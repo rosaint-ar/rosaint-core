@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Publicaciones ML · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .header-row {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .header-row .spacer { flex: 1; }
+    .sync-info {
+      font-size: 12px; color: var(--muted);
+    }
+
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .toolbar select {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit; min-width: 150px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px; margin-bottom: 20px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .kpi .v {
+      font-size: 22px; font-weight: 700; letter-spacing: -.02em;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .kpi .l {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin-top: 2px; font-weight: 600;
+    }
+    .kpi.warn .v { color: var(--warn); }
+    .kpi.hot .v { color: var(--hot); }
+    .kpi.ok .v { color: var(--ok); }
+
+    /* Alerta de productos perdiendo con ADS */
+    .alerta-ads {
+      background: color-mix(in srgb, var(--hot) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--hot) 32%, transparent);
+      border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+    }
+    .alerta-ads h4 { font-size: 14px; font-weight: 600; color: var(--hot); margin-bottom: 6px; }
+    .alerta-ads .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+    .alerta-ads ul { margin: 0; padding-left: 18px; font-size: 13px; }
+    .alerta-ads li { margin-bottom: 4px; }
+    .alerta-ads li b { color: var(--text); }
+
+    /* Grupos por producto */
+    .grupo {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 12px; overflow: hidden;
+    }
+    .grupo-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .grupo-head .nombre { font-weight: 600; font-size: 14px; }
+    .grupo-head .cnt {
+      font-size: 12px; color: var(--muted); font-weight: 500;
+    }
+    .grupo table {
+      width: 100%; border-collapse: collapse; font-size: 12.5px;
+    }
+    .grupo th {
+      text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 12px; background: var(--surface);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .grupo td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .grupo tr:last-child td { border-bottom: none; }
+    .grupo td.num, .grupo th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .grupo td.item-id {
+      font-family: var(--font-mono); color: var(--accent); font-size: 11px;
+    }
+    .grupo td.item-id a { color: var(--accent); text-decoration: none; }
+    .grupo td.item-id a:hover { text-decoration: underline; }
+
+    .badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .badge.cat { background: var(--accent-tint); color: var(--accent); }
+    .badge.trad { background: var(--surface-2); color: var(--muted); }
+    .badge.cuotas { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .badge.inactiva { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .badge.sku { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-family: var(--font-mono); font-size: 10.5px; }
+
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+      min-width: 42px; text-align: center;
+    }
+    .pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .pill.hot { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .pill.muted { background: var(--surface-2); color: var(--muted); }
+
+    .promo-tag {
+      display: inline-block; font-size: 10px; color: var(--warn); margin-left: 4px;
+    }
+
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    #btnSync svg { transition: transform .3s; }
+    #btnSync.spin svg { animation: rot 1s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="publicaciones" data-title="Publicaciones ML" data-subtitle="Rentabilidad · sync · ADS">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="header-row">
+    <span class="sync-info" id="syncInfo">—</span>
+    <span class="spacer"></span>
+    <button class="btn secondary" id="btnSyncAds">Sincronizar gasto ADS</button>
+    <button class="btn primary" id="btnSync">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+      Sincronizar con ML
+    </button>
+  </div>
+
+  <div class="kpi-row" id="kpis">
+    <div class="kpi"><div class="v" id="kpiTotal">—</div><div class="l">Publicaciones</div></div>
+    <div class="kpi ok"><div class="v" id="kpiActivas">—</div><div class="l">Activas</div></div>
+    <div class="kpi"><div class="v" id="kpiConAds">—</div><div class="l">Con ADS activo</div></div>
+    <div class="kpi warn"><div class="v" id="kpiGasto">—</div><div class="l">Gasto ADS mes</div></div>
+    <div class="kpi hot"><div class="v" id="kpiPerdiendo">—</div><div class="l">Perdiendo con ADS</div></div>
+  </div>
+
+  <div id="alertaAds"></div>
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" class="input" id="search" placeholder="Buscar por título, item ID o SKU…">
+    </div>
+    <select id="filter-tipo">
+      <option value="">Todos los tipos</option>
+      <option value="catalogo">Solo catálogo</option>
+      <option value="tradicional">Solo tradicional</option>
+    </select>
+    <select id="filter-cuotas">
+      <option value="">Con y sin cuotas</option>
+      <option value="con">Con cuotas</option>
+      <option value="sin">Sin cuotas</option>
+    </select>
+    <select id="filter-activa">
+      <option value="">Todas</option>
+      <option value="activa">Solo activas</option>
+      <option value="pausada">Solo pausadas</option>
+    </select>
+  </div>
+
+  <div id="content"><div class="empty-box">Cargando…</div></div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Publicaciones ML — leído de v_rentabilidad_ml (vista que junta publicación
+// + costo + gasto ADS del mes + rentabilidad calculada).
+// Agrupa por product_number para juntar variantes catálogo/tradicional × cuotas.
+// ═══════════════════════════════════════════════════════════════════════════
+
+let PUBS = [];
+let RENT_MIN = 15;  // fallback: umbral de rentabilidad con ads (se lee de ml_parametros)
+
+const $ = s => document.querySelector(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+const fmtPct = n => n == null ? '—' : Number(n).toFixed(0) + '%';
+const cleanTitle = t => (t||'').replace(/ - Rosaint.*$/i,'').replace(/Rosaint®?\s*Profesional/i,'').trim();
+
+// URL de la publicación en ML (MLA1234 → MLA-1234, formato que redirige bien)
+const urlML = itemId => 'https://articulo.mercadolibre.com.ar/' + itemId.replace(/^MLA/, 'MLA-');
+
+async function cargar() {
+  try {
+    const [pubs, param] = await Promise.all([
+      sb.from('v_rentabilidad_ml').select('*'),
+      sb.from('ml_parametros').select('valor').eq('clave', 'ads_auto_rentabilidad_min_pct').maybeSingle(),
+    ]);
+    if (pubs.error) throw pubs.error;
+    PUBS = pubs.data || [];
+    if (param.data?.valor) RENT_MIN = Number(param.data.valor);
+
+    actualizarSyncInfo();
+    render();
+  } catch (err) {
+    $('#content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function actualizarSyncInfo() {
+  const fechas = PUBS.map(p => p.sincronizado_en).filter(Boolean).sort();
+  if (!fechas.length) {
+    $('#syncInfo').textContent = 'Sin sincronizar todavía';
+    return;
+  }
+  const ultima = new Date(fechas[fechas.length - 1]);
+  $('#syncInfo').textContent = `Último sync: ${ultima.toLocaleDateString('es-AR')} ${ultima.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`;
+}
+
+// Semáforo de rentabilidad: <5% hot, 5-15% warn, >=15% ok
+function classRent(pct) {
+  if (pct == null) return 'muted';
+  if (pct < 5) return 'hot';
+  if (pct < RENT_MIN) return 'warn';
+  return 'ok';
+}
+
+function render() {
+  const q = $('#search').value.trim().toLowerCase();
+  const fTipo = $('#filter-tipo').value;
+  const fCuotas = $('#filter-cuotas').value;
+  const fAct = $('#filter-activa').value;
+
+  let rows = PUBS.filter(p => {
+    if (q) {
+      const txt = `${p.item_id} ${p.codigo_sku || ''} ${p.codigo_combo || ''} ${p.titulo || ''}`.toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    if (fTipo && p.tipo_publicacion !== fTipo) return false;
+    if (fCuotas === 'con' && !p.con_cuotas) return false;
+    if (fCuotas === 'sin' && p.con_cuotas) return false;
+    if (fAct === 'activa' && !p.activa) return false;
+    if (fAct === 'pausada' && p.activa) return false;
+    return true;
+  });
+
+  renderKPIs(rows);
+  renderAlerta(rows);
+
+  if (!rows.length) {
+    $('#content').innerHTML = '<div class="empty-box">Sin publicaciones con esos filtros.</div>';
+    return;
+  }
+
+  // Agrupar por product_number (variantes juntas)
+  const grupos = {};
+  for (const p of rows) {
+    const k = p.product_number || p.item_id;
+    if (!grupos[k]) grupos[k] = { titulo: p.titulo, sku: p.codigo_sku, rows: [] };
+    grupos[k].rows.push(p);
+  }
+  const gruposArr = Object.values(grupos)
+    .sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
+
+  $('#content').innerHTML = gruposArr.map(g => renderGrupo(g)).join('');
+}
+
+function renderKPIs(rows) {
+  const activas = rows.filter(p => p.activa).length;
+  const conAds = rows.filter(p => Number(p.ads_mes) > 0).length;
+  const gastoMes = rows.reduce((a,p) => a + Number(p.ads_mes || 0), 0);
+  const perdiendo = rows.filter(p => {
+    const r = p.rentabilidad_con_ads_pct;
+    return r != null && Number(r) < 0;
+  }).length;
+
+  $('#kpiTotal').textContent = rows.length;
+  $('#kpiActivas').textContent = activas;
+  $('#kpiConAds').textContent = conAds;
+  $('#kpiGasto').textContent = fmtARS(gastoMes);
+  $('#kpiPerdiendo').textContent = perdiendo;
+}
+
+function renderAlerta(rows) {
+  // Perdedores con ADS: rentabilidad_con_ads < 0 y con gasto activo
+  const perdedores = rows.filter(p => {
+    const r = p.rentabilidad_con_ads_pct;
+    return r != null && Number(r) < 0 && Number(p.ads_mes || 0) > 0;
+  }).slice(0, 8);
+
+  if (!perdedores.length) { $('#alertaAds').innerHTML = ''; return; }
+
+  $('#alertaAds').innerHTML = `
+    <div class="alerta-ads">
+      <h4>⚠ Publicaciones perdiendo plata con ADS activo</h4>
+      <div class="sub">${perdedores.length}${rows.filter(p => Number(p.rentabilidad_con_ads_pct) < 0 && Number(p.ads_mes) > 0).length > perdedores.length ? '+' : ''} con rentabilidad final negativa. Considera pausar el ADS o subir el precio.</div>
+      <ul>
+        ${perdedores.map(p => `
+          <li>
+            <b>${esc(cleanTitle(p.titulo))}</b> —
+            rent con ads <span class="pill hot">${fmtPct(p.rentabilidad_con_ads_pct)}</span>
+            · gasto mes <b>${fmtARS(p.ads_mes)}</b>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+function renderGrupo(g) {
+  return `
+    <div class="grupo">
+      <div class="grupo-head">
+        <div class="nombre">${esc(cleanTitle(g.titulo || '—'))}${g.sku ? ` <span class="badge sku">SKU ${esc(g.sku)}</span>` : ''}</div>
+        <div class="cnt">${g.rows.length} variante${g.rows.length !== 1 ? 's' : ''}</div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Item ML</th><th>Tipo</th>
+          <th class="num">Precio</th><th class="num">Costo</th>
+          <th class="num">Rent.</th>
+          <th class="num">Ads mes</th><th class="num">Ads 7d</th>
+          <th class="num">Rent. c/ADS</th>
+          <th class="num">Ventas 7d</th>
+        </tr></thead>
+        <tbody>
+          ${g.rows.map(p => renderFila(p)).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderFila(p) {
+  const tipoBadge = p.tipo_publicacion === 'catalogo'
+    ? '<span class="badge cat">Catálogo</span>'
+    : '<span class="badge trad">Tradicional</span>';
+  const cuotasBadge = p.con_cuotas ? ` <span class="badge cuotas">${p.cuotas_cantidad}x</span>` : '';
+  const inactivaBadge = !p.activa ? ' <span class="badge inactiva">Pausada</span>' : '';
+
+  const precio = p.precio_con_descuento != null && p.precio_con_descuento > 0 ? p.precio_con_descuento : p.precio;
+  const conPromo = p.precio_con_descuento != null && p.precio_con_descuento > 0 && p.precio_con_descuento < p.precio;
+
+  const rent = p.rentabilidad_pct;
+  const rentAds = p.rentabilidad_con_ads_pct;
+  const gastoMes = Number(p.ads_mes || 0);
+  const gasto7d = Number(p.ads_7d || 0);
+
+  return `
+    <tr>
+      <td class="item-id">
+        <a href="${urlML(p.item_id)}" target="_blank" title="Abrir en ML">${esc(p.item_id)}</a>
+      </td>
+      <td>${tipoBadge}${cuotasBadge}${inactivaBadge}</td>
+      <td class="num">
+        ${fmtARS(precio)}${conPromo ? '<span class="promo-tag" title="Precio con promo activa">🏷</span>' : ''}
+      </td>
+      <td class="num" style="color:var(--muted);">${fmtARS(p.costo_neto)}</td>
+      <td class="num"><span class="pill ${classRent(rent)}">${fmtPct(rent)}</span></td>
+      <td class="num" style="${gastoMes > 0 ? '' : 'color:var(--muted);'}">${gastoMes > 0 ? fmtARS(gastoMes) : '—'}</td>
+      <td class="num" style="${gasto7d > 0 ? '' : 'color:var(--muted);'}">${gasto7d > 0 ? fmtARS(gasto7d) : '—'}</td>
+      <td class="num">${gastoMes > 0 ? `<span class="pill ${classRent(rentAds)}">${fmtPct(rentAds)}</span>` : '<span style="color:var(--muted); font-size:11px;">sin ads</span>'}</td>
+      <td class="num" style="color:${Number(p.ventas_7d) > 0 ? 'var(--ok)' : 'var(--muted)'}; font-weight:${Number(p.ventas_7d) > 0 ? '600' : '400'};">${p.ventas_7d ?? '—'}</td>
+    </tr>
+  `;
+}
+
+// ─── Botones sync ───
+async function sincronizar() {
+  const btn = $('#btnSync');
+  btn.classList.add('spin'); btn.disabled = true;
+  const prev = btn.innerHTML;
+  btn.innerHTML = btn.innerHTML.replace('Sincronizar con ML', 'Sincronizando…');
+  try {
+    const { data, error } = await sb.functions.invoke('ml-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    const partes = [];
+    if (data.nuevas) partes.push(`+${data.nuevas} nuevas`);
+    if (data.eliminadas) partes.push(`−${data.eliminadas} eliminadas`);
+    partes.push(`${data.actualizadas} actualizadas`);
+    toast('✓ ' + partes.join(' · '), 'ok');
+    await cargar();
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.classList.remove('spin'); btn.disabled = false;
+    btn.innerHTML = prev;
+  }
+}
+
+async function sincronizarAds() {
+  const btn = $('#btnSyncAds');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Sincronizando ADS…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    const partes = [];
+    partes.push(`${data.guardadas} publicaciones`);
+    if (data.conGasto) partes.push(`${data.conGasto} con gasto`);
+    if (data.reseteadas) partes.push(`${data.reseteadas} reseteadas a 0 (sin campaña)`);
+    toast('✓ ADS · ' + partes.join(' · '), 'ok');
+    await cargar();
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+$('#btnSync').addEventListener('click', sincronizar);
+$('#btnSyncAds').addEventListener('click', sincronizarAds);
+$('#search').addEventListener('input', render);
+$('#filter-tipo').addEventListener('change', render);
+$('#filter-cuotas').addEventListener('change', render);
+$('#filter-activa').addEventListener('change', render);
+
+cargar();
+</script>
+</body>
+</html>

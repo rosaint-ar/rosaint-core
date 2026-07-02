@@ -1,0 +1,40 @@
+{
+  "name": "Rosaint CORE",
+  "short_name": "Rosaint",
+  "description": "Plataforma unificada de gestión Rosaint · Laboratorio, Precios, Comercial, Producción",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#F93549",
+  "background_color": "#F7F5F2",
+  "lang": "es-AR",
+  "icons": [
+    {
+      "src": "shell/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "shell/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Hoja de Producción",
+      "short_name": "Hoja",
+      "description": "Registro diario de producción · pantalla tablet",
+      "url": "./produccion/hoja.html",
+      "icons": [{ "src": "shell/logo.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "./index.html"
+    }
+  ]
+}

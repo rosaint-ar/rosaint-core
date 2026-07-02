@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .tool-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color .12s, transform .12s;
+      cursor: pointer; text-decoration: none; color: inherit;
+    }
+    .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
+    .tool-card .icon {
+      width: 36px; height: 36px; border-radius: var(--radius-sm);
+      background: var(--accent-tint); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; margin-bottom: 6px;
+    }
+    .tool-card h3 { font-size: 15px; font-weight: 600; color: var(--text); }
+    .tool-card .desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .tool-card.disabled { opacity: 0.6; cursor: not-allowed; }
+    .tool-card.disabled:hover { border-color: var(--border); transform: none; }
+    .grid-tools {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .status-line {
+      display: flex; gap: 24px; padding: 14px 18px; flex-wrap: wrap;
+      background: var(--surface-2); border-radius: var(--radius);
+      margin-bottom: 20px; font-size: 13px;
+    }
+    .status-line .k { color: var(--muted); }
+    .status-line .v {
+      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .status-line .v.ok { color: var(--ok); }
+    .status-line .v.warn { color: var(--warn); }
+
+    .conn-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .conn-dot.ok { background: var(--ok); }
+    .conn-dot.warn { background: var(--warn); }
+    .conn-dot.off { background: var(--hot); }
+  </style>
+</head>
+<body data-page="sistema" data-title="Sistema" data-subtitle="Integraciones · usuarios · backups">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="status-line" id="statusSys">
+    <span><span class="k">Integraciones:</span> <span class="v" id="conn-total">—</span></span>
+    <span><span class="k">Edge functions:</span> <span class="v" id="fn-total">—</span></span>
+    <span><span class="k">Tareas programadas:</span> <span class="v ok" id="cron-total">—</span></span>
+  </div>
+
+  <h2 style="font-size:16px; font-weight:600; margin-bottom:12px;">Herramientas de sistema</h2>
+
+  <div class="grid-tools">
+    <a href="integraciones.html" class="tool-card">
+      <div class="icon">🔌</div>
+      <h3>Integraciones</h3>
+      <div class="desc">Estado de las conexiones externas (Supabase, Odoo, Mercado Libre, ARCA) y de las tareas programadas.</div>
+    </a>
+
+    <div class="tool-card disabled">
+      <div class="icon">👤</div>
+      <h3>Usuarios y permisos</h3>
+      <div class="desc">Login principal + segundo factor para Laboratorio. Se define después.</div>
+    </div>
+
+    <div class="tool-card disabled">
+      <div class="icon">💾</div>
+      <h3>Backups</h3>
+      <div class="desc">Copia de seguridad de tablas críticas a JSON. Se agrega cuando se defina la política.</div>
+    </div>
+
+    <div class="tool-card disabled">
+      <div class="icon">📋</div>
+      <h3>Log de actividad</h3>
+      <div class="desc">Auditoría de cambios (quién tocó qué y cuándo). Placeholder.</div>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// Contadores rápidos para el status bar. Datos reales en integraciones.html.
+(async () => {
+  try {
+    // Cron jobs y edge functions no tienen endpoint público — mostramos hardcoded.
+    // Se recalculan de verdad en integraciones.html.
+    document.getElementById('cron-total').textContent = '3 activas';
+    document.getElementById('fn-total').textContent = '25+';
+    document.getElementById('conn-total').textContent = '5 configurables';
+  } catch (e) { /* ignore */ }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canales · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Tabs principales de canal ---- */
+    .canal-tabs {
+      display: flex; gap: 6px; margin-bottom: 16px;
+      background: var(--surface-2); border-radius: var(--radius-sm);
+      padding: 4px;
+    }
+    .canal-tab {
+      flex: 1; padding: 11px 16px; border-radius: var(--radius-sm);
+      background: none; border: none; cursor: pointer;
+      font-size: 13.5px; font-weight: 600; color: var(--muted);
+      transition: background .12s, color .12s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .canal-tab:hover { color: var(--text); }
+    .canal-tab.active {
+      background: var(--surface); color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .canal-tab .icon { font-size: 18px; }
+
+    /* ---- Sub-tabs del canal ML ---- */
+    .subtabs {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .subtab {
+      padding: 9px 16px; font-size: 13.5px; font-weight: 500;
+      color: var(--muted); border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: color .12s, border-color .12s;
+      background: none; border-left: none; border-right: none; border-top: none;
+      cursor: pointer;
+    }
+    .subtab:hover { color: var(--text); }
+    .subtab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+    /* ---- Config colapsable ---- */
+    details.config-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 14px; overflow: hidden;
+    }
+    details.config-box[open] { padding-bottom: 4px; }
+    details.config-box > summary {
+      list-style: none; cursor: pointer; user-select: none;
+      padding: 12px 18px; display: flex; align-items: center; gap: 10px;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      transition: background .12s;
+    }
+    details.config-box > summary::-webkit-details-marker { display: none; }
+    details.config-box > summary:hover { background: var(--surface-2); }
+    details.config-box > summary::before {
+      content: '▸'; color: var(--muted); font-size: 10px;
+      transition: transform .15s; display: inline-block;
+    }
+    details.config-box[open] > summary::before { transform: rotate(90deg); }
+    details.config-box > summary .sub {
+      font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 8px;
+    }
+    details.config-box > .cfg-body { padding: 4px 18px 16px; }
+
+    .canal-hint {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+      display: flex; align-items: center; gap: 12px; font-size: 13px;
+      color: var(--muted);
+    }
+    .canal-hint.directa { border-left: 4px solid var(--accent); }
+    .canal-hint.tn { border-left: 4px solid #2a6db5; }
+    .canal-hint.ml { border-left: 4px solid #b8860b; }
+    .canal-hint .icon { font-size: 22px; flex-shrink: 0; }
+    .canal-hint .txt { flex: 1; }
+    .canal-hint .txt b { color: var(--text); font-size: 14px; display: block; margin-bottom: 2px; }
+    .canal-hint .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .canal-hint .actions .btn { padding: 5px 12px; font-size: 12.5px; }
+
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 16px; }
+    .field label {
+      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+    }
+    .field input, .field select {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+      font: inherit;
+    }
+    .field input:focus, .field select:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .field .help { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .save-row {
+      display: flex; gap: 10px; align-items: center; margin-top: 12px;
+      padding-top: 12px; border-top: 1px solid var(--border);
+    }
+    .save-row .spacer { flex: 1; }
+    .save-row .status { font-size: 12px; color: var(--muted); }
+    .save-row .status.ok { color: var(--ok); }
+    .save-row .status.err { color: var(--hot); }
+
+    .medio-card {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 10px;
+    }
+    .medio-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .plazo-row {
+      display: flex; align-items: center; gap: 10px; padding: 5px 0;
+      border-bottom: 1px dashed var(--border);
+    }
+    .plazo-row:last-child { border-bottom: none; }
+    .plazo-row label {
+      display: flex; align-items: center; gap: 8px; flex: 1; font-size: 12.5px;
+      cursor: pointer; margin: 0; text-transform: none; letter-spacing: 0; color: var(--text); font-weight: 500;
+    }
+    .plazo-row input[type=radio] { width: auto; margin: 0; }
+    input.inline-edit {
+      width: 100px; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--surface); color: var(--text);
+      font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right;
+    }
+    input.inline-edit:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+
+    .main-section {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px 18px; margin-bottom: 14px;
+    }
+    .main-section > .head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+    }
+    .main-section > .head h3 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .main-section > .head .sub { font-size: 12.5px; color: var(--muted); }
+
+    .grid-toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .grid-toolbar .search { flex: 1; min-width: 220px; }
+    .grid-toolbar .search input { width: 100%; }
+    .grid-toolbar select {
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit; min-width: 150px;
+    }
+    .grid-toolbar select:focus { outline: none; border-color: var(--accent); }
+
+    .grupo {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 12px; overflow: hidden;
+    }
+    .grupo-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 16px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .grupo-head .n { font-weight: 600; font-size: 13.5px; }
+    .grupo-head .c { font-size: 12px; color: var(--muted); }
+    .grupo table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .grupo th {
+      text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 12px; background: var(--surface);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .grupo td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .grupo tr:last-child td { border-bottom: none; }
+    .grupo td.num, .grupo th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .grupo td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 11.5px; }
+    .grupo td.item-id { font-family: var(--font-mono); color: var(--accent); font-size: 11px; }
+    .grupo td.item-id a { color: var(--accent); text-decoration: none; }
+    .grupo td.item-id a:hover { text-decoration: underline; }
+
+    .col-l1 { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+    .col-l2 { background: color-mix(in srgb, var(--ok) 4%, var(--surface)); }
+    .col-esc { background: color-mix(in srgb, var(--warn) 4%, var(--surface)); }
+    .col-tn { background: color-mix(in srgb, #2a6db5 5%, var(--surface)); }
+
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+      min-width: 42px; text-align: center;
+    }
+    .pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .pill.hot { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .pill.muted { background: var(--surface-2); color: var(--muted); }
+
+    /* Pill de rentabilidad ML — igual que el original de rosaint.html */
+    .rentab-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+      min-width: 42px; text-align: center;
+    }
+    .rentab-pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .rentab-pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .rentab-pill.error { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .rentab-pill.empty { background: var(--surface-2); color: var(--muted); }
+
+    .badge-vinculo {
+      display: inline-block; padding: 1px 7px; border-radius: 4px;
+      font-size: 10.5px; font-weight: 500; margin-right: 3px;
+      white-space: nowrap;
+    }
+    .badge-vinculo.ancla { background: var(--accent-tint); color: var(--accent); }
+    .badge-vinculo.derivado { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+    .badge-vinculo.desvinculado { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+    .ml-fila-combo td { background: color-mix(in srgb, var(--warn) 4%, transparent); }
+    .grupo-head.ml-header-combo { background: color-mix(in srgb, var(--warn) 8%, transparent) !important; }
+
+    .ads-panel { background: var(--surface); }
+    .ads-panel summary::-webkit-details-marker { display: none; }
+    .ads-panel[open] summary { border-bottom: 1px solid var(--border); }
+
+    .badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+    }
+    .badge.cat { background: var(--accent-tint); color: var(--accent); }
+    .badge.trad { background: var(--surface-2); color: var(--muted); }
+    .badge.cuotas { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .badge.inactiva { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .badge.sku { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-family: var(--font-mono); font-size: 10.5px; }
+    .promo-tag { display: inline-block; font-size: 10px; color: var(--warn); margin-left: 4px; }
+
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.mono {
+      font-family: var(--font-mono); color: var(--accent); font-size: 11.5px;
+    }
+    .tbl td.muted { color: var(--muted); font-size: 12.5px; }
+    .tbl td.date { white-space: nowrap; color: var(--muted); font-size: 11.5px; }
+
+    /* KPIs (usados en publicaciones + resumen config) */
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px; margin-bottom: 16px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 12px 14px; text-align: center;
+    }
+    .kpi .v { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .kpi .l {
+      font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin-top: 2px; font-weight: 600;
+    }
+    .kpi.warn .v { color: var(--warn); }
+    .kpi.hot .v { color: var(--hot); }
+    .kpi.ok .v { color: var(--ok); }
+
+    /* Alerta de publicaciones perdiendo */
+    .alerta-ads {
+      background: color-mix(in srgb, var(--hot) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--hot) 32%, transparent);
+      border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+    }
+    .alerta-ads h4 { font-size: 13.5px; font-weight: 600; color: var(--hot); margin-bottom: 4px; }
+    .alerta-ads .sub { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .alerta-ads ul { margin: 0; padding-left: 18px; font-size: 12.5px; }
+    .alerta-ads li { margin-bottom: 3px; }
+    .alerta-ads li b { color: var(--text); }
+
+    /* Motor de publicidad */
+    .motor-estado {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; border-radius: var(--radius-sm);
+      font-size: 13.5px; margin-bottom: 14px;
+    }
+    .motor-estado.on {
+      background: color-mix(in srgb, var(--ok) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+      color: var(--ok);
+    }
+    .motor-estado.off {
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .motor-estado .icon { font-size: 18px; }
+    .motor-estado b { color: inherit; }
+
+    .switch-row {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+      padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm);
+    }
+    .switch-row input[type=checkbox] {
+      width: 20px; height: 20px; cursor: pointer; accent-color: var(--ok);
+    }
+    .switch-row .lbl { font-weight: 600; }
+    .switch-row .desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    .resultado-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px; margin-bottom: 12px;
+    }
+    .rmet {
+      background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px;
+      text-align: center;
+    }
+    .rmet .v { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .rmet .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-top: 2px; }
+    .rmet.hot .v { color: var(--hot); } .rmet.warn .v { color: var(--warn); }
+
+    .modo-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .modo-badge.real { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .modo-badge.seco { background: var(--surface-2); color: var(--muted); }
+
+    .sugerencias {
+      background: color-mix(in srgb, var(--ok) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent);
+      border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px;
+    }
+    .sugerencias b { color: var(--text); }
+    .sugerencias ul { margin: 6px 0 0; padding-left: 20px; }
+    .sugerencias li { margin-bottom: 4px; }
+
+    .alerta-presu {
+      background: color-mix(in srgb, var(--warn) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+      color: var(--warn); padding: 10px 14px; border-radius: var(--radius-sm);
+      font-size: 13px; margin-bottom: 12px;
+    }
+
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    .sync-info { font-size: 12px; color: var(--muted); }
+    #btnSyncPubs svg { transition: transform .3s; }
+    #btnSyncPubs.spin svg { animation: rot 1s linear infinite; }
+    @keyframes rot { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="canales" data-title="Canales" data-subtitle="Venta Directa · Tienda Nube · Mercado Libre">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="canal-tabs">
+    <button class="canal-tab active" data-canal="directa">
+      <span class="icon">📋</span> Venta Directa
+    </button>
+    <button class="canal-tab" data-canal="tn">
+      <span class="icon">🔵</span> Tienda Nube
+    </button>
+    <button class="canal-tab" data-canal="ml">
+      <span class="icon">🟡</span> Mercado Libre
+    </button>
+  </div>
+
+  <div id="view-directa"></div>
+  <div id="view-tn" style="display:none;"></div>
+  <div id="view-ml" style="display:none;"></div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Canales — Venta Directa / Tienda Nube / Mercado Libre.
+// El canal ML incluye Publicaciones y Publicidad como sub-tabs internos.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+const fmtPct = n => n == null ? '—' : Number(n).toFixed(0) + '%';
+const cleanTitle = t => (t||'').replace(/ - Rosaint.*$/i,'').replace(/Rosaint®?\s*Profesional/i,'').trim();
+const urlML = itemId => 'https://articulo.mercadolibre.com.ar/' + itemId.replace(/^MLA/, 'MLA-');
+
+let CANAL_TN = null, MEDIOS = [], PLAZOS = [];
+let OBJETIVOS = {}, LINEAS = [];
+
+function classRent(pct, nivel) {
+  if (pct == null) return 'muted';
+  const obj = OBJETIVOS[nivel];
+  if (!obj) return Number(pct) < 0 ? 'hot' : Number(pct) < 20 ? 'warn' : 'ok';
+  const verde = obj.objetivo + obj.tolerancia;
+  if (Number(pct) >= verde) return 'ok';
+  if (Number(pct) >= obj.objetivo) return 'warn';
+  return 'hot';
+}
+function titleRent(pct, nivel) {
+  if (pct == null) return 'Sin dato';
+  const obj = OBJETIVOS[nivel];
+  if (!obj) return `Margen ${Number(pct).toFixed(1)}%`;
+  const verde = obj.objetivo + obj.tolerancia;
+  return `Margen ${Number(pct).toFixed(1)}% · Objetivo ${obj.objetivo}% · Verde ≥${verde}%`;
+}
+
+$$('.canal-tab').forEach(t => t.addEventListener('click', () => {
+  $$('.canal-tab').forEach(x => x.classList.toggle('active', x === t));
+  const which = t.dataset.canal;
+  ['directa','tn','ml'].forEach(v => {
+    $('#view-' + v).style.display = (v === which ? '' : 'none');
+  });
+}));
+
+async function cargarComun() {
+  const [canales, medios, plazos, objs, lineas] = await Promise.all([
+    sb.from('canales_venta').select('*').order('nombre'),
+    sb.from('canal_medios_pago').select('*').eq('vigente', true).order('nombre'),
+    sb.from('medio_pago_plazos').select('*').order('nombre_plazo'),
+    sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts'),
+    sb.from('lineas').select('id, nombre, orden').order('orden'),
+  ]);
+  CANAL_TN = (canales.data || []).find(c => /tienda\s*nube/i.test(c.nombre)) || (canales.data || [])[0] || null;
+  MEDIOS = medios.data || [];
+  PLAZOS = plazos.data || [];
+  OBJETIVOS = {};
+  for (const o of (objs.data || [])) {
+    OBJETIVOS[o.nivel] = { objetivo: Number(o.objetivo_pct), tolerancia: Number(o.tolerancia_pts) };
+  }
+  LINEAS = lineas.data || [];
+}
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1) VENTA DIRECTA
+// ═══════════════════════════════════════════════════════════════════════════
+let SKUS_DIR = [];
+
+async function cargarDirecta() {
+  const view = $('#view-directa');
+  view.innerHTML = `
+    <div class="canal-hint directa">
+      <span class="icon">📋</span>
+      <div class="txt">
+        <b>Venta Directa</b>
+        Precios al público (L1 c/IVA) y al profesional (L2 c/IVA) con escalones de descuento por volumen. Se usa en WhatsApp, local y facturación por Odoo.
+      </div>
+      <div class="actions">
+        <a href="../precios/index.html" class="btn ghost">Precios</a>
+        <a href="../laboratorio/formulas.html" class="btn ghost">Editar por SKU</a>
+      </div>
+    </div>
+
+    <details class="config-box">
+      <summary>Configuración <span class="sub">— escalones, listas y márgenes viven en el módulo Precios</span></summary>
+      <div class="cfg-body">
+        <div style="font-size:13px; color:var(--muted); line-height:1.55; margin-bottom:12px;">
+          Este canal no tiene comisiones ni medios de pago propios porque la venta es directa (transferencia o efectivo).
+        </div>
+        <ul style="font-size:13px; color:var(--muted); line-height:1.7; padding-left:20px; margin:0;">
+          <li><b>Escalones de descuento por volumen</b> (20%, 30%, 35%) — se aplican sobre L2 según monto del pedido.</li>
+          <li><b>Objetivos de margen</b> por lista — definen los semáforos de la grilla.</li>
+          <li><b>Precios por SKU</b> — se editan uno por uno desde el editor de fórmulas.</li>
+        </ul>
+      </div>
+    </details>
+
+    <div class="main-section">
+      <div class="head">
+        <div>
+          <h3>Rentabilidad por SKU</h3>
+          <div class="sub">Margen bruto sobre venta neta (precio sin IVA). Semáforo según objetivos de margen.</div>
+        </div>
+      </div>
+      <div class="grid-toolbar">
+        <div class="search"><input type="text" class="input" id="dir-search" placeholder="Buscar por SKU o nombre…"></div>
+        <select id="dir-linea">
+          <option value="">Todas las líneas</option>
+          ${LINEAS.map(l => `<option value="${l.id}">${esc(l.nombre)}</option>`).join('')}
+        </select>
+        <span id="dir-cnt" style="font-size:12px; color:var(--muted);">—</span>
+      </div>
+      <div id="dir-grid"><div class="empty-box">Cargando…</div></div>
+    </div>
+  `;
+
+  try {
+    const { data, error } = await sb.from('v_precios_listas_completos')
+      .select('codigo_sku, nombre_sku, linea, categoria, tamanio_kg, costo_unitario, rentab_objetivo_l1, l1_publicado, rentab_real_l1, rentab_objetivo_l2, l2_publicado, rentab_real_l2, l2_menos_20, l2_menos_30, l2_menos_35');
+    if (error) throw error;
+    SKUS_DIR = data || [];
+    renderDirGrid();
+    $('#dir-search').addEventListener('input', renderDirGrid);
+    $('#dir-linea').addEventListener('change', renderDirGrid);
+  } catch (err) {
+    $('#dir-grid').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderDirGrid() {
+  const q = $('#dir-search').value.trim().toLowerCase();
+  const fLin = $('#dir-linea').value;
+  let rows = SKUS_DIR;
+  if (q) rows = rows.filter(r => ((r.codigo_sku||'') + ' ' + (r.nombre_sku||'')).toLowerCase().includes(q));
+  if (fLin) {
+    const lin = LINEAS.find(l => String(l.id) === fLin);
+    if (lin) rows = rows.filter(r => r.linea === lin.nombre);
+  }
+  $('#dir-cnt').textContent = rows.length + ' SKU' + (rows.length !== 1 ? 's' : '');
+  if (!rows.length) { $('#dir-grid').innerHTML = '<div class="empty-box">Sin resultados</div>'; return; }
+
+  const grupos = LINEAS.map(l => ({
+    nombre: l.nombre,
+    rows: rows.filter(r => r.linea === l.nombre).sort((a,b) => (a.codigo_sku||'').localeCompare(b.codigo_sku||'')),
+  })).filter(g => g.rows.length > 0);
+  const enGrupo = new Set(grupos.flatMap(g => g.rows.map(r => r.codigo_sku)));
+  const sinLinea = rows.filter(r => !enGrupo.has(r.codigo_sku));
+  if (sinLinea.length) grupos.push({ nombre: 'Sin línea', rows: sinLinea });
+
+  $('#dir-grid').innerHTML = grupos.map(g => `
+    <div class="grupo">
+      <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU${g.rows.length !== 1 ? 's' : ''}</div></div>
+      <table>
+        <thead><tr>
+          <th>Código</th><th>Nombre</th><th class="num">Tam.</th><th class="num">Costo</th>
+          <th class="num col-l1">L1 c/IVA</th><th class="num col-l1">Rent L1</th>
+          <th class="num col-l2">L2 c/IVA</th><th class="num col-l2">Rent L2</th>
+          <th class="num col-esc">L2 −20%</th><th class="num col-esc">L2 −30%</th><th class="num col-esc">L2 −35%</th>
+        </tr></thead>
+        <tbody>
+          ${g.rows.map(r => `
+            <tr>
+              <td class="codigo">${esc(r.codigo_sku)}</td>
+              <td>${esc(r.nombre_sku || '—')}</td>
+              <td class="num" style="color:var(--muted);">${r.tamanio_kg != null ? Number(r.tamanio_kg) + 'Kg' : '—'}</td>
+              <td class="num" style="color:var(--muted);">${fmtARS(r.costo_unitario)}</td>
+              <td class="num col-l1">${fmtARS(r.l1_publicado)}</td>
+              <td class="num col-l1"><span class="pill ${classRent(r.rentab_real_l1,'L1')}" title="${titleRent(r.rentab_real_l1,'L1')}">${fmtPct(r.rentab_real_l1)}</span></td>
+              <td class="num col-l2">${fmtARS(r.l2_publicado)}</td>
+              <td class="num col-l2"><span class="pill ${classRent(r.rentab_real_l2,'L2')}" title="${titleRent(r.rentab_real_l2,'L2')}">${fmtPct(r.rentab_real_l2)}</span></td>
+              <td class="num col-esc">${fmtARS(r.l2_menos_20)}</td>
+              <td class="num col-esc">${fmtARS(r.l2_menos_30)}</td>
+              <td class="num col-esc">${fmtARS(r.l2_menos_35)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2) TIENDA NUBE
+// ═══════════════════════════════════════════════════════════════════════════
+let RENT_TN = [];
+
+async function cargarTN() {
+  if (!CANAL_TN) { $('#view-tn').innerHTML = '<div class="empty-box">No hay canal Tienda Nube configurado.</div>'; return; }
+  const c = CANAL_TN;
+  $('#view-tn').innerHTML = `
+    <div class="canal-hint tn">
+      <span class="icon">🔵</span>
+      <div class="txt">
+        <b>Tienda Nube</b>
+        Marketplace B2C. Precio en pesos calculado desde L1 × factor. Comisión de plataforma, IIBB, envío absorbido y descuentos por medio de pago.
+      </div>
+    </div>
+
+    <details class="config-box">
+      <summary>Configuración del canal <span class="sub">— factor, redondeo, comisiones, IIBB, envío</span></summary>
+      <div class="cfg-body">
+        <div class="field-grid">
+          <div class="field"><label>Factor sobre L1</label><input type="number" id="tn-factor" step="0.01" min="1" value="${c.factor_lista ?? ''}"><div class="help">Ej: 1,20 = +20% sobre L1 c/IVA.</div></div>
+          <div class="field"><label>Redondeo ($)</label><input type="number" id="tn-redondeo" step="10" min="1" value="${c.redondeo ?? ''}"><div class="help">Ej: 100 = múltiplos de $100.</div></div>
+          <div class="field"><label>Descuento por transferencia (%)</label><input type="number" id="tn-transf" step="0.5" min="0" value="${c.descuento_transf_pct ?? ''}"></div>
+          <div class="field"><label>Comisión plataforma (%)</label><input type="number" id="tn-plataforma" step="0.1" min="0" value="${c.comision_plataforma_pct ?? ''}"><div class="help">Ej: TN 2%.</div></div>
+          <div class="field"><label>IIBB (%)</label><input type="number" id="tn-iibb" step="0.1" min="0" value="${c.iibb_pct ?? ''}"></div>
+          <div class="field"><label>Envío promedio absorbido ($)</label><input type="number" id="tn-envio" step="10" min="0" value="${c.envio_promedio ?? ''}"></div>
+        </div>
+        <div class="save-row"><span class="spacer"></span><span class="status" id="tn-status"></span><button class="btn primary" id="tn-save">Guardar configuración</button></div>
+      </div>
+    </details>
+
+    <details class="config-box">
+      <summary>Medios de pago y plazos <span class="sub">— comisiones, financiación 3 cuotas, plazo activo</span></summary>
+      <div class="cfg-body">
+        <div id="tn-medios"></div>
+        <div class="save-row"><span class="spacer"></span><span class="status" id="tn-medios-status"></span><button class="btn primary" id="tn-medios-save">Guardar medios</button></div>
+      </div>
+    </details>
+
+    <div class="main-section">
+      <div class="head"><div><h3>Rentabilidad por SKU × medio de pago</h3><div class="sub">Precio y margen con transferencia, 1 pago y 3 cuotas.</div></div></div>
+      <div class="grid-toolbar">
+        <div class="search"><input type="text" class="input" id="tn-search" placeholder="Buscar por SKU o nombre…"></div>
+        <select id="tn-medio"><option value="">Todos los medios</option></select>
+        <span id="tn-cnt" style="font-size:12px; color:var(--muted);">—</span>
+      </div>
+      <div id="tn-grid"><div class="empty-box">Cargando…</div></div>
+    </div>
+  `;
+  renderMedios();
+  await cargarGrillaTN();
+  $('#tn-save').addEventListener('click', guardarCfgTN);
+  $('#tn-medios-save').addEventListener('click', guardarMedios);
+  $('#tn-search').addEventListener('input', renderGrillaTN);
+  $('#tn-medio').addEventListener('change', renderGrillaTN);
+}
+
+function renderMedios() {
+  $('#tn-medios').innerHTML = MEDIOS.map(m => {
+    const plazos = PLAZOS.filter(p => p.medio_pago_id === m.id);
+    return `
+      <div class="medio-card" data-medio="${m.id}">
+        <h4>💳 ${esc(m.nombre)}</h4>
+        <div class="field-grid" style="margin-bottom:10px;">
+          <div class="field"><label>Financiación 3 cuotas (%)</label><input type="number" step="0.01" min="0" class="medio-cuotas" value="${m.financiacion_cuotas_pct ?? 0}"></div>
+          <div class="field" style="display:flex; align-items:flex-end;"><label style="display:flex; align-items:center; gap:6px; margin:0 0 8px 0; cursor:pointer; text-transform:none; letter-spacing:0; font-weight:500; color:var(--text); font-size:13px;"><input type="checkbox" class="medio-exime" ${m.exime_comision_plataforma ? 'checked' : ''} style="width:auto; margin:0;"> Exime comisión de plataforma</label></div>
+        </div>
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; margin-bottom:6px;">Plazos disponibles</div>
+        ${plazos.length ? plazos.map(p => `
+          <div class="plazo-row" data-plazo="${p.id}">
+            <label><input type="radio" name="plazo-${m.id}" value="${p.id}" ${p.plazo_activo ? 'checked' : ''}><span>${esc(p.nombre_plazo)}</span></label>
+            <input type="number" step="0.01" min="0" class="plazo-pct inline-edit" value="${p.comision_pct ?? 0}" title="% por cobro">
+            <span style="font-size:11.5px; color:var(--muted);">% por cobro</span>
+          </div>`).join('') : '<div style="font-size:12px; color:var(--muted);">Sin plazos.</div>'}
+      </div>`;
+  }).join('');
+}
+
+async function guardarCfgTN() {
+  const btn = $('#tn-save'); btn.disabled = true;
+  const st = $('#tn-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    const upd = {
+      factor_lista: parseFloat($('#tn-factor').value) || 0,
+      redondeo: parseInt($('#tn-redondeo').value, 10) || 1,
+      descuento_transf_pct: parseFloat($('#tn-transf').value) || 0,
+      comision_plataforma_pct: parseFloat($('#tn-plataforma').value) || 0,
+      iibb_pct: parseFloat($('#tn-iibb').value) || 0,
+      envio_promedio: parseFloat($('#tn-envio').value) || 0,
+      actualizado_en: new Date().toISOString(),
+    };
+    const { error } = await sb.from('canales_venta').update(upd).eq('id', CANAL_TN.id);
+    if (error) throw error;
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    await cargarComun(); await cargarGrillaTN();
+    toast('Tienda Nube guardada', 'ok');
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function guardarMedios() {
+  const btn = $('#tn-medios-save'); btn.disabled = true;
+  const st = $('#tn-medios-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    for (const b of $$('#tn-medios .medio-card')) {
+      const medioId = parseInt(b.dataset.medio, 10);
+      const cuotas = parseFloat(b.querySelector('.medio-cuotas').value) || 0;
+      const exime = b.querySelector('.medio-exime').checked;
+      const { error: eM } = await sb.from('canal_medios_pago').update({ financiacion_cuotas_pct: cuotas, exime_comision_plataforma: exime, actualizado_en: new Date().toISOString() }).eq('id', medioId);
+      if (eM) throw new Error('Medio: ' + eM.message);
+      for (const inp of b.querySelectorAll('.plazo-pct')) {
+        const plazoId = parseInt(inp.closest('.plazo-row').dataset.plazo, 10);
+        const { error: eP } = await sb.from('medio_pago_plazos').update({ comision_pct: parseFloat(inp.value) || 0, actualizado_en: new Date().toISOString() }).eq('id', plazoId);
+        if (eP) throw new Error('Plazo: ' + eP.message);
+      }
+      const activo = b.querySelector(`input[name="plazo-${medioId}"]:checked`);
+      if (activo) {
+        await sb.from('medio_pago_plazos').update({ plazo_activo: false }).eq('medio_pago_id', medioId);
+        const { error: eA } = await sb.from('medio_pago_plazos').update({ plazo_activo: true }).eq('id', parseInt(activo.value, 10));
+        if (eA) throw new Error('Plazo activo: ' + eA.message);
+      }
+    }
+    await cargarComun(); renderMedios(); await cargarGrillaTN();
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Medios guardados', 'ok');
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function cargarGrillaTN() {
+  try {
+    const { data, error } = await sb.from('v_rentabilidad_canal').select('*').eq('canal_id', CANAL_TN.id);
+    if (error) throw error;
+    RENT_TN = data || [];
+    const mediosUnicos = [...new Map(RENT_TN.map(r => [r.medio_pago_id, r])).values()];
+    const sel = $('#tn-medio');
+    sel.innerHTML = '<option value="">Todos los medios</option>' + mediosUnicos.map(m =>
+      `<option value="${m.medio_pago_id}" ${m.es_default ? 'selected' : ''}>💳 ${esc(m.medio_pago)}${m.es_default ? ' ★' : ''}</option>`
+    ).join('');
+    renderGrillaTN();
+  } catch (err) {
+    $('#tn-grid').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderGrillaTN() {
+  const q = $('#tn-search').value.trim().toLowerCase();
+  const fMedio = $('#tn-medio').value;
+  let rows = RENT_TN.slice();
+  if (fMedio) rows = rows.filter(r => String(r.medio_pago_id) === fMedio);
+  if (q) rows = rows.filter(r => ((r.codigo||'') + ' ' + (r.producto||'')).toLowerCase().includes(q));
+  $('#tn-cnt').textContent = rows.length + ' fila' + (rows.length !== 1 ? 's' : '');
+  if (!rows.length) { $('#tn-grid').innerHTML = '<div class="empty-box">Sin resultados</div>'; return; }
+
+  const grupos = LINEAS.map(l => ({ nombre: l.nombre, rows: rows.filter(r => r.linea === l.nombre).sort((a,b) => (a.codigo||'').localeCompare(b.codigo||'')) })).filter(g => g.rows.length > 0);
+  const enGrupo = new Set(grupos.flatMap(g => g.rows.map(r => r.codigo)));
+  const sinLinea = rows.filter(r => !enGrupo.has(r.codigo));
+  if (sinLinea.length) grupos.push({ nombre: 'Otros', rows: sinLinea });
+
+  $('#tn-grid').innerHTML = grupos.map(g => `
+    <div class="grupo">
+      <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU · ${esc(g.rows[0]?.medio_pago || '')}</div></div>
+      <table>
+        <thead><tr>
+          <th>Código</th><th>Nombre</th><th class="num">L1 c/IVA</th>
+          <th class="num col-tn">Lista</th><th class="num col-tn">Transf.</th><th class="num">Rent Transf.</th>
+          <th class="num col-tn">1 pago</th><th class="num">Rent 1 pago</th><th class="num">Rent 3 cuotas</th>
+        </tr></thead>
+        <tbody>
+          ${g.rows.map(r => `
+            <tr>
+              <td class="codigo">${esc(r.codigo)}</td><td>${esc(r.producto || '—')}</td>
+              <td class="num" style="color:var(--muted);">${fmtARS(r.l1_iva_incl)}</td>
+              <td class="num col-tn">${fmtARS(r.lista)}</td><td class="num col-tn">${fmtARS(r.precio_transf)}</td>
+              <td class="num"><span class="pill ${classRent(r.rent_transf,'L1')}" title="${titleRent(r.rent_transf,'L1')}">${fmtPct(r.rent_transf)}</span></td>
+              <td class="num col-tn">${fmtARS(r.precio_1pago)}</td>
+              <td class="num"><span class="pill ${classRent(r.rent_1pago,'L1')}" title="${titleRent(r.rent_1pago,'L1')}">${fmtPct(r.rent_1pago)}</span></td>
+              <td class="num"><span class="pill ${classRent(r.rent_3cuotas,'L1')}" title="${titleRent(r.rent_3cuotas,'L1')}">${fmtPct(r.rent_3cuotas)}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3) MERCADO LIBRE — con sub-tabs [Publicaciones] [Publicidad] [Config]
+// ═══════════════════════════════════════════════════════════════════════════
+let PUBS = [], RENT_MIN = 15;
+let ML_PARAMS = [], ML_CARGO = [], ML_ENVIO = [];
+
+async function cargarML() {
+  $('#view-ml').innerHTML = `
+    <div class="canal-hint ml">
+      <span class="icon">🟡</span>
+      <div class="txt">
+        <b>Mercado Libre</b>
+        Marketplace con comisión variable, ADS opcional y envío absorbido por peso. Se sincroniza con la API de ML.
+      </div>
+    </div>
+
+    <div class="subtabs">
+      <button class="subtab active" data-sub="pubs">Publicaciones</button>
+      <button class="subtab" data-sub="ads">Publicidad</button>
+      <button class="subtab" data-sub="cfg">Configuración</button>
+    </div>
+
+    <div id="sub-pubs"></div>
+    <div id="sub-ads" style="display:none;"></div>
+    <div id="sub-cfg" style="display:none;"></div>
+  `;
+
+  $$('.subtab').forEach(st => st.addEventListener('click', () => {
+    $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
+    const which = st.dataset.sub;
+    ['pubs','ads','cfg'].forEach(v => {
+      $('#sub-' + v).style.display = (v === which ? '' : 'none');
+    });
+  }));
+
+  await Promise.all([cargarPublicaciones(), cargarPublicidad(), cargarConfigML()]);
+}
+
+// ─────── 3.1) SUB-TAB PUBLICACIONES ───────
+async function cargarPublicaciones() {
+  $('#sub-pubs').innerHTML = `
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+      <span class="sync-info" id="sync-info">—</span>
+      <span style="flex:1;"></span>
+      <button class="btn secondary" id="btnSyncAds">Sincronizar gasto ADS</button>
+      <button class="btn primary" id="btnSyncPubs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+        Sincronizar con ML
+      </button>
+    </div>
+
+    <div class="grid-toolbar">
+      <div class="search"><input type="text" class="input" id="pub-search" placeholder="Buscar por título, item ID o SKU…"></div>
+      <select id="pub-tipo">
+        <option value="">Todos los tipos</option>
+        <option value="catalogo">Solo catálogo</option>
+        <option value="tradicional">Solo tradicional</option>
+      </select>
+      <select id="pub-cuotas">
+        <option value="">Con y sin cuotas</option>
+        <option value="con">Con cuotas</option>
+        <option value="sin">Sin cuotas</option>
+      </select>
+      <select id="pub-act">
+        <option value="">Todas</option>
+        <option value="activa">Solo activas</option>
+        <option value="pausada">Solo pausadas</option>
+      </select>
+    </div>
+
+    <div id="panel-ads-ml"></div>
+    <div id="pub-content"><div class="empty-box">Cargando…</div></div>
+  `;
+
+  try {
+    const { data, error } = await sb.from('v_rentabilidad_ml').select('*');
+    if (error) throw error;
+    PUBS = data || [];
+    actualizarSyncInfo(PUBS.length);
+    renderPubs();
+    $('#pub-search').addEventListener('input', renderPubs);
+    $('#pub-tipo').addEventListener('change', renderPubs);
+    $('#pub-cuotas').addEventListener('change', renderPubs);
+    $('#pub-act').addEventListener('change', renderPubs);
+    $('#btnSyncPubs').addEventListener('click', sincronizarPubs);
+    $('#btnSyncAds').addEventListener('click', sincronizarAdsGasto);
+  } catch (err) {
+    $('#pub-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function actualizarSyncInfo(count) {
+  const fechas = PUBS.map(p => p.sincronizado_en).filter(Boolean).sort();
+  const c = count != null ? count : PUBS.length;
+  let sincTxt = '';
+  if (fechas.length) {
+    const ultima = new Date(fechas[fechas.length - 1]);
+    sincTxt = ` · sincronizado ${ultima.toLocaleDateString('es-AR')} ${ultima.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`;
+  } else {
+    sincTxt = ' · sin sincronizar';
+  }
+  $('#sync-info').textContent = `${c} publicaciones${sincTxt}`;
+}
+
+function renderPubs() {
+  const q = $('#pub-search').value.trim().toLowerCase();
+  const fT = $('#pub-tipo').value, fC = $('#pub-cuotas').value, fA = $('#pub-act').value;
+
+  let rows = PUBS.filter(p => {
+    if (q) {
+      const txt = `${p.item_id} ${p.codigo_sku || ''} ${p.codigo_combo || ''} ${p.titulo || ''}`.toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    if (fT && p.tipo_publicacion !== fT) return false;
+    if (fC === 'con' && !p.con_cuotas) return false;
+    if (fC === 'sin' && p.con_cuotas) return false;
+    if (fA === 'activa' && !p.activa) return false;
+    if (fA === 'pausada' && p.activa) return false;
+    return true;
+  });
+
+  actualizarSyncInfo(rows.length);
+  $('#panel-ads-ml').innerHTML = renderPanelAdsML(rows);
+
+  if (!rows.length) { $('#pub-content').innerHTML = '<div class="empty-box">Sin publicaciones con esos filtros.</div>'; return; }
+
+  const grupos = {};
+  for (const p of rows) {
+    const k = p.product_number || p.item_id;
+    if (!grupos[k]) grupos[k] = { titulo: p.titulo, sku: p.codigo_sku, rows: [] };
+    grupos[k].rows.push(p);
+  }
+  const arr = Object.values(grupos).sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
+
+  $('#pub-content').innerHTML = arr.map(g => renderGrupoML(g)).join('');
+}
+
+// Panel superior: alertas accionables sobre publicidad + ADS.
+// Categoriza los productos: plata tirada / optimizar / variantes desbalanceadas / candidatos a pautar.
+function renderPanelAdsML(pubs) {
+  const conAds = pubs.filter(p => parseFloat(p.ads_total || 0) > 0);
+  if (conAds.length === 0) return '';
+
+  const gastoTotal = conAds.reduce((a,p) => a + parseFloat(p.ads_total || 0), 0);
+  const gasto7d = pubs.reduce((a,p) => a + parseFloat(p.ads_7d || 0), 0);
+  const limpio = (t) => esc((t || '').replace(/ - Rosaint.*$/i,'').replace(/Rosaint®?\s*Profesional/i,'').trim());
+
+  const v7 = (p) => Number(p.ventas_7d || 0);
+  const vTot = (p) => Number(p.ventas_total || 0);
+  const rent = (p) => parseFloat(p.rentabilidad_con_ads_pct);
+
+  // Agrupar por producto (ML pauta a nivel producto, no variante)
+  const prod = {};
+  for (const p of pubs) {
+    const k = p.product_number || p.item_id;
+    if (!prod[k]) prod[k] = { titulo: p.titulo, vars: [] };
+    prod[k].vars.push(p);
+  }
+  const productos = Object.values(prod).map(g => {
+    const gastoProd = g.vars.reduce((a,p) => a + parseFloat(p.ads_total||0), 0);
+    const gasto7Prod = g.vars.reduce((a,p) => a + parseFloat(p.ads_7d||0), 0);
+    const ventasProd = g.vars.reduce((a,p) => a + vTot(p), 0);
+    const ventas7Prod = g.vars.reduce((a,p) => a + v7(p), 0);
+    const visitas7Prod = g.vars.reduce((a,p) => a + Number(p.visitas_7d||0), 0);
+    const conVentas = g.vars.filter(p => vTot(p) > 0 && p.rentabilidad_con_ads_pct != null);
+    let rentProd = null;
+    if (conVentas.length) {
+      const tot = conVentas.reduce((a,p)=>a+vTot(p),0);
+      rentProd = conVentas.reduce((a,p)=>a + rent(p)*vTot(p),0) / tot;
+    } else {
+      const r = g.vars.filter(p => p.rentabilidad_con_ads_pct != null).map(rent);
+      rentProd = r.length ? r.reduce((a,b)=>a+b,0)/r.length : null;
+    }
+    const rsa = g.vars.filter(p => p.rentabilidad_pct != null).map(p => parseFloat(p.rentabilidad_pct));
+    const rentSinAds = rsa.length ? rsa.reduce((a,b)=>a+b,0)/rsa.length : null;
+    return { ...g, gastoProd, gasto7Prod, ventasProd, ventas7Prod, visitas7Prod, rentProd, rentSinAds };
+  });
+
+  const plataTirada = productos.filter(g => g.gasto7Prod > 0 && g.rentProd != null && g.rentProd < 15 && g.ventas7Prod <= 1 && g.ventasProd <= 10)
+    .sort((a,b) => a.rentProd - b.rentProd);
+  const optimizar = productos.filter(g => g.gasto7Prod > 0 && g.rentProd != null && g.rentProd < 25 && (g.ventas7Prod >= 2 || g.ventasProd > 30) && !plataTirada.includes(g))
+    .sort((a,b) => a.rentProd - b.rentProd);
+  const candidatos = productos.filter(g => g.gasto7Prod === 0 && g.ventasProd >= 10 && g.rentSinAds != null && g.rentSinAds >= 40)
+    .sort((a,b) => b.ventasProd - a.ventasProd);
+
+  const badgesVariantes = (g) => g.vars.slice()
+    .sort((a,b) => (a.con_cuotas?1:0) - (b.con_cuotas?1:0))
+    .map(p => p.con_cuotas
+      ? `<span class="badge-vinculo derivado" style="font-size:10px">${p.cuotas_cantidad || 3} cuotas</span>`
+      : `<span class="badge-vinculo" style="font-size:10px; background:var(--surface-2); color:var(--muted)">1 pago</span>`)
+    .join(' ');
+
+  const filaProd = (g, color) => {
+    const r = g.rentProd != null ? g.rentProd.toFixed(0) : '—';
+    return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border);">
+      <span style="font-size:12.5px">${limpio(g.titulo)} ${badgesVariantes(g)}</span>
+      <span style="font-size:11.5px; white-space:nowrap; text-align:right">
+        <b style="color:${color}">${r}%</b> c/ADS ·
+        <span style="color:var(--muted)">ventas ${g.ventasProd} (7d: ${g.ventas7Prod}) · gasto 7d ${fmtARS(g.gasto7Prod)}</span>
+      </span>
+    </div>`;
+  };
+
+  const filaCandidato = (g) => {
+    const r = g.rentSinAds != null ? g.rentSinAds.toFixed(0) : '—';
+    return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border);">
+      <span style="font-size:12.5px">${limpio(g.titulo)} ${badgesVariantes(g)}</span>
+      <span style="font-size:11.5px; white-space:nowrap; text-align:right">
+        <b style="color:var(--ok)">${r}%</b> rent. ·
+        <span style="color:var(--muted)">${g.ventasProd} ventas · ${g.visitas7Prod} visitas 7d · sin pauta</span>
+      </span>
+    </div>`;
+  };
+
+  const bloquePlata = plataTirada.length
+    ? `<div style="background:color-mix(in srgb, var(--hot) 8%, transparent); border:1px solid color-mix(in srgb, var(--hot) 32%, transparent); border-radius:8px; padding:10px 14px; margin-bottom:8px;">
+         <div style="font-weight:600; color:var(--hot); margin-bottom:4px; font-size:13px;">🔴 ${plataTirada.length} producto(s) gastan en pauta, no rinden ni venden — considerar pausar la publicidad del producto</div>
+         ${plataTirada.map(g => filaProd(g, 'var(--hot)')).join('')}
+         <div style="color:var(--muted); font-size:11px; margin-top:6px;">ML pauta el producto completo: la acción es pausar la publicidad de toda la publicación.</div>
+       </div>` : '';
+
+  const bloqueOptim = optimizar.length
+    ? `<div style="background:color-mix(in srgb, var(--warn) 8%, transparent); border:1px solid color-mix(in srgb, var(--warn) 32%, transparent); border-radius:8px; padding:10px 14px; margin-bottom:8px;">
+         <div style="font-weight:600; color:var(--warn); margin-bottom:4px; font-size:13px;">🟡 ${optimizar.length} producto(s) venden pero la pauta les come margen — bajar el ACOS (presupuesto/puja)</div>
+         ${optimizar.map(g => filaProd(g, 'var(--warn)')).join('')}
+       </div>` : '';
+
+  const bloqueCandidatos = candidatos.length
+    ? `<div style="background:color-mix(in srgb, var(--ok) 8%, transparent); border:1px solid color-mix(in srgb, var(--ok) 32%, transparent); border-radius:8px; padding:10px 14px; margin-bottom:8px;">
+         <div style="font-weight:600; color:var(--ok); margin-bottom:4px; font-size:13px;">🚀 ${candidatos.length} producto(s) que venden bien y rinden, SIN publicidad — oportunidad de pautar para crecer</div>
+         ${candidatos.slice(0,8).map(g => filaCandidato(g)).join('')}
+         <div style="color:var(--muted); font-size:11px; margin-top:6px;">Ya funcionan solos con buen margen. Una pauta moderada podría darles más volumen sin arriesgar rentabilidad.</div>
+       </div>` : '';
+
+  const sinAlertas = (!plataTirada.length && !optimizar.length)
+    ? `<div style="background:color-mix(in srgb, var(--ok) 6%, transparent); border:1px solid color-mix(in srgb, var(--ok) 25%, transparent); border-radius:8px; padding:8px 14px; font-size:13px; color:var(--ok);">✓ Ningún producto está gastando en pauta de forma ineficiente.</div>`
+    : '';
+
+  // Variantes con desbalance dentro de un mismo producto
+  const variantesAlerta = [];
+  for (const k of Object.keys(prod)) {
+    const grupo = prod[k].vars;
+    if (grupo.length < 2) continue;
+    const gastoGrupo = grupo.reduce((a,p) => a + parseFloat(p.ads_total||0), 0);
+    if (gastoGrupo <= 0) continue;
+    const ord = grupo.slice().sort((a,b) => Number(b.ventas_total||0) - Number(a.ventas_total||0));
+    const fuerte = ord[0];
+    const debil = ord[ord.length - 1];
+    const vFuerte = Number(fuerte.ventas_total || 0);
+    const vDebil = Number(debil.ventas_total || 0);
+    if (vFuerte > 0 && (vDebil === 0 || vDebil / vFuerte <= 0.25)) {
+      const etiq = (p) => p.con_cuotas ? `${p.cuotas_cantidad || 3} cuotas` : '1 pago';
+      variantesAlerta.push({
+        titulo: fuerte.titulo,
+        debilLabel: etiq(debil), fuerteLabel: etiq(fuerte),
+        debilEsCuotas: !!debil.con_cuotas,
+        vDebil, vFuerte,
+        rentDebil: debil.rentabilidad_con_ads_pct != null ? parseFloat(debil.rentabilidad_con_ads_pct) : null,
+        rentFuerte: fuerte.rentabilidad_con_ads_pct != null ? parseFloat(fuerte.rentabilidad_con_ads_pct) : null,
+      });
+    }
+  }
+
+  const badgeVar = (label, esCuotas) => esCuotas
+    ? `<span class="badge-vinculo derivado" style="font-size:10px">${label}</span>`
+    : `<span class="badge-vinculo" style="font-size:10px; background:var(--surface-2); color:var(--muted)">${label}</span>`;
+
+  const bloqueVariantes = variantesAlerta.length
+    ? `<div style="background:color-mix(in srgb, var(--accent) 6%, transparent); border:1px solid color-mix(in srgb, var(--accent) 25%, transparent); border-radius:8px; padding:10px 14px; margin-bottom:8px;">
+         <div style="font-weight:600; color:var(--accent); margin-bottom:4px; font-size:13px;">🔄 ${variantesAlerta.length} producto(s) con una variante que casi no vende — evaluar darla de baja en ML</div>
+         ${variantesAlerta.map(v => `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border);">
+           <span style="font-size:12.5px">${limpio(v.titulo)} dar de baja: ${badgeVar(v.debilLabel, v.debilEsCuotas)}</span>
+           <span style="font-size:11.5px; white-space:nowrap; text-align:right; color:var(--muted)">
+             <b>${v.fuerteLabel}:</b> ${v.vFuerte} ventas${v.rentFuerte!=null?` (${v.rentFuerte.toFixed(0)}%)`:''} ·
+             <b>${v.debilLabel}:</b> ${v.vDebil} ventas${v.rentDebil!=null?` (${v.rentDebil.toFixed(0)}%)`:''}
+           </span>
+         </div>`).join('')}
+         <div style="color:var(--muted); font-size:11px; margin-top:6px;">ML pauta todas las variantes juntas. Dar de baja en ML la variante que no vende hace que el producto deje de gastar pauta en esa opción.</div>
+       </div>`
+    : '';
+
+  const totalAlertas = plataTirada.length + variantesAlerta.length;
+  const badge = totalAlertas > 0
+    ? `<span style="background:var(--hot); color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:600;">${totalAlertas}</span>`
+    : `<span style="background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok); border-radius:10px; padding:1px 7px; font-size:11px;">✓</span>`;
+
+  return `
+    <details class="ads-panel" style="margin-bottom:14px; border:1px solid var(--border); border-radius:10px; overflow:hidden;">
+      <summary style="cursor:pointer; padding:9px 14px; display:flex; align-items:center; gap:10px; font-size:13px; list-style:none; user-select:none;">
+        <span style="font-weight:600;">📊 Publicidad</span>
+        ${badge}
+        <span style="color:var(--muted); font-weight:400;">gasto acum. ${fmtARS(gastoTotal)} · 7d ${fmtARS(gasto7d)} · ${conAds.length} con ADS</span>
+        <span style="color:var(--muted); margin-left:auto; font-size:11px;">ver detalle ▾</span>
+      </summary>
+      <div style="padding:12px 14px; background:var(--surface);">
+        ${bloquePlata}${bloqueOptim}${bloqueVariantes}${bloqueCandidatos}${(!bloquePlata && !bloqueOptim && !bloqueVariantes && !bloqueCandidatos) ? sinAlertas : ''}
+      </div>
+    </details>`;
+}
+
+function renderGrupoML(g) {
+  const esCombo = /combo/i.test(g.titulo || '') || g.rows.some(r => r.codigo_combo);
+  const filas = g.rows.slice()
+    .sort((a,b) => (a.con_cuotas?1:0) - (b.con_cuotas?1:0))
+    .map(p => renderFilaPub(p, esCombo)).join('');
+
+  const headerCls = esCombo ? ' ml-header-combo' : '';
+  return `
+    <div class="grupo" style="margin-bottom:12px;">
+      <div class="grupo-head${headerCls}">
+        <div class="n">${esc(cleanTitle(g.titulo || '—'))} ${esCombo ? '<span class="badge-vinculo desvinculado">combo</span>' : (g.sku ? `<span style="color:var(--muted); font-size:11px; font-weight:400;">· SKU ${esc(g.sku)}</span>` : '')}</div>
+        <div class="c">${g.rows.length} publicación${g.rows.length !== 1 ? 'es' : ''}</div>
+      </div>
+      <table style="table-layout:fixed;">
+        <thead>
+          <tr>
+            <th style="width:78px">Public.</th>
+            <th>Título ML</th>
+            <th style="width:88px">Tipo</th>
+            <th style="width:62px">Cuotas</th>
+            <th class="num" style="width:92px">Precio</th>
+            <th class="num" style="width:82px">Costo</th>
+            <th class="num" style="width:70px" title="Cargo fijo ML (productos por debajo del umbral de envío gratis)">Cargo fijo</th>
+            <th class="num" style="width:70px" title="Costo de envío gratis (productos que superan el umbral)">Envío</th>
+            <th style="width:110px" title="👁 visitas · 🛒 ventas — total (últimos 7 días)">Métricas</th>
+            <th style="width:62px" title="Rentabilidad sin descontar publicidad">Rent.</th>
+            <th style="width:78px" title="Rentabilidad descontando el gasto en publicidad acumulado (pasá el mouse para ver gasto y ACOS)">Con ADS</th>
+            <th style="width:78px" title="Rentabilidad con ADS de los últimos 7 días — flecha muestra tendencia del ACOS">ADS 7d</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderFilaPub(p, esCombo) {
+  const tipoBadge = p.tipo_publicacion === 'catalogo'
+    ? '<span class="badge-vinculo ancla" title="Publicación de catálogo">catálogo</span>'
+    : '<span class="badge-vinculo desvinculado" title="Publicación tradicional">tradicional</span>';
+  const cuotasBadge = p.con_cuotas
+    ? `<span class="badge-vinculo derivado" title="Ofrece cuotas sin interés">${p.cuotas_cantidad || 3} cuotas</span>`
+    : '<span style="color:var(--muted); font-size:11px;">—</span>';
+  const costo = p.costo_neto != null ? fmtARS(parseFloat(p.costo_neto)) : '<span style="color:var(--muted);">sin costo</span>';
+  const cargoFijo = parseFloat(p.cargo_fijo) > 0 ? fmtARS(parseFloat(p.cargo_fijo)) : '—';
+  const envio = !p.envio_gratis
+    ? '<span style="color:var(--muted); font-size:11px;" title="El envío lo paga el comprador, no es costo tuyo">comprador</span>'
+    : (parseFloat(p.costo_envio) > 0 ? fmtARS(parseFloat(p.costo_envio)) : '—');
+  const filaCls = esCombo ? ' class="ml-fila-combo"' : '';
+  const tieneDesc = p.precio_con_descuento != null && parseFloat(p.precio_con_descuento) < parseFloat(p.precio);
+  const precioCell = tieneDesc
+    ? `<span style="color:var(--muted); text-decoration:line-through; font-size:11px;">${fmtARS(parseFloat(p.precio))}</span><br><span style="color:var(--accent); font-weight:600;">${fmtARS(parseFloat(p.precio_con_descuento))}</span>`
+    : fmtARS(parseFloat(p.precio));
+  const fmtMet = (total, d7) => {
+    const t = total != null ? Number(total).toLocaleString('es-AR') : '—';
+    const s = d7 != null ? Number(d7).toLocaleString('es-AR') : '0';
+    return `${t} <span style="color:var(--muted); font-size:10px;">(${s})</span>`;
+  };
+  const metricasCell = `
+    <div style="white-space:nowrap; font-size:12px;">
+      <span title="Visitas: total (últimos 7 días)">👁 ${fmtMet(p.visitas_total, p.visitas_7d)}</span><br>
+      <span title="Ventas: total (últimos 7 días)">🛒 ${fmtMet(p.ventas_total, p.ventas_7d)}</span>
+    </div>`;
+  return `
+    <tr${filaCls}>
+      <td class="codigo" title="${esc(p.item_id)}"><a href="${urlML(p.item_id)}" target="_blank" style="color:var(--accent); text-decoration:none;">${esc(p.item_id.replace('MLA',''))}</a></td>
+      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}</td>
+      <td>${tipoBadge}</td>
+      <td>${cuotasBadge}</td>
+      <td class="num">${precioCell}</td>
+      <td class="num" style="color:var(--muted);">${costo}</td>
+      <td class="num" style="color:var(--muted); font-size:11px;">${cargoFijo}</td>
+      <td class="num" style="color:var(--muted); font-size:11px;">${envio}</td>
+      <td>${metricasCell}</td>
+      <td>${renderRentMLPill(p.rentabilidad_pct, p.costo_neto)}</td>
+      <td>${renderAdsCell(p)}</td>
+      <td>${renderAdsCell7d(p)}</td>
+    </tr>`;
+}
+
+// Semáforo de rentabilidad ML: <30% error, 30-45 warn, ≥45 ok. Si no hay costo, "s/c".
+function renderRentMLPill(pct, costoNeto) {
+  if (costoNeto == null) return '<span class="rentab-pill empty" title="Falta el costo (combo a resolver)">s/c</span>';
+  if (pct == null) return '<span class="rentab-pill empty">—</span>';
+  const v = parseFloat(pct);
+  const cls = v < 30 ? 'error' : v < 45 ? 'warn' : 'ok';
+  return `<span class="rentab-pill ${cls}">${v.toFixed(0)}%</span>`;
+}
+
+// Rentabilidad CON ADS acumulada. Gasto y ACOS en tooltip. Señal ⚠ si cae >20 pts.
+function renderAdsCell(p) {
+  const adsTotal = parseFloat(p.ads_total || 0);
+  if (p.costo_neto == null) return '<span class="rentab-pill empty">s/c</span>';
+  if (adsTotal <= 0) return '<span style="color:var(--muted); font-size:11px;" title="Sin gasto en publicidad">sin ADS</span>';
+  const acos = p.ads_acos != null ? `ACOS ${parseFloat(p.ads_acos).toFixed(0)}%` : '';
+  const v = p.rentabilidad_con_ads_pct;
+  const sinAds = p.rentabilidad_pct != null ? parseFloat(p.rentabilidad_pct) : null;
+  const caida = (sinAds != null && v != null) ? (sinAds - parseFloat(v)) : null;
+  const caidaTxt = caida != null ? ` · cae ${caida.toFixed(0)} pts por ADS` : '';
+  const tip = esc(`Acumulado — Gasto ${fmtARS(adsTotal)} · ${acos}${caidaTxt}`);
+  if (v == null) return `<span class="rentab-pill empty" title="${tip}">—</span>`;
+  const n = parseFloat(v);
+  const cls = n < 30 ? 'error' : n < 45 ? 'warn' : 'ok';
+  const señal = (caida != null && caida > 20) ? '<span style="color:var(--hot); font-size:10px;" title="La publicidad se está comiendo más de 20 puntos de rentabilidad">⚠</span>' : '';
+  return `<span style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;"><span class="rentab-pill ${cls}" title="${tip}">${n.toFixed(0)}%</span>${señal}</span>`;
+}
+
+// Rentabilidad CON ADS últimos 7 días. Flecha ▼ (mejor) / ▲ (peor) / ▬ (estable) del ACOS vs acumulado.
+function renderAdsCell7d(p) {
+  const ads7 = parseFloat(p.ads_7d || 0);
+  if (p.costo_neto == null) return '<span class="rentab-pill empty">s/c</span>';
+  if (ads7 <= 0) return '<span style="color:var(--muted); font-size:11px;" title="Sin gasto en publicidad en los últimos 7 días">sin ADS</span>';
+  const acos7 = p.ads_acos_7d != null ? parseFloat(p.ads_acos_7d) : null;
+  const acosAcum = p.ads_acos != null ? parseFloat(p.ads_acos) : null;
+  let flecha = '';
+  if (acos7 != null && acosAcum != null) {
+    const dif = acos7 - acosAcum;
+    if (dif <= -3) flecha = '<span style="color:var(--ok); font-size:11px;" title="El ACOS de esta semana es MEJOR (más bajo) que el promedio acumulado">▼</span>';
+    else if (dif >= 3) flecha = '<span style="color:var(--hot); font-size:11px;" title="El ACOS de esta semana es PEOR (más alto) que el promedio acumulado">▲</span>';
+    else flecha = '<span style="color:var(--muted); font-size:11px;" title="ACOS estable respecto al acumulado">▬</span>';
+  }
+  const acos = acos7 != null ? `ACOS ${acos7.toFixed(0)}%` : '';
+  const tip = esc(`Últimos 7 días — Gasto ${fmtARS(ads7)} · ${acos}`);
+  const v = p.rentabilidad_con_ads_7d_pct;
+  if (v == null) return `<span class="rentab-pill empty" title="${tip}">—</span>`;
+  const n = parseFloat(v);
+  const cls = n < 30 ? 'error' : n < 45 ? 'warn' : 'ok';
+  return `<span style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;"><span class="rentab-pill ${cls}" title="${tip}">${n.toFixed(0)}%</span>${flecha}</span>`;
+}
+
+async function sincronizarPubs() {
+  const btn = $('#btnSyncPubs');
+  btn.classList.add('spin'); btn.disabled = true;
+  const prev = btn.innerHTML; btn.innerHTML = prev.replace('Sincronizar con ML', 'Sincronizando…');
+  try {
+    const { data, error } = await sb.functions.invoke('ml-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    const partes = [];
+    if (data.nuevas) partes.push(`+${data.nuevas} nuevas`);
+    if (data.eliminadas) partes.push(`−${data.eliminadas} eliminadas`);
+    partes.push(`${data.actualizadas} actualizadas`);
+    toast('✓ ' + partes.join(' · '), 'ok');
+    await cargarPublicaciones();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+  finally { btn.classList.remove('spin'); btn.disabled = false; btn.innerHTML = prev; }
+}
+
+async function sincronizarAdsGasto() {
+  const btn = $('#btnSyncAds');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Sincronizando ADS…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    const partes = [`${data.guardadas} publicaciones`];
+    if (data.conGasto) partes.push(`${data.conGasto} con gasto`);
+    if (data.reseteadas) partes.push(`${data.reseteadas} reseteadas a 0`);
+    toast('✓ ADS · ' + partes.join(' · '), 'ok');
+    await cargarPublicaciones();
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = prev; }
+}
+
+// ─────── 3.2) SUB-TAB PUBLICIDAD ───────
+const ADS_CLAVES = ['ads_auto_activo','ads_auto_frecuencia_hs','ads_auto_presupuesto_mensual','ads_auto_rentabilidad_min_pct','ads_auto_dias_malos','ads_auto_max_acciones_corrida'];
+
+async function cargarPublicidad() {
+  $('#sub-ads').innerHTML = `
+    <div id="motor-estado" class="motor-estado off"><span class="icon">⚪</span><div><b>Cargando…</b></div></div>
+
+    <div class="main-section">
+      <div class="head">
+        <div><h3>🤖 Motor de automatización</h3><div class="sub">Pausa publicaciones con ads que rinden mal, según las reglas de abajo. La corrida real la ejecuta un cron en Supabase.</div></div>
+      </div>
+
+      <div class="switch-row">
+        <input type="checkbox" id="auto-activo">
+        <div>
+          <div class="lbl" id="auto-activo-lbl">Cargando…</div>
+          <div class="desc">Encendido = el motor pausa avisos reales. Apagado = calcula y registra en la bitácora, pero no toca ML.</div>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field"><label>Frecuencia (horas)</label><input type="number" id="auto-frec" step="1" min="1"><div class="help">Cada cuánto corre el motor.</div></div>
+        <div class="field"><label>Presupuesto mensual (ARS)</label><input type="number" id="auto-presu" step="100" min="0"><div class="help">Techo global. Si se pasa, alerta.</div></div>
+        <div class="field"><label>Rentabilidad mínima con ADS (%)</label><input type="number" id="auto-rentmin" step="1" min="0"><div class="help">Por debajo, aviso candidato a pausa.</div></div>
+        <div class="field"><label>Días malos consecutivos</label><input type="number" id="auto-diasm" step="1" min="1"><div class="help">Antes de pausar.</div></div>
+        <div class="field"><label>Máx. acciones por corrida</label><input type="number" id="auto-max" step="1" min="1"><div class="help">Tope de pausas por vez.</div></div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center; margin-top:16px;">
+        <button class="btn primary" id="btnSaveMotor">Guardar configuración</button>
+        <button class="btn secondary" id="btnCorrer">Correr en seco</button>
+        <span class="status" id="motor-save-status" style="font-size:12px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div class="main-section">
+      <div class="head"><div><h3>Última corrida en seco</h3><div class="sub">Muestra qué haría el motor con los datos actuales. No modifica ML.</div></div></div>
+      <div id="corrida-out"><div class="empty-box">Todavía no corriste el motor. Tocá "Correr en seco".</div></div>
+    </div>
+
+    <div class="main-section">
+      <div class="head"><div><h3>Bitácora</h3><div class="sub">Últimas 30 corridas y acciones del motor.</div></div></div>
+      <div id="bitacora"><div class="empty-box">Cargando…</div></div>
+    </div>
+  `;
+
+  try {
+    const { data } = await sb.from('ml_parametros').select('clave, valor').in('clave', ADS_CLAVES);
+    const P = {};
+    (data || []).forEach(r => { P[r.clave] = r.valor != null ? Number(r.valor) : null; });
+    const activo = P['ads_auto_activo'] === 1;
+    $('#auto-activo').checked = activo;
+    actualizarMotorEstado(activo);
+    $('#auto-frec').value = P['ads_auto_frecuencia_hs'] ?? 3;
+    $('#auto-presu').value = P['ads_auto_presupuesto_mensual'] ?? 0;
+    $('#auto-rentmin').value = P['ads_auto_rentabilidad_min_pct'] ?? 15;
+    $('#auto-diasm').value = P['ads_auto_dias_malos'] ?? 3;
+    $('#auto-max').value = P['ads_auto_max_acciones_corrida'] ?? 3;
+  } catch (err) { toast('Error al cargar config: ' + err.message, 'err'); }
+
+  $('#auto-activo').addEventListener('change', e => actualizarMotorEstado(e.target.checked));
+  $('#btnSaveMotor').addEventListener('click', guardarMotor);
+  $('#btnCorrer').addEventListener('click', correrEnSeco);
+
+  await cargarBitacora();
+}
+
+function actualizarMotorEstado(activo) {
+  const est = $('#motor-estado'), lbl = $('#auto-activo-lbl');
+  if (activo) {
+    est.className = 'motor-estado on';
+    est.innerHTML = '<span class="icon">🟢</span><div><b>Motor encendido.</b> Pausa avisos que cumplen las reglas.</div>';
+    lbl.textContent = 'Encendido (pausa de verdad)';
+  } else {
+    est.className = 'motor-estado off';
+    est.innerHTML = '<span class="icon">⚪</span><div><b>Motor apagado.</b> Calcula y registra, pero no modifica ML.</div>';
+    lbl.textContent = 'Apagado';
+  }
+}
+
+async function guardarMotor() {
+  const btn = $('#btnSaveMotor'); btn.disabled = true;
+  const st = $('#motor-save-status'); st.textContent = 'Guardando…'; st.style.color = 'var(--muted)';
+  try {
+    const pares = [
+      ['ads_auto_activo', $('#auto-activo').checked ? 1 : 0],
+      ['ads_auto_frecuencia_hs', Number($('#auto-frec').value) || 3],
+      ['ads_auto_presupuesto_mensual', Number($('#auto-presu').value) || 0],
+      ['ads_auto_rentabilidad_min_pct', Number($('#auto-rentmin').value) || 15],
+      ['ads_auto_dias_malos', Number($('#auto-diasm').value) || 3],
+      ['ads_auto_max_acciones_corrida', Number($('#auto-max').value) || 3],
+    ];
+    for (const [clave, valor] of pares) {
+      const { error } = await sb.from('ml_parametros').update({ valor, actualizado_en: new Date().toISOString() }).eq('clave', clave);
+      if (error) throw new Error(clave + ': ' + error.message);
+    }
+    const activo = $('#auto-activo').checked;
+    actualizarMotorEstado(activo);
+    st.textContent = '✓ Guardado'; st.style.color = 'var(--ok)';
+    toast(activo ? 'Motor ENCENDIDO' : 'Motor apagado', 'ok');
+  } catch (err) { st.textContent = '✗ ' + err.message; st.style.color = 'var(--hot)'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function correrEnSeco() {
+  const btn = $('#btnCorrer');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Corriendo…';
+  const out = $('#corrida-out');
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-auto', { body: { dry_run: true } });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    const sug = (data.sugerencias || []).map(s => `<li>${esc((s.titulo||'').replace(/ - Rosaint.*$/i,'').trim())} — rent ${Number(s.rent).toFixed(0)}%, ${s.ventas7} vts/7d</li>`).join('');
+    const modoBadge = data.modo === 'REAL' ? '<span class="modo-badge real">🟢 REAL</span>' : '<span class="modo-badge seco">⚪ en seco</span>';
+    out.innerHTML = `
+      ${data.exceso_presupuesto ? '<div class="alerta-presu">⚠ El gasto del mes supera el presupuesto.</div>' : ''}
+      <div class="resultado-grid">
+        <div class="rmet"><div class="v">${data.ads_total || 0}</div><div class="l">Avisos</div></div>
+        <div class="rmet ${data.exceso_presupuesto?'warn':''}"><div class="v">$${Number(data.gasto_mes_total||0).toLocaleString('es-AR')}</div><div class="l">Gasto / mes</div></div>
+        <div class="rmet warn"><div class="v">${data.candidatos_hoy || 0}</div><div class="l">Malos hoy</div></div>
+        <div class="rmet hot"><div class="v">${data.a_pausar || 0}</div><div class="l">A pausar</div></div>
+      </div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Modo: ${modoBadge}</div>
+      ${sug ? `<div class="sugerencias"><b>🚀 Sugerencias para invertir más:</b><ul>${sug}</ul></div>` : ''}
+    `;
+    await cargarBitacora();
+  } catch (err) { out.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`; }
+  finally { btn.disabled = false; btn.textContent = prev; }
+}
+
+async function cargarBitacora() {
+  const cont = $('#bitacora');
+  try {
+    const { data, error } = await sb.from('ml_ads_bitacora').select('*').order('ejecutado_en', { ascending: false }).limit(30);
+    if (error) throw error;
+    if (!data || !data.length) { cont.innerHTML = '<div class="empty-box">Sin registros todavía.</div>'; return; }
+    const ico = { ok: '✅', error: '❌', simulado: '⚪', omitido: '⏭️' };
+    cont.innerHTML = `
+      <table class="tbl">
+        <thead><tr><th>Fecha</th><th>Acción</th><th>Item ML</th><th>Motivo</th></tr></thead>
+        <tbody>
+          ${data.map(r => {
+            const f = new Date(r.ejecutado_en).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+            const tag = r.accion === 'corrida' ? '🔄 corrida' : r.accion === 'pausar' ? '⏸️ pausar' : r.accion;
+            return `<tr><td class="date">${esc(f)}</td><td>${ico[r.resultado] || ''} ${esc(tag || '')}</td><td class="mono">${esc(r.item_id || '—')}</td><td class="muted">${esc(r.motivo || '—')}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  } catch (err) { cont.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`; }
+}
+
+// ─────── 3.3) SUB-TAB CONFIG ML ───────
+async function cargarConfigML() {
+  const [params, cargos, envios] = await Promise.all([
+    sb.from('ml_parametros').select('*').order('clave'),
+    sb.from('ml_cargo_fijo').select('*').eq('vigente', true).order('precio_hasta'),
+    sb.from('ml_envio_peso').select('*').eq('vigente', true).order('peso_hasta_kg'),
+  ]);
+  ML_PARAMS = params.data || [];
+  ML_CARGO = cargos.data || [];
+  ML_ENVIO = envios.data || [];
+
+  $('#sub-cfg').innerHTML = `
+    <details class="config-box" open>
+      <summary>Parámetros ML <span class="sub">— valores globales del cálculo de rentabilidad</span></summary>
+      <div class="cfg-body">
+        ${ML_PARAMS.length ? `
+          <table class="tbl">
+            <thead><tr><th>Clave</th><th class="num">Valor</th><th>Descripción</th></tr></thead>
+            <tbody>${ML_PARAMS.map(p => `
+              <tr data-clave="${esc(p.clave)}">
+                <td style="font-family:var(--font-mono); color:var(--accent); font-size:11.5px;">${esc(p.clave)}</td>
+                <td class="num"><input type="number" step="0.01" class="inline-edit ml-param-val" value="${p.valor ?? ''}"></td>
+                <td style="color:var(--muted); font-size:12px;">${esc(p.descripcion || '—')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          <div class="save-row"><span class="spacer"></span><span class="status" id="ml-params-status"></span><button class="btn primary" id="ml-params-save">Guardar parámetros</button></div>
+        ` : '<div style="color:var(--muted); font-size:13px;">Sin parámetros.</div>'}
+      </div>
+    </details>
+
+    <details class="config-box">
+      <summary>Cargos fijos por precio <span class="sub">— auto-detectados por el sync</span></summary>
+      <div class="cfg-body">
+        ${ML_CARGO.length ? `
+          <table class="tbl">
+            <thead><tr><th class="num">Precio hasta</th><th class="num">Cargo</th></tr></thead>
+            <tbody>${ML_CARGO.map(c => `<tr><td class="num" style="font-weight:600;">${fmtARS(c.precio_hasta)}</td><td class="num">${fmtARS(c.cargo)}</td></tr>`).join('')}</tbody>
+          </table>
+        ` : '<div style="color:var(--muted); font-size:13px;">Sin cargos.</div>'}
+      </div>
+    </details>
+
+    <details class="config-box">
+      <summary>Envío por peso <span class="sub">— auto-detectado por el sync</span></summary>
+      <div class="cfg-body">
+        ${ML_ENVIO.length ? `
+          <table class="tbl">
+            <thead><tr><th class="num">Peso hasta (Kg)</th><th class="num">Costo base</th></tr></thead>
+            <tbody>${ML_ENVIO.map(e => `<tr><td class="num" style="font-weight:600;">${Number(e.peso_hasta_kg).toFixed(2)} Kg</td><td class="num">${fmtARS(e.costo_base)}</td></tr>`).join('')}</tbody>
+          </table>
+        ` : '<div style="color:var(--muted); font-size:13px;">Sin costos.</div>'}
+      </div>
+    </details>
+  `;
+
+  const mlSave = $('#ml-params-save');
+  if (mlSave) mlSave.addEventListener('click', guardarMLParams);
+}
+
+async function guardarMLParams() {
+  const btn = $('#ml-params-save'); btn.disabled = true;
+  const st = $('#ml-params-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    for (const tr of $$('#sub-cfg tr[data-clave]')) {
+      const clave = tr.dataset.clave;
+      const valor = parseFloat(tr.querySelector('.ml-param-val').value);
+      const { error } = await sb.from('ml_parametros').update({ valor: isNaN(valor) ? null : valor, actualizado_en: new Date().toISOString() }).eq('clave', clave);
+      if (error) throw new Error(clave + ': ' + error.message);
+    }
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Parámetros actualizados', 'ok');
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// ─── Arranque ───
+(async () => {
+  await cargarComun();
+  await Promise.all([cargarDirecta(), cargarTN(), cargarML()]);
+})();
+</script>
+</body>
+</html>

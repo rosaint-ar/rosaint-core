@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ingresar · Rosaint CORE</title>
+  <link rel="icon" type="image/png" href="shell/favicon.png">
+  <style>
+    :root {
+      --rojo: #F93549;
+      --azul: #34495E;
+      --negro: #1A1A1A;
+      --blanco: #FFFFFF;
+      --gris-90: #2A2A2A;
+      --gris-70: #4A4A4A;
+      --gris-50: #7A7A7A;
+      --gris-30: #C4C4C4;
+      --gris-10: #EFEDE9;
+      --gris-05: #F7F5F2;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: var(--font); color: var(--negro); background: var(--gris-05);
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      background: var(--blanco); border-radius: 12px;
+      padding: 36px 32px; width: 100%; max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    .brand {
+      text-align: center; margin-bottom: 28px;
+    }
+    .brand__logo {
+      font-family: 'Helvetica Neue', 'Arial Black', system-ui, sans-serif;
+      font-weight: 900; font-size: 26px; color: var(--rojo);
+      letter-spacing: -0.02em;
+    }
+    .brand__tag {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--gris-50); margin-top: 4px;
+    }
+    .tabs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      background: var(--gris-05); padding: 4px; border-radius: 10px; margin-bottom: 22px;
+    }
+    .tab-btn {
+      background: transparent; border: none; padding: 10px;
+      font: inherit; font-size: 13px; font-weight: 600; color: var(--gris-70);
+      cursor: pointer; border-radius: 6px; transition: background .12s;
+    }
+    .tab-btn.active {
+      background: var(--blanco); color: var(--negro);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gris-70); margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%; padding: 12px 14px; font: inherit; font-size: 15px;
+      border: 1.5px solid var(--gris-30); border-radius: 8px; background: var(--blanco);
+      color: var(--negro);
+    }
+    .field input:focus { outline: none; border-color: var(--rojo); }
+    .btn {
+      width: 100%; background: var(--rojo); color: var(--blanco); border: none;
+      padding: 14px; border-radius: 8px; font: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; margin-top: 8px; letter-spacing: 0.02em;
+      transition: opacity .12s;
+    }
+    .btn:hover { opacity: 0.92; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .msg {
+      margin-top: 14px; padding: 10px 12px; border-radius: 6px;
+      font-size: 13px; text-align: center;
+    }
+    .msg.err { background: rgba(220, 53, 69, 0.1); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.2); }
+    .msg.ok  { background: rgba(46, 160, 67, 0.1); color: #2ea043; border: 1px solid rgba(46, 160, 67, 0.2); }
+    .hint {
+      text-align: center; font-size: 12px; color: var(--gris-50); margin-top: 20px; line-height: 1.5;
+    }
+    .hint a { color: var(--rojo); text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="brand__logo">ROSAINT</div>
+    <div class="brand__tag">CORE</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="login">Ingresar</button>
+    <button class="tab-btn" data-tab="signup">Crear cuenta</button>
+  </div>
+
+  <form id="form-auth" autocomplete="on">
+    <div class="field">
+      <label for="in-email">Email</label>
+      <input type="email" id="in-email" required autocomplete="email" placeholder="rosaint.ar@gmail.com">
+    </div>
+    <div class="field">
+      <label for="in-password">Contraseña</label>
+      <input type="password" id="in-password" required autocomplete="current-password" minlength="6" placeholder="Mínimo 6 caracteres">
+    </div>
+    <button class="btn" id="btn-submit" type="submit">Ingresar</button>
+    <div id="msg" style="display: none;"></div>
+  </form>
+
+  <p class="hint" id="hint">
+    ¿Primera vez? Tocá "Crear cuenta" arriba para registrarte.<br>
+    Una vez creada, cerramos los registros nuevos.
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="shared/supabase.js"></script>
+<script>
+let MODE = 'login';
+
+function setTab(mode) {
+  MODE = mode;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === mode));
+  document.getElementById('btn-submit').textContent = mode === 'login' ? 'Ingresar' : 'Crear cuenta';
+  document.getElementById('in-password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  document.getElementById('hint').innerHTML = mode === 'login'
+    ? '¿Primera vez? Tocá "Crear cuenta" arriba para registrarte.<br>Una vez creada, cerramos los registros nuevos.'
+    : 'Se crea la cuenta y ya podés ingresar. No hace falta confirmar email.';
+  hideMsg();
+}
+
+function showMsg(kind, text) {
+  const el = document.getElementById('msg');
+  el.className = 'msg ' + kind;
+  el.textContent = text;
+  el.style.display = 'block';
+}
+function hideMsg() { document.getElementById('msg').style.display = 'none'; }
+
+document.querySelectorAll('.tab-btn').forEach(b => {
+  b.addEventListener('click', () => setTab(b.dataset.tab));
+});
+
+// Si ya hay sesión activa, mandarlo directo al dashboard
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (data.session) window.location.replace('index.html');
+})();
+
+document.getElementById('form-auth').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideMsg();
+  const email = document.getElementById('in-email').value.trim();
+  const password = document.getElementById('in-password').value;
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  const originalTxt = btn.textContent;
+  btn.textContent = MODE === 'login' ? 'Ingresando…' : 'Creando cuenta…';
+
+  try {
+    if (MODE === 'login') {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      showMsg('ok', '✓ Ingresando…');
+      setTimeout(() => window.location.replace('index.html'), 400);
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+      if (data.session) {
+        showMsg('ok', '✓ Cuenta creada. Ingresando…');
+        setTimeout(() => window.location.replace('index.html'), 500);
+      } else {
+        showMsg('ok', 'Cuenta creada. Revisá tu email para confirmar y luego ingresá.');
+        setTab('login');
+      }
+    }
+  } catch (err) {
+    showMsg('err', err.message || 'Error de autenticación');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalTxt;
+  }
+});
+</script>
+
+</body>
+</html>

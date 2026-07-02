@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Producción · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .kpi .k { font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+    .kpi .v { font-size: 24px; font-weight: 700; color: var(--text); margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 20px; padding: 12px 14px;
+      background: var(--surface-2); border-radius: var(--radius); border: 1px solid var(--border);
+    }
+    .toolbar .status { font-size: 12px; color: var(--muted); flex: 1; min-width: 200px; }
+    .btn-primary {
+      background: var(--accent); color: #fff; border: none;
+      padding: 10px 18px; border-radius: var(--radius-sm);
+      font-weight: 600; font-size: 13px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-primary:hover { opacity: .9; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px;
+    }
+    .panel-header {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+    .panel-header h2 { font-size: 15px; font-weight: 600; color: var(--text); }
+    .panel-header .lead { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .panel-header .count-badge {
+      background: var(--accent-tint); color: var(--accent); font-weight: 700;
+      font-size: 13px; padding: 4px 12px; border-radius: 20px;
+    }
+    .panel-header .count-badge.warn { background: rgba(255, 165, 0, 0.15); color: #ff8c00; }
+
+    table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.data th {
+      text-align: left; font-weight: 600; color: var(--muted);
+      font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+      padding: 8px 10px; border-bottom: 1px solid var(--border);
+    }
+    table.data td {
+      padding: 10px; border-bottom: 1px solid var(--border);
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    table.data td.num { text-align: right; }
+    table.data td.sku {
+      font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
+      color: var(--muted);
+    }
+    table.data td.warn { color: #ff8c00; font-weight: 600; }
+    table.data td.error { color: #dc3545; font-weight: 600; }
+    table.data td.ok { color: #28a745; }
+    table.data tr:last-child td { border-bottom: none; }
+
+    .componentes {
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 12px; color: var(--muted); padding-left: 12px;
+    }
+    .comp-row { display: flex; gap: 8px; align-items: baseline; }
+    .comp-row .comp-name { flex: 1; }
+    .comp-row .comp-qty { font-variant-numeric: tabular-nums; }
+    .comp-row.faltante { color: #dc3545; }
+    .comp-row.faltante::before { content: '✗'; }
+    .comp-row.ok::before { content: '✓'; color: #28a745; }
+    .comp-row.ok { color: var(--muted); }
+    .comp-row::before { display: inline-block; width: 12px; }
+
+    .empty {
+      text-align: center; padding: 40px 20px; color: var(--muted);
+      font-size: 14px;
+    }
+    .empty .icon { font-size: 40px; opacity: 0.4; display: block; margin-bottom: 8px; }
+
+    details.pedido-details {
+      margin: 4px 0; padding: 8px 12px;
+      background: var(--surface-2); border-radius: var(--radius-sm);
+    }
+    details.pedido-details summary {
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    details.pedido-details .lineas-list {
+      margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .lineas-list .linea {
+      display: grid; grid-template-columns: 90px 1fr 60px 60px;
+      gap: 8px; font-size: 12px; padding: 4px 0;
+    }
+    .lineas-list .linea .sku { font-family: 'SF Mono', Consolas, monospace; color: var(--muted); }
+    .lineas-list .linea .qty { text-align: right; font-variant-numeric: tabular-nums; }
+    .lineas-list .linea .qty.pendiente { color: #dc3545; font-weight: 600; }
+
+    .msg {
+      margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-sm);
+      font-size: 13px;
+    }
+    .msg--ok { background: rgba(40, 167, 69, 0.1); color: #28a745; border: 1px solid rgba(40, 167, 69, 0.2); }
+    .msg--err { background: rgba(220, 53, 69, 0.1); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.2); }
+    .msg--info { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+
+    .badge-partial {
+      background: rgba(255, 165, 0, 0.15); color: #ff8c00;
+      padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    }
+    .badge-pending {
+      background: rgba(220, 53, 69, 0.12); color: #dc3545;
+      padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    }
+
+    .hoja-cta {
+      display: flex; align-items: center; justify-content: space-between; gap: 20px;
+      padding: 22px 24px; margin-bottom: 20px;
+      background: linear-gradient(135deg, var(--accent) 0%, #d02537 100%);
+      border-radius: var(--radius); color: #fff; text-decoration: none;
+      box-shadow: 0 4px 16px rgba(249, 53, 73, 0.25);
+      transition: transform 0.1s, box-shadow 0.15s;
+    }
+    .hoja-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(249, 53, 73, 0.35); text-decoration: none; color: #fff; }
+    .hoja-cta__ico { font-size: 30px; flex-shrink: 0; }
+    .hoja-cta__body { flex: 1; }
+    .hoja-cta__title { font-size: 17px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+    .hoja-cta__desc { font-size: 13px; opacity: 0.9; margin: 0; }
+    .hoja-cta__arrow { font-size: 22px; opacity: 0.8; }
+  </style>
+</head>
+<body data-page="produccion" data-title="Producción" data-subtitle="Pedidos pendientes · faltantes · fabricar y fraccionar">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="k">Pedidos pendientes</div>
+      <div class="v" id="kpi-pedidos">—</div>
+      <div class="sub">Con entrega incompleta</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Productos por entregar</div>
+      <div class="v" id="kpi-productos">—</div>
+      <div class="sub">SKUs distintos</div>
+    </div>
+    <div class="kpi">
+      <div class="k">A Fabricar</div>
+      <div class="v" id="kpi-fabricar" style="color: #dc3545;">—</div>
+      <div class="sub">Falta granel o MP</div>
+    </div>
+    <div class="kpi">
+      <div class="k">A Fraccionar</div>
+      <div class="v" id="kpi-fraccionar" style="color: #ff8c00;">—</div>
+      <div class="sub">Solo envasar</div>
+    </div>
+  </div>
+
+  <a href="hoja.html" class="hoja-cta" target="_blank" rel="noopener">
+    <div class="hoja-cta__ico">📋</div>
+    <div class="hoja-cta__body">
+      <div class="hoja-cta__title">Abrir Hoja de Producción</div>
+      <p class="hoja-cta__desc">Registro diario para producción · pantalla completa optimizada para tablet · se abre en pestaña nueva.</p>
+    </div>
+    <div class="hoja-cta__arrow">→</div>
+  </a>
+
+  <div class="toolbar">
+    <div class="status" id="status-sync">Cargando…</div>
+    <button class="btn-primary" id="btn-sync">🔄 Sincronizar ahora</button>
+    <button class="btn-primary" id="btn-sync-catalogo" style="background: var(--surface-2); color: var(--text); border: 1px solid var(--border);" title="Trae todos los productos y BOMs de VELAZQUEZ (~40 seg). Correr cuando agregues productos nuevos o cambies BOMs en Odoo.">🗂 Actualizar catálogo maestro</button>
+  </div>
+
+  <div id="msg" style="display: none;"></div>
+
+  <!-- A FABRICAR -->
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>🔨 A Fabricar</h2>
+        <div class="lead">Productos que necesitan producción del granel (o alguna materia prima)</div>
+      </div>
+      <span class="count-badge" id="badge-fabricar">—</span>
+    </div>
+    <div id="tabla-fabricar">
+      <div class="empty"><span class="icon">…</span>Cargando</div>
+    </div>
+  </div>
+
+  <!-- A FRACCIONAR -->
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>📦 A Fraccionar</h2>
+        <div class="lead">Hay granel y envases. Solo hay que envasar / fraccionar.</div>
+      </div>
+      <span class="count-badge warn" id="badge-fraccionar">—</span>
+    </div>
+    <div id="tabla-fraccionar">
+      <div class="empty"><span class="icon">…</span>Cargando</div>
+    </div>
+  </div>
+
+  <!-- PEDIDOS PENDIENTES -->
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>📋 Pedidos pendientes de entrega</h2>
+        <div class="lead">Detalle por pedido y qué falta entregar de cada uno</div>
+      </div>
+      <span class="count-badge" id="badge-pedidos">—</span>
+    </div>
+    <div id="tabla-pedidos">
+      <div class="empty"><span class="icon">…</span>Cargando</div>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const SYNC_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
+
+function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function fmt(n) { const x = Number(n); return isNaN(x) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: 2 }); }
+function fmtFecha(d) { return d ? d.split('-').reverse().join('/') : '—'; }
+
+function showMsg(kind, html) {
+  const box = document.getElementById('msg');
+  box.className = 'msg msg--' + kind;
+  box.style.display = 'block';
+  box.innerHTML = html;
+  if (kind === 'ok') setTimeout(() => { box.style.display = 'none'; }, 6000);
+}
+function hideMsg() { document.getElementById('msg').style.display = 'none'; }
+
+async function cargarDatos() {
+  // Faltantes clasificados
+  const { data: faltantes, error: e1 } = await sb.from('v_prod_faltantes_clasificados').select('*').order('qty_faltante', { ascending: false });
+  if (e1) { showMsg('err', 'Error cargando faltantes: ' + e1.message); return; }
+
+  // Detalle (componentes) de cada faltante
+  const { data: detalle, error: e2 } = await sb.from('v_prod_faltantes_detalle').select('*');
+  if (e2) { showMsg('err', 'Error cargando detalle: ' + e2.message); return; }
+
+  // Pedidos + líneas pendientes (ordenados por número, más nuevo arriba)
+  const { data: pedidos, error: e3 } = await sb.from('prod_pedidos').select('*').order('numero', { ascending: false });
+  if (e3) { showMsg('err', 'Error cargando pedidos: ' + e3.message); return; }
+
+  const { data: lineas, error: e4 } = await sb.from('prod_pedido_lineas').select('*');
+  if (e4) { showMsg('err', 'Error cargando líneas: ' + e4.message); return; }
+
+  // Último log de sync
+  const { data: logs } = await sb.from('prod_sync_log').select('*').order('ejecutado_en', { ascending: false }).limit(1);
+  const lastLog = logs && logs[0];
+
+  renderKPIs(pedidos, lineas, faltantes);
+  renderStatus(lastLog);
+
+  const fabricar = faltantes.filter(f => f.accion === 'a_fabricar');
+  const fraccionar = faltantes.filter(f => f.accion === 'a_fraccionar');
+
+  renderFaltantes('tabla-fabricar', fabricar, detalle, true);
+  renderFaltantes('tabla-fraccionar', fraccionar, detalle, false);
+
+  document.getElementById('badge-fabricar').textContent = fabricar.length + ' SKUs';
+  document.getElementById('badge-fraccionar').textContent = fraccionar.length + ' SKUs';
+
+  renderPedidos(pedidos, lineas);
+}
+
+function renderKPIs(pedidos, lineas, faltantes) {
+  document.getElementById('kpi-pedidos').textContent = pedidos.length;
+  const productos = new Set(lineas.filter(l => l.qty_pendiente > 0).map(l => l.sku)).size;
+  document.getElementById('kpi-productos').textContent = productos;
+  document.getElementById('kpi-fabricar').textContent = faltantes.filter(f => f.accion === 'a_fabricar').length;
+  document.getElementById('kpi-fraccionar').textContent = faltantes.filter(f => f.accion === 'a_fraccionar').length;
+}
+
+function renderStatus(lastLog) {
+  const el = document.getElementById('status-sync');
+  if (!lastLog) { el.textContent = 'Sin sincronizaciones previas'; return; }
+  const dt = new Date(lastLog.ejecutado_en);
+  const hace = tiempoRelativo(dt);
+  const status = lastLog.ok ? '✓' : '✗';
+  el.innerHTML = 'Última sync: <strong>' + hace + '</strong> ' + status + (lastLog.error ? ' — <span style="color:#dc3545;">' + escapeHTML(lastLog.error) + '</span>' : '');
+}
+
+function tiempoRelativo(fecha) {
+  const diff = (Date.now() - fecha.getTime()) / 1000;
+  if (diff < 60) return 'hace ' + Math.floor(diff) + 's';
+  if (diff < 3600) return 'hace ' + Math.floor(diff / 60) + ' min';
+  if (diff < 86400) return 'hace ' + Math.floor(diff / 3600) + ' hs';
+  return fecha.toLocaleString('es-AR');
+}
+
+function renderFaltantes(elId, list, detalle, showComponentes) {
+  const cont = document.getElementById(elId);
+  if (list.length === 0) {
+    cont.innerHTML = '<div class="empty"><span class="icon">✓</span>Nada pendiente en esta categoría</div>';
+    return;
+  }
+  let html = '<table class="data"><thead><tr>' +
+    '<th style="width:100px;">SKU</th>' +
+    '<th>Producto</th>' +
+    '<th style="width:80px;" class="num">Pedidos</th>' +
+    '<th style="width:80px;" class="num">Requerido</th>' +
+    '<th style="width:80px;" class="num">Stock</th>' +
+    '<th style="width:90px;" class="num">Faltante</th>' +
+    '</tr></thead><tbody>';
+  for (const f of list) {
+    html += '<tr>';
+    html += '<td class="sku">' + escapeHTML(f.sku) + '</td>';
+    html += '<td>' + escapeHTML(f.nombre_producto);
+    if (showComponentes) {
+      const comps = detalle.filter(d => d.sku === f.sku && d.componente_sku);
+      if (comps.length) {
+        html += '<div class="componentes">';
+        for (const c of comps) {
+          const falta = c.qty_componente_faltante > 0;
+          html += '<div class="comp-row ' + (falta ? 'faltante' : 'ok') + '">';
+          html += '<span class="comp-name">' + escapeHTML(c.componente_nombre || c.componente_sku) + '</span>';
+          html += '<span class="comp-qty">' + fmt(c.qty_componente_necesaria) + ' nec · ' + fmt(c.qty_componente_stock) + ' stock';
+          if (falta) html += ' · <strong>faltan ' + fmt(c.qty_componente_faltante) + '</strong>';
+          html += '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+    }
+    html += '</td>';
+    html += '<td class="num">' + f.pedidos_involucrados + '</td>';
+    html += '<td class="num">' + fmt(f.qty_requerida) + '</td>';
+    html += '<td class="num">' + fmt(f.qty_stock) + '</td>';
+    html += '<td class="num error">' + fmt(f.qty_faltante) + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  cont.innerHTML = html;
+}
+
+function renderPedidos(pedidos, lineas) {
+  const cont = document.getElementById('tabla-pedidos');
+  if (pedidos.length === 0) {
+    cont.innerHTML = '<div class="empty"><span class="icon">✓</span>No hay pedidos pendientes</div>';
+    return;
+  }
+  document.getElementById('badge-pedidos').textContent = pedidos.length + ' pedidos';
+
+  const lineasByPedido = new Map();
+  for (const l of lineas) {
+    if (!lineasByPedido.has(l.pedido_id)) lineasByPedido.set(l.pedido_id, []);
+    lineasByPedido.get(l.pedido_id).push(l);
+  }
+
+  let html = '';
+  for (const p of pedidos) {
+    const lin = lineasByPedido.get(p.id) || [];
+    const badge = p.estado === 'partial' ? '<span class="badge-partial">Parcial</span>' :
+                  p.estado === 'pending' ? '<span class="badge-pending">Pendiente</span>' :
+                  '';
+    html += '<details class="pedido-details">';
+    html += '<summary>';
+    html += '<span><strong>' + escapeHTML(p.numero) + '</strong> · ' + escapeHTML(p.cliente || '(sin cliente)') + ' · ' + fmtFecha(p.fecha_pedido) + '</span>';
+    html += '<span>' + badge + ' <span style="color:var(--muted); font-size:12px; margin-left:8px;">' + lin.length + ' líneas</span></span>';
+    html += '</summary>';
+    html += '<div class="lineas-list">';
+    html += '<div class="linea" style="font-weight:600; color:var(--muted); font-size:11px; letter-spacing:.04em; text-transform:uppercase;">';
+    html += '<span>SKU</span><span>Producto</span><span class="qty">Pedido</span><span class="qty">Falta</span>';
+    html += '</div>';
+    for (const l of lin) {
+      const falta = Math.max(0, (l.qty_pedida || 0) - (l.qty_entregada || 0));
+      html += '<div class="linea">';
+      html += '<span class="sku">' + escapeHTML(l.sku) + '</span>';
+      html += '<span>' + escapeHTML(l.nombre_producto) + '</span>';
+      html += '<span class="qty">' + fmt(l.qty_pedida) + '</span>';
+      html += '<span class="qty ' + (falta > 0 ? 'pendiente' : '') + '">' + fmt(falta) + '</span>';
+      html += '</div>';
+    }
+    html += '</div></details>';
+  }
+  cont.innerHTML = html;
+}
+
+// Sincronización manual: encadena los 3 modos
+async function sincronizar() {
+  const btn = document.getElementById('btn-sync');
+  const originalTxt = btn.innerHTML;
+  btn.disabled = true;
+  hideMsg();
+
+  try {
+    btn.innerHTML = '⏳ Trayendo pedidos…';
+    const r1 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'pedidos' }) }).then(r => r.json());
+    if (!r1.ok) throw new Error('pedidos: ' + (r1.error || 'desconocido'));
+
+    btn.innerHTML = '⏳ Trayendo stock…';
+    const r2 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'productos', product_ids: r1.product_ids }) }).then(r => r.json());
+    if (!r2.ok) throw new Error('productos: ' + (r2.error || 'desconocido'));
+
+    btn.innerHTML = '⏳ Trayendo BOMs…';
+    const r3 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'bom', tmpl_ids: r2.tmpl_ids }) }).then(r => r.json());
+    if (!r3.ok) throw new Error('bom: ' + (r3.error || 'desconocido'));
+
+    showMsg('ok', 'Sincronizado: ' + r1.pedidos + ' pedidos, ' + r1.lineas + ' líneas, ' + r2.stock + ' productos con stock, ' + r3.bom + ' relaciones BOM.');
+    await cargarDatos();
+  } catch (e) {
+    console.error(e);
+    showMsg('err', 'Error: ' + e.message);
+  } finally {
+    btn.innerHTML = originalTxt;
+    btn.disabled = false;
+  }
+}
+
+async function sincronizarCatalogo() {
+  const btn = document.getElementById('btn-sync-catalogo');
+  const originalTxt = btn.innerHTML;
+  btn.disabled = true;
+  hideMsg();
+  const tmplsAcumulados = new Set();
+
+  try {
+    // Fase A: catálogo paginado (limit 100)
+    let offset = 0, procesados = 0, totalCatalogo = null;
+    while (true) {
+      btn.innerHTML = '⏳ Catálogo… ' + procesados + (totalCatalogo != null ? '/' + totalCatalogo : '');
+      const r = await fetch(SYNC_URL, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ modo: 'catalogo', offset, limit: 100 })
+      }).then(r => r.json());
+      if (!r.ok) throw new Error('catálogo: ' + (r.error || 'desconocido'));
+      totalCatalogo = r.total;
+      procesados += r.procesados;
+      for (const id of (r.tmpl_ids || [])) tmplsAcumulados.add(id);
+      if (!r.has_more || r.procesados === 0) break;
+      offset += r.limit;
+    }
+
+    // Fase B: BOMs paginadas (chunks de 50) usando los tmpl_ids acumulados
+    const tmplList = [...tmplsAcumulados];
+    let idx = 0, resetFlag = true, bomTotal = 0;
+    const chunkSize = 50;
+    while (idx < tmplList.length) {
+      btn.innerHTML = '⏳ BOMs… ' + Math.min(idx + chunkSize, tmplList.length) + '/' + tmplList.length;
+      const chunk = tmplList.slice(idx, idx + chunkSize);
+      const r = await fetch(SYNC_URL, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ modo: 'bom_completo', tmpl_ids: chunk, reset: resetFlag })
+      }).then(r => r.json());
+      if (!r.ok) throw new Error('bom_completo: ' + (r.error || 'desconocido'));
+      bomTotal += r.bom || 0;
+      resetFlag = false;
+      idx += chunkSize;
+    }
+
+    showMsg('ok', 'Catálogo actualizado: <strong>' + totalCatalogo + ' productos</strong>, ' +
+      tmplList.length + ' templates, <strong>' + bomTotal + '</strong> relaciones BOM.');
+    await cargarDatos();
+  } catch (e) {
+    console.error(e);
+    showMsg('err', 'Error: ' + e.message);
+  } finally {
+    btn.innerHTML = originalTxt;
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-sync').addEventListener('click', sincronizar);
+document.getElementById('btn-sync-catalogo').addEventListener('click', sincronizarCatalogo);
+cargarDatos();
+</script>
+</body>
+</html>

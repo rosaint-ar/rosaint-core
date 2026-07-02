@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cotización del dólar · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .current-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px 28px;
+      display: flex; align-items: center; gap: 24px; margin-bottom: 20px;
+    }
+    .current-box .big {
+      font-size: 42px; font-weight: 700; letter-spacing: -0.03em;
+      color: var(--accent); font-variant-numeric: tabular-nums;
+    }
+    .current-box .info { flex: 1; }
+    .current-box .info h2 {
+      font-size: 15px; font-weight: 600; margin-bottom: 4px;
+    }
+    .current-box .info .sub { font-size: 13px; color: var(--muted); }
+    .field-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
+    .field .input { width: 100%; }
+    .hint {
+      font-size: 12px; color: var(--muted); margin-top: 6px;
+    }
+    .hint a { color: var(--accent); }
+    .status-line {
+      font-size: 13px; margin-top: 12px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .status-line.ok  { color: var(--ok); }
+    .status-line.err { color: var(--hot); }
+    .history-table th { text-align: left; }
+    .history-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .badge-fuente {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      background: var(--surface-2); color: var(--muted);
+    }
+    .badge-fuente.auto {
+      background: color-mix(in srgb, var(--ok) 15%, transparent);
+      color: var(--ok); font-weight: 600;
+    }
+    .badge-fuente.manual {
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      color: var(--warn); font-weight: 600;
+    }
+  </style>
+</head>
+<body data-page="precios" data-title="Cotización del dólar" data-subtitle="USD oficial venta (BNA)">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="current-box">
+    <div>
+      <div class="big" id="usdActual">—</div>
+    </div>
+    <div class="info">
+      <h2>Última cotización cargada</h2>
+      <div class="sub" id="usdInfo">—</div>
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="btn secondary" id="btnSyncNow" style="padding:6px 12px; font-size:12.5px;">↻ Sincronizar ahora</button>
+        <span id="syncStatus" style="font-size:12px; color:var(--muted);"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px; background: color-mix(in srgb, var(--ok) 6%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 25%, var(--border));">
+    <div style="display:flex; gap:12px; align-items:flex-start;">
+      <div style="width:32px; height:32px; border-radius:50%; background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-weight:700;">✓</div>
+      <div>
+        <div style="font-size:14px; font-weight:600; margin-bottom:4px;">Sincronización automática activa</div>
+        <div style="font-size:13px; color:var(--muted); line-height:1.5;">
+          El BNA venta se actualiza solo tres veces por día laboral (lunes a viernes) a las
+          <b style="color:var(--text);">10:00</b>, <b style="color:var(--text);">12:00</b> y <b style="color:var(--text);">15:00</b> ART.
+          Fuente: <a href="https://dolarapi.com/" target="_blank" style="color:var(--accent);">dolarapi.com</a> (refleja el BNA oficial).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:6px;">Actualizar manualmente</h2>
+    <p style="color:var(--muted); font-size:13px; margin-bottom:14px;">
+      Solo hace falta si querés cargar un valor distinto al del BNA (ej. para simular escenarios).
+      El sync automático seguirá corriendo; tu valor manual se sobrescribe al siguiente ciclo.
+    </p>
+
+    <div class="field-row">
+      <div class="field">
+        <span class="label">Cotización USD venta (ARS)</span>
+        <input type="number" id="input-usd" class="input" step="0.01" min="0" placeholder="Ej: 1150.50">
+      </div>
+      <div class="field">
+        <span class="label">Fecha</span>
+        <input type="date" id="input-fecha" class="input">
+      </div>
+      <div class="field">
+        <span class="label">&nbsp;</span>
+        <button class="btn primary" id="btnGuardar">Guardar</button>
+      </div>
+    </div>
+
+    <div class="hint">
+      Fuente sugerida: <a href="https://www.bna.com.ar/" target="_blank">Banco Nación</a> · venta oficial de billete.
+      Si guardás el mismo día dos veces, se actualiza el valor (no se duplica).
+    </div>
+
+    <div class="status-line" id="status" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:15px; font-weight:600; margin-bottom:12px;">Historial reciente</h2>
+    <table class="history-table" style="width:100%;">
+      <thead>
+        <tr>
+          <th style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--border);">Fecha</th>
+          <th class="num" style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--border); text-align:right;">USD venta (ARS)</th>
+          <th style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--border);">Fuente</th>
+        </tr>
+      </thead>
+      <tbody id="historial-body">
+        <tr><td colspan="3" style="padding:20px; text-align:center; color:var(--muted);">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const fmtARS = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtFecha = f => f ? f.split('-').reverse().join('/') : '—';
+
+function claseFuente(fuente) {
+  if (!fuente) return '';
+  if (fuente.endsWith('-auto')) return 'auto';
+  return 'manual';
+}
+function labelFuente(fuente) {
+  if (!fuente) return '—';
+  if (fuente.endsWith('-auto')) return fuente.replace('-auto', '') + ' · auto';
+  return fuente + ' · manual';
+}
+
+async function cargar() {
+  try {
+    const { data, error } = await sb.from('cotizaciones_dolar')
+      .select('fecha, venta_oficial, fuente, url_origen, creado_en')
+      .order('fecha', { ascending: false })
+      .limit(30);
+    if (error) throw error;
+
+    const rows = data || [];
+    if (rows.length) {
+      const ultima = rows[0];
+      document.getElementById('usdActual').textContent = fmtARS(ultima.venta_oficial);
+      const esAuto = (ultima.fuente || '').endsWith('-auto');
+      document.getElementById('usdInfo').innerHTML =
+        `${fmtFecha(ultima.fecha)} · <span class="badge-fuente ${claseFuente(ultima.fuente)}">${labelFuente(ultima.fuente)}</span>`;
+    }
+
+    document.getElementById('historial-body').innerHTML = rows.length
+      ? rows.map(r => `
+          <tr>
+            <td style="padding:9px 10px; border-bottom:1px solid var(--border);">${fmtFecha(r.fecha)}</td>
+            <td class="num" style="padding:9px 10px; border-bottom:1px solid var(--border);">${fmtARS(r.venta_oficial)}</td>
+            <td style="padding:9px 10px; border-bottom:1px solid var(--border);">
+              <span class="badge-fuente ${claseFuente(r.fuente)}">${labelFuente(r.fuente)}</span>
+            </td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="3" style="padding:20px; text-align:center; color:var(--muted);">Sin registros</td></tr>';
+
+    // Prefill fecha con hoy
+    const hoy = new Date().toISOString().slice(0, 10);
+    document.getElementById('input-fecha').value = hoy;
+  } catch (err) {
+    document.getElementById('historial-body').innerHTML =
+      `<tr><td colspan="3" style="padding:20px; text-align:center; color:var(--hot);">Error: ${err.message}</td></tr>`;
+  }
+}
+
+// ─── Botón "Sincronizar ahora": llama a la edge function directo ───
+document.getElementById('btnSyncNow').addEventListener('click', async () => {
+  const btn = document.getElementById('btnSyncNow');
+  const status = document.getElementById('syncStatus');
+  btn.disabled = true;
+  status.textContent = 'Consultando BNA…';
+  status.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-dolar-bna', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: window.SUPABASE_KEY,
+      },
+      body: '{}',
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Error');
+    status.textContent = `✓ Sincronizado: ${fmtARS(d.venta)}`;
+    status.style.color = 'var(--ok)';
+    await cargar();
+  } catch (err) {
+    status.textContent = '✗ ' + err.message;
+    status.style.color = 'var(--hot)';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status-line ' + (kind || '');
+  el.style.display = '';
+}
+
+document.getElementById('btnGuardar').addEventListener('click', async () => {
+  const valor = parseFloat(document.getElementById('input-usd').value);
+  const fecha = document.getElementById('input-fecha').value;
+  if (isNaN(valor) || valor <= 0) { setStatus('Valor inválido — ingresá un número mayor a 0', 'err'); return; }
+  if (!fecha) { setStatus('Ingresá una fecha', 'err'); return; }
+
+  const btn = document.getElementById('btnGuardar');
+  btn.disabled = true;
+  setStatus('Guardando…', '');
+
+  try {
+    const { error } = await sb.from('cotizaciones_dolar').upsert({
+      fecha, venta_oficial: valor, fuente: 'BNA', url_origen: 'https://www.bna.com.ar/',
+    }, { onConflict: 'fecha' });
+    if (error) throw error;
+    setStatus('✓ Cotización guardada', 'ok');
+    document.getElementById('input-usd').value = '';
+    await cargar();
+  } catch (err) {
+    setStatus('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+cargar();
+</script>
+</body>
+</html>

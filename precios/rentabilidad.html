@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rentabilidad · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* Top toggle L1 / L2 */
+    .toggle-nivel {
+      display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      overflow: hidden; margin-bottom: 16px;
+    }
+    .toggle-nivel button {
+      background: var(--surface); color: var(--muted); padding: 8px 16px;
+      border: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
+      transition: background .12s, color .12s;
+    }
+    .toggle-nivel button.active {
+      background: var(--accent); color: var(--on-accent); font-weight: 600;
+    }
+
+    /* KPIs */
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px; margin-bottom: 20px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .kpi .v {
+      font-size: 24px; font-weight: 700; color: var(--text);
+      font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+    }
+    .kpi .l {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); margin-top: 2px; font-weight: 600;
+    }
+    .kpi.ok .v { color: var(--ok); } .kpi.warn .v { color: var(--warn); } .kpi.hot .v { color: var(--hot); }
+
+    /* Alerta */
+    .alerta {
+      background: color-mix(in srgb, var(--hot) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--hot) 32%, transparent);
+      border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+    }
+    .alerta h4 { font-size: 14px; font-weight: 600; color: var(--hot); margin-bottom: 6px; }
+    .alerta .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+    .alerta ul { margin: 0; padding-left: 18px; font-size: 13px; }
+    .alerta li { margin-bottom: 4px; }
+    .alerta li b { color: var(--text); }
+
+    /* Distribución (histograma horizontal) */
+    .histograma { background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; }
+    .histograma h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .histograma .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+    .h-row {
+      display: grid; grid-template-columns: 100px 1fr 60px;
+      gap: 12px; align-items: center; margin-bottom: 6px;
+      font-size: 12.5px;
+    }
+    .h-row .lbl { color: var(--muted); font-weight: 500; text-align: right; }
+    .h-row .bar-wrap {
+      background: var(--surface-2); border-radius: 4px; height: 18px;
+      position: relative; overflow: hidden;
+    }
+    .h-row .bar {
+      height: 100%; border-radius: 4px;
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 6px; color: white; font-weight: 600; font-size: 11px;
+      transition: width .3s;
+    }
+    .h-row .bar.hot { background: var(--hot); }
+    .h-row .bar.warn { background: var(--warn); }
+    .h-row .bar.ok { background: var(--ok); }
+    .h-row .cnt {
+      text-align: right; font-weight: 600; font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    /* Grupos por línea */
+    .linea-block { background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px; margin-bottom: 12px; }
+    .linea-block .head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .linea-block h4 { font-size: 14px; font-weight: 600; }
+    .linea-block .stats {
+      display: flex; gap: 20px; font-size: 12px; color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .linea-block .stats b { color: var(--text); font-weight: 600; }
+
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .toolbar select {
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit; min-width: 160px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+    .toolbar label {
+      display: flex; align-items: center; gap: 6px; font-size: 13px;
+      cursor: pointer; user-select: none;
+    }
+    .toolbar label input { width: auto; margin: 0; accent-color: var(--warn); }
+
+    /* Tabla SKUs */
+    .tbl {
+      width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; font-size: 13px;
+    }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .tbl th.sort { cursor: pointer; user-select: none; }
+    .tbl th.sort::after { content: ' ↕'; opacity: .3; }
+    .tbl th.sort.asc::after { content: ' ↑'; opacity: 1; color: var(--accent); }
+    .tbl th.sort.desc::after { content: ' ↓'; opacity: 1; color: var(--accent); }
+    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+
+    .pill {
+      display: inline-block; padding: 2px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+      min-width: 46px; text-align: center;
+    }
+    .pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .pill.hot { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .pill.muted { background: var(--surface-2); color: var(--muted); }
+
+    .empty-box {
+      padding: 32px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+  </style>
+</head>
+<body data-page="precios" data-title="Rentabilidad" data-subtitle="Análisis de márgenes por SKU y línea">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="toggle-nivel">
+    <button class="active" data-nivel="l1">Lista 1 · Público</button>
+    <button data-nivel="l2">Lista 2 · Profesional</button>
+  </div>
+
+  <div class="kpi-row" id="kpis">
+    <div class="kpi"><div class="v" id="k-total">—</div><div class="l">SKUs con precio</div></div>
+    <div class="kpi"><div class="v" id="k-avg">—</div><div class="l">Margen promedio</div></div>
+    <div class="kpi ok"><div class="v" id="k-verde">—</div><div class="l">Sobre objetivo</div></div>
+    <div class="kpi warn"><div class="v" id="k-ambar">—</div><div class="l">Cerca del objetivo</div></div>
+    <div class="kpi hot"><div class="v" id="k-rojo">—</div><div class="l">Bajo objetivo</div></div>
+    <div class="kpi"><div class="v" id="k-sin">—</div><div class="l">Sin precio</div></div>
+  </div>
+
+  <div id="alerta-bajo"></div>
+
+  <div class="histograma">
+    <h3>Distribución de márgenes</h3>
+    <div class="sub" id="dist-sub">—</div>
+    <div id="dist-rows"></div>
+  </div>
+
+  <h2 style="font-size:16px; font-weight:600; margin: 24px 0 12px;">Por línea comercial</h2>
+  <div id="por-linea"></div>
+
+  <h2 style="font-size:16px; font-weight:600; margin: 24px 0 12px;">Todos los SKUs</h2>
+  <div class="toolbar">
+    <div class="search"><input type="text" class="input" id="search" placeholder="Buscar por SKU o nombre…"></div>
+    <select id="filter-linea"><option value="">Todas las líneas</option></select>
+    <label><input type="checkbox" id="filter-bajo"> Solo bajo objetivo</label>
+    <span id="cnt" style="font-size:12px; color:var(--muted);">—</span>
+  </div>
+
+  <div id="tabla-skus"><div class="empty-box">Cargando…</div></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+const fmtPct = n => n == null ? '—' : Number(n).toFixed(1) + '%';
+
+let SKUS = [];
+let LINEAS = [];
+let OBJ = null;       // { L1: {objetivo, tolerancia}, L2: {...} }
+let nivel = 'l1';     // 'l1' | 'l2'
+let sortBy = 'rent';  // 'codigo' | 'nombre' | 'precio' | 'costo' | 'rent'
+let sortDir = 'asc';  // 'asc' | 'desc'
+
+function precioDe(r) { return nivel === 'l1' ? r.l1_publicado : r.l2_publicado; }
+function rentDe(r) { return nivel === 'l1' ? r.rentab_real_l1 : r.rentab_real_l2; }
+function objDe() { return OBJ?.[nivel.toUpperCase()]; }
+
+function classRent(pct) {
+  const o = objDe();
+  if (pct == null) return 'muted';
+  if (!o) return Number(pct) < 0 ? 'hot' : Number(pct) < 20 ? 'warn' : 'ok';
+  const verde = o.objetivo + o.tolerancia;
+  if (Number(pct) >= verde) return 'ok';
+  if (Number(pct) >= o.objetivo) return 'warn';
+  return 'hot';
+}
+
+async function cargar() {
+  try {
+    const [skus, objs, lineas] = await Promise.all([
+      sb.from('v_precios_listas_completos').select('*'),
+      sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts'),
+      sb.from('lineas').select('id, nombre, orden').order('orden'),
+    ]);
+    if (skus.error) throw skus.error;
+    SKUS = skus.data || [];
+    LINEAS = lineas.data || [];
+    OBJ = {};
+    for (const o of (objs.data || [])) {
+      OBJ[o.nivel] = { objetivo: Number(o.objetivo_pct), tolerancia: Number(o.tolerancia_pts) };
+    }
+    // Poblar filtro línea
+    $('#filter-linea').innerHTML = '<option value="">Todas las líneas</option>' +
+      LINEAS.map(l => `<option value="${l.id}">${esc(l.nombre)}</option>`).join('');
+    renderTodo();
+  } catch (err) {
+    $('#tabla-skus').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderTodo() {
+  renderKPIs();
+  renderAlerta();
+  renderDistribucion();
+  renderPorLinea();
+  renderTabla();
+}
+
+function renderKPIs() {
+  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(s.costo_unitario) > 0);
+  const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+  const avg = rents.length ? rents.reduce((a,n)=>a+n,0)/rents.length : null;
+  const o = objDe();
+  const verde = o ? o.objetivo + o.tolerancia : 20;
+  const rojoUmbral = o ? o.objetivo : 0;
+  const cVerde = conPrecio.filter(s => Number(rentDe(s)) >= verde).length;
+  const cRojo = conPrecio.filter(s => Number(rentDe(s)) < rojoUmbral).length;
+  const cAmbar = conPrecio.length - cVerde - cRojo;
+  const sinPrecio = SKUS.filter(s => precioDe(s) == null).length;
+
+  $('#k-total').textContent = conPrecio.length;
+  $('#k-avg').textContent = avg != null ? avg.toFixed(1) + '%' : '—';
+  $('#k-verde').textContent = cVerde;
+  $('#k-ambar').textContent = cAmbar;
+  $('#k-rojo').textContent = cRojo;
+  $('#k-sin').textContent = sinPrecio;
+}
+
+function renderAlerta() {
+  const bajo = SKUS.filter(s => {
+    const r = rentDe(s);
+    const o = objDe();
+    return r != null && o && Number(r) < o.objetivo;
+  }).sort((a,b) => Number(rentDe(a)) - Number(rentDe(b))).slice(0, 8);
+
+  if (!bajo.length) { $('#alerta-bajo').innerHTML = ''; return; }
+  const o = objDe();
+  $('#alerta-bajo').innerHTML = `
+    <div class="alerta">
+      <h4>⚠ SKUs con margen bajo el objetivo (${o.objetivo}%)</h4>
+      <div class="sub">${bajo.length} de los peores. Considerá revisar el costo o subir el precio.</div>
+      <ul>
+        ${bajo.map(s => `<li><b>${esc(s.codigo_sku)}</b> · ${esc(s.nombre_sku||'—')} — margen <span class="pill hot">${fmtPct(rentDe(s))}</span></li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+function renderDistribucion() {
+  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(s.costo_unitario) > 0);
+  const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+  const buckets = [
+    { l: '< 0% (perdiendo)', min: -Infinity, max: 0, cls: 'hot' },
+    { l: '0 - 10%', min: 0, max: 10, cls: 'hot' },
+    { l: '10 - 20%', min: 10, max: 20, cls: 'hot' },
+    { l: '20 - 30%', min: 20, max: 30, cls: 'warn' },
+    { l: '30 - 40%', min: 30, max: 40, cls: 'warn' },
+    { l: '40 - 50%', min: 40, max: 50, cls: 'ok' },
+    { l: '50 - 60%', min: 50, max: 60, cls: 'ok' },
+    { l: '60 - 70%', min: 60, max: 70, cls: 'ok' },
+    { l: '≥ 70%', min: 70, max: Infinity, cls: 'ok' },
+  ];
+  const counts = buckets.map(b => rents.filter(r => r >= b.min && r < b.max).length);
+  const maxCnt = Math.max(...counts, 1);
+  const o = objDe();
+
+  $('#dist-sub').textContent = o
+    ? `Objetivo del nivel: ${o.objetivo}% · Verde a partir de ${o.objetivo + o.tolerancia}%`
+    : `${rents.length} SKUs con precio y costo`;
+
+  $('#dist-rows').innerHTML = buckets.map((b, i) => {
+    const cnt = counts[i];
+    const pct = cnt / maxCnt * 100;
+    return `
+      <div class="h-row">
+        <div class="lbl">${esc(b.l)}</div>
+        <div class="bar-wrap">
+          <div class="bar ${b.cls}" style="width:${pct}%;">${cnt > 0 ? cnt : ''}</div>
+        </div>
+        <div class="cnt">${cnt}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPorLinea() {
+  const grupos = LINEAS.map(l => {
+    const filas = SKUS.filter(s => s.linea === l.nombre && precioDe(s) != null && Number(s.costo_unitario) > 0);
+    const rents = filas.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+    return {
+      nombre: l.nombre,
+      total: filas.length,
+      avg: rents.length ? rents.reduce((a,n)=>a+n,0)/rents.length : null,
+      min: rents.length ? Math.min(...rents) : null,
+      max: rents.length ? Math.max(...rents) : null,
+      bajoObj: OBJ && filas.filter(s => Number(rentDe(s)) < OBJ[nivel.toUpperCase()]?.objetivo).length,
+    };
+  }).filter(g => g.total > 0);
+
+  $('#por-linea').innerHTML = grupos.length
+    ? grupos.map(g => `
+        <div class="linea-block">
+          <div class="head">
+            <h4>${esc(g.nombre)}</h4>
+            <div class="stats">
+              <div>Total: <b>${g.total}</b></div>
+              <div>Promedio: <b class="pill ${classRent(g.avg)}">${fmtPct(g.avg)}</b></div>
+              <div>Mín: <b>${fmtPct(g.min)}</b> · Máx: <b>${fmtPct(g.max)}</b></div>
+              ${g.bajoObj ? `<div style="color:var(--hot);">Bajo objetivo: <b>${g.bajoObj}</b></div>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('')
+    : '<div class="empty-box">Sin datos por línea.</div>';
+}
+
+function renderTabla() {
+  const q = $('#search').value.trim().toLowerCase();
+  const fLinea = $('#filter-linea').value;
+  const soloBajo = $('#filter-bajo').checked;
+  const o = objDe();
+
+  let rows = SKUS.slice();
+  if (q) rows = rows.filter(s => ((s.codigo_sku||'') + ' ' + (s.nombre_sku||'')).toLowerCase().includes(q));
+  if (fLinea) {
+    const l = LINEAS.find(x => String(x.id) === fLinea);
+    if (l) rows = rows.filter(s => s.linea === l.nombre);
+  }
+  if (soloBajo && o) {
+    rows = rows.filter(s => Number(rentDe(s)) < o.objetivo);
+  }
+
+  // Sort
+  rows.sort((a, b) => {
+    let va, vb;
+    if (sortBy === 'codigo') { va = a.codigo_sku || ''; vb = b.codigo_sku || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (sortBy === 'nombre') { va = a.nombre_sku || ''; vb = b.nombre_sku || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (sortBy === 'precio') { va = Number(precioDe(a) || 0); vb = Number(precioDe(b) || 0); }
+    else if (sortBy === 'costo') { va = Number(a.costo_unitario || 0); vb = Number(b.costo_unitario || 0); }
+    else { va = Number(rentDe(a) || -999); vb = Number(rentDe(b) || -999); }
+    return sortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  $('#cnt').textContent = rows.length + ' SKU' + (rows.length !== 1 ? 's' : '');
+
+  if (!rows.length) { $('#tabla-skus').innerHTML = '<div class="empty-box">Sin resultados</div>'; return; }
+
+  const nivelUp = nivel.toUpperCase();
+  $('#tabla-skus').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th class="sort${sortBy==='codigo'?' '+sortDir:''}" data-sort="codigo">Código</th>
+        <th class="sort${sortBy==='nombre'?' '+sortDir:''}" data-sort="nombre">Nombre</th>
+        <th>Línea</th>
+        <th class="num sort${sortBy==='costo'?' '+sortDir:''}" data-sort="costo">Costo</th>
+        <th class="num sort${sortBy==='precio'?' '+sortDir:''}" data-sort="precio">${nivelUp} c/IVA</th>
+        <th class="num sort${sortBy==='rent'?' '+sortDir:''}" data-sort="rent">Margen ${nivelUp}</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(s => `
+          <tr>
+            <td class="codigo">${esc(s.codigo_sku)}</td>
+            <td>${esc(s.nombre_sku||'—')}</td>
+            <td style="color:var(--muted); font-size:12px;">${esc(s.linea||'—')}</td>
+            <td class="num" style="color:var(--muted);">${fmtARS(s.costo_unitario)}</td>
+            <td class="num">${fmtARS(precioDe(s))}</td>
+            <td class="num"><span class="pill ${classRent(rentDe(s))}">${fmtPct(rentDe(s))}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  // Enganchar sort
+  $$('#tabla-skus th.sort').forEach(th => th.addEventListener('click', () => {
+    const s = th.dataset.sort;
+    if (sortBy === s) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+    else { sortBy = s; sortDir = s === 'rent' ? 'asc' : 'asc'; }
+    renderTabla();
+  }));
+}
+
+// ─── Handlers ───
+$$('.toggle-nivel button').forEach(b => b.addEventListener('click', () => {
+  $$('.toggle-nivel button').forEach(x => x.classList.toggle('active', x === b));
+  nivel = b.dataset.nivel;
+  renderTodo();
+}));
+$('#search').addEventListener('input', renderTabla);
+$('#filter-linea').addEventListener('change', renderTabla);
+$('#filter-bajo').addEventListener('change', renderTabla);
+
+cargar();
+</script>
+</body>
+</html>

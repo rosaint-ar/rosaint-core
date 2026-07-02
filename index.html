@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rosaint · CORE · Dashboard</title>
+  <meta name="app-root" content="./">
+  <link rel="icon" type="image/png" href="shell/favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#F93549">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rosaint">
+  <link rel="apple-touch-icon" href="shell/favicon.png">
+  <link rel="stylesheet" href="shell/shell.css">
+  <style>
+    /* ---- Layout general ---- */
+    .greeting { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+    .greeting h1 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+    .greeting .sub { font-size: 13px; color: var(--muted); }
+    .greeting .refresh { font-size: 12px; color: var(--muted); }
+    .greeting .refresh strong { color: var(--text); }
+
+    /* ---- KPIs ---- */
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px; margin-bottom: 20px;
+    }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 4px;
+      text-decoration: none; color: inherit; transition: border-color .12s;
+    }
+    .kpi-card:hover { border-color: var(--accent); text-decoration: none; color: inherit; }
+    .kpi-card .k {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .kpi-card .v {
+      font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums;
+      color: var(--text); line-height: 1.1;
+    }
+    .kpi-card .d { font-size: 12px; color: var(--muted); }
+    .kpi-card .d.up { color: #2ea043; }
+    .kpi-card .d.down { color: var(--accent); }
+    .kpi-card.accent .v { color: var(--accent); }
+    .kpi-card.warn .v { color: #ff8c00; }
+    .kpi-card.ok .v { color: #2ea043; }
+
+    /* ---- Alertas cruzadas ---- */
+    .alertas {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 18px; margin-bottom: 20px;
+    }
+    .alertas h2 {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--muted);
+      margin: 0 0 10px;
+    }
+    .alertas h2 .badge-count {
+      background: var(--accent); color: #fff;
+      padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    }
+    .alertas-list { display: flex; flex-direction: column; gap: 6px; }
+    .alerta {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 6px;
+      font-size: 13px; background: var(--surface-2);
+      text-decoration: none; color: inherit;
+    }
+    .alerta:hover { background: var(--accent-tint); text-decoration: none; color: inherit; }
+    .alerta__ico {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .alerta__ico.critico { background: rgba(220, 53, 69, 0.15); color: #dc3545; }
+    .alerta__ico.warn { background: rgba(255, 140, 0, 0.15); color: #ff8c00; }
+    .alerta__body { flex: 1; }
+    .alerta__body strong { font-weight: 600; }
+    .alerta__cnt {
+      font-weight: 700; font-variant-numeric: tabular-nums;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    }
+    .alertas-empty {
+      display: flex; align-items: center; gap: 8px; color: #2ea043;
+      font-size: 13px; padding: 8px 10px;
+    }
+
+    /* ---- Secciones ---- */
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    @media (max-width: 900px) { .row-2 { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 18px;
+    }
+    .panel__header {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+    .panel__header h2 { font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0; }
+    .panel__link { font-size: 12px; color: var(--accent); text-decoration: none; }
+    .panel__link:hover { text-decoration: underline; }
+
+    /* Listas compactas dentro de paneles */
+    .lista-mini { display: flex; flex-direction: column; }
+    .lista-mini .item {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px;
+      padding: 6px 4px; align-items: baseline;
+      font-size: 13.5px; border-bottom: 1px dashed var(--border);
+    }
+    .lista-mini .item:last-child { border-bottom: none; }
+    .lista-mini .item__nombre { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lista-mini .item__qty {
+      font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13.5px;
+      white-space: nowrap;
+    }
+    .lista-mini .item__qty.fab { color: var(--accent); }
+    .lista-mini .item__qty.frac { color: #ff8c00; }
+
+    /* Actividades del día */
+    .actividad {
+      display: grid; grid-template-columns: 60px 90px 1fr auto; gap: 10px;
+      padding: 6px 4px; align-items: baseline;
+      font-size: 12.5px; border-bottom: 1px dashed var(--border);
+    }
+    .actividad:last-child { border-bottom: none; }
+    .actividad__hora { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .actividad__tipo {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 8px; text-align: center;
+    }
+    .actividad__tipo.fabricacion { background: rgba(220, 53, 69, 0.12); color: #dc3545; }
+    .actividad__tipo.fraccionamiento { background: rgba(255, 140, 0, 0.14); color: #ff8c00; }
+    .actividad__nombre { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actividad__qty { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* Empty states */
+    .empty-mini {
+      text-align: center; padding: 24px 12px; color: var(--muted); font-size: 13px;
+    }
+
+    /* Integraciones bar */
+    .integ-bar {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      padding: 12px 14px; background: var(--surface-2);
+      border-radius: var(--radius); font-size: 12px; color: var(--muted);
+      align-items: center;
+    }
+    .integ-item {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 5px 10px; border-radius: 20px;
+    }
+    .integ-item .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .integ-item .dot.ok { background: #2ea043; }
+    .integ-item .dot.warn { background: #ff8c00; }
+    .integ-item .dot.off { background: var(--muted); }
+  </style>
+</head>
+<body data-page="dashboard" data-title="Dashboard" data-subtitle="Estado general de Rosaint">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="greeting">
+    <div>
+      <h1 id="saludo">Buen día, Diego</h1>
+      <div class="sub" id="hoy">—</div>
+    </div>
+    <div class="refresh">Actualizado <strong id="last-refresh">—</strong> · <a href="javascript:cargarTodo()" style="color: var(--accent); text-decoration: none;">↻ Refrescar</a></div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <a href="precios/cotizacion.html" class="kpi-card">
+      <span class="k">💵 USD BNA (venta)</span>
+      <span class="v" id="kpi-usd">—</span>
+      <span class="d" id="kpi-usd-delta">—</span>
+    </a>
+    <a href="produccion/index.html" class="kpi-card accent">
+      <span class="k">📦 Pedidos por entregar</span>
+      <span class="v" id="kpi-pedidos">—</span>
+      <span class="d" id="kpi-pedidos-sub">—</span>
+    </a>
+    <a href="produccion/hoja.html" class="kpi-card">
+      <span class="k">🔨 A fabricar (Kg)</span>
+      <span class="v" id="kpi-fabricar">—</span>
+      <span class="d" id="kpi-fabricar-sub">—</span>
+    </a>
+    <a href="produccion/hoja.html" class="kpi-card warn">
+      <span class="k">📦 A fraccionar (un.)</span>
+      <span class="v" id="kpi-fraccionar">—</span>
+      <span class="d" id="kpi-fraccionar-sub">—</span>
+    </a>
+    <a href="produccion/hoja.html" class="kpi-card ok">
+      <span class="k">✍ Actividades del día</span>
+      <span class="v" id="kpi-actividades">—</span>
+      <span class="d" id="kpi-actividades-sub">—</span>
+    </a>
+  </div>
+
+  <!-- Alertas cruzadas -->
+  <div class="alertas" id="alertas-box">
+    <h2>⚠ Alertas activas <span class="badge-count" id="alertas-count">0</span></h2>
+    <div class="alertas-list" id="alertas-list">
+      <div class="empty-mini">Chequeando…</div>
+    </div>
+  </div>
+
+  <!-- Producción + Portafolio -->
+  <div class="row-2">
+    <div class="panel">
+      <div class="panel__header">
+        <h2>🔨 Top a fabricar</h2>
+        <a href="produccion/index.html" class="panel__link">Ver todo →</a>
+      </div>
+      <div class="lista-mini" id="top-fabricar">
+        <div class="empty-mini">Cargando…</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__header">
+        <h2>📦 Top a fraccionar</h2>
+        <a href="produccion/index.html" class="panel__link">Ver todo →</a>
+      </div>
+      <div class="lista-mini" id="top-fraccionar">
+        <div class="empty-mini">Cargando…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row-2">
+    <div class="panel">
+      <div class="panel__header">
+        <h2>📋 Actividades de hoy</h2>
+        <a href="produccion/hoja.html" class="panel__link">Abrir Hoja →</a>
+      </div>
+      <div id="actividades-hoy">
+        <div class="empty-mini">Cargando…</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__header">
+        <h2>🎯 Portafolio</h2>
+        <a href="catalogo/index.html" class="panel__link">Ir a Catálogo →</a>
+      </div>
+      <div class="lista-mini" id="portafolio">
+        <div class="empty-mini">Cargando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Integraciones -->
+  <div class="integ-bar">
+    <span style="font-weight: 600; color: var(--text);">Integraciones:</span>
+    <div class="integ-item"><span class="dot ok"></span>Supabase</div>
+    <div class="integ-item"><span class="dot ok"></span>Odoo</div>
+    <div class="integ-item"><span class="dot" id="dot-ml"></span><span id="lbl-ml">Mercado Libre</span></div>
+    <div class="integ-item"><span class="dot off"></span>Tienda Nube</div>
+    <div class="integ-item"><span class="dot off"></span>ARCA</div>
+    <a href="sistema/index.html" style="margin-left: auto; font-size: 12px; color: var(--accent); text-decoration: none;">Ver Sistema →</a>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="shared/supabase.js"></script>
+<script src="shell/shell.js"></script>
+<script>
+function fmt(n, opts) {
+  const x = Number(n);
+  if (isNaN(x)) return '—';
+  return x.toLocaleString('es-AR', Object.assign({ maximumFractionDigits: 0 }, opts || {}));
+}
+function fmtMoney(n) {
+  const x = Number(n);
+  if (isNaN(x)) return '—';
+  return '$' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtHora(hhmmss) { return hhmmss ? hhmmss.slice(0, 5) : ''; }
+function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function saludoPorHora() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buen día, Diego';
+  if (h < 20) return 'Buenas tardes, Diego';
+  return 'Buenas noches, Diego';
+}
+function fmtFechaLarga(d) {
+  return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+function tiempoRelativo(dias) {
+  if (dias < 1) return 'hoy';
+  if (dias === 1) return 'ayer';
+  return 'hace ' + Math.floor(dias) + ' días';
+}
+
+document.getElementById('saludo').textContent = saludoPorHora();
+document.getElementById('hoy').textContent = fmtFechaLarga(new Date());
+
+const HOY = new Date().toISOString().split('T')[0];
+
+async function cargarTodo() {
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  await Promise.all([
+    cargarUSD(), cargarProduccion(), cargarActividadesHoy(),
+    cargarPortafolio(), cargarAlertas(), cargarMLStatus()
+  ]);
+}
+
+async function cargarUSD() {
+  const { data } = await sb.from('cotizaciones_dolar').select('venta_oficial, fecha').order('fecha', { ascending: false }).limit(2);
+  if (!data || data.length === 0) return;
+  const hoy = data[0];
+  const prev = data[1];
+  document.getElementById('kpi-usd').textContent = '$' + fmt(hoy.venta_oficial, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const diasDesdeUpd = (Date.now() - new Date(hoy.fecha).getTime()) / (1000 * 60 * 60 * 24);
+  const delta = prev ? Number(hoy.venta_oficial) - Number(prev.venta_oficial) : 0;
+  const pct = prev ? (delta / Number(prev.venta_oficial)) * 100 : 0;
+  const el = document.getElementById('kpi-usd-delta');
+  el.textContent = (delta >= 0 ? '▲ +' : '▼ ') + fmt(delta, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+    ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%) · ' + tiempoRelativo(diasDesdeUpd);
+  el.className = 'd ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
+}
+
+async function cargarProduccion() {
+  const [pedidosR, fabR, fracR] = await Promise.all([
+    sb.from('prod_pedidos').select('id, cliente'),
+    sb.from('v_prod_a_fabricar').select('sku, nombre_producto, qty_faltante').order('qty_faltante', { ascending: false }),
+    sb.from('v_prod_a_fraccionar').select('sku, nombre_producto, qty_faltante').order('qty_faltante', { ascending: false })
+  ]);
+  const pedidos = pedidosR.data || [];
+  const fab = (fabR.data || []).filter(f => Number(f.qty_faltante) > 0);
+  const frac = (fracR.data || []).filter(f => Number(f.qty_faltante) > 0);
+
+  document.getElementById('kpi-pedidos').textContent = pedidos.length;
+  const clientesDistintos = new Set(pedidos.map(p => p.cliente)).size;
+  document.getElementById('kpi-pedidos-sub').textContent = clientesDistintos + ' clientes distintos';
+
+  const kgTotal = fab.reduce((s, x) => s + Number(x.qty_faltante), 0);
+  document.getElementById('kpi-fabricar').textContent = fmt(kgTotal, { maximumFractionDigits: 1 });
+  document.getElementById('kpi-fabricar-sub').textContent = fab.length + ' graneles distintos';
+
+  const unTotal = frac.reduce((s, x) => s + Number(x.qty_faltante), 0);
+  document.getElementById('kpi-fraccionar').textContent = fmt(unTotal);
+  document.getElementById('kpi-fraccionar-sub').textContent = frac.length + ' presentaciones';
+
+  // Render top listas
+  renderTopLista('top-fabricar', fab.slice(0, 6), 'kg', 'fab');
+  renderTopLista('top-fraccionar', frac.slice(0, 6), 'un', 'frac');
+}
+
+function renderTopLista(elId, list, unidad, cls) {
+  const el = document.getElementById(elId);
+  if (list.length === 0) { el.innerHTML = '<div class="empty-mini">✓ Nada pendiente</div>'; return; }
+  let html = '';
+  for (const f of list) {
+    html += '<div class="item">';
+    html += '<span class="item__nombre">' + escapeHTML(f.nombre_producto) + '</span>';
+    html += '<span class="item__qty ' + cls + '">' + fmt(f.qty_faltante, { maximumFractionDigits: 2 }) + ' ' + unidad + '</span>';
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function cargarActividadesHoy() {
+  const { data } = await sb.from('prod_hoja_diaria').select('*').eq('fecha', HOY).order('hora', { ascending: false });
+  const actividades = data || [];
+  document.getElementById('kpi-actividades').textContent = actividades.length;
+  const fab = actividades.filter(a => a.tipo === 'fabricacion').length;
+  const frac = actividades.length - fab;
+  document.getElementById('kpi-actividades-sub').textContent =
+    (fab > 0 ? fab + ' fabricaciones' : '') +
+    (fab > 0 && frac > 0 ? ' · ' : '') +
+    (frac > 0 ? frac + ' fraccionamientos' : (fab === 0 ? 'Sin actividad aún' : ''));
+
+  const cont = document.getElementById('actividades-hoy');
+  if (actividades.length === 0) { cont.innerHTML = '<div class="empty-mini">Sin actividades registradas hoy</div>'; return; }
+  let html = '';
+  for (const a of actividades.slice(0, 5)) {
+    const tipo = a.tipo || 'fraccionamiento';
+    const label = tipo === 'fabricacion' ? 'Fabric.' : 'Fracc.';
+    html += '<div class="actividad">';
+    html += '<span class="actividad__hora">' + escapeHTML(fmtHora(a.hora)) + '</span>';
+    html += '<span class="actividad__tipo ' + tipo + '">' + label + '</span>';
+    html += '<span class="actividad__nombre">' + escapeHTML(a.producto_nombre) + '</span>';
+    html += '<span class="actividad__qty">' + fmt(a.cantidad, { maximumFractionDigits: 2 }) + ' ' + escapeHTML(a.unidad) + '</span>';
+    html += '</div>';
+  }
+  if (actividades.length > 5) {
+    html += '<div class="empty-mini" style="padding: 8px 0 0; font-size: 11px;">+ ' + (actividades.length - 5) + ' más</div>';
+  }
+  cont.innerHTML = html;
+}
+
+async function cargarPortafolio() {
+  const [{ data: items }, { data: packs }, { data: lineas }] = await Promise.all([
+    sb.from('items').select('tipo, estado'),
+    sb.from('pack_componentes').select('codigo_pack'),
+    sb.from('lineas').select('nombre, activo')
+  ]);
+  const vig = (items || []).filter(i => i.estado === 'vigente');
+  const skus = vig.filter(i => i.tipo === 'SKU').length;
+  const combos = vig.filter(i => i.tipo === 'COMBO').length;
+  const packsCount = vig.filter(i => i.tipo === 'PACK').length;
+  const mps = vig.filter(i => i.tipo === 'MP').length;
+  const ses = vig.filter(i => i.tipo === 'SE').length;
+  const ins = vig.filter(i => i.tipo === 'IN').length;
+  const packsConComp = new Set((packs || []).map(p => p.codigo_pack)).size;
+  const lineasActivas = (lineas || []).filter(l => l.activo !== false).length;
+
+  const rows = [
+    { nombre: 'SKUs vigentes', valor: skus },
+    { nombre: 'Packs x4', valor: packsCount + ' (' + packsConComp + ' completos)' },
+    { nombre: 'Combos', valor: combos },
+    { nombre: 'Materias primas', valor: mps },
+    { nombre: 'Semi-elaborados', valor: ses },
+    { nombre: 'Insumos', valor: ins },
+    { nombre: 'Líneas comerciales', valor: lineasActivas + ' activas' }
+  ];
+  let html = '';
+  for (const r of rows) {
+    html += '<div class="item">';
+    html += '<span class="item__nombre">' + escapeHTML(r.nombre) + '</span>';
+    html += '<span class="item__qty">' + escapeHTML(String(r.valor)) + '</span>';
+    html += '</div>';
+  }
+  document.getElementById('portafolio').innerHTML = html;
+}
+
+async function cargarAlertas() {
+  const alertas = [];
+
+  // 1. MPs sin INCI usadas en fórmulas
+  const { data: mpsSinInci } = await sb.from('v_mps_sin_inci_en_uso').select('codigo');
+  if (mpsSinInci && mpsSinInci.length > 0) {
+    alertas.push({
+      cls: 'critico',
+      texto: '<strong>' + mpsSinInci.length + ' materia' + (mpsSinInci.length === 1 ? '' : 's') + ' prima' + (mpsSinInci.length === 1 ? '' : 's') + '</strong> sin INCI y en uso — INCI de producto terminado incompleto',
+      cnt: mpsSinInci.length,
+      href: 'laboratorio/materias-primas.html'
+    });
+  }
+
+  // 2. Packs sin componente
+  const { data: packsVig } = await sb.from('items').select('codigo').eq('tipo', 'PACK').eq('estado', 'vigente');
+  const { data: packComp } = await sb.from('pack_componentes').select('codigo_pack');
+  const conComp = new Set((packComp || []).map(p => p.codigo_pack));
+  const sinComp = (packsVig || []).filter(p => !conComp.has(p.codigo));
+  if (sinComp.length > 0) {
+    alertas.push({
+      cls: 'warn',
+      texto: '<strong>' + sinComp.length + ' pack' + (sinComp.length === 1 ? '' : 's') + '</strong> sin componente asignado',
+      cnt: sinComp.length,
+      href: 'catalogo/packs.html'
+    });
+  }
+
+  // 3. Cotización del dólar vieja
+  const { data: usd } = await sb.from('cotizaciones_dolar').select('fecha').order('fecha', { ascending: false }).limit(1);
+  if (usd && usd[0]) {
+    const dias = (Date.now() - new Date(usd[0].fecha).getTime()) / (1000 * 60 * 60 * 24);
+    if (dias > 2) {
+      alertas.push({
+        cls: 'warn',
+        texto: '<strong>Cotización USD vieja</strong> — última actualización hace ' + Math.floor(dias) + ' días',
+        cnt: Math.floor(dias) + 'd',
+        href: 'precios/cotizacion.html'
+      });
+    }
+  }
+
+  // 4. Pedidos vencidos (fecha_compromiso < hoy y aún pendientes)
+  const { data: pedidosVenc } = await sb.from('prod_pedidos').select('id, numero, fecha_compromiso, cliente').lt('fecha_compromiso', HOY);
+  if (pedidosVenc && pedidosVenc.length > 0) {
+    alertas.push({
+      cls: 'critico',
+      texto: '<strong>' + pedidosVenc.length + ' pedido' + (pedidosVenc.length === 1 ? '' : 's') + '</strong> con fecha de compromiso vencida',
+      cnt: pedidosVenc.length,
+      href: 'produccion/index.html'
+    });
+  }
+
+  // Render
+  document.getElementById('alertas-count').textContent = alertas.length;
+  const cont = document.getElementById('alertas-list');
+  if (alertas.length === 0) {
+    cont.innerHTML = '<div class="alertas-empty">✓ Sin alertas activas. Todo en orden.</div>';
+    return;
+  }
+  let html = '';
+  for (const a of alertas) {
+    html += '<a class="alerta" href="' + a.href + '">';
+    html += '<span class="alerta__ico ' + a.cls + '">' + (a.cls === 'critico' ? '!' : '⚠') + '</span>';
+    html += '<span class="alerta__body">' + a.texto + '</span>';
+    html += '<span class="alerta__cnt">' + escapeHTML(String(a.cnt)) + '</span>';
+    html += '</a>';
+  }
+  cont.innerHTML = html;
+}
+
+async function cargarMLStatus() {
+  try {
+    const { data } = await sb.rpc('ml_auth_status');
+    const info = data && data[0];
+    const dot = document.getElementById('dot-ml');
+    const lbl = document.getElementById('lbl-ml');
+    if (info && info.token_expira_en) {
+      const exp = new Date(info.token_expira_en);
+      const horas = (exp.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (horas > 0) {
+        dot.className = 'dot ok';
+        lbl.textContent = 'Mercado Libre';
+      } else {
+        dot.className = 'dot warn';
+        lbl.textContent = 'ML (token expirado)';
+      }
+    } else {
+      dot.className = 'dot warn';
+      lbl.textContent = 'ML (sin conectar)';
+    }
+  } catch {
+    document.getElementById('dot-ml').className = 'dot off';
+  }
+}
+
+// Autorefresh cada 60s
+cargarTodo();
+setInterval(cargarTodo, 60000);
+</script>
+</body>
+</html>

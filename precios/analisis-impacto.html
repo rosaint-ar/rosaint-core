@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Análisis de impacto · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .search-hero {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 22px 24px; margin-bottom: 16px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .search-hero h2 { font-size: 15px; font-weight: 600; }
+    .search-hero .sub { font-size: 13px; color: var(--muted); }
+    .search-input {
+      width: 100%; padding: 12px 16px; font-size: 15px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg); color: var(--text);
+    }
+    .search-input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+
+    .found {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+      padding: 14px 18px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .found .code {
+      font-family: var(--font-mono); color: var(--accent); font-size: 13px;
+    }
+    .found .name { flex: 1; font-weight: 500; }
+    .badge-tipo {
+      font-size: 11px; font-weight: 600; padding: 2px 9px;
+      border-radius: 20px;
+    }
+    .badge-tipo.MP { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .badge-tipo.IN { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .badge-tipo.SE, .badge-tipo.TE { background: var(--accent-tint); color: var(--accent); }
+
+    .sec {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 20px; margin-bottom: 14px;
+    }
+    .sec h3 {
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+    }
+    .row-impact {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 4px; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .row-impact:last-child { border-bottom: none; }
+    .row-impact .left { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0; }
+    .row-impact .left .code {
+      font-family: var(--font-mono); color: var(--accent); font-size: 12px;
+      background: var(--accent-tint); padding: 2px 6px; border-radius: 4px;
+    }
+    .row-impact .left .name {
+      color: var(--text); font-size: 13.5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row-impact .pct {
+      font-weight: 600; font-size: 13px; color: var(--hot);
+      font-variant-numeric: tabular-nums;
+    }
+    .row-impact .via {
+      font-size: 11px; color: var(--muted); font-style: italic;
+    }
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      font-size: 13px;
+    }
+    .empty-box.hint { padding: 24px; }
+  </style>
+</head>
+<body data-page="precios" data-title="Análisis de impacto" data-subtitle="¿Qué fórmulas usan un ingrediente?">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="search-hero">
+    <h2>Buscá una materia prima o insumo</h2>
+    <div class="sub">Escribí un código (ej. <span class="mono" style="color:var(--accent);">MP001</span>) o parte del nombre. Vas a ver en qué fórmulas se usa y con qué porcentaje.</div>
+    <input type="text" id="search" class="search-input" placeholder="Ej: glicerina, mp001, sorbitol…" autocomplete="off" autofocus>
+  </div>
+
+  <div id="empty-hint" class="empty-box hint">Empezá a tipear arriba para buscar un ingrediente.</div>
+
+  <div id="result" style="display:none;">
+    <div class="found" id="found-item"></div>
+
+    <div class="sec">
+      <h3>Uso directo <span id="cnt-directo" style="color:var(--muted); font-weight:400; text-transform:none;"></span></h3>
+      <div id="directos"></div>
+    </div>
+
+    <div class="sec" id="sec-indirectos" style="display:none;">
+      <h3>Uso indirecto en cascada <span id="cnt-indirecto" style="color:var(--muted); font-weight:400; text-transform:none;"></span></h3>
+      <div class="sub" style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+        Fórmulas que incluyen un semi-elaborado que a su vez contiene este ingrediente.
+      </div>
+      <div id="indirectos"></div>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Análisis de impacto — busca un ingrediente y muestra dónde se usa
+// (directo y en cascada: si aparece en un SE que aparece en un TE, marca ambos)
+// ═══════════════════════════════════════════════════════════════════════════
+
+let ITEMS = [], FORMULAS = [], COMPS = [];
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function cargar() {
+  try {
+    const [it, fm, cp] = await Promise.all([
+      sb.from('items').select('codigo, nombre, tipo, estado').eq('estado', 'vigente'),
+      sb.from('formulas').select('id, codigo_granel, estado').eq('estado', 'vigente'),
+      sb.from('formula_componentes').select('formula_id, codigo_componente, composicion_pct'),
+    ]);
+    if (it.error) throw it.error;
+    if (fm.error) throw fm.error;
+    if (cp.error) throw cp.error;
+
+    ITEMS = it.data || [];
+    FORMULAS = fm.data || [];
+    COMPS = cp.data || [];
+  } catch (err) {
+    document.getElementById('empty-hint').textContent = 'Error cargando datos: ' + err.message;
+    document.getElementById('empty-hint').style.color = 'var(--hot)';
+  }
+}
+
+function renderImpact() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const emptyEl = document.getElementById('empty-hint');
+  const resultEl = document.getElementById('result');
+
+  if (!q) {
+    emptyEl.style.display = ''; emptyEl.style.color = '';
+    emptyEl.textContent = 'Empezá a tipear arriba para buscar un ingrediente.';
+    resultEl.style.display = 'none';
+    return;
+  }
+
+  const item = ITEMS.find(i =>
+    i.codigo.toLowerCase() === q ||
+    i.nombre.toLowerCase().includes(q)
+  );
+
+  if (!item) {
+    emptyEl.style.display = ''; emptyEl.style.color = '';
+    emptyEl.textContent = `No se encontró ningún ítem con "${q}"`;
+    resultEl.style.display = 'none';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  resultEl.style.display = '';
+
+  // Item encontrado
+  document.getElementById('found-item').innerHTML = `
+    <span class="code">${esc(item.codigo)}</span>
+    <span class="name">${esc(item.nombre)}</span>
+    <span class="badge-tipo ${item.tipo}">${item.tipo}</span>
+  `;
+
+  // Uso directo: componentes que apuntan a este código
+  const directos = COMPS.filter(c => c.codigo_componente === item.codigo);
+  const formulasDirectas = directos.map(c => {
+    const f = FORMULAS.find(x => x.id === c.formula_id);
+    if (!f) return null;
+    const granel = ITEMS.find(i => i.codigo === f.codigo_granel);
+    return { codigo: f.codigo_granel, nombre: granel?.nombre || '—', pct: parseFloat(c.composicion_pct) };
+  }).filter(Boolean);
+
+  // Ordenar por %
+  formulasDirectas.sort((a, b) => b.pct - a.pct);
+
+  document.getElementById('cnt-directo').textContent = `(${formulasDirectas.length})`;
+  document.getElementById('directos').innerHTML = formulasDirectas.length
+    ? formulasDirectas.map(f => `
+        <div class="row-impact">
+          <div class="left">
+            <span class="code">${esc(f.codigo)}</span>
+            <span class="name">${esc(f.nombre)}</span>
+          </div>
+          <span class="pct">${f.pct.toFixed(2)}%</span>
+        </div>
+      `).join('')
+    : '<div class="empty-box" style="padding:20px;">No se usa directamente en ninguna fórmula.</div>';
+
+  // Uso indirecto: fórmulas que incluyen a otra fórmula que usa este ingrediente
+  const codigosDirectos = new Set(formulasDirectas.map(f => f.codigo));
+  const indirectas = new Map(); // codigo → nombre
+  for (const cod of codigosDirectos) {
+    for (const c of COMPS) {
+      if (c.codigo_componente !== cod) continue;
+      const f = FORMULAS.find(x => x.id === c.formula_id);
+      if (!f || codigosDirectos.has(f.codigo_granel)) continue;
+      if (indirectas.has(f.codigo_granel)) continue;
+      const granel = ITEMS.find(i => i.codigo === f.codigo_granel);
+      indirectas.set(f.codigo_granel, granel?.nombre || '—');
+    }
+  }
+
+  if (indirectas.size > 0) {
+    document.getElementById('sec-indirectos').style.display = '';
+    document.getElementById('cnt-indirecto').textContent = `(${indirectas.size})`;
+    document.getElementById('indirectos').innerHTML =
+      [...indirectas].map(([cod, nombre]) => `
+        <div class="row-impact">
+          <div class="left">
+            <span class="code">${esc(cod)}</span>
+            <span class="name">${esc(nombre)}</span>
+          </div>
+          <span class="via">vía cascada</span>
+        </div>
+      `).join('');
+  } else {
+    document.getElementById('sec-indirectos').style.display = 'none';
+  }
+}
+
+document.getElementById('search').addEventListener('input', renderImpact);
+cargar();
+</script>
+</body>
+</html>

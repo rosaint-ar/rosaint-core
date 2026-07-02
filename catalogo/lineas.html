@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Líneas comerciales · Catálogo · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .info-bar {
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
+      color: var(--muted); margin-bottom: 16px;
+    }
+
+    table.lineas {
+      width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+    }
+    table.lineas th {
+      text-align: left; font-weight: 600; color: var(--muted);
+      font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+      padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    table.lineas td {
+      padding: 12px; border-bottom: 1px solid var(--border);
+      color: var(--text); font-size: 14px; vertical-align: middle;
+    }
+    table.lineas tr:last-child td { border-bottom: none; }
+
+    .col-orden { width: 60px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--muted); }
+    .col-color { width: 50px; }
+    .col-nombre { min-width: 200px; }
+    .col-desc { color: var(--muted); font-size: 13px; }
+    .col-items { width: 90px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .col-activo { width: 100px; text-align: center; }
+    .col-acc { width: 100px; text-align: right; }
+
+    .color-swatch {
+      width: 32px; height: 32px; border-radius: 8px;
+      border: 1.5px solid var(--border); display: inline-block;
+      cursor: pointer;
+    }
+    .badge-items {
+      display: inline-block; background: var(--surface-2);
+      padding: 3px 10px; border-radius: 12px; font-size: 12px;
+    }
+
+    .switch { position: relative; width: 42px; height: 22px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #ccc; border-radius: 22px; transition: .2s;
+    }
+    .slider::before {
+      position: absolute; content: ""; width: 16px; height: 16px;
+      left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .2s;
+    }
+    input:checked + .slider { background: var(--accent); }
+    input:checked + .slider::before { transform: translateX(20px); }
+
+    input.edit-inline, textarea.edit-inline {
+      background: transparent; border: 1px solid transparent;
+      padding: 6px 8px; border-radius: 6px; font: inherit; color: var(--text);
+      width: 100%; box-sizing: border-box;
+    }
+    input.edit-inline:focus, textarea.edit-inline:focus {
+      outline: none; background: var(--surface-2); border-color: var(--accent);
+    }
+    input.edit-inline:hover, textarea.edit-inline:hover {
+      background: var(--surface-2);
+    }
+
+    .btn-icon {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); padding: 6px 10px; border-radius: 6px;
+      cursor: pointer; font-size: 12px;
+    }
+    .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-icon.saved { border-color: #2ea043; color: #2ea043; }
+
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 12px 18px; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.15);
+      font-size: 13px; opacity: 0; transition: opacity .2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.ok { border-color: #2ea043; color: #2ea043; }
+    .toast.err { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body data-page="catalogo" data-title="Líneas comerciales" data-subtitle="Organización del portafolio · agrupación de productos">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="info-bar">
+    Las líneas comerciales agrupan el portafolio y se usan como base en Precios, Publicar lista, Rentabilidad y Reportes.
+    Al desactivar una línea, sus productos siguen activos pero dejan de aparecer en menús agrupados.
+  </div>
+
+  <table class="lineas">
+    <thead>
+      <tr>
+        <th class="col-orden">#</th>
+        <th class="col-color">Color</th>
+        <th class="col-nombre">Nombre</th>
+        <th class="col-desc">Descripción</th>
+        <th class="col-items">Items</th>
+        <th class="col-activo">Activa</th>
+        <th class="col-acc"></th>
+      </tr>
+    </thead>
+    <tbody id="tbody-lineas">
+      <tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 40px 0;">Cargando…</td></tr>
+    </tbody>
+  </table>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const STATE = { lineas: [], items: {} };
+
+function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (kind || 'ok');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 2400);
+}
+
+async function cargar() {
+  const [{ data: lineas, error: e1 }, { data: items, error: e2 }] = await Promise.all([
+    sb.from('lineas').select('*').order('orden', { ascending: true }),
+    sb.from('items').select('linea_id, tipo, estado').eq('estado', 'vigente')
+  ]);
+  if (e1) { toast('Error líneas: ' + e1.message, 'err'); return; }
+  if (e2) { toast('Error items: ' + e2.message, 'err'); return; }
+
+  STATE.lineas = lineas || [];
+  STATE.items = {};
+  for (const i of (items || [])) {
+    if (!STATE.items[i.linea_id]) STATE.items[i.linea_id] = 0;
+    STATE.items[i.linea_id]++;
+  }
+  render();
+}
+
+function render() {
+  const tbody = document.getElementById('tbody-lineas');
+  if (STATE.lineas.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 40px 0;">Sin líneas.</td></tr>';
+    return;
+  }
+  let html = '';
+  for (const l of STATE.lineas) {
+    const items = STATE.items[l.id] || 0;
+    html += '<tr data-id="' + l.id + '">';
+    html += '<td class="col-orden"><input type="number" class="edit-inline" data-field="orden" value="' + (l.orden || 0) + '" style="text-align:center; padding: 6px 4px;"></td>';
+    html += '<td class="col-color"><input type="color" class="color-swatch" data-field="color" value="' + (l.color || '#cccccc') + '" title="Cambiar color"></td>';
+    html += '<td class="col-nombre"><input type="text" class="edit-inline" data-field="nombre" value="' + escapeHTML(l.nombre || '') + '"></td>';
+    html += '<td class="col-desc"><input type="text" class="edit-inline" data-field="descripcion" value="' + escapeHTML(l.descripcion || '') + '"></td>';
+    html += '<td class="col-items"><span class="badge-items">' + items + '</span></td>';
+    html += '<td class="col-activo"><label class="switch"><input type="checkbox" data-field="activo" ' + (l.activo ? 'checked' : '') + '><span class="slider"></span></label></td>';
+    html += '<td class="col-acc"><button class="btn-icon" data-action="save">Guardar</button></td>';
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  tbody.querySelectorAll('tr[data-id]').forEach(row => {
+    const id = Number(row.dataset.id);
+    const btn = row.querySelector('[data-action="save"]');
+    btn.addEventListener('click', () => guardarLinea(id, row));
+  });
+}
+
+async function guardarLinea(id, row) {
+  const payload = {};
+  row.querySelectorAll('[data-field]').forEach(el => {
+    const field = el.dataset.field;
+    if (el.type === 'checkbox') payload[field] = el.checked;
+    else if (el.type === 'number') payload[field] = Number(el.value) || 0;
+    else if (el.type === 'color') payload[field] = el.value;
+    else payload[field] = el.value.trim() || null;
+  });
+
+  const { error } = await sb.from('lineas').update(payload).eq('id', id);
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  toast('✓ Guardado');
+  const btn = row.querySelector('[data-action="save"]');
+  btn.classList.add('saved');
+  btn.textContent = '✓ Guardado';
+  setTimeout(() => { btn.classList.remove('saved'); btn.textContent = 'Guardar'; }, 1500);
+  // Refrescar contador de items por si cambió orden
+  cargar();
+}
+
+cargar();
+</script>
+</body>
+</html>

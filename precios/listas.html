@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Listas de precios · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Info banner ---- */
+    .info-box {
+      background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+      border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+      font-size: 12.5px; color: var(--muted); line-height: 1.5;
+    }
+    .info-box b { color: var(--text); }
+
+    /* ---- KPIs ---- */
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px; margin-bottom: 14px;
+    }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+    }
+    .kpi .v { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .kpi .l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 2px; font-weight: 600; }
+    .kpi.warn .v { color: var(--warn); }
+    .kpi.ok .v { color: var(--ok); }
+    .kpi.hot .v { color: var(--hot); }
+
+    /* ---- Toolbar ---- */
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .toolbar select {
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit; min-width: 150px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+    .toolbar label {
+      display: flex; align-items: center; gap: 6px; font-size: 12.5px;
+      cursor: pointer; user-select: none; color: var(--text);
+    }
+    .toolbar label input { width: auto; margin: 0; accent-color: var(--accent); }
+
+    /* ---- Table principal ---- */
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 12.5px; }
+    .tbl th {
+      text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 10px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap;
+    }
+    .tbl th.rent-head {
+      background: color-mix(in srgb, var(--accent) 5%, var(--surface-2));
+      text-align: center; font-size: 10px;
+    }
+    .tbl td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 11.5px; }
+    .tbl tr.dirty {
+      background: color-mix(in srgb, var(--warn) 6%, transparent) !important;
+    }
+    .tbl tr.dirty-cascade {
+      background: color-mix(in srgb, var(--warn) 3%, transparent);
+    }
+    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+    .tbl tr.dirty:hover, .tbl tr.dirty-cascade:hover {
+      background: color-mix(in srgb, var(--warn) 10%, transparent) !important;
+    }
+
+    /* Vínculo badges */
+    .vinc {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      font-weight: 600; white-space: nowrap;
+    }
+    .vinc.ancla { background: var(--accent-tint); color: var(--accent); }
+    .vinc.deriv { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+    .vinc.desv { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .vinc.manual { background: var(--surface-2); color: var(--muted); }
+
+    /* Input de precio */
+    input.precio-edit {
+      width: 110px; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--surface); color: var(--text);
+      font: inherit; font-size: 13px; font-weight: 600; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    input.precio-edit:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    input.precio-edit.dirty {
+      border-color: var(--warn);
+      background: color-mix(in srgb, var(--warn) 8%, transparent);
+    }
+    input.precio-edit:disabled {
+      background: transparent; border-color: transparent;
+      color: var(--muted); font-weight: 500;
+      cursor: default;
+    }
+    .precio-computed {
+      display: inline-block; padding: 5px 8px; font-size: 13px;
+      font-variant-numeric: tabular-nums; color: var(--muted);
+    }
+
+    /* Rent pills — compactos */
+    .rent-cell { text-align: right; padding: 4px 6px !important; }
+    .rent-pill {
+      display: inline-block; padding: 2px 6px; border-radius: 10px;
+      font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+      min-width: 34px; text-align: center;
+    }
+    .rent-pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .rent-pill.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .rent-pill.hot { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .rent-pill.muted { background: var(--surface-2); color: var(--muted); }
+
+    /* FAB */
+    .fab {
+      position: sticky; bottom: 20px; margin-top: 16px;
+      display: none; justify-content: space-between; align-items: center;
+      background: var(--surface); border: 1px solid var(--accent);
+      border-radius: var(--radius); padding: 12px 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      z-index: 20;
+    }
+    .fab.show { display: flex; }
+    .fab .info { font-size: 13.5px; color: var(--text); }
+    .fab .info b { color: var(--accent); }
+    .fab .actions { display: flex; gap: 8px; }
+
+    /* Modal de configuración */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100; padding: 20px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      max-width: 780px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 22px 24px;
+    }
+    .modal-box h3 { font-size: 18px; margin-bottom: 4px; }
+    .modal-box .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+    .cfg-section { margin-bottom: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .cfg-section:first-of-type { border-top: none; padding-top: 0; }
+    .cfg-section h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .cfg-section .desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+
+    input.inline-edit {
+      width: 100px; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--surface); color: var(--text);
+      font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right;
+    }
+    input.inline-edit.wide { width: 140px; }
+    input.inline-edit.txt { text-align: left; width: 200px; font-variant-numeric: normal; }
+    input.inline-edit:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+
+    .cfg-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .cfg-tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 10px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .cfg-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .cfg-tbl tr:last-child td { border-bottom: none; }
+    .cfg-tbl td.num, .cfg-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .cfg-tbl td.mono { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+
+    .btn-icon {
+      background: none; border: 1px solid transparent; padding: 4px 8px;
+      border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--muted);
+    }
+    .btn-icon:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+    .btn-icon.hot:hover { color: var(--hot); border-color: color-mix(in srgb, var(--hot) 40%, transparent); }
+
+    .save-row {
+      display: flex; gap: 10px; align-items: center; margin-top: 10px;
+      padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .save-row .spacer { flex: 1; }
+    .save-row .status { font-size: 12px; color: var(--muted); }
+    .save-row .status.ok { color: var(--ok); }
+    .save-row .status.err { color: var(--hot); }
+
+    .lista-info {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 10px 12px; background: var(--surface-2);
+      border-radius: var(--radius-sm); margin-bottom: 8px;
+    }
+    .lista-info .icon {
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      background: var(--accent-tint); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 12px; flex-shrink: 0;
+    }
+    .lista-info h5 { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+    .lista-info .desc-lp { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .badge-tipo {
+      display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 10px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-left: 6px;
+    }
+    .badge-tipo.pub { background: var(--accent-tint); color: var(--accent); }
+    .badge-tipo.prof { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .badge-tipo.base { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 300;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="precios" data-title="Listas de precios" data-subtitle="Lista 1 completa con anclas y rentabilidades en tiempo real">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="info-box">
+    <b>Sistema de anclas:</b> los SKUs <span class="vinc ancla">⚓ Ancla</span> se editan directamente. Los <span class="vinc deriv">↳ Deriv.</span> se recalculan con factor y redondeo (grises). Al modificar un precio ancla, todas sus rentabilidades y las de sus derivados se recalculan en vivo — no editás a ciegas.
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="v" id="k-total">—</div><div class="l">SKUs L1</div></div>
+    <div class="kpi"><div class="v" id="k-anclas">—</div><div class="l">Anclas</div></div>
+    <div class="kpi"><div class="v" id="k-derivados">—</div><div class="l">Derivados</div></div>
+    <div class="kpi warn"><div class="v" id="k-cambios">—</div><div class="l">Cambios pendientes</div></div>
+    <div class="kpi"><div class="v" id="k-desvinc">—</div><div class="l">Desvinculados</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search"><input type="text" class="input" id="search" placeholder="Buscar por SKU o nombre…"></div>
+    <select id="filter-linea"><option value="">Todas las líneas</option></select>
+    <select id="filter-vinculo">
+      <option value="">Todos los vínculos</option>
+      <option value="ancla">Solo anclas</option>
+      <option value="deriv">Solo derivados</option>
+      <option value="desv">Solo desvinculados</option>
+      <option value="manual">Solo manuales</option>
+    </select>
+    <label><input type="checkbox" id="filter-cambios"> Solo con cambios</label>
+    <button class="btn secondary" id="btn-cfg" style="margin-left:auto;">⚙ Configuración</button>
+  </div>
+
+  <div id="grid"><div class="empty-box">Cargando…</div></div>
+
+  <div class="fab" id="fab">
+    <div class="info"><b id="fab-count">0</b> cambio(s) pendiente(s) — impactan cascada</div>
+    <div class="actions">
+      <button class="btn ghost" id="fab-descartar">Descartar</button>
+      <button class="btn primary" id="fab-aplicar">Aplicar todos</button>
+    </div>
+  </div>
+
+</main>
+
+<!-- Modal de configuración -->
+<div class="modal-bg" id="modal-cfg">
+  <div class="modal-box">
+    <h3>Configuración de precios</h3>
+    <div class="sub">Listas activas, escalones, objetivos de margen y parámetros globales.</div>
+
+    <div class="cfg-section">
+      <h4>Listas activas</h4>
+      <div class="desc">Las dos listas base del sistema.</div>
+      <div id="cfg-listas-info"></div>
+    </div>
+
+    <div class="cfg-section">
+      <h4>Escalones de descuento por volumen</h4>
+      <div class="desc">Se aplican sobre L2 según el monto total del pedido.</div>
+      <table class="cfg-tbl">
+        <thead><tr><th>Nombre</th><th class="num">Monto mínimo</th><th class="num">% descuento</th><th style="width:40px;"></th></tr></thead>
+        <tbody id="cfg-esc-body"></tbody>
+      </table>
+      <div class="save-row">
+        <button class="btn secondary" id="cfg-esc-nuevo" style="padding:5px 12px; font-size:12.5px;">+ Agregar</button>
+        <span class="spacer"></span>
+        <span class="status" id="cfg-esc-status"></span>
+        <button class="btn primary" id="cfg-esc-save">Guardar escalones</button>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <h4>Objetivos de margen</h4>
+      <div class="desc">Umbrales del semáforo. Verde = margen ≥ objetivo + tolerancia.</div>
+      <table class="cfg-tbl">
+        <thead><tr><th style="width:80px;">Nivel</th><th>Descripción</th><th class="num">Objetivo %</th><th class="num">Tolerancia (pts)</th><th class="num">Verde ≥</th></tr></thead>
+        <tbody id="cfg-obj-body"></tbody>
+      </table>
+      <div class="save-row">
+        <span class="spacer"></span>
+        <span class="status" id="cfg-obj-status"></span>
+        <button class="btn primary" id="cfg-obj-save">Guardar objetivos</button>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <h4>Parámetros globales</h4>
+      <div class="desc">Constantes que usa todo el sistema.</div>
+      <table class="cfg-tbl">
+        <thead><tr><th>Clave</th><th class="num">Valor</th><th>Descripción</th></tr></thead>
+        <tbody id="cfg-par-body"></tbody>
+      </table>
+      <div class="save-row">
+        <span class="spacer"></span>
+        <span class="status" id="cfg-par-status"></span>
+        <button class="btn primary" id="cfg-par-save">Guardar parámetros</button>
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+      <button class="btn ghost" id="cfg-cerrar">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Listas de precios — vista principal: Lista 1 completa con anclas editables
+// y las 5 rentabilidades (L1, L2, L2-20%, L2-30%, L2-35%) live-updating.
+// Config (escalones/objetivos/parámetros) en modal aparte.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+const fmtPct = n => n == null ? '—' : Number(n).toFixed(0) + '%';
+
+const LISTA_L1 = 1, LISTA_L2 = 2;
+const IVA = 1.21;
+
+let SKUS = [];             // datos base de v_precios_listas_completos
+let SKU_INDEX = {};        // codigo → SKU
+let RELACIONES = {};       // sku_destino → { fuente_tipo, sku_origen, factor, operacion, redondeo_arriba_a }
+let ESTADO_L1 = {};        // codigo → { desvinculado_en, precio_iva_incl }
+let ANCLAS = new Set();
+let DERIVADOS_POR_ANCLA = {};
+let LINEAS = [];
+let OBJETIVOS = {};        // nivel → { objetivo, tolerancia }
+let CAMBIOS = {};          // codigo → nuevo precio L1 c/IVA (para anclas u otros editables)
+
+// Cache modal config
+let LISTAS = [], ESCALONES = [], OBJETIVOS_ARR = [], PARAMETROS = [];
+let ESC_NUEVOS = 0;
+
+async function cargar() {
+  try {
+    const [skus, rels, precL1, lineas, objs] = await Promise.all([
+      sb.from('v_precios_listas_completos').select('codigo_sku, nombre_sku, linea, categoria, tamanio_kg, costo_unitario, rentab_objetivo_l1, l1_publicado, rentab_real_l1, rentab_objetivo_l2, l2_publicado, rentab_real_l2, l2_menos_20, l2_menos_30, l2_menos_35'),
+      sb.from('relaciones_precio').select('sku_destino, fuente_tipo, sku_origen, factor, operacion, redondeo_arriba_a'),
+      sb.from('items_lista_precio').select('codigo_vendible, precio_iva_incl, desvinculado_en').eq('lista_id', LISTA_L1),
+      sb.from('lineas').select('id, nombre, orden').order('orden'),
+      sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts'),
+    ]);
+    if (skus.error) throw skus.error;
+
+    SKUS = skus.data || [];
+    SKU_INDEX = {};
+    for (const s of SKUS) SKU_INDEX[s.codigo_sku] = s;
+
+    RELACIONES = {};
+    for (const r of (rels.data || [])) RELACIONES[r.sku_destino] = r;
+
+    // Anclas explícitas + anclas efectivas (raíces de cadenas)
+    ANCLAS = new Set();
+    for (const r of (rels.data || [])) {
+      if (r.fuente_tipo === 'ancla') ANCLAS.add(r.sku_destino);
+    }
+    for (const r of (rels.data || [])) {
+      if (r.fuente_tipo === 'sku' && r.sku_origen) {
+        ANCLAS.add(raizAncla(r.sku_origen, rels.data));
+      }
+    }
+
+    DERIVADOS_POR_ANCLA = {};
+    for (const a of ANCLAS) {
+      DERIVADOS_POR_ANCLA[a] = listarDescendientes(a, rels.data);
+    }
+
+    ESTADO_L1 = {};
+    for (const p of (precL1.data || [])) {
+      ESTADO_L1[p.codigo_vendible] = {
+        desvinculado_en: p.desvinculado_en,
+        precio_iva_incl: p.precio_iva_incl != null ? Number(p.precio_iva_incl) : null,
+      };
+    }
+
+    LINEAS = lineas.data || [];
+    OBJETIVOS = {};
+    for (const o of (objs.data || [])) {
+      OBJETIVOS[o.nivel] = { objetivo: Number(o.objetivo_pct), tolerancia: Number(o.tolerancia_pts) };
+    }
+
+    poblarFiltros();
+    renderKPIs();
+    render();
+  } catch (err) {
+    $('#grid').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function raizAncla(sku, rels) {
+  let actual = sku;
+  const visto = new Set();
+  while (!visto.has(actual)) {
+    visto.add(actual);
+    const r = rels.find(x => x.sku_destino === actual);
+    if (!r || r.fuente_tipo === 'ancla' || !r.sku_origen) return actual;
+    actual = r.sku_origen;
+  }
+  return actual;
+}
+
+function listarDescendientes(ancla, rels) {
+  const result = [];
+  const visitar = (sku) => {
+    for (const r of rels) {
+      if (r.fuente_tipo === 'sku' && r.sku_origen === sku) {
+        result.push(r.sku_destino);
+        visitar(r.sku_destino);
+      }
+    }
+  };
+  visitar(ancla);
+  return result;
+}
+
+function poblarFiltros() {
+  $('#filter-linea').innerHTML = '<option value="">Todas las líneas</option>' +
+    LINEAS.map(l => `<option value="${l.id}">${esc(l.nombre)}</option>`).join('');
+}
+
+function tipoVinculo(codigo) {
+  const rel = RELACIONES[codigo];
+  if (ANCLAS.has(codigo)) return 'ancla';
+  if (ESTADO_L1[codigo]?.desvinculado_en) return 'desv';
+  if (rel && rel.fuente_tipo === 'sku') return 'deriv';
+  return 'manual';
+}
+
+// Precio L1 c/IVA "efectivo" — considera CAMBIOS y cascada
+function precioL1Efectivo(codigo) {
+  // Si tenemos un cambio pendiente para este código, usarlo
+  if (CAMBIOS[codigo] != null) return CAMBIOS[codigo];
+
+  const rel = RELACIONES[codigo];
+  const desv = ESTADO_L1[codigo]?.desvinculado_en != null;
+
+  // Derivado y no desvinculado: recalcular desde la cadena (con CAMBIOS si el ancla se editó)
+  if (rel && rel.fuente_tipo === 'sku' && !desv) {
+    return calcularCascada(codigo);
+  }
+
+  // Ancla, manual, desvinculado, sin relación: precio guardado
+  return ESTADO_L1[codigo]?.precio_iva_incl ?? null;
+}
+
+function calcularCascada(codigo) {
+  const rel = RELACIONES[codigo];
+  if (!rel) return ESTADO_L1[codigo]?.precio_iva_incl ?? null;
+  if (rel.fuente_tipo === 'ancla') {
+    // Es un ancla: si tiene cambio pendiente, usarlo; sino, precio guardado
+    return CAMBIOS[codigo] != null ? CAMBIOS[codigo] : (ESTADO_L1[codigo]?.precio_iva_incl ?? null);
+  }
+  // Derivado: si está desvinculado, usar precio guardado
+  if (ESTADO_L1[codigo]?.desvinculado_en) {
+    return ESTADO_L1[codigo]?.precio_iva_incl ?? null;
+  }
+  // Derivado normal: calcular desde origen
+  const base = calcularCascada(rel.sku_origen);
+  if (base == null) return null;
+  const factor = parseFloat(rel.factor);
+  let res = rel.operacion === 'multiplicar' ? base * factor : base / factor;
+  const rr = parseInt(rel.redondeo_arriba_a);
+  if (rr && rr > 0) res = Math.ceil(res / rr) * rr;
+  return res;
+}
+
+// Rentabilidad sobre precio SIN IVA (fórmula corregida)
+function rent(precioConIva, costo) {
+  if (precioConIva == null || costo == null || precioConIva <= 0 || costo <= 0) return null;
+  const pSin = precioConIva / IVA;
+  return (pSin - costo) / pSin * 100;
+}
+
+function classRent(pct, nivel) {
+  if (pct == null) return 'muted';
+  const o = OBJETIVOS[nivel];
+  if (!o) return Number(pct) < 0 ? 'hot' : Number(pct) < 20 ? 'warn' : 'ok';
+  const verde = o.objetivo + o.tolerancia;
+  if (Number(pct) >= verde) return 'ok';
+  if (Number(pct) >= o.objetivo) return 'warn';
+  return 'hot';
+}
+function titleRent(pct, nivel) {
+  if (pct == null) return 'Sin dato';
+  const o = OBJETIVOS[nivel];
+  if (!o) return `Margen ${Number(pct).toFixed(1)}%`;
+  return `Margen ${Number(pct).toFixed(1)}% · Objetivo ${o.objetivo}% · Verde ≥${o.objetivo + o.tolerancia}%`;
+}
+
+function renderKPIs() {
+  const total = SKUS.length;
+  const anclas = SKUS.filter(s => ANCLAS.has(s.codigo_sku)).length;
+  const derivados = SKUS.filter(s => tipoVinculo(s.codigo_sku) === 'deriv').length;
+  const desvinc = SKUS.filter(s => tipoVinculo(s.codigo_sku) === 'desv').length;
+  const cambios = Object.keys(CAMBIOS).length;
+  $('#k-total').textContent = total;
+  $('#k-anclas').textContent = anclas;
+  $('#k-derivados').textContent = derivados;
+  $('#k-cambios').textContent = cambios;
+  $('#k-desvinc').textContent = desvinc;
+}
+
+function render() {
+  const q = $('#search').value.trim().toLowerCase();
+  const fLin = $('#filter-linea').value;
+  const fVinc = $('#filter-vinculo').value;
+  const soloCambios = $('#filter-cambios').checked;
+
+  let rows = SKUS.slice();
+  if (q) rows = rows.filter(s => ((s.codigo_sku||'') + ' ' + (s.nombre_sku||'')).toLowerCase().includes(q));
+  if (fLin) {
+    const l = LINEAS.find(x => String(x.id) === fLin);
+    if (l) rows = rows.filter(s => s.linea === l.nombre);
+  }
+  if (fVinc) rows = rows.filter(s => tipoVinculo(s.codigo_sku) === fVinc);
+  if (soloCambios) {
+    // Muestra las anclas con cambios + sus derivados que están en cascada
+    const anclasDirty = new Set(Object.keys(CAMBIOS));
+    const enCascada = new Set();
+    for (const a of anclasDirty) {
+      enCascada.add(a);
+      for (const d of (DERIVADOS_POR_ANCLA[a] || [])) enCascada.add(d);
+    }
+    rows = rows.filter(s => enCascada.has(s.codigo_sku));
+  }
+  rows.sort((a, b) => (a.codigo_sku||'').localeCompare(b.codigo_sku||''));
+
+  if (!rows.length) {
+    $('#grid').innerHTML = '<div class="empty-box">Sin resultados</div>';
+    return;
+  }
+
+  // Set de códigos que están "en cascada" (para el highlight tenue)
+  const enCascada = new Set();
+  for (const a of Object.keys(CAMBIOS)) {
+    for (const d of (DERIVADOS_POR_ANCLA[a] || [])) enCascada.add(d);
+  }
+
+  $('#grid').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th style="width:60px;">Cód.</th>
+        <th>Nombre</th>
+        <th>Línea</th>
+        <th style="width:80px;">Vínculo</th>
+        <th class="num" style="width:80px;">Costo</th>
+        <th class="num" style="width:120px;">L1 c/IVA</th>
+        <th class="num rent-head" style="width:50px;" title="Rentabilidad L1 c/IVA">L1</th>
+        <th class="num rent-head" style="width:50px;" title="Rentabilidad L2 c/IVA (= L1 × 0,70)">L2</th>
+        <th class="num rent-head" style="width:50px;" title="Rentabilidad con escalón −20% sobre L2">−20%</th>
+        <th class="num rent-head" style="width:50px;" title="Rentabilidad con escalón −30% sobre L2">−30%</th>
+        <th class="num rent-head" style="width:50px;" title="Rentabilidad con escalón −35% sobre L2">−35%</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(s => renderFila(s, enCascada)).join('')}
+      </tbody>
+    </table>
+  `;
+
+  $$('.precio-edit:not(:disabled)').forEach(inp => inp.addEventListener('input', onEditPrecio));
+  actualizarFAB();
+}
+
+function renderFila(s, enCascada) {
+  const cod = s.codigo_sku;
+  const vinculo = tipoVinculo(cod);
+  const rel = RELACIONES[cod];
+  const nombre = s.nombre_sku || '—';
+  const linea = s.linea || '—';
+  const costo = Number(s.costo_unitario) || null;
+
+  // Precio L1 c/IVA a mostrar
+  const l1 = precioL1Efectivo(cod);
+  // L2 = L1 × 0.7 redondeado al múltiplo más cercano de $100
+  const l2 = l1 != null ? Math.round((l1 * 0.70) / 100) * 100 : null;
+  // Escalones L2
+  const l2_20 = l2 != null ? l2 * 0.80 : null;
+  const l2_30 = l2 != null ? l2 * 0.70 : null;
+  const l2_35 = l2 != null ? l2 * 0.65 : null;
+
+  // Rentabilidades
+  const rL1 = rent(l1, costo);
+  const rL2 = rent(l2, costo);
+  const r20 = rent(l2_20, costo);
+  const r30 = rent(l2_30, costo);
+  const r35 = rent(l2_35, costo);
+
+  const dirty = CAMBIOS[cod] != null;
+  const cascada = !dirty && enCascada.has(cod);
+  const cls = dirty ? 'dirty' : (cascada ? 'dirty-cascade' : '');
+
+  // Vínculo badge
+  let vincHtml = '';
+  if (vinculo === 'ancla') vincHtml = '<span class="vinc ancla">⚓ Ancla</span>';
+  else if (vinculo === 'deriv') {
+    const op = rel?.operacion === 'multiplicar' ? '×' : '÷';
+    const factor = parseFloat(rel?.factor || 1);
+    const factorStr = factor === 1 ? '=' : `${op}${factor}`;
+    vincHtml = `<span class="vinc deriv" title="${esc(rel?.sku_origen)} ${factorStr}">↳ ${esc(rel?.sku_origen)}</span>`;
+  }
+  else if (vinculo === 'desv') vincHtml = '<span class="vinc desv" title="Precio manual (no se actualiza al propagar el ancla)">✂ Desvinc.</span>';
+  else vincHtml = '<span class="vinc manual">—</span>';
+
+  // Input de precio: editable solo para ancla, desvinculado, o manual
+  const editable = vinculo !== 'deriv';
+  const valorInput = dirty ? CAMBIOS[cod] : (l1 != null ? Math.round(l1) : '');
+  let precioCell;
+  if (editable) {
+    precioCell = `<input type="number" class="precio-edit${dirty ? ' dirty' : ''}" step="100" min="0"
+                        data-sku="${esc(cod)}" data-vinc="${vinculo}" value="${valorInput}" placeholder="—">`;
+  } else {
+    precioCell = `<span class="precio-computed">${fmtARS(l1)}</span>`;
+  }
+
+  return `
+    <tr class="${cls}" data-sku="${esc(cod)}">
+      <td class="codigo">${esc(cod)}</td>
+      <td>${esc(nombre)}</td>
+      <td style="color:var(--muted); font-size:11.5px;">${esc(linea)}</td>
+      <td>${vincHtml}</td>
+      <td class="num" style="color:var(--muted);">${fmtARS(costo)}</td>
+      <td class="num">${precioCell}</td>
+      <td class="rent-cell"><span class="rent-pill ${classRent(rL1,'L1')}" title="${titleRent(rL1,'L1')}">${fmtPct(rL1)}</span></td>
+      <td class="rent-cell"><span class="rent-pill ${classRent(rL2,'L2')}" title="${titleRent(rL2,'L2')}">${fmtPct(rL2)}</span></td>
+      <td class="rent-cell"><span class="rent-pill ${classRent(r20,'L2_20')}" title="${titleRent(r20,'L2_20')}">${fmtPct(r20)}</span></td>
+      <td class="rent-cell"><span class="rent-pill ${classRent(r30,'L2_30')}" title="${titleRent(r30,'L2_30')}">${fmtPct(r30)}</span></td>
+      <td class="rent-cell"><span class="rent-pill ${classRent(r35,'L2_35')}" title="${titleRent(r35,'L2_35')}">${fmtPct(r35)}</span></td>
+    </tr>
+  `;
+}
+
+function onEditPrecio(e) {
+  const cod = e.target.dataset.sku;
+  const v = e.target.value.trim();
+  const valorNuevo = v === '' ? null : Number(v);
+  const actual = ESTADO_L1[cod]?.precio_iva_incl;
+
+  if (valorNuevo == null || valorNuevo === actual) {
+    delete CAMBIOS[cod];
+  } else {
+    CAMBIOS[cod] = valorNuevo;
+  }
+
+  // Re-render solo del cuerpo (rápido y refresca cascada)
+  render();
+  renderKPIs();
+  // Mantener foco en el input
+  const nuevoInput = document.querySelector(`.precio-edit[data-sku="${cod}"]`);
+  if (nuevoInput) { nuevoInput.focus(); nuevoInput.select(); }
+}
+
+function actualizarFAB() {
+  const n = Object.keys(CAMBIOS).length;
+  $('#fab-count').textContent = n;
+  $('#fab').classList.toggle('show', n > 0);
+}
+
+async function aplicarCambio(cod) {
+  const precio = CAMBIOS[cod];
+  const vinc = tipoVinculo(cod);
+
+  if (vinc === 'ancla') {
+    const { data, error } = await sb.rpc('propagar_precio_ancla', {
+      p_sku_ancla: cod, p_precio_iva_incl: precio, p_lista_id: LISTA_L1,
+    });
+    if (error) throw error;
+    // Actualizar cache local
+    ESTADO_L1[cod] = { ...(ESTADO_L1[cod] || {}), precio_iva_incl: precio };
+    const actualizados = (data || []).filter(r => r.estado === 'derivado_actualizado');
+    for (const r of actualizados) {
+      ESTADO_L1[r.sku_actualizado] = { ...(ESTADO_L1[r.sku_actualizado] || {}), precio_iva_incl: Number(r.precio_l1) };
+    }
+  } else {
+    // Manual, desvinculado, o sin relación: upsert directo
+    const precioSinIva = Math.round((precio / IVA) * 100) / 100;
+    const { error } = await sb.from('items_lista_precio').upsert({
+      lista_id: LISTA_L1, codigo_vendible: cod,
+      precio_iva_incl: precio, precio_iva_excl: precioSinIva, precio_publicado: precio,
+    }, { onConflict: 'lista_id,codigo_vendible' });
+    if (error) throw error;
+    ESTADO_L1[cod] = { ...(ESTADO_L1[cod] || {}), precio_iva_incl: precio };
+  }
+  delete CAMBIOS[cod];
+}
+
+$('#fab-aplicar').addEventListener('click', async () => {
+  const codigos = Object.keys(CAMBIOS);
+  if (!codigos.length) return;
+  if (!confirm(`Aplicar ${codigos.length} cambio(s)? Las anclas propagan a sus derivados.`)) return;
+  const btn = $('#fab-aplicar'); btn.disabled = true; btn.textContent = 'Aplicando…';
+  let ok = 0, err = 0;
+  for (const cod of codigos) {
+    try { await aplicarCambio(cod); ok++; } catch (e) { err++; console.error(cod, e); }
+  }
+  btn.disabled = false; btn.textContent = 'Aplicar todos';
+  toast(err > 0 ? `✓ ${ok} OK · ${err} con error` : `✓ ${ok} cambio(s) aplicado(s)`, err > 0 ? 'err' : 'ok');
+  render(); renderKPIs();
+});
+
+$('#fab-descartar').addEventListener('click', () => {
+  if (!Object.keys(CAMBIOS).length) return;
+  if (!confirm('Descartar todos los cambios pendientes?')) return;
+  CAMBIOS = {};
+  render(); renderKPIs();
+  toast('Cambios descartados', 'ok');
+});
+
+$('#search').addEventListener('input', render);
+$('#filter-linea').addEventListener('change', render);
+$('#filter-vinculo').addEventListener('change', render);
+$('#filter-cambios').addEventListener('change', render);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Modal de configuración
+// ═══════════════════════════════════════════════════════════════════════════
+async function abrirCfg() {
+  $('#modal-cfg').classList.add('show');
+  await cargarCfg();
+}
+function cerrarCfg() { $('#modal-cfg').classList.remove('show'); }
+$('#btn-cfg').addEventListener('click', abrirCfg);
+$('#cfg-cerrar').addEventListener('click', cerrarCfg);
+$('#modal-cfg').addEventListener('click', e => { if (e.target.id === 'modal-cfg') cerrarCfg(); });
+
+async function cargarCfg() {
+  const [ls, es, obs, ps] = await Promise.all([
+    sb.from('listas_precios').select('*').eq('estado', 'vigente').order('id'),
+    sb.from('escalones_descuento').select('*').eq('estado', 'vigente').order('monto_minimo_ars'),
+    sb.from('objetivos_margen').select('*').order('orden'),
+    sb.from('parametros').select('*').order('clave'),
+  ]);
+  LISTAS = ls.data || [];
+  ESCALONES = es.data || [];
+  OBJETIVOS_ARR = obs.data || [];
+  PARAMETROS = ps.data || [];
+  renderCfgListas(); renderCfgEsc(); renderCfgObj(); renderCfgPar();
+}
+
+function renderCfgListas() {
+  $('#cfg-listas-info').innerHTML = LISTAS.map(l => {
+    const tipoBadge = l.tipo_lista === 'publico' ? '<span class="badge-tipo pub">Público</span>' : '<span class="badge-tipo prof">Profesional</span>';
+    const baseBadge = l.es_base_descuentos ? '<span class="badge-tipo base">Base descuentos</span>' : '';
+    return `
+      <div class="lista-info">
+        <div class="icon">L${l.id}</div>
+        <div style="flex:1;">
+          <h5>${esc(l.nombre)} ${tipoBadge}${baseBadge}</h5>
+          <div class="desc-lp">${esc(l.descripcion || '—')}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderCfgEsc() {
+  $('#cfg-esc-body').innerHTML = ESCALONES.map(e => `
+    <tr data-esc="${e.id ?? 'new_' + e._newId}">
+      <td><input type="text" class="inline-edit txt esc-nombre" value="${esc(e.nombre || '')}" placeholder="Ej: Escalón 1"></td>
+      <td class="num"><input type="number" class="inline-edit wide esc-monto" step="1000" min="0" value="${e.monto_minimo_ars ?? 0}"></td>
+      <td class="num"><input type="number" class="inline-edit esc-pct" step="0.5" min="0" max="100" value="${e.descuento_pct ?? 0}"></td>
+      <td><button class="btn-icon hot" title="Eliminar" onclick="eliminarEscalon('${e.id ?? 'new_' + e._newId}')">×</button></td>
+    </tr>
+  `).join('');
+}
+$('#cfg-esc-nuevo').addEventListener('click', () => {
+  ESC_NUEVOS++;
+  ESCALONES.push({ id: null, _newId: ESC_NUEVOS, nombre: `Escalón ${ESCALONES.length + 1}`, monto_minimo_ars: 0, descuento_pct: 0, estado: 'vigente' });
+  renderCfgEsc();
+});
+window.eliminarEscalon = function(key) {
+  const k = String(key);
+  ESCALONES = ESCALONES.filter(e => {
+    if (e.id != null) return String(e.id) !== k;
+    return String('new_' + e._newId) !== k;
+  });
+  renderCfgEsc();
+};
+
+async function guardarEscalones() {
+  const btn = $('#cfg-esc-save'); btn.disabled = true;
+  const st = $('#cfg-esc-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    const rows = $$('#cfg-esc-body tr');
+    const list = [];
+    for (const tr of rows) {
+      const nombre = tr.querySelector('.esc-nombre').value.trim();
+      const monto = parseFloat(tr.querySelector('.esc-monto').value) || 0;
+      const pct = parseFloat(tr.querySelector('.esc-pct').value) || 0;
+      const key = tr.dataset.esc;
+      if (!nombre) { st.textContent = '✗ Nombre requerido'; st.className = 'status err'; btn.disabled = false; return; }
+      list.push({ key, nombre, monto, pct });
+    }
+    for (const r of list.filter(x => !x.key.startsWith('new_'))) {
+      const { error } = await sb.from('escalones_descuento').update({
+        nombre: r.nombre, monto_minimo_ars: r.monto, descuento_pct: r.pct, actualizado_en: new Date().toISOString(),
+      }).eq('id', parseInt(r.key, 10));
+      if (error) throw error;
+    }
+    const nuevos = list.filter(r => r.key.startsWith('new_')).map(r => ({ nombre: r.nombre, monto_minimo_ars: r.monto, descuento_pct: r.pct, estado: 'vigente' }));
+    if (nuevos.length) { const { error } = await sb.from('escalones_descuento').insert(nuevos); if (error) throw error; }
+    const idsActuales = new Set(list.filter(r => !r.key.startsWith('new_')).map(r => parseInt(r.key, 10)));
+    const originales = await sb.from('escalones_descuento').select('id').eq('estado', 'vigente');
+    for (const o of (originales.data || [])) {
+      if (!idsActuales.has(o.id)) {
+        await sb.from('escalones_descuento').update({ estado: 'descontinuado', actualizado_en: new Date().toISOString() }).eq('id', o.id);
+      }
+    }
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Escalones actualizados', 'ok');
+    await cargarCfg();
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+$('#cfg-esc-save').addEventListener('click', guardarEscalones);
+
+function renderCfgObj() {
+  $('#cfg-obj-body').innerHTML = OBJETIVOS_ARR.map(o => {
+    const verde = Number(o.objetivo_pct) + Number(o.tolerancia_pts);
+    return `
+      <tr data-nivel="${esc(o.nivel)}">
+        <td style="font-family:var(--font-mono); color:var(--accent); font-size:12px; font-weight:600;">${esc(o.nivel)}</td>
+        <td style="color:var(--muted);">${esc(o.descripcion || '—')}</td>
+        <td class="num"><input type="number" class="inline-edit obj-objetivo" step="1" min="0" max="100" value="${o.objetivo_pct}"></td>
+        <td class="num"><input type="number" class="inline-edit obj-tolerancia" step="1" min="0" max="20" value="${o.tolerancia_pts}"></td>
+        <td class="num obj-verde" style="color:var(--ok); font-weight:600;">${verde.toFixed(0)}%</td>
+      </tr>
+    `;
+  }).join('');
+  $$('#cfg-obj-body input').forEach(inp => inp.addEventListener('input', e => {
+    const tr = e.target.closest('tr');
+    const obj = parseFloat(tr.querySelector('.obj-objetivo').value) || 0;
+    const tol = parseFloat(tr.querySelector('.obj-tolerancia').value) || 0;
+    tr.querySelector('.obj-verde').textContent = (obj + tol).toFixed(0) + '%';
+  }));
+}
+
+async function guardarObjetivos() {
+  const btn = $('#cfg-obj-save'); btn.disabled = true;
+  const st = $('#cfg-obj-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    for (const tr of $$('#cfg-obj-body tr')) {
+      const nivel = tr.dataset.nivel;
+      const objetivo = parseFloat(tr.querySelector('.obj-objetivo').value) || 0;
+      const tolerancia = parseFloat(tr.querySelector('.obj-tolerancia').value) || 0;
+      const { error } = await sb.from('objetivos_margen').update({
+        objetivo_pct: objetivo, tolerancia_pts: tolerancia, actualizado_en: new Date().toISOString(),
+      }).eq('nivel', nivel);
+      if (error) throw error;
+    }
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Objetivos actualizados', 'ok');
+    await cargarCfg();
+    // Recargar objetivos en la vista principal
+    const { data } = await sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts');
+    OBJETIVOS = {};
+    for (const o of (data || [])) OBJETIVOS[o.nivel] = { objetivo: Number(o.objetivo_pct), tolerancia: Number(o.tolerancia_pts) };
+    render();
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+$('#cfg-obj-save').addEventListener('click', guardarObjetivos);
+
+function renderCfgPar() {
+  const visibles = PARAMETROS.filter(p => p.clave !== 'pin_edicion');
+  let html = visibles.map(p => `
+    <tr data-clave="${esc(p.clave)}">
+      <td class="mono">${esc(p.clave)}</td>
+      <td class="num"><input type="text" class="inline-edit par-valor" value="${esc(p.valor ?? '')}"></td>
+      <td style="color:var(--muted); font-size:12px;">${esc(p.descripcion || '—')}</td>
+    </tr>
+  `).join('');
+  if (PARAMETROS.some(p => p.clave === 'pin_edicion')) {
+    html += `
+      <tr>
+        <td class="mono" style="color:var(--muted);">pin_edicion</td>
+        <td class="num" style="color:var(--muted); font-style:italic;">••••</td>
+        <td style="color:var(--muted); font-size:12px;">PIN protegido — no editable acá.</td>
+      </tr>
+    `;
+  }
+  $('#cfg-par-body').innerHTML = html;
+}
+
+async function guardarParametros() {
+  const btn = $('#cfg-par-save'); btn.disabled = true;
+  const st = $('#cfg-par-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    for (const tr of $$('#cfg-par-body tr[data-clave]')) {
+      const clave = tr.dataset.clave;
+      const valor = tr.querySelector('.par-valor').value.trim();
+      const { error } = await sb.from('parametros').update({ valor, actualizado_en: new Date().toISOString() }).eq('clave', clave);
+      if (error) throw error;
+    }
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Parámetros actualizados', 'ok');
+    await cargarCfg();
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+$('#cfg-par-save').addEventListener('click', guardarParametros);
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+cargar();
+</script>
+</body>
+</html>

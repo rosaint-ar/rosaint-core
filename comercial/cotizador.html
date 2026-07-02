@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cotizador · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Estilos propios del cotizador (usan tokens del shell) ---- */
+
+    .page-status {
+      display: flex; gap: 14px; align-items: center;
+      margin-bottom: 20px; font-size: 12.5px; color: var(--muted);
+    }
+    .page-status .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      display: inline-block; margin-right: 6px; vertical-align: middle;
+    }
+    .page-status .dot.on   { background: var(--ok); }
+    .page-status .dot.off  { background: var(--hot); }
+    .page-status .dot.load { background: var(--warn); }
+
+    .controls { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .toggle-group {
+      display: flex; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); overflow: hidden;
+    }
+    .toggle-group button {
+      background: var(--surface); color: var(--muted);
+      padding: 8px 16px; transition: background .12s, color .12s;
+      font-weight: 500;
+    }
+    .toggle-group button.active {
+      background: var(--accent); color: var(--on-accent); font-weight: 600;
+    }
+
+    .search-wrap { position: relative; flex: 1; min-width: 280px; }
+    .search-wrap input { width: 100%; }
+    .suggestions {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+      background: var(--surface); border: 1px solid var(--border); border-top: none;
+      border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+      max-height: 320px; overflow-y: auto; display: none;
+      box-shadow: var(--shadow-menu);
+    }
+    .suggestions.open { display: block; }
+    .suggestions .item {
+      padding: 8px 12px; cursor: pointer; display: flex;
+      justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .suggestions .item:hover, .suggestions .item.hl { background: var(--accent-tint); }
+    .suggestions .item.agregado { background: color-mix(in srgb, var(--ok) 8%, transparent); }
+    .suggestions .item.agregado .nom { color: var(--muted); }
+    .suggestions .item.agregado .pr-remove { display: none; color: var(--hot); }
+    .suggestions .item.agregado:hover { background: color-mix(in srgb, var(--hot) 10%, transparent); }
+    .suggestions .item.agregado:hover .pr-check { display: none; }
+    .suggestions .item.agregado:hover .pr-remove { display: inline; }
+    .suggestions .item.agregado:hover .nom { color: var(--hot); }
+    .suggestions .item .nom { flex: 1; color: var(--text); }
+    .suggestions .item .linea { font-size: 11px; color: var(--muted); }
+    .suggestions .item .pr { color: var(--accent); font-weight: 600; white-space: nowrap; }
+    .suggestions .item .pack-tag {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      color: var(--structure); background: color-mix(in srgb, var(--structure) 12%, transparent);
+      padding: 1px 6px; border-radius: 10px; margin-right: 6px; vertical-align: middle;
+    }
+    .suggestions .empty { padding: 12px; color: var(--muted); text-align: center; }
+
+    /* Tabla del pedido */
+    .pedido table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .pedido th {
+      padding: 10px 12px; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted); font-weight: 600;
+      border-bottom: 1px solid var(--border); background: var(--surface-2);
+      text-align: left;
+    }
+    .pedido th.num, .pedido td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pedido td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .pedido td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .pack-inline {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      color: var(--structure); background: color-mix(in srgb, var(--structure) 12%, transparent);
+      padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle;
+    }
+    input.qty {
+      width: 64px; padding: 5px 6px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--surface); color: var(--text);
+      text-align: center; font: inherit;
+    }
+    input.qty:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .btn-del {
+      color: var(--hot); font-size: 16px; padding: 2px 6px;
+      border-radius: 4px; line-height: 1;
+    }
+    .btn-del:hover { background: color-mix(in srgb, var(--hot) 12%, transparent); }
+    .empty-row td { text-align: center; color: var(--muted); padding: 28px; }
+    tr.totals td {
+      border-top: 2px solid var(--border); background: var(--surface-2);
+      font-weight: 500; padding: 10px 12px;
+    }
+    tr.subtot td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+
+    /* Escalón / progreso */
+    .escalon-box {
+      margin-top: 14px; border-radius: var(--radius-sm);
+      padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+      font-size: 13px;
+    }
+    .escalon-box.activo {
+      background: color-mix(in srgb, var(--ok) 13%, transparent);
+      color: var(--ok);
+      border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+    }
+    .escalon-box.proximo {
+      background: color-mix(in srgb, var(--warn) 13%, transparent);
+      color: var(--warn);
+      border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+    }
+    .escalon-box.base { background: var(--surface-2); color: var(--muted); }
+    .escalon-box .big { font-size: 16px; font-weight: 600; }
+    .progress {
+      flex: 1; height: 7px; max-width: 220px;
+      background: color-mix(in srgb, var(--warn) 25%, transparent);
+      border-radius: 4px; overflow: hidden;
+    }
+    .progress .bar { height: 100%; background: var(--warn); transition: width .25s; }
+    .escalon-box.activo .progress { background: color-mix(in srgb, var(--ok) 25%, transparent); }
+    .escalon-box.activo .progress .bar { background: var(--ok); }
+
+    /* Envío */
+    select.envio {
+      padding: 9px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface);
+      color: var(--text); min-width: 320px; font: inherit;
+    }
+    select.envio:focus { outline: none; border-color: var(--accent); }
+    .costo-wrap {
+      display: flex; align-items: center; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); padding-left: 10px;
+    }
+    .costo-wrap:focus-within {
+      border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .costo-wrap .peso { color: var(--muted); font-size: 14px; }
+    .costo-input {
+      width: 120px; padding: 9px 12px 9px 4px; border: none;
+      background: transparent; font: inherit; color: var(--text);
+    }
+    .costo-input:focus { outline: none; }
+    .costo-input:disabled { color: var(--muted); opacity: 0.5; }
+    .costo-input.editado { color: var(--warn); font-weight: 500; }
+
+    /* Total */
+    .grand-total {
+      display: flex; justify-content: flex-end; align-items: baseline;
+      gap: 14px; padding: 16px 4px 8px;
+      font-size: 12px; color: var(--muted); font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .grand-total .amount {
+      font-size: 30px; font-weight: 700; color: var(--text);
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+      text-transform: none;
+    }
+
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg);
+      padding: 12px 22px; border-radius: var(--radius-sm);
+      font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body data-page="cotizador" data-title="Cotizador" data-subtitle="Armado de pedidos B2B">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="page-status">
+    <span id="conn"><span class="dot load"></span>Conectando…</span>
+    <span id="count"></span>
+  </div>
+
+  <!-- Controles -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Modo</span>
+        <div class="toggle-group" id="modoToggle">
+          <button data-modo="cotizacion" class="active">Cotización</button>
+          <button data-modo="precios">Precios</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Lista de precios</span>
+        <div class="toggle-group" id="listaToggle">
+          <button data-lista="l2" class="active">Profesional (L2)</button>
+          <button data-lista="l1">Público (L1)</button>
+        </div>
+      </div>
+      <div class="field search-wrap">
+        <span class="label">Agregar producto</span>
+        <input type="text" id="search" class="input" placeholder="Buscá por nombre… ej: crema reductora, gel neutro, aceite lavanda" autocomplete="off">
+        <div class="suggestions" id="suggestions"></div>
+      </div>
+    </div>
+    <div class="hint" id="listaHint">Los descuentos por volumen se aplican solo sobre la lista Profesional (L2).</div>
+  </div>
+
+  <!-- Pedido / Lista -->
+  <div class="card pedido" style="margin-bottom:16px;">
+    <div id="pedidoTitle" style="font-size:15px; font-weight:600; margin-bottom:12px;">Pedido</div>
+    <table>
+      <thead id="pedidoThead"></thead>
+      <tbody id="pedidoBody"></tbody>
+    </table>
+    <div id="escalonBox" class="escalon-box base" style="display:none"></div>
+  </div>
+
+  <!-- Envío + total (solo en modo Cotización) -->
+  <div class="card" id="envioCard">
+    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px">
+      <div class="field">
+        <span class="label">Envío (opcional)</span>
+        <select class="envio" id="envioSelect">
+          <option value="">Sin envío / retira en local</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="label">Costo de envío</span>
+        <div class="costo-wrap">
+          <span class="peso">$</span>
+          <input type="number" id="envioCosto" class="costo-input" min="0" step="100" value="0" disabled>
+        </div>
+        <span class="hint" id="envioHint">Elegí un envío para editar su costo</span>
+      </div>
+    </div>
+
+    <div class="grand-total">
+      <span>Total</span>
+      <span class="amount" id="grandTotal">$0</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="btnCopy">Copiar para WhatsApp</button>
+      <button class="btn secondary" id="btnCopyDetalle">Copiar con detalle</button>
+      <button class="btn ghost" id="btnClear" style="color:var(--hot);">Vaciar pedido</button>
+    </div>
+  </div>
+
+  <!-- Botones del modo Precios -->
+  <div class="card" id="preciosCard" style="display:none;">
+    <div class="actions">
+      <button class="btn primary" id="btnCopyPrecios">Copiar lista de precios</button>
+      <button class="btn ghost" id="btnClearPrecios" style="color:var(--hot);">Vaciar lista</button>
+    </div>
+    <div class="hint">Se copia una línea por producto con formato <span class="mono" style="color:var(--text);">Nombre • $precio</span>. Sin totales ni descuentos.</div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Cotizador — dos modos de uso:
+//   · Cotización: pedido con cantidades, descuentos, envío y total.
+//   · Precios: lista simple "Nombre • $precio" para pasar consultas.
+// Packs x4 aparecen solo en Profesional (L2), con precio = precio SKU × 4.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Estado ───
+let CATALOGO = [];
+let ESCALONES = [];
+let ENVIOS = [];
+let pedido = [];
+let listaActiva = 'l2';        // 'l1' | 'l2'
+let modoUso = 'cotizacion';    // 'cotizacion' | 'precios'
+let envioCosto = 0;
+let envioIdx = -1;
+let envioNombre = '';
+
+const $ = s => document.querySelector(s);
+const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
+
+// ─── Carga inicial ───
+async function init() {
+  try {
+    const [precios, escalones, packsRes, packCompsRes] = await Promise.all([
+      sb.from('v_precios_listas_completos')
+        .select('codigo_sku,nombre_sku,linea,l1_publicado,l2_publicado'),
+      sb.from('escalones_descuento')
+        .select('monto_minimo_ars,descuento_pct')
+        .eq('estado','vigente')
+        .order('monto_minimo_ars', { ascending: true }),
+      sb.from('items')
+        .select('codigo, nombre')
+        .eq('tipo', 'PACK')
+        .eq('estado', 'vigente'),
+      sb.from('pack_componentes')
+        .select('codigo_pack, codigo_sku, cantidad'),
+    ]);
+
+    if (precios.error) throw precios.error;
+    if (escalones.error) throw escalones.error;
+
+    // ── Catálogo de SKUs individuales ──
+    const catalogoSkus = (precios.data || [])
+      .filter(r => r.l2_publicado != null || r.l1_publicado != null)
+      .map(r => ({
+        codigo: r.codigo_sku,
+        nombre: r.nombre_sku,
+        linea: r.linea || '',
+        l1: r.l1_publicado != null ? Number(r.l1_publicado) : null,
+        l2: r.l2_publicado != null ? Number(r.l2_publicado) : null,
+        esPack: false,
+      }));
+
+    // Índice de SKUs por código para calcular precios de packs
+    const skusPorCodigo = {};
+    catalogoSkus.forEach(s => { skusPorCodigo[s.codigo] = s; });
+
+    // ── Componentes de cada pack ──
+    const compsPorPack = {};
+    (packCompsRes.data || []).forEach(c => {
+      compsPorPack[c.codigo_pack] = { codigo_sku: c.codigo_sku, cantidad: Number(c.cantidad) };
+    });
+
+    // ── Packs (solo aparecen en L2; L1 queda null) ──
+    // Precio L2 del pack = precio L2 del SKU base × cantidad (típicamente 4).
+    // Si en algún momento el pack tiene descuento propio, agarrarlo de una tabla dedicada.
+    const catalogoPacks = (packsRes.data || [])
+      .map(p => {
+        const comp = compsPorPack[p.codigo];
+        if (!comp) return null;
+        const sku = skusPorCodigo[comp.codigo_sku];
+        if (!sku || sku.l2 == null) return null;
+        return {
+          codigo: p.codigo,
+          nombre: p.nombre,
+          linea: sku.linea,
+          l1: null,
+          l2: sku.l2 * comp.cantidad,
+          esPack: true,
+        };
+      })
+      .filter(Boolean);
+
+    // Orden por código de SKU: agrupa presentaciones del mismo producto
+    // (mismo prefijo → juntas) y empuja los packs (prefijos 41-43) al final.
+    CATALOGO = [...catalogoSkus, ...catalogoPacks]
+      .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es'));
+
+    ESCALONES = (escalones.data || []).map(e => ({
+      min: Number(e.monto_minimo_ars), pct: Number(e.descuento_pct),
+    }));
+
+    // Tarifas de envío (hardcode — no están en BD todavía)
+    ENVIOS = [
+      { nombre: 'Envío a domicilio · Rosario', costo: 4000 },
+      { nombre: 'Envío a domicilio · Zona 1', costo: 5000 },
+      { nombre: 'Envío a domicilio · Zona 2', costo: 5000 },
+      { nombre: 'Envío a domicilio · Zona 3', costo: 3500 },
+      { nombre: 'Sucursal/punto de entrega · Correo Argentino', costo: 5500 },
+      { nombre: 'Domicilio · Correo Argentino', costo: 9000 },
+      { nombre: 'Sucursal/punto de entrega · Andreani', costo: 5000 },
+      { nombre: 'Domicilio · Andreani', costo: 10000 },
+      { nombre: 'Punto de entrega · HOP', costo: 17500 },
+    ];
+    const sel = $('#envioSelect');
+    ENVIOS.forEach((e, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = `${e.nombre} · ref. ${fmt(e.costo)}`;
+      sel.appendChild(o);
+    });
+
+    const nSku = catalogoSkus.length, nPack = catalogoPacks.length;
+    $('#conn').innerHTML = '<span class="dot on"></span>Conectado';
+    $('#count').textContent = `${nSku} productos + ${nPack} packs`;
+
+    render();
+  } catch (err) {
+    $('#conn').innerHTML = '<span class="dot off"></span>Sin conexión';
+    toast('Error al cargar precios. Revisá la conexión.');
+    console.error(err);
+  }
+}
+
+// ─── Precio según lista activa ───
+function precioUnit(item) {
+  return listaActiva === 'l1' ? item.l1 : item.l2;
+}
+
+// ─── Buscador ───
+const searchEl = $('#search');
+const sugEl = $('#suggestions');
+let hlIndex = -1;
+let filtrados = [];
+
+searchEl.addEventListener('input', renderSugerencias);
+searchEl.addEventListener('focus', renderSugerencias);
+searchEl.addEventListener('keydown', e => {
+  if (!sugEl.classList.contains('open')) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); hlIndex = Math.min(hlIndex+1, filtrados.length-1); paintHl(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); hlIndex = Math.max(hlIndex-1, 0); paintHl(); }
+  else if (e.key === 'Enter' && hlIndex >= 0) { e.preventDefault(); agregar(filtrados[hlIndex]); }
+  else if (e.key === 'Escape') { cerrarSug(); }
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) cerrarSug();
+});
+
+function renderSugerencias() {
+  const q = searchEl.value.trim().toLowerCase();
+  const disponibles = CATALOGO.filter(it => precioUnit(it) != null);
+  filtrados = q
+    ? disponibles.filter(it =>
+        it.nombre.toLowerCase().includes(q) || it.codigo.includes(q))
+        .slice(0, 40)
+    : disponibles.slice(0, 40);
+  hlIndex = filtrados.length ? 0 : -1;
+
+  if (!filtrados.length) {
+    sugEl.innerHTML = '<div class="empty">Sin resultados</div>';
+    sugEl.classList.add('open'); return;
+  }
+  sugEl.innerHTML = filtrados.map((it, i) => {
+    const yaAgregado = modoUso === 'precios' && pedido.some(p => p.codigo === it.codigo);
+    const tip = yaAgregado ? ' title="Clic para quitar de la lista"' : '';
+    const marca = yaAgregado
+      ? '<span class="pr-check" style="color:var(--ok);">✓ </span><span class="pr-remove">× </span>'
+      : '';
+    return `<div class="item ${i===hlIndex?'hl':''} ${yaAgregado?'agregado':''}" data-i="${i}"${tip}>
+      <span class="nom">${it.esPack ? '<span class="pack-tag">PACK</span>' : ''}${escapeHtml(it.nombre)}<div class="linea">${escapeHtml(it.linea)}</div></span>
+      <span class="pr">${marca}${fmt(precioUnit(it))}</span>
+    </div>`;
+  }).join('');
+  sugEl.querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      // Cortamos la propagación: el listener global de "clic afuera" (que cierra
+      // el dropdown) usa el target del click. Si dejamos burbujear, cuando
+      // renderSugerencias() reconstruye el HTML, el elemento clickeado queda
+      // desconectado del DOM, closest() devuelve null y el dropdown se cierra
+      // aunque el clic haya sido "adentro".
+      e.stopPropagation();
+      agregar(filtrados[+el.dataset.i]);
+    });
+  });
+  sugEl.classList.add('open');
+}
+function paintHl() {
+  sugEl.querySelectorAll('.item').forEach((el, i) => el.classList.toggle('hl', i===hlIndex));
+  const cur = sugEl.querySelector('.item.hl');
+  if (cur) cur.scrollIntoView({ block: 'nearest' });
+}
+function cerrarSug() { sugEl.classList.remove('open'); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ─── Pedido ───
+function agregar(item) {
+  const ex = pedido.find(p => p.codigo === item.codigo);
+
+  if (modoUso === 'precios') {
+    // Toggle: si ya está en la lista, clickear de nuevo lo quita.
+    // Así se pueden corregir errores desde el mismo buscador.
+    if (ex) {
+      pedido = pedido.filter(p => p.codigo !== item.codigo);
+    } else {
+      pedido.push({ codigo: item.codigo, nombre: item.nombre, linea: item.linea, l1: item.l1, l2: item.l2, esPack: item.esPack, cant: 1 });
+    }
+    render();
+    renderSugerencias();
+    searchEl.focus();
+    return;
+  }
+
+  // Modo Cotización: si ya está, aumenta cantidad
+  if (ex) ex.cant += 1;
+  else pedido.push({ codigo: item.codigo, nombre: item.nombre, linea: item.linea, l1: item.l1, l2: item.l2, esPack: item.esPack, cant: 1 });
+  searchEl.value = '';
+  cerrarSug();
+  searchEl.focus();
+  render();
+}
+function quitar(codigo) { pedido = pedido.filter(p => p.codigo !== codigo); render(); }
+function setCant(codigo, v) {
+  const p = pedido.find(x => x.codigo === codigo);
+  if (!p) return;
+  p.cant = Math.max(1, parseInt(v) || 1);
+  render();
+}
+
+// ─── Descuento por escalón (solo L2, solo modo Cotización) ───
+function calcDescuento(subtotal) {
+  if (listaActiva !== 'l2') return { pct: 0, prox: null };
+  let pct = 0, idx = -1;
+  ESCALONES.forEach((e, i) => { if (subtotal >= e.min) { pct = e.pct; idx = i; } });
+  const prox = ESCALONES[idx+1] || null;
+  return { pct, prox };
+}
+
+// ─── Render principal (bifurca por modo) ───
+function render() {
+  const isPrecios = modoUso === 'precios';
+
+  // Mostrar/ocultar cards según modo
+  $('#envioCard').style.display = isPrecios ? 'none' : '';
+  $('#preciosCard').style.display = isPrecios ? '' : 'none';
+  $('#escalonBox').style.display = 'none';
+  $('#pedidoTitle').textContent = isPrecios ? 'Lista de productos' : 'Pedido';
+
+  // Header de tabla según modo
+  const thead = $('#pedidoThead');
+  if (isPrecios) {
+    thead.innerHTML = `<tr>
+      <th style="width:70px">Cód.</th>
+      <th>Producto</th>
+      <th class="num" style="width:140px">Precio</th>
+      <th style="width:40px"></th>
+    </tr>`;
+  } else {
+    thead.innerHTML = `<tr>
+      <th style="width:70px">Cód.</th>
+      <th>Producto</th>
+      <th class="num" style="width:110px">Precio unit.</th>
+      <th class="num" style="width:90px">Cant.</th>
+      <th class="num" style="width:120px">Subtotal</th>
+      <th style="width:40px"></th>
+    </tr>`;
+  }
+
+  const body = $('#pedidoBody');
+
+  if (!pedido.length) {
+    const cols = isPrecios ? 4 : 6;
+    const msg = isPrecios
+      ? 'Buscá un producto arriba para agregarlo a la lista.'
+      : 'Buscá un producto arriba para empezar a cotizar.';
+    body.innerHTML = `<tr class="empty-row"><td colspan="${cols}">${msg}</td></tr>`;
+    if (!isPrecios) $('#grandTotal').textContent = fmt(envioCosto);
+    return;
+  }
+
+  if (isPrecios) {
+    body.innerHTML = pedido.map(p => `
+      <tr>
+        <td class="codigo">${p.codigo}</td>
+        <td>${escapeHtml(p.nombre)}${p.esPack ? '<span class="pack-inline">PACK</span>' : ''}</td>
+        <td class="num">${fmt(precioUnit(p))}</td>
+        <td><button class="btn-del" data-cod="${p.codigo}" title="Quitar">×</button></td>
+      </tr>`).join('');
+    body.querySelectorAll('.btn-del').forEach(b =>
+      b.addEventListener('click', e => quitar(e.target.dataset.cod)));
+    return;
+  }
+
+  // Modo Cotización
+  let subtotal = 0;
+  body.innerHTML = pedido.map(p => {
+    const unit = precioUnit(p);
+    const sub = unit * p.cant;
+    subtotal += sub;
+    return `<tr>
+      <td class="codigo">${p.codigo}</td>
+      <td>${escapeHtml(p.nombre)}${p.esPack ? '<span class="pack-inline">PACK</span>' : ''}</td>
+      <td class="num">${fmt(unit)}</td>
+      <td class="num"><input class="qty" type="number" min="1" value="${p.cant}" data-cod="${p.codigo}"></td>
+      <td class="num">${fmt(sub)}</td>
+      <td><button class="btn-del" data-cod="${p.codigo}" title="Quitar">×</button></td>
+    </tr>`;
+  }).join('');
+
+  body.querySelectorAll('input.qty').forEach(inp =>
+    inp.addEventListener('input', e => setCant(e.target.dataset.cod, e.target.value)));
+  body.querySelectorAll('.btn-del').forEach(b =>
+    b.addEventListener('click', e => quitar(e.target.dataset.cod)));
+
+  const { pct, prox } = calcDescuento(subtotal);
+  const descMonto = subtotal * pct / 100;
+  const totalProductos = subtotal - descMonto;
+
+  let filasFinales = `<tr class="subtot totals"><td colspan="4" style="text-align:right">Subtotal productos</td><td class="num">${fmt(subtotal)}</td><td></td></tr>`;
+  if (pct > 0) {
+    filasFinales += `<tr class="subtot"><td colspan="4" style="text-align:right;color:var(--ok)">Descuento ${pct}% por volumen</td><td class="num" style="color:var(--ok)">−${fmt(descMonto)}</td><td></td></tr>`;
+  }
+  body.insertAdjacentHTML('beforeend', filasFinales);
+
+  renderEscalon(subtotal, pct, prox);
+
+  $('#grandTotal').textContent = fmt(totalProductos + envioCosto);
+}
+
+function renderEscalon(subtotal, pct, prox) {
+  const box = $('#escalonBox');
+  box.style.display = 'flex';
+
+  if (listaActiva !== 'l2') {
+    box.className = 'escalon-box base';
+    box.innerHTML = `<span>Lista pública (L1) — sin descuentos por volumen.</span>`;
+    return;
+  }
+  if (pct > 0 && prox) {
+    const falta = prox.min - subtotal;
+    const rango = prox.min - ESCALONES.find(e=>e.pct===pct).min;
+    const avance = Math.min(100, ((subtotal - (prox.min - rango)) / rango) * 100);
+    box.className = 'escalon-box activo';
+    box.innerHTML = `
+      <span class="big">✓ ${pct}% OFF aplicado</span>
+      <div class="progress"><div class="bar" style="width:${avance}%"></div></div>
+      <span>Agregá ${fmt(falta)} más para llegar al ${prox.pct}%</span>`;
+  } else if (pct > 0 && !prox) {
+    box.className = 'escalon-box activo';
+    box.innerHTML = `<span class="big">✓ ${pct}% OFF aplicado</span><span>Máximo descuento alcanzado.</span>`;
+  } else if (prox) {
+    const falta = prox.min - subtotal;
+    const avance = Math.min(100, (subtotal / prox.min) * 100);
+    box.className = 'escalon-box proximo';
+    box.innerHTML = `
+      <span>Agregá <strong>${fmt(falta)}</strong> más para activar <strong>${prox.pct}% OFF</strong></span>
+      <div class="progress"><div class="bar" style="width:${avance}%"></div></div>`;
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+// ─── Toggle lista ───
+$('#listaToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  listaActiva = btn.dataset.lista;
+  $('#listaToggle').querySelectorAll('button').forEach(b => b.classList.toggle('active', b===btn));
+  $('#listaHint').textContent = listaActiva === 'l2'
+    ? 'Los descuentos por volumen se aplican solo sobre la lista Profesional (L2). Los packs x4 solo aparecen acá.'
+    : 'Lista pública (L1): precios de venta al público, sin descuentos por volumen ni packs.';
+  // Quitar del pedido los items que no tengan precio en la lista nueva (típicamente packs al pasar a L1)
+  pedido = pedido.filter(p => precioUnit(p) != null);
+  render();
+});
+
+// ─── Toggle modo ───
+$('#modoToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  modoUso = btn.dataset.modo;
+  $('#modoToggle').querySelectorAll('button').forEach(b => b.classList.toggle('active', b===btn));
+  render();
+});
+
+// ─── Envío ───
+const envioSelect = $('#envioSelect');
+const envioInput = $('#envioCosto');
+const envioHint = $('#envioHint');
+
+envioSelect.addEventListener('change', e => {
+  const v = e.target.value;
+  if (v === '') {
+    envioIdx = -1; envioNombre = ''; envioCosto = 0;
+    envioInput.value = 0; envioInput.disabled = true;
+    envioInput.classList.remove('editado');
+    envioHint.textContent = 'Elegí un envío para editar su costo';
+  } else {
+    envioIdx = Number(v);
+    const env = ENVIOS[envioIdx];
+    envioNombre = env.nombre;
+    envioCosto = env.costo;
+    envioInput.value = env.costo; envioInput.disabled = false;
+    envioInput.classList.remove('editado');
+    envioHint.textContent = `Referencia: ${fmt(env.costo)} · editá si cotizaste otro valor`;
+  }
+  render();
+});
+
+envioInput.addEventListener('input', e => {
+  envioCosto = Math.max(0, Number(e.target.value) || 0);
+  const ref = envioIdx >= 0 ? ENVIOS[envioIdx].costo : null;
+  envioInput.classList.toggle('editado', ref != null && envioCosto !== ref);
+  render();
+});
+
+// ─── Texto para WhatsApp (modo Cotización) ───
+function generarTexto(conDetalle) {
+  if (!pedido.length) return '';
+  let subtotal = 0;
+  const lineas = pedido.map(p => {
+    const unit = precioUnit(p);
+    const sub = unit * p.cant;
+    subtotal += sub;
+    if (conDetalle)
+      return `• ${p.nombre}\n   ${p.cant} × ${fmt(unit)} = ${fmt(sub)}`;
+    return `• ${p.cant}× ${p.nombre} — ${fmt(sub)}`;
+  });
+
+  const { pct } = calcDescuento(subtotal);
+  const descMonto = subtotal * pct / 100;
+  const totalProd = subtotal - descMonto;
+  const total = totalProd + envioCosto;
+
+  let txt = `*Cotización Rosaint*\n`;
+  txt += `_Lista ${listaActiva === 'l2' ? 'Profesional' : 'Público'}_\n\n`;
+  txt += lineas.join('\n') + '\n';
+  txt += `\n———————————\n`;
+  if (pct > 0) {
+    txt += `Subtotal: ${fmt(subtotal)}\n`;
+    txt += `Descuento ${pct}% por volumen: −${fmt(descMonto)}\n`;
+  }
+  if (envioCosto > 0) {
+    txt += `Envío${envioNombre ? ' ('+envioNombre+')' : ''}: ${fmt(envioCosto)}\n`;
+  }
+  txt += `*TOTAL: ${fmt(total)}*`;
+  return txt;
+}
+
+// ─── Texto de la lista de precios (modo Precios) ───
+function generarTextoPrecios() {
+  if (!pedido.length) return '';
+  return pedido.map(p => `${p.nombre} • ${fmt(precioUnit(p))}`).join('\n');
+}
+
+async function copiarAlPortapapeles(txt, msgOk) {
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast(msgOk);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+    toast(msgOk);
+  }
+}
+
+$('#btnCopy').addEventListener('click', () => {
+  const txt = generarTexto(false);
+  if (!txt) { toast('El pedido está vacío.'); return; }
+  copiarAlPortapapeles(txt, '✓ Copiado, listo para pegar en WhatsApp');
+});
+$('#btnCopyDetalle').addEventListener('click', () => {
+  const txt = generarTexto(true);
+  if (!txt) { toast('El pedido está vacío.'); return; }
+  copiarAlPortapapeles(txt, '✓ Copiado con detalle');
+});
+$('#btnCopyPrecios').addEventListener('click', () => {
+  const txt = generarTextoPrecios();
+  if (!txt) { toast('La lista está vacía.'); return; }
+  copiarAlPortapapeles(txt, '✓ Precios copiados');
+});
+
+$('#btnClear').addEventListener('click', () => {
+  if (pedido.length && confirm('¿Vaciar todo el pedido?')) { pedido = []; render(); }
+});
+$('#btnClearPrecios').addEventListener('click', () => {
+  if (pedido.length && confirm('¿Vaciar la lista?')) { pedido = []; render(); }
+});
+
+// ─── Toast ───
+let toastT;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+init();
+</script>
+</body>
+</html>

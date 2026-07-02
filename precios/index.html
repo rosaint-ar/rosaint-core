@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Precios · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .tool-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color .12s, transform .12s;
+      cursor: pointer; text-decoration: none; color: inherit;
+    }
+    .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
+    .tool-card .icon {
+      width: 36px; height: 36px; border-radius: var(--radius-sm);
+      background: var(--accent-tint); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; margin-bottom: 6px;
+    }
+    .tool-card h3 { font-size: 15px; font-weight: 600; color: var(--text); }
+    .tool-card .desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .tool-card.disabled {
+      opacity: 0.6; cursor: not-allowed;
+    }
+    .tool-card.disabled:hover { border-color: var(--border); transform: none; }
+    .grid-tools {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .status-current {
+      display: flex; gap: 24px; padding: 14px 18px;
+      background: var(--surface-2); border-radius: var(--radius);
+      margin-bottom: 20px; font-size: 13px;
+    }
+    .status-current .k { color: var(--muted); }
+    .status-current .v {
+      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body data-page="precios" data-title="Precios" data-subtitle="Listas · cotización · análisis">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="status-current" id="statusPrecios">
+    <span><span class="k">USD hoy:</span> <span class="v" id="usd-actual">—</span></span>
+    <span><span class="k">Última actualización:</span> <span class="v" id="usd-fecha">—</span></span>
+  </div>
+
+  <h2 style="font-size:16px; font-weight:600; margin-bottom:12px;">Herramientas de precios</h2>
+
+  <div class="grid-tools">
+    <a href="cotizacion.html" class="tool-card">
+      <div class="icon">$</div>
+      <h3>Cotización del dólar</h3>
+      <div class="desc">Actualizá el USD venta oficial (BNA). Se aplica a todos los cálculos de pricing.</div>
+    </a>
+
+    <a href="analisis-impacto.html" class="tool-card">
+      <div class="icon">◎</div>
+      <h3>Análisis de impacto</h3>
+      <div class="desc">Buscá una MP o insumo y ver en qué fórmulas se usa — directamente y en cascada.</div>
+    </a>
+
+    <a href="listas.html" class="tool-card">
+      <div class="icon">≡</div>
+      <h3>Listas de precios</h3>
+      <div class="desc">Lista 1 completa con anclas editables y las 5 rentabilidades en tiempo real (L1, L2, y los 3 escalones). Config de escalones, objetivos y parámetros globales adentro.</div>
+    </a>
+
+    <a href="rentabilidad.html" class="tool-card">
+      <div class="icon">%</div>
+      <h3>Rentabilidad</h3>
+      <div class="desc">Análisis de márgenes por SKU y línea. Distribución, alerta de bajo objetivo, tabla ordenable.</div>
+    </a>
+
+    <a href="publicar.html" class="tool-card">
+      <div class="icon">⬇</div>
+      <h3>Publicar lista pública</h3>
+      <div class="desc">Genera el HTML estático de la Lista Profesional (canal Venta Directa). Precios L2 + descuentos 20/30/35% listos para el hosting.</div>
+    </a>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// Traer la cotización actual para el status bar
+(async () => {
+  try {
+    const { data } = await sb.from('cotizaciones_dolar')
+      .select('venta_oficial, fecha')
+      .order('fecha', { ascending: false })
+      .limit(1).single();
+    if (data) {
+      document.getElementById('usd-actual').textContent =
+        '$' + Number(data.venta_oficial).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+      document.getElementById('usd-fecha').textContent = data.fecha.split('-').reverse().join('/');
+    }
+  } catch (e) {
+    console.warn('No se pudo cargar cotización:', e);
+  }
+})();
+</script>
+</body>
+</html>

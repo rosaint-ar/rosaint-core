@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conciliador IVA · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    /* ---- Controles del panel superior ---- */
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month] {
+      font: inherit; padding: 9px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); min-width: 160px;
+    }
+    .field input[type=month]:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .drop {
+      border: 1.5px dashed var(--border); border-radius: var(--radius-sm);
+      padding: 9px 14px; background: var(--surface); cursor: pointer;
+      font-size: 13px; color: var(--muted);
+      transition: border-color .15s, color .15s, background .15s;
+      white-space: nowrap;
+    }
+    .drop:hover { border-color: var(--accent); color: var(--accent); }
+    .drop.ok {
+      border-style: solid; border-color: var(--ok); color: var(--ok);
+      background: color-mix(in srgb, var(--ok) 10%, transparent);
+    }
+    input[type=file] { display: none; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+    /* ---- Status bar ---- */
+    .status-bar {
+      font-size: 13px; color: var(--muted);
+      margin: 12px 2px 16px; min-height: 18px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .status-bar.err { color: var(--hot); }
+    .status-bar.ok  { color: var(--ok); }
+    .status-bar .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-bar .dot.load { background: var(--warn); }
+    .status-bar .dot.on   { background: var(--ok); }
+    .status-bar .dot.off  { background: var(--hot); }
+
+    /* ---- Summary de KPIs (4 columnas) ---- */
+    .summary {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    .summary .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .summary .card .n {
+      font-size: 26px; font-weight: 700; letter-spacing: -.02em;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .summary .card .l { font-size: 11px; color: var(--muted); margin-top: 4px;
+      text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+    }
+    .summary .card.ok    .n { color: var(--ok); }
+    .summary .card.falta .n { color: var(--hot); }
+    .summary .card.sobra .n { color: var(--warn); }
+    .summary .card.dif   .n { color: var(--accent); }
+
+    /* ---- Grupos ---- */
+    .group { margin-bottom: 24px; }
+    .group h2 {
+      font-size: 15px; font-weight: 600; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ---- Badges ---- */
+    .badge {
+      font-size: 11px; font-weight: 600;
+      padding: 2px 9px; border-radius: 20px;
+    }
+    .badge.r { color: var(--hot);    background: color-mix(in srgb, var(--hot) 13%, transparent); }
+    .badge.a { color: var(--warn);   background: color-mix(in srgb, var(--warn) 13%, transparent); }
+    .badge.g { color: var(--ok);     background: color-mix(in srgb, var(--ok) 13%, transparent); }
+    .badge.v { color: var(--accent); background: var(--accent-tint); }
+
+    /* ---- Tablas ---- */
+    table {
+      width: 100%; border-collapse: collapse;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    th {
+      text-align: left; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); background: var(--surface-2);
+      padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    td {
+      padding: 9px 12px; border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    tr:last-child td { border-bottom: none; }
+    td.mono {
+      font-family: var(--font-mono); font-size: 12px; color: var(--accent);
+    }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.perc { color: var(--warn); font-weight: 500; }
+    tr.warn { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+    tr.nc { background: color-mix(in srgb, var(--hot) 6%, transparent); }
+
+    .nc-tag {
+      font-size: 10px; background: color-mix(in srgb, var(--hot) 13%, transparent);
+      color: var(--hot); padding: 1px 6px; border-radius: 10px; margin-left: 4px;
+    }
+    .usd-tag {
+      font-size: 10px; background: color-mix(in srgb, var(--structure) 15%, transparent);
+      color: var(--structure); padding: 1px 6px; border-radius: 10px; margin-left: 4px;
+    }
+
+    .empty {
+      color: var(--muted); font-style: italic;
+      padding: 14px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); font-size: 13px;
+    }
+
+    .val-info { font-size: 12px; color: var(--muted); margin: 6px 2px 10px; }
+
+    /* ---- Bloque de cuadre final ---- */
+    .cuadre {
+      background: var(--surface); border: 2px solid var(--border);
+      border-radius: var(--radius); padding: 0; overflow: hidden; margin-top: 8px;
+    }
+    .cuadre h2 {
+      padding: 14px 18px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-size: 15px;
+      font-weight: 600;
+    }
+    .cuadre table {
+      border: none; border-radius: 0;
+    }
+    .cuadre table td { padding: 11px 18px; }
+    .cuadre .dif-ok  { color: var(--ok);  font-weight: 600; }
+    .cuadre .dif-mal { color: var(--hot); font-weight: 600; }
+
+    .veredicto {
+      padding: 16px 18px; font-size: 15px; font-weight: 600; text-align: center;
+    }
+    .veredicto.ok  { background: color-mix(in srgb, var(--ok) 13%, transparent);  color: var(--ok); }
+    .veredicto.mal { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+
+    .chk { width: 17px; height: 17px; cursor: pointer; accent-color: var(--ok); }
+  </style>
+</head>
+<body data-page="conciliador" data-title="Conciliador IVA Compras" data-subtitle="Cruce Odoo ⇄ ARCA · notas de crédito · cuadre para el libro">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="card" style="margin-bottom:12px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Período contable</span>
+        <input type="month" id="periodo" value="2026-05">
+      </div>
+      <div class="field">
+        <span class="label">Excel de ARCA (Mis Comprobantes)</span>
+        <label class="drop" id="dropLabel" for="fileArca">Seleccionar archivo .xlsx…</label>
+        <input type="file" id="fileArca" accept=".xlsx,.xls">
+      </div>
+      <button class="btn primary" id="btnConciliar" disabled>Conciliar</button>
+    </div>
+    <div class="hint">Trae facturas y notas de crédito de Odoo por fecha contable, y las cruza contra ARCA. Las NC restan.</div>
+  </div>
+
+  <div class="status-bar" id="status"><span class="dot off"></span>Listo para conciliar.</div>
+  <div id="results"></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Conciliador IVA Compras
+// Excel ARCA + Odoo (via edge function) → detecta faltantes, sobrantes,
+// diferencias de monto y descuadres internos. Arma el cuadre final del libro.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+let arcaRows = null;
+let estado = null;
+
+$('fileArca').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 1, defval: null });
+      const header = rows[0];
+      const idx = (name) => header.findIndex(h => (h||'').toString().trim() === name);
+      const c = {
+        fecha: idx('Fecha'), tipo: idx('Tipo'), pv: idx('Punto de Venta'), num: idx('Número Desde'),
+        cuit: idx('Nro. Doc. Emisor'), denom: idx('Denominación Emisor'),
+        neto: idx('Neto Gravado Total'), nogravado: idx('Neto No Gravado'),
+        otros: idx('Otros Tributos'), iva: idx('Total IVA'), total: idx('Imp. Total'),
+        moneda: idx('Moneda'), tc: idx('Tipo Cambio'),
+      };
+      arcaRows = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i]; if (!r || r[c.fecha] == null) continue;
+        const tipo = (r[c.tipo]||'').toString();
+        const esNC = /cr[eé]dito/i.test(tipo) || /^(3|8|13|53|110)\s*[-–]/.test(tipo);
+        const signo = esNC ? -1 : 1;
+        // Moneda extranjera: ARCA da montos en USD + tipo de cambio. Convertir a pesos.
+        const moneda = c.moneda>=0 ? (r[c.moneda]||'').toString().trim() : '$';
+        const tc = (c.tc>=0 && +r[c.tc]>0) ? +r[c.tc] : 1;
+        const conv = (moneda && moneda!=='$' && moneda.toUpperCase()!=='PES') ? tc : 1;
+        // neto = gravado + no gravado (Odoo los une, ARCA los separa)
+        const netoTotal = (+r[c.neto]||0) + (c.nogravado>=0 ? (+r[c.nogravado]||0) : 0);
+        arcaRows.push({
+          fecha: r[c.fecha], tipo, esNC,
+          pv: parseInt(r[c.pv])||0, num: parseInt(r[c.num])||0,
+          cuit: (r[c.cuit]||'').toString().replace(/\D/g,''),
+          denom: (r[c.denom]||'').toString(),
+          moneda, tc: conv,
+          neto: netoTotal*conv*signo,
+          otros: (+r[c.otros]||0)*conv*signo,
+          iva: (+r[c.iva]||0)*conv*signo,
+          total: (+r[c.total]||0)*conv*signo,
+        });
+      }
+      $('dropLabel').textContent = `✓ ${f.name} (${arcaRows.length})`;
+      $('dropLabel').classList.add('ok');
+      $('btnConciliar').disabled = false;
+      setStatus('on', `Excel cargado: ${arcaRows.length} comprobantes. Elegí período y conciliá.`);
+    } catch (err) {
+      setStatus('off', 'Error leyendo Excel: ' + err.message, true);
+    }
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+function setStatus(dot, msg, isErr) {
+  $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`;
+  $('status').className = 'status-bar' + (isErr?' err':'');
+}
+const money = (n) => '$' + (n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function claveArca(x){ return `${x.cuit}|${String(x.pv).padStart(5,'0')}-${String(x.num).padStart(8,'0')}`; }
+function claveOdoo(x){ return `${x.cuit}|${x.comprobante}`; }
+
+async function traerOdoo(periodo) {
+  const r = await fetch(window.ODOO_FN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + window.SUPABASE_KEY,
+      'apikey': window.SUPABASE_KEY,
+    },
+    body: JSON.stringify({ periodo }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || 'Error');
+  return d.facturas;
+}
+
+$('btnConciliar').addEventListener('click', async () => {
+  const periodo = $('periodo').value;
+  if (!periodo || !arcaRows) { setStatus('off','Falta período o Excel.',true); return; }
+  $('btnConciliar').disabled = true;
+  setStatus('load','Consultando Odoo (facturas + NC)…');
+  let odoo;
+  try { odoo = await traerOdoo(periodo); }
+  catch(err){ setStatus('off','Error Odoo: '+err.message,true); $('btnConciliar').disabled=false; return; }
+
+  const odooIdx = new Map(); odoo.forEach(o=>odooIdx.set(claveOdoo(o),o));
+  const arcaIdx = new Map(); arcaRows.forEach(a=>arcaIdx.set(claveArca(a),a));
+  const odooLax = new Map();
+  odoo.forEach(o => {
+    const np = (o.comprobante.split('-')[1]||'').replace(/^0+/,'');
+    odooLax.set(`${o.cuit}|${np}`, o);
+  });
+
+  const faltan = [], casiMatch = [];
+  arcaRows.forEach(a => {
+    const k = claveArca(a);
+    if (odooIdx.has(k)) return;
+    const lax = odooLax.get(`${a.cuit}|${String(a.num)}`);
+    if (lax) casiMatch.push({ arca:a, odoo:lax });
+    else faltan.push(a);
+  });
+  const sobran = [];
+  odoo.forEach(o => {
+    if (arcaIdx.has(claveOdoo(o))) return;
+    if (casiMatch.some(c => c.odoo === o)) return;
+    sobran.push(o);
+  });
+  const difs = [];
+  const descuadres = []; // mismo comprobante, total ok pero neto o IVA difieren
+  arcaRows.forEach(a => {
+    const o = odooIdx.get(claveArca(a));
+    if (!o) return;
+    if (Math.abs(a.total-o.total) > 0.5) difs.push({ arca:a, odoo:o });
+    else {
+      const difNeto = a.neto - o.neto;
+      const difIva  = a.iva - (o.iva||0);
+      if (Math.abs(difNeto) > 0.5 || Math.abs(difIva) > 0.5) descuadres.push({ arca:a, odoo:o, difNeto, difIva });
+    }
+  });
+  const coinciden = arcaRows.length - faltan.length - casiMatch.length;
+
+  estado = {
+    periodo, odoo, arca: arcaRows,
+    faltan, sobran, casiMatch, difs, descuadres, coinciden,
+    validadas: new Set(),
+  };
+  render();
+  setStatus('on', `Listo: ${faltan.length} faltan, ${sobran.length} de más, ${casiMatch.length} a revisar.`);
+  $('btnConciliar').disabled = false;
+});
+
+function render() {
+  const r = estado;
+  let h = `<div class="summary">
+    <div class="card ok"><div class="n">${r.coinciden}</div><div class="l">Coinciden OK</div></div>
+    <div class="card falta"><div class="n">${r.faltan.length}</div><div class="l">Faltan en Odoo</div></div>
+    <div class="card sobra"><div class="n">${r.sobran.length+r.casiMatch.length}</div><div class="l">De más / a revisar</div></div>
+    <div class="card dif"><div class="n">${r.difs.length}</div><div class="l">Difieren en monto</div></div>
+  </div>`;
+
+  h += `<div class="group"><h2>En ARCA pero no en Odoo <span class="badge r">${r.faltan.length}</span></h2>`;
+  if (!r.faltan.length) h += `<div class="empty">Ninguna. Todo lo de ARCA está cargado.</div>`;
+  else {
+    h += `<table><thead><tr>
+      <th>Fecha</th><th>Proveedor</th><th>Tipo</th><th>Comprobante</th>
+      <th class="num">Neto</th><th class="num">IVA</th><th class="num">Otros Trib.</th><th class="num">Total</th>
+    </tr></thead><tbody>`;
+    r.faltan.forEach(a => {
+      h += `<tr class="${a.esNC?'nc':''}">
+        <td>${a.fecha}</td>
+        <td>${a.denom}${a.esNC?'<span class="nc-tag">NC</span>':''}</td>
+        <td>${a.tipo}</td>
+        <td class="mono">${String(a.pv).padStart(5,'0')}-${String(a.num).padStart(8,'0')}</td>
+        <td class="num">${money(a.neto)}</td>
+        <td class="num">${money(a.iva)}</td>
+        <td class="num ${a.otros?'perc':''}">${a.otros?money(a.otros):'—'}</td>
+        <td class="num">${money(a.total)}</td>
+      </tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="group"><h2>En Odoo pero no en ARCA <span class="badge a">${r.sobran.length}</span></h2>`;
+  if (!r.sobran.length) h += `<div class="empty">Ninguna.</div>`;
+  else {
+    h += `<div class="val-info">Marcá las que revisaste y considerás correctas. Las validadas cuentan para el cuadre final.</div>`;
+    h += `<table><thead><tr>
+      <th style="width:40px;">OK</th><th>Proveedor</th><th>Comprobante</th><th class="num">Total</th>
+    </tr></thead><tbody>`;
+    r.sobran.forEach((o,i) => {
+      h += `<tr class="${o.es_nc?'nc':''}">
+        <td><input type="checkbox" class="chk" data-sobra="${i}" ${r.validadas.has('s'+i)?'checked':''}></td>
+        <td>${o.proveedor}${o.es_nc?'<span class="nc-tag">NC</span>':''}</td>
+        <td class="mono">${o.comprobante}</td>
+        <td class="num">${money(o.total)}</td>
+      </tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+  h += `</div>`;
+
+  if (r.casiMatch.length) {
+    h += `<div class="group"><h2>A revisar: mismo CUIT y número, distinto PV/tipo <span class="badge a">${r.casiMatch.length}</span></h2>
+      <table><thead><tr>
+        <th>Proveedor</th><th>ARCA</th><th>Odoo</th><th class="num">Total ARCA</th><th class="num">Total Odoo</th>
+      </tr></thead><tbody>`;
+    r.casiMatch.forEach(c => {
+      h += `<tr class="warn">
+        <td>${c.arca.denom}</td>
+        <td class="mono">${String(c.arca.pv).padStart(5,'0')}-${String(c.arca.num).padStart(8,'0')}</td>
+        <td class="mono">${c.odoo.comprobante}</td>
+        <td class="num">${money(c.arca.total)}</td>
+        <td class="num">${money(c.odoo.total)}</td>
+      </tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+
+  if (r.difs.length) {
+    h += `<div class="group"><h2>Diferencias de monto <span class="badge v">${r.difs.length}</span></h2>
+      <table><thead><tr>
+        <th>Proveedor</th><th>Comprobante</th><th class="num">Total ARCA</th><th class="num">Total Odoo</th><th class="num">Dif.</th>
+      </tr></thead><tbody>`;
+    r.difs.forEach(d => {
+      const usd = d.arca.moneda && d.arca.moneda!=='$' && d.arca.moneda.toUpperCase()!=='PES';
+      h += `<tr class="warn">
+        <td>${d.arca.denom}${usd?`<span class="usd-tag">${d.arca.moneda} @ ${d.arca.tc}</span>`:''}</td>
+        <td class="mono">${d.odoo.comprobante}</td>
+        <td class="num">${money(d.arca.total)}</td>
+        <td class="num">${money(d.odoo.total)}</td>
+        <td class="num perc">${money(d.arca.total-d.odoo.total)}</td>
+      </tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+
+  if (r.descuadres && r.descuadres.length) {
+    h += `<div class="group"><h2>Descuadres internos: total OK pero neto o IVA difieren <span class="badge v">${r.descuadres.length}</span></h2>
+      <div class="val-info">Suman bien en total, pero el neto o IVA está clasificado distinto (ej. facturas B/C sin IVA discriminado, combustible). Corregilas en Odoo, o validalas (✓) si la diferencia es conocida y aceptada — las validadas no bloquean el cuadre.</div>
+      <table><thead><tr>
+        <th style="width:40px;">OK</th><th>Proveedor</th><th>Comprobante</th>
+        <th class="num">Neto ARCA</th><th class="num">Neto Odoo</th><th class="num">Dif. Neto</th>
+        <th class="num">IVA ARCA</th><th class="num">IVA Odoo</th><th class="num">Dif. IVA</th>
+      </tr></thead><tbody>`;
+    r.descuadres.forEach((d,i) => {
+      const usd = d.arca.moneda && d.arca.moneda!=='$' && d.arca.moneda.toUpperCase()!=='PES';
+      h += `<tr class="warn">
+        <td><input type="checkbox" class="chk" data-desc="${i}" ${r.validadas.has('d'+i)?'checked':''}></td>
+        <td>${d.arca.denom}${usd?`<span class="usd-tag">${d.arca.moneda} @ ${d.arca.tc}</span>`:''}</td>
+        <td class="mono">${d.odoo.comprobante}</td>
+        <td class="num">${money(d.arca.neto)}</td>
+        <td class="num">${money(d.odoo.neto)}</td>
+        <td class="num ${Math.abs(d.difNeto)>0.5?'perc':''}">${Math.abs(d.difNeto)>0.5?money(d.difNeto):'—'}</td>
+        <td class="num">${money(d.arca.iva)}</td>
+        <td class="num">${money(d.odoo.iva||0)}</td>
+        <td class="num ${Math.abs(d.difIva)>0.5?'perc':''}">${Math.abs(d.difIva)>0.5?money(d.difIva):'—'}</td>
+      </tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+
+  h += `<div id="cuadreBox"></div>`;
+  $('results').innerHTML = h;
+  document.querySelectorAll('[data-sobra]').forEach(cb =>
+    cb.addEventListener('change', e => {
+      const k = 's' + e.target.dataset.sobra;
+      if (e.target.checked) estado.validadas.add(k); else estado.validadas.delete(k);
+      renderCuadre();
+    }));
+  document.querySelectorAll('[data-desc]').forEach(cb =>
+    cb.addEventListener('change', e => {
+      const k = 'd' + e.target.dataset.desc;
+      if (e.target.checked) estado.validadas.add(k); else estado.validadas.delete(k);
+      renderCuadre();
+    }));
+  renderCuadre();
+}
+
+function renderCuadre() {
+  const r = estado;
+  const sumArca = r.arca.reduce((a,x) => ({
+    neto:  a.neto  + x.neto,
+    iva:   a.iva   + x.iva,
+    otros: a.otros + x.otros,
+    total: a.total + x.total,
+  }), { neto:0, iva:0, otros:0, total:0 });
+
+  const sobranValidadas = r.sobran.filter((o,i) => r.validadas.has('s'+i));
+  const odooContables = r.odoo.filter(o => !r.sobran.includes(o) || sobranValidadas.includes(o));
+  const sumOdoo = odooContables.reduce((a,x) => ({
+    neto:  a.neto  + x.neto,
+    iva:   a.iva   + (x.iva || 0),
+    otros: a.otros + (x.percepciones || 0),
+    total: a.total + x.total,
+  }), { neto:0, iva:0, otros:0, total:0 });
+
+  // Descontar de la diferencia los descuadres que el usuario validó (errores aceptados)
+  let ajusteNeto = 0, ajusteIva = 0;
+  (r.descuadres || []).forEach((d,i) => {
+    if (r.validadas.has('d'+i)) { ajusteNeto += d.difNeto; ajusteIva += d.difIva; }
+  });
+
+  const dif = {
+    neto:  (sumArca.neto  - sumOdoo.neto)  - ajusteNeto,
+    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva,
+    otros: sumArca.otros  - sumOdoo.otros,
+    total: sumArca.total  - sumOdoo.total,
+  };
+  const tol = 1.0;
+  const ok = Math.abs(dif.neto) < tol && Math.abs(dif.iva) < tol && Math.abs(dif.total) < tol;
+  const faltanCount = r.faltan.length + r.casiMatch.length;
+
+  const fila = (lbl, va, vo, vd) => `<tr>
+    <td>${lbl}</td>
+    <td class="num">${money(va)}</td>
+    <td class="num">${money(vo)}</td>
+    <td class="num ${Math.abs(vd)<tol?'dif-ok':'dif-mal'}">${money(vd)}</td>
+  </tr>`;
+
+  let h = `<div class="group"><div class="cuadre"><h2>Cuadre final · libro de IVA ${r.periodo}</h2>
+    <table><thead><tr>
+      <th>Concepto</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Diferencia</th>
+    </tr></thead><tbody>
+    ${fila('Neto gravado', sumArca.neto, sumOdoo.neto, dif.neto)}
+    ${fila('IVA', sumArca.iva, sumOdoo.iva, dif.iva)}
+    ${fila('Otros tributos / percepciones', sumArca.otros, sumOdoo.otros, dif.otros)}
+    ${fila('Total', sumArca.total, sumOdoo.total, dif.total)}
+    </tbody></table>`;
+
+  if (faltanCount > 0) {
+    h += `<div class="veredicto mal">⚠ Faltan cargar ${faltanCount} comprobante(s) en Odoo. El cuadre no cerrará hasta resolverlas.</div>`;
+  } else if (ok) {
+    h += `<div class="veredicto ok">✓ Odoo y ARCA cuadran. El libro de IVA está listo para entregar al contador.</div>`;
+  } else {
+    h += `<div class="veredicto mal">⚠ Hay diferencias entre Odoo y ARCA. Revisá las filas en rojo antes de generar el libro.</div>`;
+  }
+  h += `<div class="val-info" style="padding:0 18px 14px;">Nota: ARCA no discrimina percepciones por jurisdicción, así que "Otros tributos" se compara solo por total. El detalle por provincia vive en Odoo.</div>`;
+  h += `</div></div>`;
+  $('cuadreBox').innerHTML = h;
+}
+</script>
+</body>
+</html>

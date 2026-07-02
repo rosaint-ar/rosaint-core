@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Percepciones · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    /* ---- Zona de drop del PDF ---- */
+    .drop {
+      display: block;
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius); padding: 28px;
+      text-align: center; background: var(--surface);
+      cursor: pointer; transition: border-color .15s, background .15s, color .15s;
+      color: var(--muted);
+    }
+    .drop:hover { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); }
+    .drop.ok {
+      border-style: solid; border-color: var(--ok);
+      background: color-mix(in srgb, var(--ok) 10%, transparent);
+      color: var(--ok);
+    }
+    .drop-title { font-size: 15px; font-weight: 600; }
+    .drop-hint { font-size: 12px; margin-top: 6px; color: var(--muted); }
+    input[type=file] { display: none; }
+
+    /* ---- Status bar ---- */
+    .status-bar {
+      font-size: 13px; color: var(--muted);
+      margin: 14px 2px; min-height: 18px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .status-bar.err { color: var(--hot); }
+    .status-bar.ok { color: var(--ok); }
+    .status-bar .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-bar .dot.load { background: var(--warn); }
+    .status-bar .dot.on   { background: var(--ok); }
+    .status-bar .dot.off  { background: var(--hot); }
+
+    /* ---- Vista previa estilo factura ---- */
+    .invoice {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; margin-top: 14px;
+    }
+    .inv-head {
+      padding: 16px 18px; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; font-size: 13px;
+    }
+    .inv-head .k { color: var(--muted); }
+    .inv-head .v { font-weight: 500; color: var(--text); }
+    .inv-head .full {
+      grid-column: 1 / -1; font-size: 16px; font-weight: 700; margin-bottom: 4px;
+      letter-spacing: -0.01em;
+    }
+
+    /* ---- Tabla de percepciones dentro de la factura ---- */
+    .invoice table { width: 100%; border-collapse: collapse; }
+    .invoice th {
+      text-align: left; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); background: var(--surface-2);
+      padding: 9px 14px; border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .invoice td {
+      padding: 9px 14px; border-bottom: 1px solid var(--border);
+      font-size: 13px; vertical-align: top;
+    }
+    .invoice td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* ---- Chips de impuestos ---- */
+    .tax-chip {
+      display: inline-block; background: var(--accent-tint); color: var(--accent);
+      font-size: 11px; padding: 2px 9px; border-radius: 20px;
+      margin: 2px 3px 2px 0; font-weight: 500;
+    }
+    .tax-chip.warn {
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      color: var(--warn); cursor: help;
+    }
+    .tax-chip.miss {
+      background: color-mix(in srgb, var(--hot) 12%, transparent);
+      color: var(--hot);
+    }
+
+    /* ---- Totales ---- */
+    .totales {
+      padding: 14px 18px; background: var(--surface-2);
+      border-top: 1px solid var(--border);
+    }
+    .totales .row {
+      display: flex; justify-content: flex-end; gap: 24px;
+      padding: 3px 0; font-size: 13px;
+    }
+    .totales .row .lbl { color: var(--muted); min-width: 220px; text-align: right; }
+    .totales .row .val { min-width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+    .totales .row.total {
+      font-size: 16px; font-weight: 700;
+      border-top: 1px solid var(--border);
+      margin-top: 6px; padding-top: 8px;
+    }
+    .totales .row.perc .lbl,
+    .totales .row.perc .val { color: var(--warn); }
+
+    /* ---- Alertas ---- */
+    .alerta {
+      background: color-mix(in srgb, var(--warn) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+      border-radius: var(--radius-sm); padding: 10px 14px;
+      margin: 12px 0; font-size: 13px; color: var(--warn);
+    }
+    .alerta.err {
+      background: color-mix(in srgb, var(--hot) 10%, transparent);
+      border-color: color-mix(in srgb, var(--hot) 32%, transparent);
+      color: var(--hot);
+    }
+    .alerta.ok {
+      background: color-mix(in srgb, var(--ok) 12%, transparent);
+      border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+      color: var(--ok);
+    }
+    .alerta b { color: inherit; }
+
+    .actions-row {
+      display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;
+    }
+  </style>
+</head>
+<body data-page="percepciones" data-title="Reconocedor de percepciones" data-subtitle="Leé la factura PDF · mapea · agrupa · aplica en Odoo">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="card">
+    <label class="drop" id="drop" for="filePdf">
+      <div class="drop-title">Soltá acá la factura PDF o hacé clic para elegir</div>
+      <div class="drop-hint">Funciona con PDFs de texto (Mercado Libre, Google, plataformas…)</div>
+    </label>
+    <input type="file" id="filePdf" accept="application/pdf">
+  </div>
+
+  <div class="status-bar" id="status"><span class="dot off"></span>Esperando una factura.</div>
+
+  <div id="preview"></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Reconocedor de percepciones
+// Toma un PDF de factura, extrae las líneas de percepciones, las matchea contra
+// los impuestos vivos de Odoo (via edge function), y aplica en el borrador.
+// ═══════════════════════════════════════════════════════════════════════════
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $ = (id) => document.getElementById(id);
+const SB_URL = () => window.SUPABASE_URL;
+const SB_KEY = () => window.SUPABASE_KEY;
+const FN_URL = () => window.ODOO_FN_URL;
+
+let listaImpuestos = [];
+let impuestosParseados = [];
+
+function setStatus(dot, msg, cls = '') {
+  $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`;
+  $('status').className = 'status-bar ' + cls;
+}
+const money = (n) => '$ ' + (n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function norm(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
+
+// De un nombre de impuesto Odoo extrae tipo/provincia/resolución/alcance
+function parseImpuesto(name) {
+  const n = name || '';
+  if (/IVA/i.test(n) && !/IIBB/i.test(n)) {
+    return { tipo:'IVA', prov:null, res:null, alcance: /especial/i.test(n)?'especial':'general' };
+  }
+  const m = n.match(/IIBB\s+(.+?)\s*[–-]\s*(.+)$/);
+  if (m) {
+    const prov = m[1].trim(), resto = m[2].trim();
+    const rm = resto.match(/(?:RG|RES\.?|R\.?)\s*([\d/]+)/i);
+    return { tipo:'IIBB', prov, res: rm? rm[1].replace(/\/.*$/,'') : null, alcance: /esp|elec/i.test(resto)?'especial':'general' };
+  }
+  return { tipo:'?', prov:null, res:null, alcance:'general' };
+}
+
+async function cargarImpuestosOdoo() {
+  const r = await fetch(FN_URL(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SB_KEY(),
+      Authorization: 'Bearer ' + SB_KEY(),
+    },
+    body: JSON.stringify({ modo: 'contabilidad', que: 'impuestos' }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error('No se pudieron leer impuestos de Odoo: ' + (d.error||''));
+  listaImpuestos = d.data || [];
+  impuestosParseados = listaImpuestos
+    .filter(t => /Percep|IIBB|P\. IIBB/i.test(t.name))
+    .map(t => ({
+      id: t.id, name: t.name,
+      group_id: Array.isArray(t.tax_group_id) ? t.tax_group_id[0] : null,
+      group_name: Array.isArray(t.tax_group_id) ? t.tax_group_id[1] : '',
+      ...parseImpuesto(t.name),
+    }));
+}
+
+// ─── Extraer texto del PDF ───
+async function extraerTextoPdf(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let lineas = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    const porY = {};
+    tc.items.forEach(it => {
+      const y = Math.round(it.transform[5]);
+      (porY[y] = porY[y] || []).push({ x: it.transform[4], s: it.str });
+    });
+    Object.keys(porY).sort((a,b)=>b-a).forEach(y => {
+      const linea = porY[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();
+      if (linea) lineas.push(linea);
+    });
+  }
+  return lineas;
+}
+
+// ─── Parseo de encabezado y líneas con monto ───
+function parseMontoFinal(s){
+  let m = s.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/);
+  if(m) return parseFloat(m[1].replace(/\./g,'').replace(',','.'));
+  m = s.match(/(\d+\.\d{2})\s*$/);
+  if(m) return parseFloat(m[1]);
+  m = s.match(/(\d+),(\d{2})\s*$/);
+  if(m) return parseFloat(m[1]+'.'+m[2]);
+  return null;
+}
+function parsearFactura(lineas) {
+  const texto = lineas.join('\n');
+  const cuitProv = (texto.match(/C\.?U\.?I\.?T\.?:?\s*([\d]{2}-?[\d]{8}-?[\d])/i)||[])[1] || '';
+  const comprobante = (texto.match(/\b(\d{3,5}-\d{8,12})\b/) || texto.match(/N[°º]?:?\s*(\d{3,5}-\d{6,12})/i) || [])[1] || '';
+  const fecha = (texto.match(/emisi[oó]n:\s*([\d.\/]{8,10})/i) || texto.match(/fecha:\s*([\d.\/]{8,10})/i) || [])[1] || '';
+  const conMonto = [];
+  lineas.forEach(l => {
+    const monto = parseMontoFinal(l);
+    if (monto !== null) {
+      const concepto = l.replace(/\$?\s*[\d.]*[,.]\d{2}\s*$/,'').replace(/\$/g,'').trim();
+      if (concepto) conMonto.push({ concepto, monto, raw: l });
+    }
+  });
+  return { cuitProv, comprobante, fecha, conMonto };
+}
+
+function esPercepcion(concepto) {
+  const n = norm(concepto);
+  return /PERCEP|RETENC|\bPERC\b|\bRET\b|PER\.?\s*IVA|PER\.?\s*IIBB/.test(n);
+}
+
+// Busca impuesto Odoo que matchee: provincia + (resolución si la hay) + alcance
+function matchImpuesto(attr) {
+  if (attr.tipo === 'IVA') {
+    return impuestosParseados.find(t => t.tipo==='IVA' && t.alcance===attr.alcance)
+        || impuestosParseados.find(t => t.tipo==='IVA' && t.alcance==='general') || null;
+  }
+  const cands = impuestosParseados.filter(t => t.tipo==='IIBB' && attr.prov && norm(t.prov)===norm(attr.prov));
+  if (!cands.length) {
+    return attr.prov ? { _faltaRes: true, prov: attr.prov, res: attr.res } : null;
+  }
+  if (attr.res) {
+    const conRes = cands.find(t => t.res && t.res === attr.res);
+    if (conRes) return conRes;
+  }
+  const general = cands.find(t => t.alcance==='general');
+  const especial = cands.find(t => t.alcance==='especial');
+  if (attr.alcance === 'especial') return especial || general || cands[0];
+  return general || cands[0];
+}
+
+// Clasificación por REGLAS: provincia + resolución + alcance
+function clasificarReglas(concepto) {
+  const n = norm(concepto);
+  if (/(PERC?\.?|PERCEP\w*|RET\.?)\s*\.?\s*(IVA|VALOR AGREGADO)|(IVA|VALOR AGREGADO)\s*[-.]?\s*(PERC|RET|RG)/.test(n) && !/IIBB|INGRESOS BRUTOS|ING\.? BRUTOS/.test(n)) {
+    return { tipo:'IVA', prov:null, res:null, alcance: /ESPECIAL/.test(n)?'especial':'general' };
+  }
+  const provincias = [...new Set(impuestosParseados.filter(t=>t.prov).map(t=>t.prov))];
+  const organismos = [
+    { re: /\bAGIP\b/, prov: 'CABA' },
+    { re: /\bARBA\b/, prov: 'Buenos Aires' },
+    { re: /\bAPI\b/, prov: 'Santa Fe' },
+    { re: /\bATM\b/, prov: 'Mendoza' },
+    { re: /\bDGR\b.*C[OÓ]RDOBA|RENTAS C[OÓ]RDOBA/, prov: 'Córdoba' },
+    { re: /\bDGR\b.*TUCUM/, prov: 'Tucumán' },
+    { re: /\bATER\b/, prov: 'Entre Ríos' },
+    { re: /\bDGR\b.*SALTA/, prov: 'Salta' },
+    { re: /\bDPR\b.*NEUQU|\bDPR\b NEUQU/, prov: 'Neuquén' },
+  ];
+  let provDetectada = null;
+  for (const pr of provincias) {
+    const prN = norm(pr);
+    if (n.includes(prN)) { provDetectada = pr; break; }
+    if (prN==='CABA' && /CIUDAD.*BUENOS AIRES|C\.?A\.?B\.?A/.test(n)) { provDetectada = pr; break; }
+  }
+  if (!provDetectada) {
+    for (const o of organismos) {
+      if (o.re.test(n)) {
+        const found = provincias.find(p => norm(p)===norm(o.prov));
+        if (found) { provDetectada = found; break; }
+      }
+    }
+  }
+  const rm = n.match(/(?:RG|RES\.?|RESOLUCION|NORMA|R\.?)\s*N?[°º]?\s*(\d+)/);
+  const res = rm ? rm[1] : null;
+  const alcance = /ESPECIAL|ELECTRONICO|COM\.?\s*ELEC/.test(n) ? 'especial' : 'general';
+  return { tipo:'IIBB', prov: provDetectada, res, alcance };
+}
+
+// Agrupa percepciones por impuesto Odoo (tax_id): resoluciones con impuesto propio quedan separadas
+function agrupar(percepciones) {
+  const grupos = {};
+  percepciones.forEach(p => {
+    if (!p.mapeo || !p.mapeo.odoo_tax_id) {
+      const k = '_SIN_MAPEO';
+      (grupos[k] = grupos[k] || { lineas:[], monto:0, sinMapeo:true }).lineas.push(p);
+      grupos[k].monto += p.monto; return;
+    }
+    const key = 'tax_' + p.mapeo.odoo_tax_id;
+    if (!grupos[key]) grupos[key] = {
+      tipo: p.mapeo.tipo, jurisdiccion: p.mapeo.jurisdiccion,
+      alcance: p.mapeo.alcance, res: p.mapeo.res,
+      tax_id: p.mapeo.odoo_tax_id, tax_name: p.mapeo.odoo_tax_name,
+      group_name: p.mapeo.odoo_group_name,
+      lineas: [], monto: 0,
+    };
+    grupos[key].lineas.push(p); grupos[key].monto += p.monto;
+  });
+  return grupos;
+}
+
+// ─── Flujo principal ───
+$('filePdf').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $('drop').classList.add('ok');
+  $('drop').querySelector('.drop-title').textContent = '✓ ' + f.name;
+  try {
+    setStatus('load', 'Leyendo impuestos de Odoo en vivo…');
+    await cargarImpuestosOdoo();
+    setStatus('load', 'Leyendo el PDF…');
+    const buf = await f.arrayBuffer();
+    const lineas = await extraerTextoPdf(buf);
+    const fac = parsearFactura(lineas);
+
+    const percLineas = fac.conMonto.filter(x => esPercepcion(x.concepto));
+    setStatus('load', `Encontradas ${percLineas.length} percepciones. Reconociendo…`);
+
+    percLineas.forEach(p => {
+      const attr = clasificarReglas(p.concepto);
+      p.attr = attr;
+      const m = matchImpuesto(attr);
+      if (m && m._faltaRes) {
+        p.faltaCrear = { tipo:'IIBB', jurisdiccion: m.prov, res: m.res, alcance: attr.alcance };
+      } else if (m) {
+        p.mapeo = {
+          odoo_tax_id: m.id, odoo_tax_name: m.name, odoo_group_name: m.group_name,
+          tipo: m.tipo, jurisdiccion: m.prov, alcance: m.alcance, res: m.res,
+        };
+      } else {
+        p.sinMapeo = true;
+      }
+    });
+
+    const grupos = agrupar(percLineas);
+    renderPreview(fac, percLineas, grupos);
+    const faltan = percLineas.filter(p=>p.faltaCrear).length;
+    const sin = percLineas.filter(p=>p.sinMapeo).length;
+    setStatus(
+      (faltan||sin) ? 'load' : 'on',
+      faltan ? `${faltan} percepción(es) necesitan crearse en Odoo.`
+        : sin ? `${sin} sin reconocer.`
+        : 'Todas reconocidas y desglosadas.',
+      (faltan||sin) ? '' : 'ok'
+    );
+  } catch (err) {
+    setStatus('off', 'Error: ' + err.message, 'err');
+  }
+});
+
+function renderPreview(fac, percLineas, grupos) {
+  const gruposArr = Object.values(grupos);
+  const totalPerc = percLineas.reduce((a,p)=>a+p.monto,0);
+
+  let h = `<div class="invoice">
+    <div class="inv-head">
+      <div class="full">Factura de compra</div>
+      <div><span class="k">CUIT proveedor:</span> <span class="v">${fac.cuitProv||'—'}</span></div>
+      <div><span class="k">Comprobante:</span> <span class="v">${fac.comprobante||'—'}</span></div>
+      <div><span class="k">Fecha:</span> <span class="v">${fac.fecha||'—'}</span></div>
+      <div><span class="k">Percepciones:</span> <span class="v">${percLineas.length} → ${gruposArr.filter(g=>!g.sinMapeo).length} líneas agrupadas</span></div>
+    </div>`;
+
+  h += `<table><thead><tr>
+    <th>Texto en factura</th><th>Reconocido como</th><th class="num">Monto</th>
+  </tr></thead><tbody>`;
+  percLineas.forEach((p) => {
+    let chip;
+    if (p.mapeo) chip = `<span class="tax-chip">${p.mapeo.odoo_tax_name}</span>`;
+    else if (p.faltaCrear) {
+      const fc = p.faltaCrear;
+      chip = `<span class="tax-chip miss">⚠ Falta crear: IIBB ${fc.jurisdiccion} ${fc.res?'Res. '+fc.res:fc.alcance}</span>`;
+    } else {
+      chip = `<span class="tax-chip warn">⚠ No reconocida — asignar a mano</span>`;
+    }
+    h += `<tr><td>${p.concepto}</td><td>${chip}</td><td class="num">${money(p.monto)}</td></tr>`;
+  });
+  h += `</tbody></table>`;
+
+  h += `<div class="totales">`;
+  gruposArr.filter(g=>!g.sinMapeo).forEach(g => {
+    const detalle = g.lineas.length > 1
+      ? ` <span style="font-size:11px;color:var(--muted);">(${g.lineas.length} sumadas)</span>`
+      : '';
+    h += `<div class="row perc"><span class="lbl">${g.tax_name}:${detalle}</span><span class="val">${money(g.monto)}</span></div>`;
+  });
+  if (grupos['_SIN_MAPEO']) {
+    h += `<div class="row perc"><span class="lbl">⚠ Sin mapear:</span><span class="val">${money(grupos['_SIN_MAPEO'].monto)}</span></div>`;
+  }
+  h += `<div class="row total"><span class="lbl">Total percepciones:</span><span class="val">${money(totalPerc)}</span></div>`;
+  h += `</div></div>`;
+
+  const faltantes = percLineas.filter(p => p.faltaCrear);
+  if (faltantes.length) {
+    h += `<div class="alerta err"><b>Faltan crear ${faltantes.length} impuesto(s) en Odoo:</b><br>`;
+    faltantes.forEach(p => {
+      const fc = p.faltaCrear;
+      h += `· <b>Percepción IIBB ${fc.jurisdiccion} – ${fc.res?'RG '+fc.res:fc.alcance}</b> (de "${p.concepto}" = ${money(p.monto)}). No tenés ningún impuesto de esa provincia en tu sistema.<br>`;
+    });
+    h += `Creala en Odoo y volvé a procesar.</div>`;
+  }
+  if (grupos['_SIN_MAPEO']) {
+    h += `<div class="alerta">Hay percepciones que no se reconocieron. Revisalas antes de confirmar.</div>`;
+  }
+
+  window._gruposActuales = gruposArr.filter(g=>!g.sinMapeo);
+  window._facActual = fac;
+  const puedeConfirmar = !!fac.cuitProv && !!fac.comprobante && !grupos['_SIN_MAPEO'] && !faltantes.length;
+
+  h += `<div class="actions-row">
+    <button class="btn secondary" id="btnOtra">Cargar otra</button>
+    <button class="btn primary" id="btnConfirmar" ${puedeConfirmar?'':'disabled'}>Buscar borrador en Odoo y aplicar percepciones</button>
+  </div><div id="resultadoOdoo"></div>`;
+
+  $('preview').innerHTML = h;
+  $('btnOtra').addEventListener('click', () => location.reload());
+  if (puedeConfirmar) $('btnConfirmar').addEventListener('click', confirmarEnOdoo);
+}
+
+async function confirmarEnOdoo() {
+  const btn = $('btnConfirmar'); btn.disabled = true;
+  const fac = window._facActual, grupos = window._gruposActuales;
+  const out = $('resultadoOdoo');
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: SB_KEY(),
+    Authorization: 'Bearer ' + SB_KEY(),
+  };
+  try {
+    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Buscando borrador en Odoo…</div>`;
+    let r = await fetch(FN_URL(), {
+      method: 'POST', headers,
+      body: JSON.stringify({ modo: 'buscar_borrador', cuit: fac.cuitProv.replace(/\D/g,'') }),
+    });
+    let d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+
+    const normComp = (s) => (s||'').replace(/[^\d-]/g,'').split('-').map(x=>parseInt(x,10)||0).join('-');
+    const match = (d.borradores||[]).find(b => normComp(b.l10n_latam_document_number) === normComp(fac.comprobante));
+    if (!match) {
+      out.innerHTML = `<div class="alerta">No se encontró borrador con CUIT ${fac.cuitProv} y comprobante ${fac.comprobante}.</div>`;
+      btn.disabled = false; return;
+    }
+
+    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Aplicando percepciones a ${match.name}…</div>`;
+    const percepciones = grupos.map(g => ({
+      tax_id: g.tax_id, monto: Math.round(g.monto*100)/100,
+    }));
+    r = await fetch(FN_URL(), {
+      method: 'POST', headers,
+      body: JSON.stringify({ modo: 'aplicar_percepciones', move_id: match.id, percepciones }),
+    });
+    d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+
+    let hh = `<div class="invoice" style="margin-top:14px;">
+      <div class="inv-head">
+        <div class="full">✓ Percepciones aplicadas a ${match.name}</div>
+        <div><span class="k">Total Odoo:</span> <span class="v">${money(d.cabecera.amount_total)}</span></div>
+        <div><span class="k">Aplicadas:</span> <span class="v">${d.aplicadas}</span></div>
+      </div>
+      <div class="totales">`;
+    (d.lineas_tax || []).forEach(l => {
+      hh += `<div class="row perc"><span class="lbl">${l.name}:</span><span class="val">${money(l.balance)}</span></div>`;
+    });
+    hh += `</div></div>
+      <div class="alerta ok">Listo. Revisá la factura en Odoo y confirmala a mano. El borrador NO fue posteado.</div>`;
+    out.innerHTML = hh;
+  } catch (e) {
+    out.innerHTML = `<div class="alerta err">Error: ${e.message}</div>`;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>

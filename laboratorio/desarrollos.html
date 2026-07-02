@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desarrollos · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .toolbar {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .count-info { font-size: 12.5px; color: var(--muted); }
+    table.tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted);
+      padding: 10px 14px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td {
+      padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .badge-ver {
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      color: var(--warn); padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 600;
+    }
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border);
+      border-radius: var(--radius);
+    }
+  </style>
+</head>
+<body data-page="laboratorio" data-title="Desarrollos" data-subtitle="Fórmulas en curso de I+D">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" class="input" id="search" placeholder="Buscar por código o nombre…">
+    </div>
+    <span class="count-info" id="cnt">—</span>
+  </div>
+
+  <div id="content">
+    <div class="empty-box">Cargando…</div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+let DATA = [];
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function cargar() {
+  try {
+    const { data: devs, error } = await sb.from('formulas')
+      .select('id, codigo_granel, version, notas, creado_en, vigente_desde')
+      .eq('estado', 'desarrollo')
+      .order('creado_en', { ascending: false });
+    if (error) throw error;
+
+    const codigos = [...new Set((devs || []).map(d => d.codigo_granel))];
+    let nombres = {};
+    if (codigos.length) {
+      const { data: items } = await sb.from('items').select('codigo, nombre').in('codigo', codigos);
+      (items || []).forEach(i => nombres[i.codigo] = i.nombre);
+    }
+    DATA = (devs || []).map(d => ({ ...d, nombre: nombres[d.codigo_granel] || '—' }));
+    render();
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  let rows = DATA;
+  if (q) rows = rows.filter(d => (d.codigo_granel + ' ' + d.nombre + ' ' + (d.notas||'')).toLowerCase().includes(q));
+
+  document.getElementById('cnt').textContent =
+    rows.length + ' desarrollo' + (rows.length !== 1 ? 's' : '');
+
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `<div class="empty-box">${DATA.length ? 'Sin coincidencias' : 'No hay fórmulas en desarrollo. Creá una desde el editor con "+ Nueva versión".'}</div>`;
+    return;
+  }
+
+  document.getElementById('content').innerHTML = `
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Código</th><th>Producto</th><th class="num">Versión</th>
+          <th>Nota</th><th>Creado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(d => `
+          <tr>
+            <td class="codigo">${esc(d.codigo_granel)}</td>
+            <td>${esc(d.nombre)}</td>
+            <td class="num"><span class="badge-ver">v${d.version}</span></td>
+            <td style="color:var(--muted); font-size:12.5px;">${d.notas ? esc(d.notas) : '<span style="opacity:.6;">(sin nota)</span>'}</td>
+            <td style="font-size:12px; color:var(--muted);">${d.creado_en ? new Date(d.creado_en).toLocaleDateString('es-AR') : '—'}</td>
+            <td>
+              <a href="formulas.html?codigo=${esc(d.codigo_granel)}" class="btn primary" style="padding:5px 12px; font-size:12.5px; text-decoration:none;">Abrir en editor →</a>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+document.getElementById('search').addEventListener('input', render);
+cargar();
+</script>
+</body>
+</html>

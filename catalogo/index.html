@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catálogo · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .tool-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color .12s, transform .12s;
+      cursor: pointer; text-decoration: none; color: inherit;
+    }
+    .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
+    .tool-card .icon {
+      width: 36px; height: 36px; border-radius: var(--radius-sm);
+      background: var(--accent-tint); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; margin-bottom: 6px;
+    }
+    .tool-card h3 { font-size: 15px; font-weight: 600; color: var(--text); }
+    .tool-card .desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .tool-card.disabled { opacity: 0.6; cursor: not-allowed; }
+    .tool-card.disabled:hover { border-color: var(--border); transform: none; }
+    .grid-tools {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .status-current {
+      display: flex; gap: 24px; padding: 14px 18px; flex-wrap: wrap;
+      background: var(--surface-2); border-radius: var(--radius);
+      margin-bottom: 20px; font-size: 13px;
+    }
+    .status-current .k { color: var(--muted); }
+    .status-current .v {
+      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body data-page="catalogo" data-title="Catálogo" data-subtitle="Productos terminados · presentaciones · combos">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="status-current" id="statusCat">
+    <span><span class="k">SKUs activos:</span> <span class="v" id="cnt-sku">—</span></span>
+    <span><span class="k">Combos:</span> <span class="v" id="cnt-combo">—</span></span>
+    <span><span class="k">Packs x4:</span> <span class="v" id="cnt-pack">—</span></span>
+  </div>
+
+  <h2 style="font-size:16px; font-weight:600; margin-bottom:12px;">Herramientas del catálogo</h2>
+
+  <div class="grid-tools">
+    <a href="combos.html" class="tool-card">
+      <div class="icon">◐</div>
+      <h3>Combos</h3>
+      <div class="desc">Armá combos de 2 a 5 productos, con cálculo de costo automático y publicación por canal.</div>
+    </a>
+
+    <a href="presentaciones.html" class="tool-card">
+      <div class="icon">□</div>
+      <h3>Presentaciones (SKUs)</h3>
+      <div class="desc">Alta de SKU: granel + envase + etiqueta + tamaño. Con canales y línea comercial.</div>
+    </a>
+
+    <a href="lineas.html" class="tool-card">
+      <div class="icon">☰</div>
+      <h3>Líneas comerciales</h3>
+      <div class="desc">ABM de las 5 líneas (Neutra, Termoactiva, Corporal, Facial, Packs). Nombre, color, orden y activo. Contador de items por línea.</div>
+    </a>
+
+    <a href="packs.html" class="tool-card">
+      <div class="icon">◈</div>
+      <h3>Packs x4</h3>
+      <div class="desc">Combos mayoristas de 4 unidades. Ver todos los packs vigentes con costo automático, editar cantidad, agregar nuevos.</div>
+    </a>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+(async () => {
+  try {
+    const { data } = await sb.from('items').select('tipo').eq('estado', 'vigente');
+    const rows = data || [];
+    const skus = rows.filter(r => r.tipo === 'SKU').length;
+    const combos = rows.filter(r => r.tipo === 'COMBO').length;
+    const packs = rows.filter(r => r.tipo === 'PACK').length;
+    document.getElementById('cnt-sku').textContent = skus;
+    document.getElementById('cnt-combo').textContent = combos;
+    document.getElementById('cnt-pack').textContent = packs;
+  } catch (e) {
+    console.warn('No se pudo cargar el resumen:', e);
+  }
+})();
+</script>
+</body>
+</html>

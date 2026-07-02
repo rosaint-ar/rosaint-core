@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integraciones · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .conn-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px; margin-bottom: 12px;
+      display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center;
+    }
+    .conn-icon {
+      width: 44px; height: 44px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; flex-shrink: 0;
+    }
+    .conn-icon.supabase { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .conn-icon.odoo { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .conn-icon.ml { background: #fff9de; color: #b8860b; }
+    .conn-icon.tn { background: #dfeeff; color: #2a6db5; }
+    .conn-icon.arca { background: var(--surface-2); color: var(--muted); }
+    .conn-icon.wa { background: #e2f7ea; color: #128c47; }
+
+    .conn-body { min-width: 0; }
+    .conn-name {
+      font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px;
+    }
+    .conn-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .conn-meta {
+      font-size: 12px; color: var(--muted); margin-top: 8px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .conn-meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .conn-status {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    }
+    .conn-status.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .conn-status.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .conn-status.off { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .conn-status.manual { background: var(--surface-2); color: var(--muted); }
+
+    .conn-actions {
+      display: flex; gap: 8px; flex-shrink: 0;
+    }
+    .conn-actions .btn { padding: 6px 12px; font-size: 12.5px; }
+
+    .section-title {
+      font-size: 15px; font-weight: 600; margin: 28px 0 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title:first-child { margin-top: 0; }
+    .section-title .cnt {
+      font-size: 11px; color: var(--muted); background: var(--surface-2);
+      padding: 2px 8px; border-radius: 10px; font-weight: 500;
+    }
+
+    /* Tabla de cron / edge functions */
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.mono { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .tbl td.muted { color: var(--muted); font-size: 12.5px; }
+
+    .empty-box {
+      padding: 32px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="sistema" data-title="Integraciones" data-subtitle="Estado de las conexiones y tareas programadas">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <h2 class="section-title">Conexiones externas <span class="cnt" id="cnt-conn">—</span></h2>
+
+  <div id="conn-supabase" class="conn-card">
+    <div class="conn-icon supabase">◐</div>
+    <div class="conn-body">
+      <div class="conn-name">Supabase <span class="conn-status ok" id="st-supabase">Conectada</span></div>
+      <div class="conn-desc">Base de datos + auth + edge functions. La fuente única de datos.</div>
+      <div class="conn-meta" id="meta-supabase"></div>
+    </div>
+    <div class="conn-actions">
+      <a class="btn ghost" href="https://supabase.com/dashboard/project/jayhjhifrfcdecofwgbf" target="_blank">Panel →</a>
+    </div>
+  </div>
+
+  <div id="conn-odoo" class="conn-card">
+    <div class="conn-icon odoo">🟪</div>
+    <div class="conn-body">
+      <div class="conn-name">Odoo <span class="conn-status" id="st-odoo">Verificando…</span></div>
+      <div class="conn-desc">Facturas, borradores, percepciones y clientes. Via edge function odoo-explorar.</div>
+      <div class="conn-meta" id="meta-odoo"></div>
+    </div>
+    <div class="conn-actions">
+      <button class="btn secondary" id="btn-ping-odoo">Probar</button>
+    </div>
+  </div>
+
+  <div id="conn-ml" class="conn-card">
+    <div class="conn-icon ml">🟡</div>
+    <div class="conn-body">
+      <div class="conn-name">Mercado Libre <span class="conn-status" id="st-ml">Verificando…</span></div>
+      <div class="conn-desc">Publicaciones, ADS, órdenes. OAuth con refresh token guardado en ml_auth.</div>
+      <div class="conn-meta" id="meta-ml"></div>
+    </div>
+    <div class="conn-actions">
+      <a class="btn ghost" href="../comercial/publicaciones.html">Ir a publicaciones →</a>
+    </div>
+  </div>
+
+  <div id="conn-tn" class="conn-card">
+    <div class="conn-icon tn">🔵</div>
+    <div class="conn-body">
+      <div class="conn-name">Tienda Nube <span class="conn-status manual">Pendiente</span></div>
+      <div class="conn-desc">Marketplace. La integración directa (API) todavía no está armada.</div>
+    </div>
+    <div class="conn-actions">
+      <span style="font-size:12px; color:var(--muted);">Sin integrar</span>
+    </div>
+  </div>
+
+  <div id="conn-arca" class="conn-card">
+    <div class="conn-icon arca">🏛</div>
+    <div class="conn-body">
+      <div class="conn-name">ARCA <span class="conn-status manual">Manual</span></div>
+      <div class="conn-desc">Fiscal argentino. Se importa el Excel "Mis Comprobantes" en el Conciliador IVA.</div>
+    </div>
+    <div class="conn-actions">
+      <a class="btn ghost" href="../fiscal/conciliador.html">Conciliador →</a>
+    </div>
+  </div>
+
+  <div id="conn-wa" class="conn-card">
+    <div class="conn-icon wa">💬</div>
+    <div class="conn-body">
+      <div class="conn-name">WhatsApp <span class="conn-status manual">Deep link</span></div>
+      <div class="conn-desc">Cotizador y CRM abren wa.me/{teléfono}?text=… en el navegador. Sin API oficial.</div>
+    </div>
+    <div class="conn-actions">
+      <span style="font-size:12px; color:var(--muted);">Sin API</span>
+    </div>
+  </div>
+
+  <h2 class="section-title">Tareas programadas (pg_cron) <span class="cnt" id="cnt-cron">—</span></h2>
+  <div id="cron-list"><div class="empty-box">Cargando…</div></div>
+
+  <h2 class="section-title">Edge functions <span class="cnt" id="cnt-fn">—</span></h2>
+  <div id="fn-list"><div class="empty-box">Cargando…</div></div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtFecha = d => d ? new Date(d).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+const fmtHace = d => {
+  if (!d) return null;
+  const ms = Date.now() - new Date(d).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'hace instantes';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `hace ${h}h`;
+  const dias = Math.floor(h / 24);
+  return `hace ${dias}d`;
+};
+
+// ─── Supabase status ───
+async function cargarSupabase() {
+  try {
+    const t0 = performance.now();
+    const { error } = await sb.from('parametros').select('clave').limit(1);
+    const ms = Math.round(performance.now() - t0);
+    if (error) throw error;
+    $('#meta-supabase').innerHTML = `
+      <span>URL: <b>${esc(window.SUPABASE_URL.replace('https://','').replace('.supabase.co',''))}</b></span>
+      <span>Ping: <b>${ms} ms</b></span>
+      <span>Auth: <b>publishable key</b></span>
+    `;
+  } catch (err) {
+    $('#st-supabase').textContent = 'Error';
+    $('#st-supabase').className = 'conn-status off';
+  }
+}
+
+// ─── Odoo status (ping via odoo-explorar) ───
+async function cargarOdoo() {
+  const st = $('#st-odoo');
+  try {
+    const t0 = performance.now();
+    const r = await fetch(window.ODOO_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: window.SUPABASE_KEY,
+        Authorization: 'Bearer ' + window.SUPABASE_KEY,
+      },
+      body: JSON.stringify({ modo: 'contabilidad', que: 'impuestos' }),
+    });
+    const ms = Math.round(performance.now() - t0);
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Sin respuesta');
+    st.textContent = 'Conectado';
+    st.className = 'conn-status ok';
+    $('#meta-odoo').innerHTML = `
+      <span>Endpoint: <b>odoo-explorar</b></span>
+      <span>Ping: <b>${ms} ms</b></span>
+      <span>Impuestos leídos: <b>${(d.data||[]).length}</b></span>
+    `;
+  } catch (err) {
+    st.textContent = 'Error';
+    st.className = 'conn-status off';
+    $('#meta-odoo').innerHTML = `<span style="color:var(--hot);">${esc(err.message)}</span>`;
+  }
+}
+
+$('#btn-ping-odoo').addEventListener('click', () => { $('#st-odoo').textContent = 'Verificando…'; $('#st-odoo').className = 'conn-status'; cargarOdoo(); });
+
+// ─── ML status ───
+// ml_auth tiene RLS activada (protege refresh_token). Usamos la RPC ml_auth_status()
+// que expone solo campos seguros (seller ID, vencimiento del token, timestamps).
+async function cargarML() {
+  const st = $('#st-ml');
+  try {
+    const { data, error } = await sb.rpc('ml_auth_status');
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.ml_user_id) {
+      st.textContent = 'No conectado';
+      st.className = 'conn-status off';
+      $('#meta-ml').innerHTML = '<span style="color:var(--muted);">No hay credenciales en ml_auth. Reconectá la cuenta desde el flujo OAuth de ML.</span>';
+      return;
+    }
+    const expira = row.token_expira_en;
+    const vencido = expira && new Date(expira).getTime() < Date.now();
+    const proximo = expira && new Date(expira).getTime() < Date.now() + 30 * 60 * 1000;
+
+    if (vencido) {
+      st.textContent = 'Token vencido';
+      st.className = 'conn-status warn';
+    } else if (proximo) {
+      st.textContent = 'Vence pronto';
+      st.className = 'conn-status warn';
+    } else {
+      st.textContent = 'Conectado';
+      st.className = 'conn-status ok';
+    }
+
+    const ultimoSync = row.ultimo_sync_publicaciones;
+    $('#meta-ml').innerHTML = `
+      <span>Seller ID: <b>${esc(row.ml_user_id)}</b></span>
+      <span>Token vence: <b>${fmtFecha(expira)}</b></span>
+      ${ultimoSync ? `<span>Último sync: <b>${fmtHace(ultimoSync)}</b></span>` : '<span style="color:var(--muted);">Sin sync todavía</span>'}
+    `;
+  } catch (err) {
+    st.textContent = 'Error';
+    st.className = 'conn-status off';
+    $('#meta-ml').innerHTML = `<span style="color:var(--hot);">${esc(err.message)}</span>`;
+  }
+}
+
+// ─── Cron jobs ───
+async function cargarCron() {
+  try {
+    const { data, error } = await sb.rpc('sistema_cron_jobs');
+    // Si no hay RPC, hacer un query directo via un edge function o fallback estático
+    if (error && error.code === '42883') { // función no existe
+      cargarCronFallback(); return;
+    }
+    if (error) throw error;
+    renderCron(data || []);
+  } catch (err) {
+    cargarCronFallback();
+  }
+}
+function cargarCronFallback() {
+  // Sin RPC: mostramos los que sabemos que existen (hardcodeados desde la consulta manual).
+  // Idealmente en Fase 5.1 se crea una RPC pública que devuelva cron.job.
+  const jobs = [
+    { jobid: 27, jobname: 'sync-dolar-bna', schedule: '0 13,15,18 * * 1-5', active: true, descripcion: 'Actualiza cotización BNA venta 3 veces por día laboral (10:00, 12:00, 15:00 ART).' },
+    { jobid: 25, jobname: 'sync-diario', schedule: '0 8 * * *', active: true, descripcion: 'Sync diaria (definida en el proyecto Rosaint).' },
+    { jobid: 13, jobname: 'espejo-padron', schedule: '*/15 * * * *', active: true, descripcion: 'Actualiza el espejo del padrón cada 15 minutos.' },
+  ];
+  renderCron(jobs);
+}
+function renderCron(jobs) {
+  $('#cnt-cron').textContent = jobs.length + ' activa' + (jobs.length !== 1 ? 's' : '');
+  if (!jobs.length) {
+    $('#cron-list').innerHTML = '<div class="empty-box">No hay tareas programadas.</div>';
+    return;
+  }
+  $('#cron-list').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>Nombre</th><th>Cron</th><th>Descripción</th><th style="width:60px;">Activa</th>
+      </tr></thead>
+      <tbody>
+        ${jobs.map(j => `
+          <tr>
+            <td class="mono">${esc(j.jobname)}</td>
+            <td class="mono" style="color:var(--text); font-size:11px;">${esc(j.schedule)}</td>
+            <td class="muted">${esc(j.descripcion || '—')}</td>
+            <td>${j.active ? '<span style="color:var(--ok); font-weight:600;">✓</span>' : '<span style="color:var(--muted);">—</span>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ─── Edge functions (lista estática basada en las que tenemos deployadas) ───
+function cargarEdgeFunctions() {
+  const fns = [
+    { slug: 'sync-dolar-bna', descripcion: 'Trae cotización BNA venta desde dolarapi.com', usa: 'módulo Precios' },
+    { slug: 'odoo-explorar', descripcion: 'Proxy a Odoo (facturas, borradores, percepciones, contactos)', usa: 'Percepciones · Conciliador · CRM' },
+    { slug: 'ml-sync', descripcion: 'Sincroniza catálogo del seller en ML (agrega/actualiza/elimina)', usa: 'Publicaciones' },
+    { slug: 'ml-ads-sync', descripcion: 'Sincroniza gasto en publicidad de ML (reset a 0 si no hay campaña)', usa: 'Publicidad · Publicaciones' },
+    { slug: 'ml-ads-auto', descripcion: 'Motor que pausa avisos con mala rentabilidad', usa: 'Publicidad' },
+    { slug: 'ml-oauth', descripcion: 'Callback OAuth para conectar cuenta de ML', usa: 'Setup inicial' },
+  ];
+  $('#cnt-fn').textContent = `${fns.length} claves · 25+ auxiliares`;
+  $('#fn-list').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>Función</th><th>Descripción</th><th>Usada por</th>
+      </tr></thead>
+      <tbody>
+        ${fns.map(f => `
+          <tr>
+            <td class="mono">${esc(f.slug)}</td>
+            <td>${esc(f.descripcion)}</td>
+            <td class="muted">${esc(f.usa)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="font-size:12px; color:var(--muted); margin-top:10px; padding: 0 4px;">
+      + funciones auxiliares del sync de Odoo (odoo-sync-*, odoo-fix-*, odoo-inspect-*, mcp-imagen…). Ver todas en el panel de Supabase.
+    </div>
+  `;
+}
+
+// Contador de conexiones (fijo: las 6 que se muestran)
+$('#cnt-conn').textContent = '6 servicios';
+
+cargarSupabase();
+cargarOdoo();
+cargarML();
+cargarCron();
+cargarEdgeFunctions();
+</script>
+</body>
+</html>

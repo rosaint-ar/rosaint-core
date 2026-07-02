@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hoja Producción">
+  <meta name="theme-color" content="#1A1A1A">
+  <title>Hoja de Producción · Rosaint</title>
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="apple-touch-icon" href="../shell/favicon.png">
+  <link rel="manifest" href="../manifest.json">
+  <style>
+    :root {
+      --rojo: #F93549;
+      --azul: #34495E;
+      --negro: #1A1A1A;
+      --blanco: #FFFFFF;
+      --gris-90: #2A2A2A;
+      --gris-70: #4A4A4A;
+      --gris-50: #7A7A7A;
+      --gris-30: #C4C4C4;
+      --gris-20: #E0E0E0;
+      --gris-10: #EFEDE9;
+      --gris-05: #F7F5F2;
+      --verde: #2ea043;
+      --naranja: #ff8c00;
+      --rojo-tint: rgba(249, 53, 73, 0.08);
+      --naranja-tint: rgba(255, 140, 0, 0.12);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      font-family: var(--font); font-size: 15px; color: var(--negro);
+      background: var(--gris-05);
+      -webkit-font-smoothing: antialiased;
+    }
+    body { display: flex; flex-direction: column; }
+
+    /* Barra superior */
+    .topbar {
+      background: var(--negro); color: var(--blanco);
+      padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+      flex-shrink: 0;
+    }
+    .topbar__logo {
+      font-family: 'Helvetica Neue', 'Arial Black', system-ui, sans-serif;
+      font-weight: 900; font-size: 17px; letter-spacing: -0.02em; color: var(--rojo);
+    }
+    .topbar__title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+    .topbar__spacer { flex: 1; }
+    .topbar__fecha-picker input {
+      background: var(--gris-90); color: var(--blanco); border: 1px solid var(--gris-70);
+      padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 15px;
+      font-variant-numeric: tabular-nums;
+    }
+    .topbar__link {
+      color: var(--gris-30); text-decoration: none; font-size: 13px; padding: 6px 10px;
+    }
+    .topbar__link:hover { color: var(--blanco); }
+
+    /* Header con pendientes — lista tabular compacta */
+    .pendientes {
+      background: var(--blanco); padding: 12px 20px 14px; border-bottom: 1px solid var(--gris-20);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+      flex-shrink: 0;
+    }
+    .pend-col { min-width: 0; }
+    .pend-col__header {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+      margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1.5px solid var(--gris-10);
+    }
+    .pend-col.fab .pend-col__header { border-bottom-color: rgba(249, 53, 73, 0.35); }
+    .pend-col.frac .pend-col__header { border-bottom-color: rgba(255, 140, 0, 0.4); }
+    .pend-col__label {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--gris-70);
+    }
+    .pend-col.fab .pend-col__label { color: var(--rojo); }
+    .pend-col.frac .pend-col__label { color: var(--naranja); }
+    .pend-col__count {
+      font-size: 12px; color: var(--gris-70); font-variant-numeric: tabular-nums;
+    }
+    .pend-list {
+      display: flex; flex-direction: column;
+      max-height: 128px; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .pend-item {
+      display: grid; grid-template-columns: 1fr auto; gap: 12px;
+      padding: 5px 4px 5px 6px; align-items: baseline;
+      font-size: 13.5px; line-height: 1.3;
+    }
+    .pend-item + .pend-item { border-top: 1px dashed var(--gris-10); }
+    .pend-item__name {
+      color: var(--negro); font-weight: 500;
+      line-height: 1.3;
+    }
+    .pend-item__qty {
+      font-weight: 700; font-variant-numeric: tabular-nums;
+      font-size: 14px; white-space: nowrap;
+      align-self: baseline;
+    }
+    .pend-col.fab .pend-item__qty { color: var(--rojo); }
+    .pend-col.frac .pend-item__qty { color: var(--naranja); }
+    .pend-empty {
+      font-size: 13px; color: var(--gris-50); padding: 8px 0;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    @media (max-width: 700px) {
+      .pendientes { grid-template-columns: 1fr; gap: 10px; padding: 10px 14px; }
+      .pend-list { max-height: 80px; }
+    }
+
+    /* Contenido: tabla + botón agregar */
+    .contenido { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 20px; }
+    .contenido__title {
+      font-size: 20px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em;
+      display: flex; align-items: baseline; gap: 12px;
+    }
+    .contenido__title .badge {
+      background: var(--negro); color: var(--blanco); font-size: 13px; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px;
+    }
+    .contenido__sub { font-size: 13px; color: var(--gris-70); margin-bottom: 14px; }
+
+    .tabla-wrap {
+      background: var(--blanco); border: 1px solid var(--gris-20); border-radius: 12px;
+      flex: 1; overflow-y: auto; overflow-x: auto; margin-bottom: 14px;
+      -webkit-overflow-scrolling: touch;
+    }
+    table.hoja { width: 100%; border-collapse: collapse; font-size: 15px; }
+    table.hoja thead th {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--negro); color: var(--blanco);
+      text-align: left; font-weight: 600; font-size: 12px; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 12px 14px;
+    }
+    table.hoja tbody td {
+      padding: 14px; border-bottom: 1px solid var(--gris-10);
+      font-variant-numeric: tabular-nums;
+    }
+    table.hoja tbody tr:last-child td { border-bottom: none; }
+    table.hoja tbody tr:nth-child(odd) { background: var(--gris-05); }
+    table.hoja td.qty { text-align: right; font-weight: 600; }
+    table.hoja td.iniciales {
+      text-align: center; font-family: 'SF Mono', Consolas, monospace;
+      font-size: 17px; font-weight: 700; letter-spacing: 0.06em;
+    }
+    table.hoja td.acciones { text-align: right; width: 100px; }
+    table.hoja .del-btn {
+      background: transparent; border: 1px solid var(--gris-30); color: var(--gris-70);
+      border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+    }
+    table.hoja .del-btn:hover { border-color: var(--rojo); color: var(--rojo); }
+
+    .empty {
+      text-align: center; padding: 60px 20px; color: var(--gris-50);
+      font-size: 15px;
+    }
+
+    .toolbar-btns {
+      display: flex; gap: 12px; flex-shrink: 0;
+    }
+    .btn-add {
+      flex: 1; background: var(--rojo); color: var(--blanco); border: none;
+      padding: 22px; border-radius: 12px; font-size: 18px; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.02em;
+      box-shadow: 0 4px 16px rgba(249, 53, 73, 0.25);
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .btn-add:active { transform: translateY(1px); box-shadow: 0 2px 8px rgba(249, 53, 73, 0.3); }
+    .btn-obs {
+      background: var(--gris-05); color: var(--negro); border: 1px solid var(--gris-30);
+      padding: 22px 28px; border-radius: 12px; font-size: 15px; font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      z-index: 100; display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: var(--blanco); border-radius: 16px; width: 100%; max-width: 640px;
+      max-height: 92vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal__header {
+      padding: 20px 24px; border-bottom: 1px solid var(--gris-20);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal__title { font-size: 20px; font-weight: 700; margin: 0; }
+    .modal__close {
+      background: none; border: none; font-size: 26px; color: var(--gris-50);
+      cursor: pointer; padding: 4px 12px;
+    }
+    .modal__body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .modal__footer {
+      padding: 16px 24px; border-top: 1px solid var(--gris-20);
+      display: flex; gap: 12px; justify-content: flex-end;
+    }
+
+    .field { margin-bottom: 18px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gris-70); margin-bottom: 6px;
+    }
+    .field input, .field textarea, .field select {
+      width: 100%; padding: 14px; font-family: inherit; font-size: 16px;
+      border: 1.5px solid var(--gris-30); border-radius: 8px; background: var(--blanco);
+    }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none; border-color: var(--rojo);
+    }
+    .field textarea { resize: vertical; min-height: 80px; }
+
+    .search-wrap { position: relative; }
+    .search-results {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--blanco); border: 1px solid var(--gris-20); border-radius: 8px;
+      max-height: 320px; overflow-y: auto; margin-top: 4px; z-index: 10;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      display: none;
+    }
+    .search-results.open { display: block; }
+    .search-item {
+      padding: 12px 14px; border-bottom: 1px solid var(--gris-10);
+      cursor: pointer; font-size: 14px;
+    }
+    .search-item:hover, .search-item.active { background: var(--gris-05); }
+    .search-item .sku {
+      font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
+      color: var(--gris-70); margin-right: 8px;
+    }
+    .search-item .qty-stock {
+      float: right; font-size: 12px; color: var(--gris-70);
+    }
+    .search-item .qty-stock.warn { color: var(--rojo); font-weight: 600; }
+
+    .field-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+    .field-row .field { margin-bottom: 0; }
+
+    .btn-modal-primary {
+      background: var(--rojo); color: var(--blanco); border: none;
+      padding: 14px 28px; border-radius: 8px; font-size: 16px; font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-modal-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-modal-ghost {
+      background: transparent; color: var(--gris-70); border: 1.5px solid var(--gris-30);
+      padding: 14px 24px; border-radius: 8px; font-size: 16px; cursor: pointer;
+    }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--negro); color: var(--blanco); padding: 14px 22px;
+      border-radius: 10px; font-size: 14px; font-weight: 500; z-index: 200;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      opacity: 0; transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.err { background: var(--rojo); }
+
+    /* Badge de tipo en la tabla y modal */
+    .tipo-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .tipo-badge.fabricacion { background: var(--rojo-tint); color: var(--rojo); }
+    .tipo-badge.fraccionamiento { background: var(--naranja-tint); color: var(--naranja); }
+
+    /* Toggle Fabricación/Fraccionamiento en el modal */
+    .tipo-toggle {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      background: var(--gris-05); padding: 4px; border-radius: 10px;
+    }
+    .tipo-toggle button {
+      background: transparent; border: none;
+      padding: 12px; border-radius: 8px;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer; color: var(--gris-70);
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .tipo-toggle button.active[data-tipo="fabricacion"] {
+      background: var(--blanco); color: var(--rojo);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .tipo-toggle button.active[data-tipo="fraccionamiento"] {
+      background: var(--blanco); color: var(--naranja);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* Impresión ----------------------------------------------- */
+    @media print {
+      @page { size: A4 portrait; margin: 14mm 12mm; }
+      html, body { overflow: visible !important; height: auto !important; background: white !important; }
+      .topbar, .pendientes, .toolbar-btns, .modal-bg, .toast,
+      table.hoja th:last-child, table.hoja td.acciones { display: none !important; }
+      .contenido { overflow: visible !important; padding: 0 !important; flex: unset !important; }
+      .tabla-wrap { border: none !important; overflow: visible !important; max-height: none !important; }
+      .print-header {
+        display: flex !important; justify-content: space-between; align-items: flex-end;
+        border-bottom: 2px solid var(--negro); padding-bottom: 8px; margin-bottom: 14px;
+      }
+      .print-header h1 { font-size: 22px; margin: 0; }
+      .print-header .fecha-print { font-size: 14px; color: var(--gris-70); }
+      .print-header .subtitulo { font-size: 12px; color: var(--gris-70); margin-top: 2px; }
+      .contenido__title, .contenido__sub { display: none !important; }
+      table.hoja { font-size: 11pt; }
+      table.hoja thead th { background: white !important; color: var(--negro) !important;
+        border-bottom: 1.5px solid var(--negro); padding: 8px 10px; font-size: 9pt; }
+      table.hoja tbody td { padding: 8px 10px; font-size: 10pt; border-bottom: 1px solid var(--gris-10); }
+      table.hoja tbody tr { page-break-inside: avoid; }
+      table.hoja tbody tr:nth-child(odd) { background: white !important; }
+      .print-obs {
+        display: block !important; margin-top: 22px;
+        padding: 12px; border: 1px solid var(--gris-30); border-radius: 6px;
+        page-break-inside: avoid;
+      }
+      .print-obs h3 { font-size: 11pt; margin: 0 0 6px; }
+      .print-obs p { font-size: 10pt; margin: 0; white-space: pre-wrap; min-height: 40px; }
+      .print-firma {
+        display: block !important; margin-top: 40px; font-size: 10pt;
+        border-top: 1px solid var(--negro); padding-top: 4px; max-width: 240px;
+        text-align: center;
+      }
+    }
+    .print-header, .print-obs, .print-firma { display: none; }
+
+    /* Tablet portrait/landscape adjust */
+    @media (max-width: 900px) {
+      .pend-card { min-width: 200px; }
+      .pend-card__num { font-size: 22px; }
+      .contenido { padding: 14px; }
+      .btn-add { padding: 18px; font-size: 16px; }
+      table.hoja tbody td { padding: 12px 10px; font-size: 14px; }
+    }
+    @media (max-width: 600px) {
+      .topbar { padding: 10px 14px; gap: 10px; }
+      .topbar__title { font-size: 15px; }
+      .pendientes { padding: 10px 14px; }
+      .pend-card { min-width: 180px; padding: 10px 12px; }
+      .field-row { grid-template-columns: 1fr; }
+      .toolbar-btns { flex-direction: column; }
+      .btn-obs { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar__logo">ROSAINT</div>
+  <div class="topbar__title">Hoja de Producción</div>
+  <div class="topbar__spacer"></div>
+  <div class="topbar__fecha-picker">
+    <input type="date" id="fecha-picker">
+  </div>
+  <a href="index.html" class="topbar__link">← Volver a plataforma</a>
+</div>
+
+<div class="pendientes">
+  <div class="pend-col fab">
+    <div class="pend-col__header">
+      <span class="pend-col__label">🔨 A Fabricar</span>
+      <span class="pend-col__count" id="pend-fab-count">—</span>
+    </div>
+    <div class="pend-list" id="pend-fab-list"><span class="pend-empty">Cargando…</span></div>
+  </div>
+  <div class="pend-col frac">
+    <div class="pend-col__header">
+      <span class="pend-col__label">📦 A Fraccionar</span>
+      <span class="pend-col__count" id="pend-frac-count">—</span>
+    </div>
+    <div class="pend-list" id="pend-frac-list"><span class="pend-empty">Cargando…</span></div>
+  </div>
+</div>
+
+<div class="contenido">
+  <h1 class="contenido__title">
+    <span id="titulo-fecha">Actividades del día</span>
+    <span class="badge" id="badge-count">0</span>
+  </h1>
+  <div class="contenido__sub" id="titulo-sub">Cargando…</div>
+
+  <!-- Encabezado que solo aparece al imprimir -->
+  <div class="print-header">
+    <div>
+      <h1>Informe Diario de Producción</h1>
+      <div class="subtitulo">Rosaint · Cosmética Profesional</div>
+    </div>
+    <div class="fecha-print" id="print-fecha"></div>
+  </div>
+
+  <div class="tabla-wrap">
+    <table class="hoja">
+      <thead>
+        <tr>
+          <th style="width: 80px;">Hora</th>
+          <th style="width: 130px;">Tipo</th>
+          <th>Producto</th>
+          <th style="width: 130px;">Presentación</th>
+          <th style="width: 120px; text-align: right;">Un. / Kg</th>
+          <th style="width: 90px; text-align: center;">Firma</th>
+          <th class="acciones" style="width: 90px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-hoja">
+        <tr><td colspan="7"><div class="empty">Cargando…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Observaciones + firma solo visible al imprimir -->
+  <div class="print-obs">
+    <h3>Observaciones</h3>
+    <p id="print-obs-texto">—</p>
+  </div>
+  <div class="print-firma">Firma del responsable</div>
+
+  <div class="toolbar-btns">
+    <button class="btn-add" id="btn-add">+ Agregar producto</button>
+    <button class="btn-obs" id="btn-obs">📝 Observaciones</button>
+    <button class="btn-obs" id="btn-print">🖨 Imprimir</button>
+  </div>
+</div>
+
+<!-- Modal Agregar línea -->
+<div class="modal-bg" id="modal-add">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title">Registrar producción</h2>
+      <button class="modal__close" id="modal-close">×</button>
+    </div>
+    <div class="modal__body">
+      <div class="field">
+        <label>Tipo de actividad</label>
+        <div class="tipo-toggle" id="tipo-toggle">
+          <button type="button" data-tipo="fabricacion" class="active">🔨 Fabricación</button>
+          <button type="button" data-tipo="fraccionamiento">📦 Fraccionamiento</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="in-producto">Producto</label>
+        <div class="search-wrap">
+          <input type="text" id="in-producto" placeholder="Buscar por SKU o nombre…" autocomplete="off">
+          <div class="search-results" id="search-results"></div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="in-cantidad">Cantidad</label>
+          <input type="number" id="in-cantidad" step="0.01" min="0" inputmode="decimal" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="in-unidad">Unidad</label>
+          <select id="in-unidad">
+            <option value="un">un.</option>
+            <option value="kg">kg</option>
+            <option value="lts">lts</option>
+            <option value="g">g</option>
+            <option value="cc">cc</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="in-iniciales">Firma (iniciales)</label>
+        <input type="text" id="in-iniciales" maxlength="4" placeholder="Ej: DV" style="text-transform: uppercase; font-family: 'SF Mono', Consolas, monospace; font-size: 20px; font-weight: 700; text-align: center; letter-spacing: 0.1em;">
+      </div>
+    </div>
+    <div class="modal__footer">
+      <button class="btn-modal-ghost" id="btn-cancel">Cancelar</button>
+      <button class="btn-modal-primary" id="btn-save" disabled>Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Observaciones -->
+<div class="modal-bg" id="modal-obs">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title">Observaciones del día</h2>
+      <button class="modal__close" id="modal-obs-close">×</button>
+    </div>
+    <div class="modal__body">
+      <div class="field">
+        <label for="in-obs">Notas libres</label>
+        <textarea id="in-obs" rows="6" placeholder="Anotá aquí lo que quieras dejar por escrito del día…"></textarea>
+      </div>
+    </div>
+    <div class="modal__footer">
+      <button class="btn-modal-ghost" id="btn-obs-cancel">Cancelar</button>
+      <button class="btn-modal-primary" id="btn-obs-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script>
+/* Auth guard — si no hay sesión, redirige a login */
+(async () => {
+  try {
+    const { data } = await sb.auth.getSession();
+    if (!data.session) window.location.replace('../login.html');
+  } catch { window.location.replace('../login.html'); }
+})();
+</script>
+<script>
+/* =========================================================================
+   Hoja de Producción — pantalla completa para tablet
+   ========================================================================= */
+
+const STATE = {
+  fecha: new Date().toISOString().split('T')[0],
+  actividades: [],
+  productos: [],
+  productoSel: null,
+  tipoSel: 'fabricacion',
+  pendFab: [],
+  pendFrac: []
+};
+
+const TIPO_LABEL = { fabricacion: 'Fabricación', fraccionamiento: 'Fraccionamiento' };
+
+function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function fmt(n) { const x = Number(n); return isNaN(x) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: 2 }); }
+function fmtFechaLarga(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+function fmtHora(hhmmss) {
+  if (!hhmmss) return '';
+  return hhmmss.slice(0, 5);
+}
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (kind || '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 2600);
+}
+
+/* ---- Carga inicial: pendientes + productos + actividades ---- */
+async function cargarTodo() {
+  // Cargar productos y actividades primero; luego pendientes (que descuenta actividades)
+  await Promise.all([cargarProductos(), cargarActividades()]);
+  await cargarPendientes();
+}
+
+function renderPendList(elId, list, unidadDefault) {
+  const el = document.getElementById(elId);
+  const visible = list.filter(f => Number(f.qty_faltante) > 0);
+  if (visible.length === 0) {
+    el.innerHTML = '<span class="pend-empty">✓ Nada pendiente</span>';
+    return;
+  }
+  let html = '';
+  for (const f of visible) {
+    const qty = fmt(f.qty_faltante);
+    const un = unidadDefault === 'kg' ? 'kg' : (f.qty_faltante == 1 ? 'un' : 'un');
+    html += '<div class="pend-item">';
+    html += '<span class="pend-item__name">' + escapeHTML(f.nombre_producto) + '</span>';
+    html += '<span class="pend-item__qty">' + qty + ' ' + un + '</span>';
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+// Descuenta las actividades del día del pendiente de Odoo
+// (solo local, no afecta la sync general)
+function aplicarDescuentoLocal(pendientes, actividades) {
+  const consumo = new Map(); // sku -> cantidad total consumida hoy
+  for (const a of actividades) {
+    const sku = a.producto_sku;
+    consumo.set(sku, (consumo.get(sku) || 0) + Number(a.cantidad || 0));
+  }
+  return pendientes.map(p => {
+    const c = consumo.get(p.sku) || 0;
+    return { ...p, qty_faltante: Math.max(0, Number(p.qty_faltante) - c) };
+  });
+}
+
+async function cargarPendientes() {
+  const [{ data: fabRaw }, { data: fracRaw }] = await Promise.all([
+    sb.from('v_prod_a_fabricar').select('*').order('qty_faltante', { ascending: false }),
+    sb.from('v_prod_a_fraccionar').select('*').order('qty_faltante', { ascending: false })
+  ]);
+  STATE.pendFab = fabRaw || [];
+  STATE.pendFrac = fracRaw || [];
+  renderPendientes();
+}
+
+function renderPendientes() {
+  const fab = aplicarDescuentoLocal(STATE.pendFab, STATE.actividades);
+  const frac = aplicarDescuentoLocal(STATE.pendFrac, STATE.actividades);
+
+  const fabActivos = fab.filter(f => Number(f.qty_faltante) > 0);
+  const fracActivos = frac.filter(f => Number(f.qty_faltante) > 0);
+
+  document.getElementById('pend-fab-count').textContent =
+    fabActivos.length + ' SKU' + (fabActivos.length === 1 ? '' : 's');
+  document.getElementById('pend-frac-count').textContent =
+    fracActivos.length + ' SKU' + (fracActivos.length === 1 ? '' : 's');
+
+  renderPendList('pend-fab-list', fab, 'kg');
+  renderPendList('pend-frac-list', frac, 'un');
+}
+
+// Solo productos reales: excluye servicios/envíos/descuentos
+const RE_NO_PRODUCTO = /^(shipping_|delivery_|freeship|desc|odoo_)|^false$/i;
+const RE_NO_PRODUCTO_NOMBRE = /^(env[íi]o|desc\.|descuento)/i;
+
+async function cargarProductos() {
+  // Usa v_prod_catalogo_tipo que agrega tipo_producto (granel / presentacion / mp / otro)
+  const { data, error } = await sb.from('v_prod_catalogo_tipo').select('sku, nombre_producto, qty_disponible, tipo_producto');
+  if (error) { console.warn('catalogo:', error); return; }
+  STATE.productos = (data || []).filter(p => {
+    const sku = String(p.sku || '');
+    const nombre = String(p.nombre_producto || '');
+    if (!sku || RE_NO_PRODUCTO.test(sku)) return false;
+    if (RE_NO_PRODUCTO_NOMBRE.test(nombre)) return false;
+    return true;
+  });
+}
+
+async function cargarActividades() {
+  const { data, error } = await sb.from('prod_hoja_diaria').select('*')
+    .eq('fecha', STATE.fecha)
+    .order('hora', { ascending: true });
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  STATE.actividades = data || [];
+  renderTabla();
+  // Recalcular pendientes con el descuento de las actividades del día
+  if (STATE.pendFab.length || STATE.pendFrac.length) renderPendientes();
+}
+
+function renderTabla() {
+  const tbody = document.getElementById('tbody-hoja');
+  document.getElementById('titulo-fecha').textContent =
+    STATE.fecha === new Date().toISOString().split('T')[0]
+      ? 'Actividades de hoy'
+      : 'Actividades del ' + fmtFechaLarga(STATE.fecha);
+  document.getElementById('badge-count').textContent = STATE.actividades.length;
+  document.getElementById('titulo-sub').textContent = fmtFechaLarga(STATE.fecha);
+
+  if (STATE.actividades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Todavía no se registraron actividades este día.<br><br>Tocá <strong>+ Agregar producto</strong> para arrancar.</div></td></tr>';
+    return;
+  }
+
+  let html = '';
+  for (const a of STATE.actividades) {
+    const tipo = a.tipo || 'fraccionamiento';
+    html += '<tr>';
+    html += '<td>' + escapeHTML(fmtHora(a.hora)) + '</td>';
+    html += '<td><span class="tipo-badge ' + tipo + '">' + escapeHTML(TIPO_LABEL[tipo] || tipo) + '</span></td>';
+    html += '<td>' + escapeHTML(a.producto_nombre) + '<div style="font-size:11px;color:var(--gris-70);font-family:monospace;">' + escapeHTML(a.producto_sku) + '</div></td>';
+    html += '<td>' + escapeHTML(a.presentacion || '—') + '</td>';
+    html += '<td class="qty">' + fmt(a.cantidad) + ' ' + escapeHTML(a.unidad) + '</td>';
+    html += '<td class="iniciales">' + escapeHTML(a.iniciales) + '</td>';
+    html += '<td class="acciones"><button class="del-btn" data-id="' + a.id + '">Borrar</button></td>';
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  tbody.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', () => borrarLinea(Number(btn.dataset.id)));
+  });
+}
+
+async function borrarLinea(id) {
+  if (!confirm('¿Borrar esta línea?')) return;
+  const { error } = await sb.from('prod_hoja_diaria').delete().eq('id', id);
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  toast('Línea borrada — pendiente restaurado');
+  await cargarActividades();
+  renderPendientes();
+}
+
+/* ---- Modal agregar ---- */
+function setTipo(tipo) {
+  const cambio = STATE.tipoSel !== tipo;
+  STATE.tipoSel = tipo;
+  document.querySelectorAll('.tipo-toggle button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tipo === tipo);
+  });
+  // Al cambiar tipo, si el producto seleccionado no matchea, limpiarlo
+  if (cambio && STATE.productoSel) {
+    const t = STATE.productoSel.tipo_producto || 'otro';
+    if (!tipoPermitido(t)) {
+      STATE.productoSel = null;
+      document.getElementById('in-producto').value = '';
+      actualizarBotonSave();
+    }
+  }
+  // Ajustar unidad por defecto según tipo
+  const unidadEl = document.getElementById('in-unidad');
+  if (tipo === 'fabricacion' && unidadEl.value === 'un') unidadEl.value = 'kg';
+  else if (tipo === 'fraccionamiento' && ['kg', 'lts', 'g', 'cc'].includes(unidadEl.value)) unidadEl.value = 'un';
+  // Refrescar el dropdown si está abierto
+  const input = document.getElementById('in-producto');
+  if (document.getElementById('search-results').classList.contains('open')) {
+    renderSearchResults(buscarProductos(input.value));
+  }
+}
+
+function autodetectarTipo(sku) {
+  const prod = STATE.productos.find(p => p.sku === sku);
+  if (prod) {
+    if (prod.tipo_producto === 'granel') return 'fabricacion';
+    if (prod.tipo_producto === 'presentacion') return 'fraccionamiento';
+    if (prod.tipo_producto === 'mp') return 'fraccionamiento';
+  }
+  return null;
+}
+
+function abrirModalAdd() {
+  STATE.productoSel = null;
+  document.getElementById('in-producto').value = '';
+  document.getElementById('in-cantidad').value = '';
+  document.getElementById('in-unidad').value = 'kg';
+  document.getElementById('in-iniciales').value = '';
+  document.getElementById('search-results').classList.remove('open');
+  document.getElementById('btn-save').disabled = true;
+  setTipo('fabricacion');
+  document.getElementById('modal-add').classList.add('open');
+  setTimeout(() => document.getElementById('in-producto').focus(), 100);
+}
+
+function cerrarModalAdd() {
+  document.getElementById('modal-add').classList.remove('open');
+}
+
+function extraerPresentacion(nombre) {
+  const m = nombre.match(/(\d+(?:[.,]\d+)?)\s*(Kg|g|cc|Lts|L|ml|un|Un\.)\s*$/i);
+  return m ? m[0].trim() : '';
+}
+
+// Normaliza acentos/mayúsculas para búsqueda insensitive
+function norm(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function tipoPermitido(tipoProd) {
+  if (STATE.tipoSel === 'fabricacion') {
+    // Solo graneles / semielaborados. Nada más.
+    return tipoProd === 'granel';
+  }
+  // Fraccionamiento: presentaciones, MPs, insumos (envases). Nunca graneles.
+  return tipoProd === 'presentacion' || tipoProd === 'mp' || tipoProd === 'insumo';
+}
+
+function buscarProductos(query) {
+  const q = norm(query.trim());
+  const filtrados = STATE.productos.filter(p => tipoPermitido(p.tipo_producto || 'otro'));
+  if (!q) return filtrados.slice(0, 30);
+  return filtrados.filter(p =>
+    norm(p.sku).includes(q) || norm(p.nombre_producto).includes(q)
+  ).slice(0, 30);
+}
+
+const TIPO_ABREV = { granel: 'Granel', presentacion: 'Present.', mp: 'MP', insumo: 'Insumo', otro: '' };
+function renderSearchResults(list) {
+  const wrap = document.getElementById('search-results');
+  if (list.length === 0) {
+    const hint = STATE.tipoSel === 'fabricacion'
+      ? 'Sin resultados. Solo graneles/semielaborados en modo Fabricación.'
+      : 'Sin resultados. Solo presentaciones y MPs en modo Fraccionamiento.';
+    wrap.innerHTML = '<div class="search-item" style="cursor:default;color:var(--gris-50);">' + hint + '</div>';
+    wrap.classList.add('open');
+    return;
+  }
+  let html = '';
+  for (const p of list) {
+    const stockWarn = Number(p.qty_disponible) <= 0;
+    const tipoLabel = TIPO_ABREV[p.tipo_producto] || '';
+    html += '<div class="search-item" data-sku="' + escapeHTML(p.sku) + '">';
+    html += '<span class="sku">' + escapeHTML(p.sku) + '</span>';
+    if (tipoLabel) html += '<span class="sku" style="background:var(--gris-10);padding:1px 6px;border-radius:4px;">' + tipoLabel + '</span>';
+    html += escapeHTML(p.nombre_producto);
+    html += '<span class="qty-stock ' + (stockWarn ? 'warn' : '') + '">Stock: ' + fmt(p.qty_disponible) + '</span>';
+    html += '</div>';
+  }
+  wrap.innerHTML = html;
+  wrap.classList.add('open');
+  wrap.querySelectorAll('.search-item[data-sku]').forEach(item => {
+    item.addEventListener('click', () => seleccionarProducto(item.dataset.sku));
+  });
+}
+
+function seleccionarProducto(sku) {
+  const p = STATE.productos.find(x => x.sku === sku);
+  if (!p) return;
+  STATE.productoSel = p;
+  const input = document.getElementById('in-producto');
+  input.value = p.nombre_producto + ' (' + p.sku + ')';
+  document.getElementById('search-results').classList.remove('open');
+  const detectado = autodetectarTipo(sku);
+  if (detectado) setTipo(detectado);
+  actualizarBotonSave();
+  document.getElementById('in-cantidad').focus();
+}
+
+function actualizarBotonSave() {
+  const cant = Number(document.getElementById('in-cantidad').value || 0);
+  const inic = document.getElementById('in-iniciales').value.trim();
+  document.getElementById('btn-save').disabled = !STATE.productoSel || cant <= 0 || inic.length === 0;
+}
+
+async function guardarActividad() {
+  if (!STATE.productoSel) return;
+  const cantidad = Number(document.getElementById('in-cantidad').value || 0);
+  const unidad = document.getElementById('in-unidad').value;
+  const iniciales = document.getElementById('in-iniciales').value.trim().toUpperCase();
+  if (cantidad <= 0 || !iniciales) return;
+
+  const ahora = new Date();
+  const hora = ahora.toTimeString().slice(0, 8);
+  const presentacion = extraerPresentacion(STATE.productoSel.nombre_producto);
+
+  const { error } = await sb.from('prod_hoja_diaria').insert({
+    fecha: STATE.fecha,
+    hora,
+    tipo: STATE.tipoSel,
+    producto_sku: STATE.productoSel.sku,
+    producto_nombre: STATE.productoSel.nombre_producto,
+    presentacion,
+    cantidad,
+    unidad,
+    iniciales
+  });
+
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  toast('✓ Registrado: ' + STATE.productoSel.nombre_producto);
+  cerrarModalAdd();
+  await cargarActividades();
+  renderPendientes();
+}
+
+/* ---- Modal observaciones ---- */
+async function abrirModalObs() {
+  const { data } = await sb.from('prod_hoja_observaciones').select('texto').eq('fecha', STATE.fecha).maybeSingle();
+  document.getElementById('in-obs').value = (data && data.texto) || '';
+  document.getElementById('modal-obs').classList.add('open');
+  setTimeout(() => document.getElementById('in-obs').focus(), 100);
+}
+function cerrarModalObs() { document.getElementById('modal-obs').classList.remove('open'); }
+async function guardarObs() {
+  const texto = document.getElementById('in-obs').value.trim();
+  const { error } = await sb.from('prod_hoja_observaciones').upsert(
+    { fecha: STATE.fecha, texto, actualizado_en: new Date().toISOString() },
+    { onConflict: 'fecha' }
+  );
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  toast('✓ Observaciones guardadas');
+  cerrarModalObs();
+}
+
+/* ---- Wire ---- */
+document.getElementById('fecha-picker').value = STATE.fecha;
+document.getElementById('fecha-picker').addEventListener('change', e => {
+  STATE.fecha = e.target.value;
+  cargarActividades();
+});
+
+document.getElementById('btn-add').addEventListener('click', abrirModalAdd);
+document.getElementById('btn-obs').addEventListener('click', abrirModalObs);
+document.getElementById('btn-print').addEventListener('click', imprimir);
+
+document.querySelectorAll('.tipo-toggle button').forEach(b => {
+  b.addEventListener('click', () => setTipo(b.dataset.tipo));
+});
+
+async function imprimir() {
+  // Cargar observaciones del día para incluirlas en el impreso
+  const { data } = await sb.from('prod_hoja_observaciones').select('texto').eq('fecha', STATE.fecha).maybeSingle();
+  document.getElementById('print-obs-texto').textContent = (data && data.texto) ? data.texto : '(sin observaciones)';
+  const fecha = new Date(STATE.fecha + 'T12:00:00');
+  document.getElementById('print-fecha').textContent = fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  window.print();
+}
+document.getElementById('modal-close').addEventListener('click', cerrarModalAdd);
+document.getElementById('btn-cancel').addEventListener('click', cerrarModalAdd);
+document.getElementById('modal-obs-close').addEventListener('click', cerrarModalObs);
+document.getElementById('btn-obs-cancel').addEventListener('click', cerrarModalObs);
+document.getElementById('btn-obs-save').addEventListener('click', guardarObs);
+document.getElementById('btn-save').addEventListener('click', guardarActividad);
+
+document.getElementById('modal-add').addEventListener('click', e => { if (e.target === document.getElementById('modal-add')) cerrarModalAdd(); });
+document.getElementById('modal-obs').addEventListener('click', e => { if (e.target === document.getElementById('modal-obs')) cerrarModalObs(); });
+
+const inProducto = document.getElementById('in-producto');
+inProducto.addEventListener('input', e => {
+  STATE.productoSel = null;
+  actualizarBotonSave();
+  renderSearchResults(buscarProductos(e.target.value));
+});
+inProducto.addEventListener('focus', e => {
+  if (!STATE.productoSel) renderSearchResults(buscarProductos(e.target.value));
+});
+document.getElementById('in-cantidad').addEventListener('input', actualizarBotonSave);
+document.getElementById('in-iniciales').addEventListener('input', actualizarBotonSave);
+
+cargarTodo();
+
+// Auto-refresh cada 90s (por si otra tablet sincroniza)
+setInterval(() => { cargarActividades().then(cargarPendientes); }, 90000);
+</script>
+
+</body>
+</html>

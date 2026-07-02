@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Materias primas · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .status-bar {
+      display: flex; gap: 24px; padding: 12px 18px; flex-wrap: wrap;
+      background: var(--surface-2); border-radius: var(--radius);
+      margin-bottom: 16px; font-size: 13px;
+    }
+    .status-bar .k { color: var(--muted); }
+    .status-bar .v {
+      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .status-bar .v.warn { color: var(--warn); }
+
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .toolbar select {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit;
+      min-width: 160px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+
+    /* Tabla */
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted);
+      padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td {
+      padding: 9px 12px; border-bottom: 1px solid var(--border);
+    }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+
+    td.editable {
+      cursor: pointer; position: relative;
+    }
+    td.editable:hover {
+      background: color-mix(in srgb, var(--warn) 10%, transparent);
+    }
+    td.editable::after {
+      content: '✎'; position: absolute; right: 6px; top: 50%;
+      transform: translateY(-50%);
+      opacity: 0; color: var(--warn); font-size: 11px;
+      transition: opacity .12s;
+    }
+    td.editable:hover::after { opacity: 1; }
+
+    /* Badge de alerta cuando una MP usada en fórmula no tiene INCI */
+    .badge-inci-falta {
+      display: inline-block; font-size: 10.5px; font-weight: 600;
+      color: var(--warn);
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+      padding: 1px 7px; border-radius: 10px; margin-left: 6px;
+      cursor: pointer; vertical-align: middle;
+      transition: background .12s;
+    }
+    .badge-inci-falta:hover {
+      background: color-mix(in srgb, var(--warn) 25%, transparent);
+    }
+
+    .row-actions {
+      display: flex; gap: 4px;
+    }
+    .btn-icon {
+      background: none; border: 1px solid transparent;
+      padding: 4px 8px; border-radius: 4px; cursor: pointer;
+      font-size: 13px; color: var(--muted);
+      transition: color .12s, border-color .12s, background .12s;
+    }
+    .btn-icon:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+    .btn-icon.ok { color: var(--ok); }
+    .btn-icon.warn { color: var(--warn); }
+    .btn-icon.hot { color: var(--hot); }
+    .btn-icon.hot:hover { background: color-mix(in srgb, var(--hot) 10%, transparent); }
+
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border);
+      border-radius: var(--radius);
+    }
+
+    /* ---- Modales ---- */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55);
+      backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100; padding: 20px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); max-width: 720px; width: 100%;
+      max-height: 90vh; overflow-y: auto; padding: 24px 26px;
+    }
+    .modal-box.small { max-width: 460px; }
+    .modal-box h3 { font-size: 18px; margin-bottom: 4px; }
+    .modal-box .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .modal-box label {
+      display: block; font-size: 11px; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--muted); font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .modal-box input[type=text], .modal-box input[type=number], .modal-box select, .modal-box textarea {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit;
+      margin-bottom: 12px;
+    }
+    .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+    .modal-box input:focus, .modal-box select:focus, .modal-box textarea:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .field-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px;
+    }
+    .field-grid .full { grid-column: 1 / -1; }
+    .field-help { font-size: 12px; color: var(--muted); margin-top: -8px; margin-bottom: 10px; }
+    .field-error { font-size: 12px; color: var(--hot); margin-top: -8px; margin-bottom: 10px; }
+    .modal-actions {
+      display: flex; gap: 10px; margin-top: 18px; align-items: center;
+    }
+    .modal-actions .spacer { flex: 1; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg);
+      padding: 12px 22px; border-radius: var(--radius-sm);
+      font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="laboratorio" data-title="Materias primas" data-subtitle="Catálogo · precios USD · conversión ARS">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="status-bar">
+    <span><span class="k">USD hoy:</span> <span class="v" id="s-usd">—</span></span>
+    <span><span class="k">Total MPs:</span> <span class="v" id="s-total">—</span></span>
+    <span><span class="k">Sin precio:</span> <span class="v warn" id="s-nopr">—</span></span>
+    <span><span class="k">Sin INCI (usadas):</span> <span class="v warn" id="s-noinci">—</span></span>
+  </div>
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" class="input" id="search" placeholder="Buscar por nombre o código…">
+    </div>
+    <select id="filter-cat">
+      <option value="">Todas las categorías</option>
+    </select>
+    <select id="filter-prov">
+      <option value="">Todos los proveedores</option>
+    </select>
+    <select id="filter-inci">
+      <option value="">INCI · todas</option>
+      <option value="falta">⚠ Sin INCI (usadas)</option>
+      <option value="tiene">Con INCI</option>
+      <option value="sin_usar">Sin usar en fórmulas</option>
+    </select>
+    <button class="btn primary" id="btnNueva">+ Nueva MP</button>
+  </div>
+
+  <div id="content">
+    <div class="empty-box">Cargando…</div>
+  </div>
+
+</main>
+
+<!-- Modal item (alta/edición) -->
+<div class="modal-bg" id="modalItem">
+  <div class="modal-box">
+    <h3 id="mi-title">Nueva materia prima</h3>
+    <div class="sub">Código de 5 dígitos (rango 20000-29999 para MP).</div>
+
+    <div class="field-grid">
+      <div>
+        <label>Código *</label>
+        <input type="text" id="mi-codigo" maxlength="5">
+        <p class="field-help" id="mi-cod-help"></p>
+        <p class="field-error" id="mi-cod-err" style="display:none;"></p>
+      </div>
+      <div>
+        <label>Estado</label>
+        <select id="mi-estado">
+          <option value="vigente">vigente</option>
+          <option value="desarrollo">desarrollo</option>
+          <option value="testeo">testeo</option>
+          <option value="aprobado">aprobado</option>
+          <option value="descontinuado">descontinuado</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>Nombre *</label>
+        <input type="text" id="mi-nombre" maxlength="200">
+      </div>
+      <div>
+        <label>Categoría</label>
+        <select id="mi-cat"><option value="">— Sin categoría —</option></select>
+      </div>
+      <div>
+        <label>Proveedor</label>
+        <select id="mi-prov"><option value="">— Sin proveedor —</option></select>
+      </div>
+      <div>
+        <label>Unidad</label>
+        <select id="mi-unidad">
+          <option value="Kg">Kg</option>
+          <option value="unidad">unidad</option>
+        </select>
+      </div>
+      <div>
+        <label>Código proveedor</label>
+        <input type="text" id="mi-codprov">
+      </div>
+      <div class="full">
+        <label>INCI Name</label>
+        <input type="text" id="mi-inci">
+      </div>
+      <div>
+        <label>Fabricante</label>
+        <input type="text" id="mi-fab">
+      </div>
+      <div>
+        <label>Origen</label>
+        <input type="text" id="mi-origen">
+      </div>
+      <div class="full">
+        <label>Función principal</label>
+        <input type="text" id="mi-func">
+      </div>
+      <div class="full">
+        <label>Precio USD <span style="text-transform:none; letter-spacing:normal; font-weight:400; color:var(--muted); font-size:11px;">(al crear: precio inicial · al editar: dejá vacío para no cambiar)</span></label>
+        <input type="number" id="mi-usd" step="0.0001" min="0">
+      </div>
+      <div class="full">
+        <label>Notas</label>
+        <textarea id="mi-notas" rows="2"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="miBtnDel" style="color:var(--hot); display:none;">Eliminar MP</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="miBtnCancel">Cancelar</button>
+      <button class="btn primary" id="miBtnSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal precio (actualización rápida) -->
+<div class="modal-bg" id="modalPrecio">
+  <div class="modal-box small">
+    <h3>Actualizar precio USD</h3>
+    <div class="sub" id="mp-item">—</div>
+    <label>Precio actual USD</label>
+    <input type="number" id="mp-usd" step="0.0001" min="0">
+    <p class="field-help">Se registra como nuevo precio con la fecha de hoy. El anterior queda en el historial.</p>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button class="btn ghost" id="mpBtnCancel">Cancelar</button>
+      <button class="btn primary" id="mpBtnSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Materias primas — CRUD
+// items (tipo=MP) + precios_items (histórico) + categorias + proveedores
+// ═══════════════════════════════════════════════════════════════════════════
+
+let ITEMS = [];       // items tipo MP
+let PRECIOS = {};     // codigo → { usd_unidad, flete_pct, iva_pct, vigente_desde } (último por item)
+let CATEGORIAS = [];  // { id, nombre, aplica_a }
+let PROVEEDORES = []; // { id, nombre }
+let USD = null;       // cotización actual
+let USADAS_EN_FORMULAS = new Set();  // códigos de MP que aparecen como componente en alguna fórmula vigente
+
+let editando = null;
+let editandoPrecio = null;
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtUSD = n => n == null ? '—' : 'US$ ' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:4});
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+
+function calcARSsinIVA(codigo) {
+  const p = PRECIOS[codigo]; if (!p || !USD) return null;
+  return p.usd_unidad * USD * (1 + (p.flete_pct || 0) / 100);
+}
+function calcARS(codigo) {
+  const s = calcARSsinIVA(codigo); if (s == null) return null;
+  const p = PRECIOS[codigo];
+  return s * (1 + (p.iva_pct || 0) / 100);
+}
+
+async function cargar() {
+  try {
+    const [items, precios, cats, provs, coti, formulas, comps] = await Promise.all([
+      sb.from('items').select('*').eq('tipo', 'MP'),
+      sb.from('precios_items').select('*').order('vigente_desde', { ascending: false }),
+      sb.from('categorias').select('id, nombre, aplica_a'),
+      sb.from('proveedores').select('id, nombre').order('nombre'),
+      sb.from('cotizaciones_dolar').select('venta_oficial').order('fecha', { ascending: false }).limit(1).single(),
+      sb.from('formulas').select('id').eq('estado', 'vigente'),
+      sb.from('formula_componentes').select('formula_id, codigo_componente'),
+    ]);
+    if (items.error) throw items.error;
+    if (precios.error) throw precios.error;
+    if (cats.error) throw cats.error;
+    if (provs.error) throw provs.error;
+
+    ITEMS = (items.data || []).sort((a,b) => a.nombre.localeCompare(b.nombre, 'es'));
+    CATEGORIAS = cats.data || [];
+    PROVEEDORES = provs.data || [];
+    USD = coti.data?.venta_oficial ? Number(coti.data.venta_oficial) : null;
+
+    // Último precio por item (ya vienen ordenados desc por vigente_desde)
+    PRECIOS = {};
+    for (const p of (precios.data || [])) {
+      if (!PRECIOS[p.codigo_item]) PRECIOS[p.codigo_item] = p;
+    }
+
+    // Set de códigos usados como componente en alguna fórmula VIGENTE.
+    // Se usa para detectar MPs sin INCI que están efectivamente en producción
+    // (las que no se usan pueden quedar sin INCI y no rompen nada).
+    const formulasVigentes = new Set((formulas.data || []).map(f => f.id));
+    USADAS_EN_FORMULAS = new Set(
+      (comps.data || [])
+        .filter(c => formulasVigentes.has(c.formula_id))
+        .map(c => c.codigo_componente)
+    );
+
+    poblarFiltros();
+    actualizarStatus();
+    render();
+  } catch (err) {
+    $('#content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function poblarFiltros() {
+  const catsMP = CATEGORIAS.filter(c => c.aplica_a === 'MP');
+  $('#filter-cat').innerHTML = '<option value="">Todas las categorías</option>' +
+    catsMP.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+  $('#filter-prov').innerHTML = '<option value="">Todos los proveedores</option>' +
+    PROVEEDORES.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('');
+  // Poblar los selects del modal item
+  $('#mi-cat').innerHTML = '<option value="">— Sin categoría —</option>' +
+    catsMP.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+  $('#mi-prov').innerHTML = '<option value="">— Sin proveedor —</option>' +
+    PROVEEDORES.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('');
+}
+
+function actualizarStatus() {
+  $('#s-usd').textContent = USD ? '$' + Number(USD).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
+  $('#s-total').textContent = ITEMS.length;
+  const sinPrecio = ITEMS.filter(i => !PRECIOS[i.codigo]).length;
+  $('#s-nopr').textContent = sinPrecio;
+  // MPs sin INCI que están usadas en alguna fórmula vigente → el INCI del terminado
+  // queda incompleto si no las cargamos. Esas son las urgentes.
+  const sinInci = ITEMS.filter(i =>
+    (!i.inci_name || !i.inci_name.trim()) && USADAS_EN_FORMULAS.has(i.codigo)
+  ).length;
+  $('#s-noinci').textContent = sinInci;
+}
+
+function nombreCat(id) { const c = CATEGORIAS.find(x => x.id === id); return c ? c.nombre : '—'; }
+function nombreProv(id) { const p = PROVEEDORES.find(x => x.id === id); return p ? p.nombre : '—'; }
+
+function render() {
+  const q = $('#search').value.trim().toLowerCase();
+  const fCat = $('#filter-cat').value;
+  const fProv = $('#filter-prov').value;
+  const fInci = $('#filter-inci').value;
+
+  let rows = ITEMS;
+  if (q) rows = rows.filter(i => (i.nombre + ' ' + i.codigo).toLowerCase().includes(q));
+  if (fCat) rows = rows.filter(i => String(i.categoria_id) === fCat);
+  if (fProv) rows = rows.filter(i => String(i.proveedor_id) === fProv);
+  if (fInci === 'falta') {
+    rows = rows.filter(i => (!i.inci_name || !i.inci_name.trim()) && USADAS_EN_FORMULAS.has(i.codigo));
+  } else if (fInci === 'tiene') {
+    rows = rows.filter(i => i.inci_name && i.inci_name.trim());
+  } else if (fInci === 'sin_usar') {
+    rows = rows.filter(i => !USADAS_EN_FORMULAS.has(i.codigo));
+  }
+
+  if (!rows.length) {
+    $('#content').innerHTML = '<div class="empty-box">Sin resultados</div>';
+    return;
+  }
+
+  $('#content').innerHTML = `
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Código</th><th>Nombre</th><th>Categoría</th><th>Proveedor</th>
+          <th class="num">USD unit.</th><th class="num">ARS s/IVA</th><th class="num">ARS c/IVA</th>
+          <th style="width:100px;">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(i => {
+          const p = PRECIOS[i.codigo];
+          const usada = USADAS_EN_FORMULAS.has(i.codigo);
+          const sinInci = !i.inci_name || !i.inci_name.trim();
+          const alertaInci = usada && sinInci;
+          return `
+          <tr${alertaInci ? ' style="background: color-mix(in srgb, var(--warn) 5%, transparent);"' : ''}>
+            <td class="codigo">${esc(i.codigo)}</td>
+            <td>
+              ${esc(i.nombre)}
+              ${i.estado !== 'vigente' ? ` <span style="font-size:10px; color:var(--warn); text-transform:uppercase; margin-left:6px;">${esc(i.estado)}</span>` : ''}
+              ${alertaInci ? ` <span class="badge-inci-falta" title="Esta MP se usa en fórmulas y no tiene INCI cargado. El INCI de los productos que la contienen queda incompleto." onclick="abrirEditar('${esc(i.codigo)}')">⚠ INCI faltante</span>` : ''}
+            </td>
+            <td style="color:var(--muted);">${esc(nombreCat(i.categoria_id))}</td>
+            <td style="color:var(--muted);">${esc(nombreProv(i.proveedor_id))}</td>
+            <td class="num editable" onclick="abrirPrecio('${esc(i.codigo)}')" title="Clic para actualizar precio">${fmtUSD(p?.usd_unidad)}</td>
+            <td class="num" style="color:var(--muted);">${fmtARS(calcARSsinIVA(i.codigo))}</td>
+            <td class="num" style="font-weight:600;">${fmtARS(calcARS(i.codigo))}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn-icon warn" onclick="abrirPrecio('${esc(i.codigo)}')" title="Actualizar precio">$</button>
+                <button class="btn-icon" onclick="abrirEditar('${esc(i.codigo)}')" title="Editar MP">✎</button>
+              </div>
+            </td>
+          </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ─── Modal item ───
+function siguienteCodigo() {
+  const usados = new Set(ITEMS.map(i => parseInt(i.codigo, 10)).filter(n => n >= 20000 && n <= 29999));
+  for (let n = 20001; n <= 29999; n++) if (!usados.has(n)) return String(n);
+  return '';
+}
+
+function abrirNueva() {
+  editando = null;
+  $('#mi-title').textContent = 'Nueva materia prima';
+  const sugerido = siguienteCodigo();
+  $('#mi-codigo').value = sugerido;
+  $('#mi-codigo').readOnly = false;
+  $('#mi-cod-help').textContent = `Sugerido: ${sugerido}. Podés cambiarlo si querés.`;
+  $('#mi-cod-err').style.display = 'none';
+  ['#mi-nombre','#mi-inci','#mi-fab','#mi-origen','#mi-func','#mi-codprov','#mi-usd','#mi-notas']
+    .forEach(s => $(s).value = '');
+  $('#mi-estado').value = 'vigente';
+  $('#mi-cat').value = '';
+  $('#mi-prov').value = '';
+  $('#mi-unidad').value = 'Kg';
+  $('#miBtnDel').style.display = 'none';
+  $('#modalItem').classList.add('show');
+  setTimeout(() => $('#mi-nombre').focus(), 60);
+}
+
+function abrirEditar(codigo) {
+  const i = ITEMS.find(x => x.codigo === codigo); if (!i) return;
+  editando = codigo;
+  $('#mi-title').textContent = 'Editar materia prima';
+  $('#mi-codigo').value = i.codigo;
+  $('#mi-codigo').readOnly = true;
+  $('#mi-cod-help').textContent = 'El código no se puede cambiar desde este módulo.';
+  $('#mi-cod-err').style.display = 'none';
+  $('#mi-nombre').value = i.nombre || '';
+  $('#mi-estado').value = i.estado || 'vigente';
+  $('#mi-cat').value = i.categoria_id ?? '';
+  $('#mi-prov').value = i.proveedor_id ?? '';
+  $('#mi-unidad').value = i.unidad || 'Kg';
+  $('#mi-inci').value = i.inci_name || '';
+  $('#mi-fab').value = i.fabricante || '';
+  $('#mi-origen').value = i.origen || '';
+  $('#mi-func').value = i.funcion_principal || '';
+  $('#mi-codprov').value = i.codigo_proveedor || '';
+  $('#mi-notas').value = i.notas || '';
+  $('#mi-usd').value = '';
+  $('#miBtnDel').style.display = '';
+  $('#modalItem').classList.add('show');
+  setTimeout(() => $('#mi-nombre').focus(), 60);
+}
+
+function cerrarItem() { $('#modalItem').classList.remove('show'); }
+
+async function guardarItem() {
+  const codigo = $('#mi-codigo').value.trim();
+  const nombre = $('#mi-nombre').value.trim();
+  const errBox = $('#mi-cod-err');
+  errBox.style.display = 'none';
+
+  if (!nombre) { toast('El nombre es obligatorio', 'err'); return; }
+  if (!editando) {
+    if (!/^\d{5}$/.test(codigo)) { errBox.textContent = 'El código debe ser de 5 dígitos numéricos'; errBox.style.display = 'block'; return; }
+    if (ITEMS.some(i => i.codigo === codigo)) { errBox.textContent = 'Este código ya está en uso'; errBox.style.display = 'block'; return; }
+  }
+
+  const data = {
+    codigo, nombre, tipo: 'MP',
+    estado: $('#mi-estado').value,
+    categoria_id: $('#mi-cat').value || null,
+    proveedor_id: $('#mi-prov').value || null,
+    unidad: $('#mi-unidad').value,
+    inci_name: $('#mi-inci').value.trim() || null,
+    fabricante: $('#mi-fab').value.trim() || null,
+    origen: $('#mi-origen').value.trim() || null,
+    funcion_principal: $('#mi-func').value.trim() || null,
+    codigo_proveedor: $('#mi-codprov').value.trim() || null,
+    notas: $('#mi-notas').value.trim() || null,
+  };
+
+  const btn = $('#miBtnSave'); btn.disabled = true;
+  try {
+    if (editando) {
+      delete data.codigo;
+      const { error } = await sb.from('items').update(data).eq('codigo', editando);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('items').insert(data);
+      if (error) throw error;
+    }
+
+    // Precio inicial / actualización
+    const precioUSD = parseFloat($('#mi-usd').value);
+    if (!isNaN(precioUSD) && precioUSD >= 0) {
+      const old = PRECIOS[editando || codigo];
+      const { error: ePr } = await sb.from('precios_items').insert({
+        codigo_item: editando || codigo,
+        usd_unidad: precioUSD,
+        flete_pct: old?.flete_pct ?? 5.0,
+        iva_pct: old?.iva_pct ?? 21.0,
+        vigente_desde: new Date().toISOString().slice(0, 10),
+      });
+      if (ePr) throw ePr;
+    }
+
+    cerrarItem();
+    await cargar();
+    toast(editando ? 'MP actualizada' : 'MP creada', 'ok');
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function eliminarItem() {
+  if (!editando) return;
+  if (!confirm('¿Eliminar esta MP? Si está usada en una fórmula, la operación fallará (la base rechaza el borrado por FK).')) return;
+  const btn = $('#miBtnDel'); btn.disabled = true;
+  try {
+    // Borrar precios primero (histórico), después el item
+    await sb.from('precios_items').delete().eq('codigo_item', editando);
+    const { error } = await sb.from('items').delete().eq('codigo', editando);
+    if (error) throw error;
+    cerrarItem();
+    await cargar();
+    toast('MP eliminada', 'ok');
+  } catch (err) {
+    toast('No se pudo eliminar: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── Modal precio ───
+function abrirPrecio(codigo) {
+  const i = ITEMS.find(x => x.codigo === codigo); if (!i) return;
+  editandoPrecio = codigo;
+  const p = PRECIOS[codigo];
+  $('#mp-item').innerHTML = `<span style="font-family:var(--font-mono); color:var(--accent);">${esc(codigo)}</span> · ${esc(i.nombre)}`;
+  $('#mp-usd').value = p?.usd_unidad ?? '';
+  $('#modalPrecio').classList.add('show');
+  setTimeout(() => $('#mp-usd').focus(), 60);
+}
+function cerrarPrecio() { $('#modalPrecio').classList.remove('show'); }
+
+async function guardarPrecio() {
+  const valor = parseFloat($('#mp-usd').value);
+  if (isNaN(valor) || valor < 0) { toast('Valor inválido', 'err'); return; }
+  const old = PRECIOS[editandoPrecio];
+  const btn = $('#mpBtnSave'); btn.disabled = true;
+  try {
+    const { error } = await sb.from('precios_items').insert({
+      codigo_item: editandoPrecio,
+      usd_unidad: valor,
+      flete_pct: old?.flete_pct ?? 5.0,
+      iva_pct: old?.iva_pct ?? 21.0,
+      vigente_desde: new Date().toISOString().slice(0, 10),
+    });
+    if (error) throw error;
+    cerrarPrecio();
+    await cargar();
+    toast('Precio actualizado', 'ok');
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── Toast ───
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// ─── Handlers ───
+$('#btnNueva').addEventListener('click', abrirNueva);
+$('#search').addEventListener('input', render);
+$('#filter-cat').addEventListener('change', render);
+$('#filter-prov').addEventListener('change', render);
+$('#filter-inci').addEventListener('change', render);
+
+$('#miBtnSave').addEventListener('click', guardarItem);
+$('#miBtnDel').addEventListener('click', eliminarItem);
+$('#miBtnCancel').addEventListener('click', cerrarItem);
+$('#modalItem').addEventListener('click', e => { if (e.target.id === 'modalItem') cerrarItem(); });
+
+$('#mpBtnSave').addEventListener('click', guardarPrecio);
+$('#mpBtnCancel').addEventListener('click', cerrarPrecio);
+$('#modalPrecio').addEventListener('click', e => { if (e.target.id === 'modalPrecio') cerrarPrecio(); });
+
+// Global para onclick inline
+window.abrirEditar = abrirEditar;
+window.abrirPrecio = abrirPrecio;
+
+cargar();
+</script>
+</body>
+</html>

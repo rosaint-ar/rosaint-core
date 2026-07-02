@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presentaciones · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .toolbar select {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); font: inherit; min-width: 200px;
+    }
+    .toolbar select:focus { outline: none; border-color: var(--accent); }
+    .count-info { font-size: 12.5px; color: var(--muted); }
+
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl td.codigo { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+    .tbl td.small { font-size: 12px; color: var(--muted); }
+
+    .plat-chip {
+      font-size: 10px; padding: 1px 6px; border-radius: 10px;
+      background: var(--accent-tint); color: var(--accent); font-weight: 600;
+      margin-right: 3px;
+    }
+
+    .row-actions { display: flex; gap: 4px; }
+    .btn-icon {
+      background: none; border: 1px solid transparent; padding: 4px 8px;
+      border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--muted);
+      transition: color .12s, border-color .12s, background .12s; text-decoration: none;
+    }
+    .btn-icon:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+    .btn-icon.accent { color: var(--accent); }
+    .btn-icon.accent:hover { color: var(--accent); border-color: var(--accent); }
+
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100; padding: 20px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      max-width: 720px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 24px 26px;
+    }
+    .modal-box h3 { font-size: 18px; margin-bottom: 4px; }
+    .modal-box .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .modal-box label {
+      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+    }
+    .modal-box input, .modal-box select, .modal-box textarea {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+      font: inherit; margin-bottom: 12px;
+    }
+    .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+    .modal-box input:focus, .modal-box select:focus, .modal-box textarea:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .field-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px 14px; }
+    .field-grid .full, .field-grid-3 .full { grid-column: 1 / -1; }
+    .field-help { font-size: 12px; color: var(--muted); margin-top: -8px; margin-bottom: 10px; }
+    .field-error { font-size: 12px; color: var(--hot); margin-top: -8px; margin-bottom: 10px; }
+
+    .canales-row {
+      display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 14px;
+    }
+    .canales-row label {
+      display: flex; align-items: center; gap: 6px;
+      text-transform: none; letter-spacing: normal; font-weight: 500;
+      color: var(--text); font-size: 13px; margin-bottom: 0;
+    }
+    .canales-row label.disabled { color: var(--muted); cursor: not-allowed; }
+
+    .costo-box {
+      padding: 10px 14px; background: var(--surface-2);
+      border-radius: var(--radius-sm); font-size: 13px; margin-top: 6px;
+      color: var(--muted);
+    }
+    .costo-box b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; align-items: center; }
+    .modal-actions .spacer { flex: 1; }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="catalogo" data-title="Presentaciones" data-subtitle="SKUs · granel + envase + etiqueta + tamaño">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" class="input" id="search" placeholder="Buscar por nombre, SKU o granel…">
+    </div>
+    <select id="filter-granel">
+      <option value="">Todos los graneles</option>
+    </select>
+    <span class="count-info" id="cnt">—</span>
+    <button class="btn primary" id="btnNueva">+ Nueva presentación</button>
+  </div>
+
+  <div id="content"><div class="empty-box">Cargando…</div></div>
+
+</main>
+
+<div class="modal-bg" id="modalPres">
+  <div class="modal-box">
+    <h3 id="mp-title">Nueva presentación</h3>
+    <div class="sub">SKU comercial en rango 10000-19999.</div>
+
+    <div class="field-grid">
+      <div>
+        <label>Código SKU *</label>
+        <input type="text" id="mp-codigo" maxlength="5">
+        <p class="field-help" id="mp-cod-help"></p>
+        <p class="field-error" id="mp-cod-err" style="display:none;"></p>
+      </div>
+      <div>
+        <label>Estado</label>
+        <select id="mp-estado">
+          <option value="vigente">vigente</option>
+          <option value="desarrollo">desarrollo</option>
+          <option value="testeo">testeo</option>
+          <option value="aprobado">aprobado</option>
+          <option value="descontinuado">descontinuado</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>Nombre comercial *</label>
+        <input type="text" id="mp-nombre" placeholder="Ej: Crema Base Masajes AD 1 Kg">
+      </div>
+      <div class="full">
+        <label>Granel *</label>
+        <input type="text" id="mp-granel" list="granel-list" placeholder="Escribí nombre o código del granel…">
+        <datalist id="granel-list"></datalist>
+      </div>
+      <div>
+        <label>Envase *</label>
+        <input type="text" id="mp-envase" list="insumo-list" placeholder="Nombre o código…">
+      </div>
+      <div>
+        <label>Etiqueta (opcional)</label>
+        <input type="text" id="mp-etiqueta" list="insumo-list" placeholder="Nombre o código…">
+      </div>
+      <datalist id="insumo-list"></datalist>
+    </div>
+
+    <div class="field-grid-3">
+      <div>
+        <label>Tamaño (Kg) *</label>
+        <input type="number" id="mp-tamanio" step="0.001" min="0" placeholder="1">
+      </div>
+      <div>
+        <label>Etiquetas por hoja</label>
+        <input type="number" id="mp-etiq-hoja" step="1" min="1" value="1">
+      </div>
+      <div>
+        <label>Línea comercial</label>
+        <select id="mp-linea">
+          <option value="">— Sin línea —</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Descripción comercial (opcional)</label>
+    <input type="text" id="mp-desc" placeholder="Texto descriptivo para listas y feeds">
+
+    <label style="margin-top:12px;">Publicar en canales <span style="text-transform:none; letter-spacing:normal; font-weight:400; color:var(--muted); font-size:11px;">(Odoo incluye todo por defecto)</span></label>
+    <div class="canales-row">
+      <label><input type="checkbox" class="canal-check" data-canal="lista_profesional"> 📋 Lista profesional</label>
+      <label><input type="checkbox" class="canal-check" data-canal="tienda_nube"> 🔵 Tienda Nube</label>
+      <label class="disabled" title="Mercado Libre se gestiona por sincronización de publicaciones">
+        <input type="checkbox" disabled> 🟡 Mercado Libre (por sincronización)
+      </label>
+    </div>
+
+    <div class="costo-box">
+      Costo estimado: <b id="mp-costo">—</b>
+      <span id="mp-costo-detalle" style="color:var(--muted);"></span>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="mpBtnDel" style="color:var(--hot); display:none;">Eliminar presentación</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="mpBtnCancel">Cancelar</button>
+      <button class="btn primary" id="mpBtnSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Presentaciones — CRUD
+// items (tipo=SKU) + presentaciones + item_canales + lineas + v_costos_skus
+// ═══════════════════════════════════════════════════════════════════════════
+
+let PRES = [];         // presentaciones rows
+let ITEMS = {};        // codigo → item (SKUs, TE, SE, IN)
+let GRANELES = [];     // items TE + SE
+let INSUMOS = [];      // items IN
+let LINEAS = [];
+let COSTOS = {};       // codigo_sku → costo_unitario
+let ITEM_CANALES = {}; // codigo → { canal: activo }
+let COSTO_GRANEL_KG = {}; // codigo_granel → costo/Kg (calculado via RPC)
+
+let editando = null;
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
+const codigoDeInput = t => {
+  if (!t) return '';
+  const m = [...t.matchAll(/\(([^)]+)\)/g)];
+  return m.length ? m[m.length - 1][1].trim() : t.trim();
+};
+const textoItem = c => { const i = ITEMS[c]; return i ? `${i.nombre} (${i.codigo})` : ''; };
+
+const PLAT_LABEL = { lista_profesional: '📋 Lista', tienda_nube: '🔵 TN' };
+
+async function cargar() {
+  try {
+    const [pres, items, canales, lineas, costos] = await Promise.all([
+      sb.from('presentaciones').select('*'),
+      sb.from('items').select('codigo, nombre, tipo, estado, linea_id').eq('estado', 'vigente'),
+      sb.from('item_canales').select('codigo_item, canal, activo'),
+      sb.from('lineas').select('id, nombre, orden').order('orden'),
+      sb.from('v_costos_skus').select('codigo_sku, costo_unitario'),
+    ]);
+    if (pres.error) throw pres.error;
+    if (items.error) throw items.error;
+
+    PRES = (pres.data || []);
+    ITEMS = {};
+    (items.data || []).forEach(i => { ITEMS[i.codigo] = i; });
+    GRANELES = (items.data || []).filter(i => i.tipo === 'TE' || i.tipo === 'SE')
+                                  .sort((a,b) => a.nombre.localeCompare(b.nombre, 'es'));
+    INSUMOS = (items.data || []).filter(i => i.tipo === 'IN')
+                                 .sort((a,b) => a.nombre.localeCompare(b.nombre, 'es'));
+    LINEAS = lineas.data || [];
+
+    ITEM_CANALES = {};
+    (canales.data || []).forEach(c => {
+      if (!ITEM_CANALES[c.codigo_item]) ITEM_CANALES[c.codigo_item] = {};
+      ITEM_CANALES[c.codigo_item][c.canal] = c.activo;
+    });
+
+    COSTOS = {};
+    (costos.data || []).forEach(c => {
+      COSTOS[c.codigo_sku] = c.costo_unitario != null ? Number(c.costo_unitario) : null;
+    });
+
+    poblarFiltros();
+    render();
+  } catch (err) {
+    $('#content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function poblarFiltros() {
+  // Filtro de graneles usados en presentaciones
+  const usados = [...new Set(PRES.map(p => p.codigo_granel))]
+    .map(cg => ({ cg, nombre: ITEMS[cg]?.nombre || cg }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+
+  $('#filter-granel').innerHTML = '<option value="">Todos los graneles</option>' +
+    usados.map(g => `<option value="${g.cg}">${esc(g.nombre)}</option>`).join('');
+
+  // Líneas para el modal
+  $('#mp-linea').innerHTML = '<option value="">— Sin línea —</option>' +
+    LINEAS.map(l => `<option value="${l.id}">${esc(l.nombre)}</option>`).join('');
+
+  // Datalists del modal (nombre + código para autocompletar)
+  $('#granel-list').innerHTML = GRANELES.map(g =>
+    `<option value="${esc(g.nombre)} (${g.codigo})"></option>`).join('');
+  $('#insumo-list').innerHTML = INSUMOS.map(i =>
+    `<option value="${esc(i.nombre)} (${i.codigo})"></option>`).join('');
+}
+
+function render() {
+  const q = $('#search').value.trim().toLowerCase();
+  const fG = $('#filter-granel').value;
+
+  let rows = PRES.slice();
+  if (fG) rows = rows.filter(p => p.codigo_granel === fG);
+  if (q) rows = rows.filter(p => {
+    const nom = (ITEMS[p.codigo_sku]?.nombre || '').toLowerCase();
+    const gran = (ITEMS[p.codigo_granel]?.nombre || '').toLowerCase();
+    return (p.codigo_sku + ' ' + nom + ' ' + gran).includes(q);
+  });
+  rows.sort((a, b) => a.codigo_sku.localeCompare(b.codigo_sku));
+
+  $('#cnt').textContent = rows.length + ' presentación' + (rows.length !== 1 ? 'es' : '');
+
+  if (!rows.length) {
+    $('#content').innerHTML = `<div class="empty-box">${PRES.length ? 'Sin coincidencias' : 'No hay presentaciones. Creá una con "+ Nueva presentación".'}</div>`;
+    return;
+  }
+
+  $('#content').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>SKU</th><th>Nombre</th><th>Granel</th><th>Envase</th><th>Etiqueta</th>
+        <th class="num">Tamaño</th><th class="num">Costo</th><th>Canales</th>
+        <th style="width:60px;"></th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(p => {
+          const nombre = ITEMS[p.codigo_sku]?.nombre || p.codigo_sku;
+          const gran = ITEMS[p.codigo_granel]?.nombre || p.codigo_granel;
+          const env = ITEMS[p.codigo_envase]?.nombre || p.codigo_envase;
+          const etiq = p.codigo_etiqueta ? (ITEMS[p.codigo_etiqueta]?.nombre || p.codigo_etiqueta) : '—';
+          const costo = COSTOS[p.codigo_sku];
+          const canales = ITEM_CANALES[p.codigo_sku] || {};
+          const platsActivos = ['lista_profesional', 'tienda_nube'].filter(k => canales[k]);
+          return `<tr>
+            <td class="codigo">${esc(p.codigo_sku)}</td>
+            <td>${esc(nombre)}${ITEMS[p.codigo_sku]?.estado && ITEMS[p.codigo_sku].estado !== 'vigente' ? ` <span style="font-size:10px; color:var(--warn); text-transform:uppercase; margin-left:6px;">${esc(ITEMS[p.codigo_sku].estado)}</span>` : ''}</td>
+            <td class="small">${esc(gran)}</td>
+            <td class="small">${esc(env)}</td>
+            <td class="small">${esc(etiq)}</td>
+            <td class="num">${parseFloat(p.tamanio_kg)} Kg</td>
+            <td class="num" style="font-weight:600;">${fmtARS(costo)}</td>
+            <td>${platsActivos.length ? platsActivos.map(k => `<span class="plat-chip">${PLAT_LABEL[k]}</span>`).join('') : '<span style="color:var(--muted); font-size:11px;">—</span>'}</td>
+            <td>
+              <div class="row-actions">
+                <button class="btn-icon" onclick="abrirEditar('${esc(p.codigo_sku)}')" title="Editar presentación">✎</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ─── Modal ───
+function siguienteCodigo() {
+  const usados = new Set(Object.keys(ITEMS).map(c => parseInt(c, 10)).filter(n => n >= 10000 && n <= 19999));
+  for (let n = 10101; n <= 19999; n++) if (!usados.has(n)) return String(n);
+  return '';
+}
+
+async function calcCostoEstimado() {
+  const granel = codigoDeInput($('#mp-granel').value);
+  const envase = codigoDeInput($('#mp-envase').value);
+  const etiq = codigoDeInput($('#mp-etiqueta').value);
+  const tam = parseFloat($('#mp-tamanio').value) || 0;
+  const etiqHoja = parseInt($('#mp-etiq-hoja').value, 10) || 1;
+
+  if (!tam || !granel) {
+    $('#mp-costo').textContent = 'se calcula al guardar';
+    $('#mp-costo-detalle').textContent = '';
+    return;
+  }
+
+  // Costo del granel: RPC calcular_costo_formula (una sola vez por granel, cacheado)
+  if (!(granel in COSTO_GRANEL_KG)) {
+    try {
+      const { data } = await sb.rpc('calcular_costo_formula', { p_codigo_granel: granel });
+      COSTO_GRANEL_KG[granel] = data != null ? Number(data) : null;
+    } catch (e) { COSTO_GRANEL_KG[granel] = null; }
+  }
+  const cG = COSTO_GRANEL_KG[granel];
+
+  // Envase y etiqueta: RPC precio_ars_final
+  const costoInsumo = async (cod) => {
+    if (!cod) return 0;
+    try {
+      const { data } = await sb.rpc('precio_ars_final', { p_codigo: cod });
+      return parseFloat(data) || 0;
+    } catch { return 0; }
+  };
+  const [cEnv, cEtiqRaw] = await Promise.all([costoInsumo(envase), costoInsumo(etiq)]);
+  const cEtiq = cEtiqRaw / etiqHoja;
+
+  let total = 0; const det = [];
+  if (cG != null) { total += cG * tam; det.push(`granel ${fmtARS(cG)}×${tam}kg`); }
+  if (cEnv > 0) { total += cEnv; det.push(`envase ${fmtARS(cEnv)}`); }
+  if (cEtiq > 0) { total += cEtiq; det.push(`etiq ${fmtARS(cEtiq)}`); }
+
+  $('#mp-costo').textContent = total > 0 ? '~' + fmtARS(total) : 'se calcula al guardar';
+  $('#mp-costo-detalle').textContent = det.length ? ` (${det.join(' + ')})` : '';
+}
+
+function abrirNueva() {
+  editando = null;
+  $('#mp-title').textContent = 'Nueva presentación';
+  const sugerido = siguienteCodigo();
+  $('#mp-codigo').value = sugerido;
+  $('#mp-codigo').disabled = false;
+  $('#mp-cod-help').textContent = `Sugerido: ${sugerido} (podés cambiarlo).`;
+  $('#mp-cod-err').style.display = 'none';
+  ['#mp-nombre','#mp-granel','#mp-envase','#mp-etiqueta','#mp-tamanio','#mp-desc'].forEach(s => $(s).value = '');
+  $('#mp-etiq-hoja').value = 1;
+  $('#mp-estado').value = 'vigente';
+  $('#mp-linea').value = '';
+  // Por defecto va en lista profesional
+  $$('.canal-check').forEach(c => { c.checked = c.dataset.canal === 'lista_profesional'; });
+  $('#mpBtnDel').style.display = 'none';
+  $('#mp-costo').textContent = 'se calcula al guardar';
+  $('#mp-costo-detalle').textContent = '';
+  $('#modalPres').classList.add('show');
+  setTimeout(() => $('#mp-nombre').focus(), 60);
+}
+
+function abrirEditar(sku) {
+  const p = PRES.find(x => x.codigo_sku === sku);
+  const it = ITEMS[sku];
+  if (!p || !it) return;
+  editando = sku;
+  $('#mp-title').textContent = 'Editar presentación ' + sku;
+  $('#mp-codigo').value = sku;
+  $('#mp-codigo').disabled = true;
+  $('#mp-cod-help').textContent = 'El código no se puede cambiar.';
+  $('#mp-cod-err').style.display = 'none';
+  $('#mp-nombre').value = it.nombre || '';
+  $('#mp-granel').value = textoItem(p.codigo_granel);
+  $('#mp-envase').value = textoItem(p.codigo_envase);
+  $('#mp-etiqueta').value = p.codigo_etiqueta ? textoItem(p.codigo_etiqueta) : '';
+  $('#mp-tamanio').value = parseFloat(p.tamanio_kg);
+  $('#mp-etiq-hoja').value = p.etiquetas_por_hoja || 1;
+  $('#mp-estado').value = it.estado || 'vigente';
+  $('#mp-desc').value = p.descripcion_comercial || '';
+  $('#mp-linea').value = it.linea_id || '';
+
+  const canales = ITEM_CANALES[sku] || {};
+  $$('.canal-check').forEach(c => { c.checked = !!canales[c.dataset.canal]; });
+  $('#mpBtnDel').style.display = '';
+
+  const costo = COSTOS[sku];
+  $('#mp-costo').textContent = costo != null ? fmtARS(costo) : '—';
+  $('#mp-costo-detalle').textContent = '';
+
+  $('#modalPres').classList.add('show');
+  setTimeout(() => $('#mp-nombre').focus(), 60);
+}
+
+function cerrarModal() { $('#modalPres').classList.remove('show'); }
+
+async function guardar() {
+  const codigo = $('#mp-codigo').value.trim();
+  const nombre = $('#mp-nombre').value.trim();
+  const granel = codigoDeInput($('#mp-granel').value);
+  const envase = codigoDeInput($('#mp-envase').value);
+  const etiq = codigoDeInput($('#mp-etiqueta').value);
+  const tam = parseFloat($('#mp-tamanio').value);
+  const etiqHoja = parseInt($('#mp-etiq-hoja').value, 10) || 1;
+  const estado = $('#mp-estado').value;
+  const desc = $('#mp-desc').value.trim() || null;
+  const lineaId = $('#mp-linea').value || null;
+
+  const errBox = $('#mp-cod-err'); errBox.style.display = 'none';
+
+  if (!codigo) { toast('Falta el código SKU', 'err'); return; }
+  if (!editando && !/^\d{5}$/.test(codigo)) { errBox.textContent = 'El código debe ser 5 dígitos'; errBox.style.display = 'block'; return; }
+  if (!editando && ITEMS[codigo]) { errBox.textContent = 'Este código ya está en uso'; errBox.style.display = 'block'; return; }
+  if (!nombre) { toast('Falta el nombre comercial', 'err'); return; }
+  if (!granel || !ITEMS[granel]) { toast('Granel no reconocido. Elegilo de la lista.', 'err'); return; }
+  if (!envase || !ITEMS[envase]) { toast('Envase no reconocido. Elegilo de la lista.', 'err'); return; }
+  if (etiq && !ITEMS[etiq]) { toast('Etiqueta no reconocida. Elegila de la lista o dejala vacía.', 'err'); return; }
+  if (!tam || tam <= 0) { toast('El tamaño debe ser mayor a 0', 'err'); return; }
+
+  const canalesMarcados = { odoo: true };
+  $$('.canal-check').forEach(c => { canalesMarcados[c.dataset.canal] = c.checked; });
+
+  const btn = $('#mpBtnSave'); btn.disabled = true;
+
+  try {
+    if (editando) {
+      // Update item
+      const { error: eI } = await sb.from('items').update({
+        nombre, estado, linea_id: lineaId, actualizado_en: new Date().toISOString(),
+      }).eq('codigo', codigo);
+      if (eI) throw new Error('Item: ' + eI.message);
+
+      // Update presentación
+      const { error: eP } = await sb.from('presentaciones').update({
+        codigo_granel: granel, codigo_envase: envase, codigo_etiqueta: etiq || null,
+        tamanio_kg: tam, etiquetas_por_hoja: etiqHoja, descripcion_comercial: desc,
+      }).eq('codigo_sku', codigo);
+      if (eP) throw new Error('Presentación: ' + eP.message);
+    } else {
+      // Crear item SKU
+      const { error: eI } = await sb.from('items').insert({
+        codigo, nombre, tipo: 'SKU', estado, linea_id: lineaId,
+      });
+      if (eI) throw new Error('Item: ' + eI.message);
+
+      // Crear presentación
+      const { error: eP } = await sb.from('presentaciones').insert({
+        codigo_sku: codigo, codigo_granel: granel, codigo_envase: envase,
+        codigo_etiqueta: etiq || null, tamanio_kg: tam,
+        etiquetas_por_hoja: etiqHoja, descripcion_comercial: desc,
+      });
+      if (eP) throw new Error('Presentación: ' + eP.message);
+    }
+
+    // Sincronizar canales
+    for (const [canal, activo] of Object.entries(canalesMarcados)) {
+      const { error: eC } = await sb.from('item_canales').upsert({
+        codigo_item: codigo, canal, activo, actualizado_en: new Date().toISOString(),
+      }, { onConflict: 'codigo_item,canal' });
+      if (eC) throw new Error('Canal ' + canal + ': ' + eC.message);
+    }
+
+    cerrarModal();
+    await cargar();
+    toast(editando ? 'Presentación actualizada' : `Presentación ${codigo} creada`, 'ok');
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function eliminar() {
+  if (!editando) return;
+  const sku = editando;
+  if (!confirm(`¿Eliminar la presentación ${sku}? Si está en packs/combos, listas de precios o pedidos, la base rechaza el borrado.`)) return;
+
+  const btn = $('#mpBtnDel'); btn.disabled = true;
+  try {
+    // Borrar item_canales primero (más seguro)
+    await sb.from('item_canales').delete().eq('codigo_item', sku);
+    // Borrar presentación
+    const { error: eP } = await sb.from('presentaciones').delete().eq('codigo_sku', sku);
+    if (eP) throw new Error(eP.message);
+    // Borrar item
+    const { error: eI } = await sb.from('items').delete().eq('codigo', sku);
+    if (eI) throw new Error('El SKU está referenciado en otra tabla (precios, packs, etc.). ' + eI.message);
+
+    cerrarModal();
+    await cargar();
+    toast('Presentación eliminada', 'ok');
+  } catch (err) {
+    toast('No se pudo eliminar: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─── Auto-recalculo de costo estimado al cambiar campos ───
+['#mp-granel','#mp-envase','#mp-etiqueta','#mp-tamanio','#mp-etiq-hoja'].forEach(s => {
+  $(s).addEventListener('change', calcCostoEstimado);
+});
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+$('#btnNueva').addEventListener('click', abrirNueva);
+$('#search').addEventListener('input', render);
+$('#filter-granel').addEventListener('change', render);
+$('#mpBtnSave').addEventListener('click', guardar);
+$('#mpBtnDel').addEventListener('click', eliminar);
+$('#mpBtnCancel').addEventListener('click', cerrarModal);
+$('#modalPres').addEventListener('click', e => { if (e.target.id === 'modalPres') cerrarModal(); });
+
+window.abrirEditar = abrirEditar;
+cargar();
+</script>
+</body>
+</html>

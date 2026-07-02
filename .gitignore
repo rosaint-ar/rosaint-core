@@ -1,0 +1,34 @@
+# Certificados y claves — NUNCA al repo
+*.key
+*.crt
+*.csr
+*.pem
+*.p12
+certificados-arca/
+credentials/
+secrets/
+
+# Archivos temporales / scratchpad
+template-b64.txt
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / build artifacts (por si alguna vez se agregan)
+node_modules/
+dist/
+build/
+
+# Documentos de trabajo local
+*.docx~
+*.gdoc
+
+# Backups
+*.bak
+*.old

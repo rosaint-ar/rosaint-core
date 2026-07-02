@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proveedores · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .toolbar .search { flex: 1; min-width: 220px; }
+    .toolbar .search input { width: 100%; }
+    .count-info { font-size: 12.5px; color: var(--muted); }
+
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+    .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .tbl .items-count {
+      color: var(--muted); font-size: 12px;
+    }
+
+    .btn-icon {
+      background: none; border: 1px solid transparent; padding: 4px 8px;
+      border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--muted);
+      transition: color .12s, border-color .12s, background .12s;
+    }
+    .btn-icon:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+    .empty-box {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    }
+
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100; padding: 20px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      max-width: 560px; width: 100%; padding: 24px 26px;
+    }
+    .modal-box h3 { font-size: 18px; margin-bottom: 16px; }
+    .modal-box label {
+      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+    }
+    .modal-box input, .modal-box textarea {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+      font: inherit; margin-bottom: 12px;
+    }
+    .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+    .modal-box input:focus, .modal-box textarea:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .field-grid .full { grid-column: 1 / -1; }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+    .modal-actions .spacer { flex: 1; }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="laboratorio" data-title="Proveedores" data-subtitle="Alta y datos de contacto">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" class="input" id="search" placeholder="Buscar por nombre, localidad, contacto…">
+    </div>
+    <span class="count-info" id="cnt">—</span>
+    <button class="btn primary" id="btnNuevo">+ Nuevo proveedor</button>
+  </div>
+
+  <div id="content"><div class="empty-box">Cargando…</div></div>
+
+</main>
+
+<div class="modal-bg" id="modalProv">
+  <div class="modal-box">
+    <h3 id="mp-title">Nuevo proveedor</h3>
+    <div class="field-grid">
+      <div class="full">
+        <label>Nombre *</label>
+        <input type="text" id="mp-nombre" maxlength="200">
+      </div>
+      <div>
+        <label>Localidad</label>
+        <input type="text" id="mp-loc">
+      </div>
+      <div>
+        <label>Contacto</label>
+        <input type="text" id="mp-cont">
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="text" id="mp-email">
+      </div>
+      <div>
+        <label>Teléfono</label>
+        <input type="text" id="mp-tel">
+      </div>
+      <div class="full">
+        <label>Notas</label>
+        <textarea id="mp-notas" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="mpBtnDel" style="color:var(--hot); display:none;">Eliminar</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="mpBtnCancel">Cancelar</button>
+      <button class="btn primary" id="mpBtnSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+let PROVS = [], ITEMS_BY_PROV = {};
+let editando = null;
+
+const $ = s => document.querySelector(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function cargar() {
+  try {
+    const [provs, items] = await Promise.all([
+      sb.from('proveedores').select('*').order('nombre'),
+      sb.from('items').select('proveedor_id, tipo').in('tipo', ['MP','IN']).eq('estado', 'vigente'),
+    ]);
+    if (provs.error) throw provs.error;
+    PROVS = provs.data || [];
+    ITEMS_BY_PROV = {};
+    (items.data || []).forEach(i => {
+      if (!i.proveedor_id) return;
+      if (!ITEMS_BY_PROV[i.proveedor_id]) ITEMS_BY_PROV[i.proveedor_id] = { mp: 0, in: 0 };
+      if (i.tipo === 'MP') ITEMS_BY_PROV[i.proveedor_id].mp++;
+      else if (i.tipo === 'IN') ITEMS_BY_PROV[i.proveedor_id].in++;
+    });
+    render();
+  } catch (err) {
+    $('#content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function render() {
+  const q = $('#search').value.trim().toLowerCase();
+  let rows = PROVS;
+  if (q) rows = rows.filter(p => (p.nombre + ' ' + (p.localidad||'') + ' ' + (p.contacto||'') + ' ' + (p.email||'')).toLowerCase().includes(q));
+
+  $('#cnt').textContent = rows.length + ' proveedor' + (rows.length !== 1 ? 'es' : '');
+
+  if (!rows.length) {
+    $('#content').innerHTML = `<div class="empty-box">${PROVS.length ? 'Sin coincidencias' : 'No hay proveedores. Creá uno con "+ Nuevo proveedor".'}</div>`;
+    return;
+  }
+
+  $('#content').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>Nombre</th><th>Localidad</th><th>Contacto</th><th>Email</th><th>Teléfono</th>
+        <th class="num">Items</th><th style="width:60px;"></th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(p => {
+          const items = ITEMS_BY_PROV[p.id] || { mp: 0, in: 0 };
+          const total = items.mp + items.in;
+          const desglose = total > 0 ? `${items.mp} MP · ${items.in} IN` : '';
+          return `<tr>
+            <td style="font-weight:600;">${esc(p.nombre)}</td>
+            <td style="color:var(--muted);">${esc(p.localidad || '—')}</td>
+            <td style="color:var(--muted);">${esc(p.contacto || '—')}</td>
+            <td style="color:var(--muted);">${p.email ? `<a href="mailto:${esc(p.email)}" style="color:var(--accent);">${esc(p.email)}</a>` : '—'}</td>
+            <td style="color:var(--muted);">${esc(p.telefono || '—')}</td>
+            <td class="num">${total || '—'}${desglose ? `<div class="items-count">${desglose}</div>` : ''}</td>
+            <td><button class="btn-icon" onclick="abrirEditar(${p.id})" title="Editar proveedor">✎</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function abrirNuevo() {
+  editando = null;
+  $('#mp-title').textContent = 'Nuevo proveedor';
+  ['#mp-nombre','#mp-loc','#mp-cont','#mp-email','#mp-tel','#mp-notas'].forEach(s => $(s).value = '');
+  $('#mpBtnDel').style.display = 'none';
+  $('#modalProv').classList.add('show');
+  setTimeout(() => $('#mp-nombre').focus(), 60);
+}
+
+function abrirEditar(id) {
+  const p = PROVS.find(x => x.id === id); if (!p) return;
+  editando = id;
+  $('#mp-title').textContent = 'Editar proveedor';
+  $('#mp-nombre').value = p.nombre || '';
+  $('#mp-loc').value = p.localidad || '';
+  $('#mp-cont').value = p.contacto || '';
+  $('#mp-email').value = p.email || '';
+  $('#mp-tel').value = p.telefono || '';
+  $('#mp-notas').value = p.notas || '';
+  $('#mpBtnDel').style.display = '';
+  $('#modalProv').classList.add('show');
+  setTimeout(() => $('#mp-nombre').focus(), 60);
+}
+
+function cerrarModal() { $('#modalProv').classList.remove('show'); }
+
+async function guardar() {
+  const nombre = $('#mp-nombre').value.trim();
+  if (!nombre) { toast('El nombre es obligatorio', 'err'); return; }
+  const data = {
+    nombre,
+    localidad: $('#mp-loc').value.trim() || null,
+    contacto: $('#mp-cont').value.trim() || null,
+    email: $('#mp-email').value.trim() || null,
+    telefono: $('#mp-tel').value.trim() || null,
+    notas: $('#mp-notas').value.trim() || null,
+    actualizado_en: new Date().toISOString(),
+  };
+  const btn = $('#mpBtnSave'); btn.disabled = true;
+  try {
+    if (editando) {
+      const { error } = await sb.from('proveedores').update(data).eq('id', editando); if (error) throw error;
+    } else {
+      const { error } = await sb.from('proveedores').insert(data); if (error) throw error;
+    }
+    cerrarModal(); await cargar();
+    toast(editando ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
+  } catch (err) { toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function eliminar() {
+  if (!editando) return;
+  const items = ITEMS_BY_PROV[editando];
+  const total = items ? items.mp + items.in : 0;
+  const msg = total > 0
+    ? `Este proveedor tiene ${total} item(s) asignado(s). Al eliminarlo, esos items quedarán sin proveedor. ¿Continuar?`
+    : '¿Eliminar este proveedor?';
+  if (!confirm(msg)) return;
+
+  const btn = $('#mpBtnDel'); btn.disabled = true;
+  try {
+    // Desasignar de items
+    if (total > 0) {
+      await sb.from('items').update({ proveedor_id: null }).eq('proveedor_id', editando);
+    }
+    const { error } = await sb.from('proveedores').delete().eq('id', editando); if (error) throw error;
+    cerrarModal(); await cargar(); toast('Proveedor eliminado', 'ok');
+  } catch (err) { toast('No se pudo eliminar: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+$('#btnNuevo').addEventListener('click', abrirNuevo);
+$('#search').addEventListener('input', render);
+$('#mpBtnSave').addEventListener('click', guardar);
+$('#mpBtnDel').addEventListener('click', eliminar);
+$('#mpBtnCancel').addEventListener('click', cerrarModal);
+$('#modalProv').addEventListener('click', e => { if (e.target.id === 'modalProv') cerrarModal(); });
+
+window.abrirEditar = abrirEditar;
+cargar();
+</script>
+</body>
+</html>

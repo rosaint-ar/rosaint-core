@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Packs x4 · Catálogo · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .info-bar {
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
+      color: var(--muted); margin-bottom: 16px;
+    }
+
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+    }
+    .kpi .k { font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+    .kpi .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+    .toolbar {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .toolbar input[type=search] {
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 8px 12px; border-radius: 6px; color: var(--text);
+      font-family: inherit; font-size: 14px; min-width: 220px;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 16px; border-radius: 6px; font-weight: 600;
+      font-size: 13px; cursor: pointer;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+
+    table.packs {
+      width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+    }
+    table.packs th {
+      text-align: left; font-weight: 600; color: var(--muted);
+      font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+      padding: 10px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    table.packs th.num, table.packs td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.packs td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      color: var(--text); font-size: 13px; vertical-align: middle;
+    }
+    table.packs tr:last-child td { border-bottom: none; }
+    table.packs tr.warn td { background: rgba(255, 165, 0, 0.06); }
+    table.packs .sku {
+      font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
+      color: var(--muted);
+    }
+    table.packs .del-btn {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); padding: 4px 8px; border-radius: 4px;
+      font-size: 11px; cursor: pointer;
+    }
+    table.packs .del-btn:hover { border-color: var(--accent); color: var(--accent); }
+    input.qty-inline {
+      width: 60px; background: transparent; border: 1px solid transparent;
+      padding: 5px 6px; border-radius: 4px; text-align: right;
+      font: inherit; font-variant-numeric: tabular-nums; color: var(--text);
+    }
+    input.qty-inline:hover { background: var(--surface-2); }
+    input.qty-inline:focus {
+      outline: none; background: var(--surface-2); border-color: var(--accent);
+    }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 100; display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 12px; width: 100%; max-width: 560px;
+      max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .modal__header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal__title { font-size: 16px; font-weight: 600; margin: 0; }
+    .modal__close {
+      background: none; border: none; font-size: 22px; color: var(--muted);
+      cursor: pointer; padding: 4px 8px;
+    }
+    .modal__body { padding: 18px 20px; overflow-y: auto; }
+    .modal__footer {
+      padding: 12px 20px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+    }
+    .field input, .field select {
+      width: 100%; padding: 10px 12px; font: inherit; font-size: 14px;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2);
+      color: var(--text); box-sizing: border-box;
+    }
+    .field input:focus, .field select:focus {
+      outline: none; border-color: var(--accent); background: var(--surface);
+    }
+    .field-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+
+    .search-wrap { position: relative; }
+    .search-results {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+      max-height: 240px; overflow-y: auto; margin-top: 2px; z-index: 10;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none;
+    }
+    .search-results.open { display: block; }
+    .search-item {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      cursor: pointer; font-size: 13px;
+    }
+    .search-item:hover { background: var(--surface-2); }
+    .search-item .sku {
+      font-family: 'SF Mono', Consolas, monospace; font-size: 11px;
+      color: var(--muted); margin-right: 8px;
+    }
+
+    .btn-modal-primary {
+      background: var(--accent); color: #fff; border: none;
+      padding: 10px 18px; border-radius: 6px; font-weight: 600;
+      font-size: 13px; cursor: pointer;
+    }
+    .btn-modal-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-modal-ghost {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      padding: 10px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    }
+
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 12px 18px; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.15);
+      font-size: 13px; opacity: 0; transition: opacity .2s;
+      pointer-events: none; z-index: 200;
+    }
+    .toast.show { opacity: 1; }
+    .toast.ok { border-color: #2ea043; color: #2ea043; }
+    .toast.err { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body data-page="catalogo" data-title="Packs x4" data-subtitle="Combos mayoristas · 4 unidades del mismo SKU base">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="info-bar">
+    Cada pack agrupa <strong>4 unidades</strong> del mismo SKU base (típicamente presentaciones de 250 g) para venta mayorista con descuento por volumen.
+    El costo se calcula automáticamente en base al costo unitario del SKU × cantidad.
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="k">Packs activos</div>
+      <div class="v" id="kpi-total">—</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Costo promedio</div>
+      <div class="v" id="kpi-costo-prom">—</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Con componentes</div>
+      <div class="v" id="kpi-completos">—</div>
+    </div>
+    <div class="kpi">
+      <div class="k">Sin componentes</div>
+      <div class="v" id="kpi-vacios" style="color: #ff8c00;">—</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="filtro" placeholder="Buscar por SKU o nombre…" autocomplete="off">
+    <button class="btn-primary" id="btn-add">+ Nuevo pack</button>
+  </div>
+
+  <table class="packs">
+    <thead>
+      <tr>
+        <th style="width:80px;">SKU Pack</th>
+        <th>Nombre</th>
+        <th style="width:80px;">SKU base</th>
+        <th style="width:60px;" class="num">Un.</th>
+        <th style="width:120px;" class="num">Costo total</th>
+        <th style="width:120px;" class="num">Costo unit.</th>
+        <th style="width:60px;"></th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 40px 0;">Cargando…</td></tr>
+    </tbody>
+  </table>
+
+</main>
+
+<!-- Modal Nuevo/Editar pack -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="modal-title">Nuevo pack</h2>
+      <button class="modal__close" id="modal-close">×</button>
+    </div>
+    <div class="modal__body">
+      <div class="field">
+        <label for="in-codigo">Código del pack (SKU 4XXXX)</label>
+        <input type="text" id="in-codigo" placeholder="Ej: 42180" maxlength="5" pattern="4\d{4}" style="font-family: 'SF Mono', Consolas, monospace;">
+      </div>
+      <div class="field">
+        <label for="in-nombre">Nombre del pack</label>
+        <input type="text" id="in-nombre" placeholder="Ej: [PACK 4 Un.] Crema «Nueva» Corporal 250 g">
+      </div>
+      <div class="field">
+        <label for="in-base">SKU base (presentación que compone el pack)</label>
+        <div class="search-wrap">
+          <input type="text" id="in-base" placeholder="Buscar por SKU o nombre…" autocomplete="off">
+          <div class="search-results" id="search-results"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="in-cantidad">Cantidad por pack</label>
+        <input type="number" id="in-cantidad" value="4" min="1" step="1">
+      </div>
+    </div>
+    <div class="modal__footer">
+      <button class="btn-modal-ghost" id="btn-cancel">Cancelar</button>
+      <button class="btn-modal-primary" id="btn-save" disabled>Crear pack</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const STATE = {
+  packs: [],      // items donde tipo='PACK'
+  componentes: [], // pack_componentes rows
+  costos: {},     // codigo_pack -> costo_total_pack
+  presentaciones: [], // items donde tipo='SKU' (para elegir base)
+  baseSel: null,
+  filtro: ''
+};
+
+function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+function fmt(n) { const x = Number(n); return isNaN(x) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
+function fmtMoney(n) { const x = Number(n); return isNaN(x) ? '—' : '$' + x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (kind || 'ok');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 2400);
+}
+
+async function cargar() {
+  const [packsR, compR, costosR, presR] = await Promise.all([
+    sb.from('items').select('codigo, nombre, tipo, estado').eq('tipo', 'PACK').eq('estado', 'vigente').order('codigo'),
+    sb.from('pack_componentes').select('*'),
+    sb.from('v_costos_packs').select('*'),
+    sb.from('items').select('codigo, nombre').eq('tipo', 'SKU').eq('estado', 'vigente').order('codigo')
+  ]);
+  if (packsR.error) { toast('Error packs: ' + packsR.error.message, 'err'); return; }
+  STATE.packs = packsR.data || [];
+  STATE.componentes = compR.data || [];
+  STATE.costos = {};
+  for (const c of (costosR.data || [])) STATE.costos[c.codigo_pack] = c.costo_total_pack;
+  STATE.presentaciones = presR.data || [];
+
+  renderKPIs();
+  render();
+}
+
+function renderKPIs() {
+  const total = STATE.packs.length;
+  const conComp = STATE.packs.filter(p => STATE.componentes.some(c => c.codigo_pack === p.codigo)).length;
+  const sinComp = total - conComp;
+  const costos = STATE.packs.map(p => STATE.costos[p.codigo]).filter(c => c != null && !isNaN(c)).map(Number);
+  const prom = costos.length ? costos.reduce((a,b)=>a+b,0) / costos.length : 0;
+
+  document.getElementById('kpi-total').textContent = total;
+  document.getElementById('kpi-costo-prom').textContent = costos.length ? fmtMoney(prom) : '—';
+  document.getElementById('kpi-completos').textContent = conComp;
+  document.getElementById('kpi-vacios').textContent = sinComp;
+}
+
+function render() {
+  const tbody = document.getElementById('tbody');
+  const q = norm(STATE.filtro);
+  const packs = q
+    ? STATE.packs.filter(p => norm(p.codigo).includes(q) || norm(p.nombre).includes(q))
+    : STATE.packs;
+
+  if (packs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--muted); padding: 40px 0;">Sin packs.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  for (const p of packs) {
+    const comp = STATE.componentes.find(c => c.codigo_pack === p.codigo);
+    const costoTotal = STATE.costos[p.codigo];
+    const costoUnit = comp && costoTotal ? costoTotal / (comp.cantidad || 1) : null;
+    const warnClass = !comp ? ' class="warn"' : '';
+
+    html += '<tr data-pack="' + escapeHTML(p.codigo) + '"' + warnClass + '>';
+    html += '<td class="sku">' + escapeHTML(p.codigo) + '</td>';
+    html += '<td>' + escapeHTML(p.nombre) + '</td>';
+    if (comp) {
+      html += '<td class="sku">' + escapeHTML(comp.codigo_sku) + '</td>';
+      html += '<td class="num"><input type="number" class="qty-inline" data-field="cantidad" value="' + comp.cantidad + '" min="1" step="1"></td>';
+    } else {
+      html += '<td colspan="2" style="color:#ff8c00;font-size:12px;">Sin componente — <a href="javascript:void(0)" onclick="agregarComponentePack(\'' + p.codigo + '\')">agregar</a></td>';
+    }
+    html += '<td class="num">' + (costoTotal != null ? fmtMoney(costoTotal) : '—') + '</td>';
+    html += '<td class="num">' + (costoUnit != null ? fmtMoney(costoUnit) : '—') + '</td>';
+    html += '<td><button class="del-btn" data-del="' + escapeHTML(p.codigo) + '">🗑</button></td>';
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // Wire eventos
+  tbody.querySelectorAll('tr[data-pack]').forEach(tr => {
+    const pack = tr.dataset.pack;
+    const inp = tr.querySelector('input.qty-inline');
+    if (inp) inp.addEventListener('change', () => actualizarCantidad(pack, Number(inp.value) || 1));
+    const del = tr.querySelector('[data-del]');
+    if (del) del.addEventListener('click', () => eliminarPack(pack));
+  });
+}
+
+async function actualizarCantidad(codigoPack, nuevaCantidad) {
+  const { error } = await sb.from('pack_componentes').update({ cantidad: nuevaCantidad }).eq('codigo_pack', codigoPack);
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  toast('✓ Cantidad actualizada');
+  cargar();
+}
+
+async function eliminarPack(codigoPack) {
+  if (!confirm('¿Eliminar el pack ' + codigoPack + '?\nEsto cambia su estado a "descatalogado" y borra sus componentes.')) return;
+  const { error: e1 } = await sb.from('pack_componentes').delete().eq('codigo_pack', codigoPack);
+  if (e1) { toast('Error componentes: ' + e1.message, 'err'); return; }
+  const { error: e2 } = await sb.from('items').update({ estado: 'descatalogado' }).eq('codigo', codigoPack);
+  if (e2) { toast('Error item: ' + e2.message, 'err'); return; }
+  toast('✓ Pack eliminado');
+  cargar();
+}
+
+// Modal ---
+function abrirModal(codigoExistente) {
+  STATE.baseSel = null;
+  document.getElementById('in-codigo').value = codigoExistente || '';
+  document.getElementById('in-codigo').disabled = !!codigoExistente;
+  document.getElementById('in-nombre').value = '';
+  document.getElementById('in-base').value = '';
+  document.getElementById('in-cantidad').value = 4;
+  document.getElementById('search-results').classList.remove('open');
+  document.getElementById('modal-title').textContent = codigoExistente ? 'Agregar componente a ' + codigoExistente : 'Nuevo pack';
+  document.getElementById('btn-save').textContent = codigoExistente ? 'Agregar componente' : 'Crear pack';
+  document.getElementById('btn-save').disabled = true;
+  document.getElementById('modal').classList.add('open');
+  // Precargar nombre si es existente
+  if (codigoExistente) {
+    const p = STATE.packs.find(x => x.codigo === codigoExistente);
+    if (p) document.getElementById('in-nombre').value = p.nombre;
+    document.getElementById('in-nombre').disabled = true;
+  } else {
+    document.getElementById('in-nombre').disabled = false;
+  }
+  setTimeout(() => document.getElementById(codigoExistente ? 'in-base' : 'in-codigo').focus(), 100);
+}
+function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+function agregarComponentePack(codigo) { abrirModal(codigo); }
+window.agregarComponentePack = agregarComponentePack;
+
+function buscarPresentaciones(query) {
+  const q = norm(query);
+  const list = STATE.presentaciones.filter(p => norm(p.codigo).includes(q) || norm(p.nombre).includes(q));
+  return list.slice(0, 20);
+}
+
+function renderResults(list) {
+  const wrap = document.getElementById('search-results');
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="search-item" style="cursor:default;color:var(--muted);">Sin resultados</div>';
+    wrap.classList.add('open');
+    return;
+  }
+  let html = '';
+  for (const p of list) {
+    html += '<div class="search-item" data-sku="' + escapeHTML(p.codigo) + '">';
+    html += '<span class="sku">' + escapeHTML(p.codigo) + '</span>';
+    html += escapeHTML(p.nombre);
+    html += '</div>';
+  }
+  wrap.innerHTML = html;
+  wrap.classList.add('open');
+  wrap.querySelectorAll('.search-item[data-sku]').forEach(item => {
+    item.addEventListener('click', () => seleccionarBase(item.dataset.sku));
+  });
+}
+
+function seleccionarBase(sku) {
+  const p = STATE.presentaciones.find(x => x.codigo === sku);
+  if (!p) return;
+  STATE.baseSel = p;
+  document.getElementById('in-base').value = p.nombre + ' (' + p.codigo + ')';
+  document.getElementById('search-results').classList.remove('open');
+  actualizarBtnSave();
+}
+
+function actualizarBtnSave() {
+  const codigo = document.getElementById('in-codigo').value.trim();
+  const nombre = document.getElementById('in-nombre').value.trim();
+  const cantidad = Number(document.getElementById('in-cantidad').value) || 0;
+  const validoCodigo = document.getElementById('in-codigo').disabled || /^4\d{4}$/.test(codigo);
+  const ok = validoCodigo && (document.getElementById('in-nombre').disabled || nombre.length > 0) && STATE.baseSel && cantidad > 0;
+  document.getElementById('btn-save').disabled = !ok;
+}
+
+async function guardarPack() {
+  const codigo = document.getElementById('in-codigo').value.trim();
+  const nombre = document.getElementById('in-nombre').value.trim();
+  const cantidad = Number(document.getElementById('in-cantidad').value) || 4;
+  const esNuevo = !document.getElementById('in-codigo').disabled;
+
+  if (esNuevo) {
+    // Crear item PACK
+    const { error: e1 } = await sb.from('items').insert({
+      codigo, nombre, tipo: 'PACK', estado: 'vigente', linea_id: 5 // línea PACKS
+    });
+    if (e1) { toast('Error creando pack: ' + e1.message, 'err'); return; }
+  }
+  // Insertar componente
+  const { error: e2 } = await sb.from('pack_componentes').insert({
+    codigo_pack: codigo, codigo_sku: STATE.baseSel.codigo, cantidad
+  });
+  if (e2) { toast('Error componente: ' + e2.message, 'err'); return; }
+
+  toast('✓ Pack ' + codigo + ' listo');
+  cerrarModal();
+  cargar();
+}
+
+// Wire
+document.getElementById('btn-add').addEventListener('click', () => abrirModal(null));
+document.getElementById('modal-close').addEventListener('click', cerrarModal);
+document.getElementById('btn-cancel').addEventListener('click', cerrarModal);
+document.getElementById('btn-save').addEventListener('click', guardarPack);
+document.getElementById('modal').addEventListener('click', e => { if (e.target === document.getElementById('modal')) cerrarModal(); });
+
+document.getElementById('in-base').addEventListener('input', e => {
+  STATE.baseSel = null;
+  actualizarBtnSave();
+  renderResults(buscarPresentaciones(e.target.value));
+});
+document.getElementById('in-base').addEventListener('focus', e => {
+  if (!STATE.baseSel) renderResults(buscarPresentaciones(e.target.value));
+});
+document.getElementById('in-codigo').addEventListener('input', actualizarBtnSave);
+document.getElementById('in-nombre').addEventListener('input', actualizarBtnSave);
+document.getElementById('in-cantidad').addEventListener('input', actualizarBtnSave);
+
+document.getElementById('filtro').addEventListener('input', e => {
+  STATE.filtro = e.target.value;
+  render();
+});
+
+cargar();
+</script>
+</body>
+</html>

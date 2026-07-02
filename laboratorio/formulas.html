@@ -1,0 +1,2286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor de fórmula · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Utilidades ---- */
+    .hidden { display: none !important; }
+    .text-muted { color: var(--muted); }
+    .text-success { color: var(--ok); }
+    .text-warning { color: var(--warn); }
+    .text-error { color: var(--hot); }
+    .small { font-size: 12px; }
+    .mb-8 { margin-bottom: 8px; }
+    .mb-12 { margin-bottom: 12px; }
+    .nowrap { white-space: nowrap; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ---- Status bar (USD + IVA + link listado) ---- */
+    .page-status {
+      display: flex; gap: 14px; align-items: center;
+      margin-bottom: 16px; font-size: 13px; color: var(--muted);
+    }
+    .page-status strong { color: var(--text); }
+    .page-status .spacer { flex: 1; }
+
+    /* ---- Login (Supabase auth: temporal, se reemplaza por el login general) ---- */
+    .login-container {
+      min-height: 60vh; display: flex; align-items: center; justify-content: center;
+    }
+    .login-card { width: 340px; max-width: 100%; }
+    .login-card h2 { font-size: 18px; margin-bottom: 4px; }
+    .login-card .sub { color: var(--muted); margin-bottom: 18px; font-size: 13px; }
+    .login-card input {
+      width: 100%; padding: 9px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      margin-bottom: 10px; background: var(--surface); color: var(--text);
+      font: inherit;
+    }
+    .login-card input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .login-card .btn { width: 100%; justify-content: center; }
+    .login-error {
+      color: var(--hot); font-size: 12px; margin-bottom: 10px;
+    }
+    .loading-screen {
+      min-height: 60vh; display: flex; align-items: center; justify-content: center;
+      color: var(--muted);
+    }
+
+    /* ---- Selector de fórmula ---- */
+    .formula-list {
+      max-height: 400px; overflow-y: auto;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .formula-row {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      cursor: pointer; display: flex; align-items: center; gap: 12px;
+    }
+    .formula-row:hover { background: var(--surface-2); }
+    .formula-row:last-child { border-bottom: none; }
+    .formula-row .codigo {
+      font-family: var(--font-mono); color: var(--accent);
+      font-size: 12px; min-width: 60px;
+    }
+    .formula-row .linea {
+      font-size: 11px; color: var(--muted); margin-left: auto;
+    }
+
+    /* ---- Formula header ---- */
+    .formula-header { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 18px; }
+    .formula-header .field { display: flex; flex-direction: column; gap: 4px; }
+    .formula-header .flabel {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); font-weight: 600;
+    }
+    .formula-header .fvalue { font-size: 16px; font-weight: 500; color: var(--text); }
+    .formula-header .fvalue.fcodigo { font-family: var(--font-mono); color: var(--accent); }
+    .formula-header .fvalue.fcosto { color: var(--ok); font-size: 18px; font-weight: 600; }
+
+    /* ---- Section headers dentro de las cards ---- */
+    .sec-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
+    }
+    .sec-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .sec-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ---- Tablas ---- */
+    .lab-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .lab-table th {
+      text-align: left; padding: 8px 10px;
+      font-weight: 600; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border); background: var(--surface-2);
+    }
+    .lab-table th.num, .lab-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .lab-table td {
+      padding: 8px 10px; border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .lab-table tr:last-child td { border-bottom: none; }
+    .lab-table tr.totals td {
+      border-top: 2px solid var(--border);
+      background: var(--surface-2); font-weight: 500; padding: 10px;
+    }
+    .lab-table td.codigo {
+      font-family: var(--font-mono); color: var(--accent); font-size: 12px;
+    }
+    .lab-table td.codigo.granel-link { cursor: pointer; }
+    .lab-table td.codigo.granel-link:hover { text-decoration: underline; }
+
+    /* ---- Columnas de precios por lista (fondos sutiles) ---- */
+    .col-l1  { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+    .col-l2  { background: color-mix(in srgb, var(--ok) 5%, var(--surface)); }
+    .col-esc { background: color-mix(in srgb, var(--warn) 5%, var(--surface)); }
+
+    /* ---- Inputs en tabla ---- */
+    input.cell {
+      width: 100%; padding: 4px 6px;
+      border: 1px solid transparent; background: transparent;
+      font: inherit; color: inherit;
+      border-radius: 4px; text-align: right;
+    }
+    input.cell:hover { background: var(--surface-2); border-color: var(--border); }
+    input.cell:focus {
+      outline: none; background: var(--surface);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    input.cell.text { text-align: left; }
+    input.cell[readonly] {
+      background: color-mix(in srgb, var(--accent) 5%, transparent);
+      color: var(--accent);
+    }
+
+    /* ---- Badges ---- */
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 4px; font-size: 11px; font-weight: 600;
+    }
+    .badge.ok    { background: color-mix(in srgb, var(--ok) 15%, transparent);   color: var(--ok); }
+    .badge.warn  { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .badge.error { background: color-mix(in srgb, var(--hot) 12%, transparent);  color: var(--hot); }
+    .badge.info  { background: var(--accent-tint); color: var(--accent); }
+
+    /* ---- Semáforo de rentabilidad ---- */
+    .rentab {
+      padding: 3px 8px; border-radius: 4px;
+      font-weight: 500; font-size: 12px;
+      display: inline-block; min-width: 56px; text-align: right;
+    }
+    .rentab.ok    { background: color-mix(in srgb, var(--ok) 15%, transparent);   color: var(--ok); }
+    .rentab.warn  { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .rentab.error { background: color-mix(in srgb, var(--hot) 12%, transparent);  color: var(--hot); }
+    .rentab.empty { background: var(--surface-2); color: var(--muted); }
+
+    /* ---- Desglose de costo ---- */
+    .costo-desglose:hover { background: var(--surface-2); }
+    .desglose-arrow {
+      display: inline-block; width: 12px;
+      color: var(--muted); font-size: 10px; margin-right: 2px;
+    }
+    .fila-desglose td { border-bottom: 2px solid var(--border) !important; background: var(--surface-2); }
+
+    /* ---- Badges de vínculo (ancla / derivado / desvinculado / manual) ---- */
+    .badge-vinculo {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 7px; border-radius: 4px;
+      font-size: 11px; font-weight: 500;
+      white-space: nowrap; line-height: 1.4;
+    }
+    .badge-vinculo.ancla {
+      background: var(--accent-tint); color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    }
+    .badge-vinculo.deriv {
+      background: color-mix(in srgb, var(--ok) 12%, transparent);
+      color: var(--ok);
+    }
+    .badge-vinculo.desv {
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      color: var(--warn);
+      border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+    }
+    .badge-vinculo.manual {
+      background: var(--surface-2); color: var(--muted);
+    }
+    .badge-vinculo .link-action {
+      background: none; border: none; cursor: pointer;
+      color: inherit; padding: 0 2px; font-size: 13px; font-weight: 700;
+      border-radius: 3px;
+    }
+    .badge-vinculo .link-action:hover {
+      background: color-mix(in srgb, currentColor 15%, transparent);
+    }
+
+    /* ---- Panel de propagación (SKU ancla) ---- */
+    .panel-relaciones {
+      background: var(--accent-tint);
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+      border-radius: var(--radius); padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .panel-relaciones h3 {
+      font-size: 14px; font-weight: 600; color: var(--accent);
+      display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+    }
+    .panel-relaciones .subtitle {
+      font-size: 12px; color: var(--muted); margin-bottom: 12px;
+    }
+    .panel-relaciones .accion-row {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+
+    /* ---- Preview de derivados dentro del panel ancla ---- */
+    .preview-derivados {
+      margin-top: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 0;
+      max-height: 360px; overflow-y: auto; display: none;
+    }
+    .preview-derivados.open { display: block; }
+    .preview-derivados table { width: 100%; border-collapse: collapse; }
+    .preview-derivados th {
+      position: sticky; top: 0; background: var(--surface-2); padding: 6px 10px;
+      font-size: 11px; text-align: left; border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .preview-derivados td {
+      padding: 5px 10px; border-bottom: 1px solid var(--border); font-size: 12px;
+    }
+    .preview-derivados .grupo-header td {
+      background: var(--surface-2); font-weight: 600; color: var(--accent);
+      font-size: 11px; padding-top: 8px;
+    }
+    .preview-derivados .diff-up   { color: var(--ok); font-weight: 500; }
+    .preview-derivados .diff-down { color: var(--hot); font-weight: 500; }
+    .preview-derivados .diff-eq   { color: var(--muted); }
+    .preview-derivados .estado-desvinc {
+      background: color-mix(in srgb, var(--warn) 15%, transparent);
+      color: var(--warn);
+      font-size: 10px; padding: 1px 5px; border-radius: 3px;
+    }
+    .preview-derivados .codigo {
+      font-family: var(--font-mono); color: var(--accent); font-size: 11px;
+    }
+    .preview-derivados .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .preview-derivados .text-muted { color: var(--muted); }
+
+    /* ---- Modal desvincular ---- */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      display: none; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 24px; max-width: 480px;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .modal-box h4 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+    .modal-box p { font-size: 13px; line-height: 1.5; color: var(--text); margin-bottom: 16px; }
+    .modal-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ---- INCI ---- */
+    .inci-text {
+      width: 100%; min-height: 80px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text);
+      font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+      resize: vertical;
+    }
+    .inci-text:focus { outline: none; border-color: var(--accent); }
+    .inci-auto {
+      background: var(--surface-2); border: 1px dashed var(--border);
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      font-family: var(--font-mono); font-size: 12px;
+      color: var(--text); margin-bottom: 10px;
+    }
+
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      padding: 12px 18px; border-radius: var(--radius-sm);
+      background: var(--text); color: var(--bg);
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      opacity: 0; transform: translateY(20px);
+      transition: all 0.25s; z-index: 1000;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { background: var(--hot); color: var(--on-accent); }
+    .toast.success { background: var(--ok); color: var(--on-accent); }
+    .toast.warn { background: var(--warn); color: var(--on-accent); }
+
+    /* ---- Composición row: componente que "completa a 100%" ---- */
+    tr.fila-completa {
+      background: color-mix(in srgb, var(--structure) 6%, transparent) !important;
+    }
+    tr.fila-completa input.cell[readonly] {
+      color: var(--structure);
+      background: color-mix(in srgb, var(--structure) 8%, transparent);
+    }
+
+    /* Drag handle */
+    .drag-asa {
+      cursor: grab; color: var(--muted); margin-right: 6px; user-select: none;
+    }
+    .drag-asa:active { cursor: grabbing; }
+
+    /* Buttons compactos */
+    .btn-sm {
+      padding: 4px 10px; font-size: 12px;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+  </style>
+</head>
+<body data-page="laboratorio" data-title="Editor de fórmula" data-subtitle="Composición · precios · INCI">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <!-- Status bar con USD / IVA / botón listado -->
+  <div class="page-status">
+    <span>USD = <strong id="cotizacion-usd">—</strong></span>
+    <span>·</span>
+    <span>IVA = <strong id="iva-pct">21%</strong></span>
+    <span class="spacer"></span>
+    <a href="#" id="link-listado" onclick="event.preventDefault(); volverAlListado()" style="display:none;">≡ Listado de fórmulas</a>
+  </div>
+
+  <!-- Login (temporal — se reemplazará por el login general de la plataforma) -->
+  <div id="login-screen" class="login-container hidden">
+    <div class="card login-card">
+      <h2>Editor de fórmula</h2>
+      <div class="sub">Iniciá sesión para continuar</div>
+      <div id="login-error" class="login-error hidden"></div>
+      <input type="email" id="login-email" placeholder="Email" autocomplete="email">
+      <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password">
+      <button class="btn primary" onclick="login()">Entrar</button>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading-screen" class="loading-screen">Cargando...</div>
+
+  <!-- Selector inicial (cuando no hay ?codigo=...) -->
+  <div id="selector-view" class="card hidden" style="max-width:720px; margin: 0 auto;">
+    <div class="sec-title mb-12">Elegí una fórmula para editar</div>
+    <input type="text" id="filter-input" class="input" placeholder="Buscar por código o nombre..." oninput="filtrarFormulas()" style="width:100%; margin-bottom:10px;">
+    <div id="formula-list" class="formula-list"></div>
+  </div>
+
+  <!-- Editor -->
+  <div id="editor-view" class="hidden">
+
+    <div class="card formula-header" style="margin-bottom:20px;">
+      <div class="field">
+        <span class="flabel">Código</span>
+        <span class="fvalue fcodigo" id="f-codigo">—</span>
+      </div>
+      <div class="field">
+        <span class="flabel">Nombre</span>
+        <span class="fvalue" id="f-nombre">—</span>
+      </div>
+      <div class="field">
+        <span class="flabel">Línea</span>
+        <span class="fvalue" id="f-linea">—</span>
+      </div>
+      <div class="field">
+        <span class="flabel">Costo por Kg (actual)</span>
+        <span class="fvalue fcosto" id="f-costo-kg">—</span>
+      </div>
+    </div>
+
+    <div id="panel-versiones" class="card" style="margin-bottom:16px;"></div>
+
+    <!-- Composición -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="sec-head">
+        <div>
+          <div class="sec-title">Composición del granel</div>
+          <div class="sec-sub">Editá los porcentajes; el costo se recalcula en vivo</div>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="text" id="busca-componente" list="lista-componentes"
+                 class="input" placeholder="Buscar por nombre o código…" autocomplete="off"
+                 style="min-width:240px; padding:6px 10px; font-size:13px;"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();agregarComponente();}">
+          <datalist id="lista-componentes"></datalist>
+          <button class="btn secondary btn-sm" onclick="agregarComponente()">+ Agregar</button>
+          <button class="btn ghost btn-sm" id="btn-descartar-composicion" onclick="descartarCambiosComposicion()" disabled style="color:var(--hot);">Descartar</button>
+          <button class="btn primary btn-sm" id="btn-guardar-composicion" onclick="guardarComposicion()" disabled>Guardar cambios</button>
+        </div>
+      </div>
+      <table class="lab-table">
+        <thead>
+          <tr>
+            <th style="width: 70px">Código</th>
+            <th>Componente</th>
+            <th class="num" style="width: 80px">%</th>
+            <th class="num" style="width: 110px">Costo / Kg</th>
+            <th class="num" style="width: 110px">Costo MP / Kg</th>
+            <th class="num" style="width: 80px">Costo %</th>
+            <th style="width: 90px"></th>
+          </tr>
+        </thead>
+        <tbody id="composicion-body"></tbody>
+        <tfoot id="composicion-foot"></tfoot>
+      </table>
+    </div>
+
+    <!-- Presentaciones y precios -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="sec-head">
+        <div>
+          <div class="sec-title">Presentaciones y precios</div>
+          <div class="sec-sub">Una fila por SKU. Editá la rentabilidad objetivo o el precio final; el otro se recalcula. Semáforo de margen real por columna.</div>
+        </div>
+        <button class="btn primary btn-sm" id="btn-guardar-precios" onclick="guardarPrecios()" disabled>Guardar cambios</button>
+      </div>
+
+      <div id="panel-relaciones-host"></div>
+
+      <table id="precios-table" class="lab-table">
+        <thead>
+          <tr>
+            <th rowspan="2" style="width: 60px">Cód.</th>
+            <th rowspan="2">Presentación</th>
+            <th rowspan="2" class="num" style="width: 55px">Tam.</th>
+            <th rowspan="2" style="width: 80px" title="Cómo se calcula el precio: ancla, derivado o desvinculado">Vínculo</th>
+            <th rowspan="2" class="num" style="width: 85px">Costo unit.<br><span class="small text-muted">(s/IVA)</span></th>
+            <th colspan="4" style="text-align: center;" class="col-l1">Lista 1 · Público (editable)</th>
+            <th colspan="3" style="text-align: center;" class="col-l2">Lista 2 · Profesional (L1 c/IVA × 0,70)</th>
+            <th colspan="3" style="text-align: center;" class="col-esc">Escalones sobre L2 c/IVA</th>
+          </tr>
+          <tr>
+            <th class="num col-l1" style="width: 60px" title="Margen objetivo sobre venta neta">Obj %</th>
+            <th class="num col-l1" style="width: 95px" title="Precio c/IVA (redondear a $100)">Precio c/IVA</th>
+            <th class="num col-l1" style="width: 75px" title="Ganancia por unidad (sobre neta)">Gan./u</th>
+            <th class="num col-l1" style="width: 70px" title="Margen real sobre venta neta">Real %</th>
+            <th class="num col-l2" style="width: 95px">Precio c/IVA</th>
+            <th class="num col-l2" style="width: 75px">Gan./u</th>
+            <th class="num col-l2" style="width: 70px">Real %</th>
+            <th class="num col-esc" style="width: 90px">−20%</th>
+            <th class="num col-esc" style="width: 90px">−30%</th>
+            <th class="num col-esc" style="width: 90px">−35%</th>
+          </tr>
+        </thead>
+        <tbody id="precios-body"></tbody>
+      </table>
+    </div>
+
+    <!-- INCI -->
+    <div class="card">
+      <div class="sec-head">
+        <div>
+          <div class="sec-title">Nomenclatura INCI</div>
+          <div class="sec-sub">Auto-generada desde los componentes; editable</div>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <select id="inci-caps" onchange="renderInciAuto()" title="Capitalización del INCI"
+                  style="padding:5px 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:12px;">
+            <option value="upper">MAYÚSCULAS</option>
+            <option value="original">Title Case</option>
+          </select>
+          <button class="btn secondary btn-sm" onclick="regenerarInci()">Regenerar</button>
+          <button class="btn primary btn-sm" id="btn-guardar-inci" onclick="guardarInci()" disabled>Guardar</button>
+        </div>
+      </div>
+      <div class="inci-auto" id="inci-auto">—</div>
+      <textarea class="inci-text" id="inci-text" placeholder="INCI manual (opcional, sobreescribe la auto-generada)..." oninput="marcarInciSucio()"></textarea>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- Modal: confirmación de desvinculación al editar un derivado -->
+<div class="modal-overlay" id="modal-desvincular">
+  <div class="modal-box">
+    <h4>¿Desvincular este precio de su ancla?</h4>
+    <p id="modal-desvincular-body"></p>
+    <div class="actions">
+      <button class="btn secondary btn-sm" onclick="cerrarModalDesvincular(false)">Cancelar</button>
+      <button class="btn primary btn-sm" onclick="cerrarModalDesvincular(true)">Sí, desvincular</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Editor de fórmula — cliente Supabase compartido
+// El login es específico de este módulo (Supabase Auth); se reemplazará por
+// el login general de la plataforma + un segundo factor para Laboratorio.
+// ═══════════════════════════════════════════════════════════════════════════
+const sb = window.sb;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Estado global
+// ═══════════════════════════════════════════════════════════════════════════
+const state = {
+  user: null,
+  cotizacion: null,
+  codigoGranel: null,
+  formula: null,
+  versionIdAEditar: null,
+  granel: null,
+  componentes: [],
+  presentaciones: [],
+  precios: {},
+  listas: {},
+  escalones: [],
+  todasFormulas: [],
+  iva: 21,
+
+  relacionesPorSku: {},
+  estadoPorSku: {},
+  todosItems: {},
+  preciosAnclasCache: {},
+  catalogoComponentes: [],
+
+  composicionSucia: false,
+  preciosSucio: {},
+  etiquetasSucio: {},
+  inciSucio: false,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Utilidades
+// ═══════════════════════════════════════════════════════════════════════════
+const fmt = {
+  ars: (n) => n == null ? '—' : new Intl.NumberFormat('es-AR', {
+    style: 'currency', currency: 'ARS', maximumFractionDigits: 0
+  }).format(n),
+  pct: (n) => n == null ? '—' : n.toFixed(2) + '%',
+  pct1: (n) => n == null ? '—' : n.toFixed(1) + '%',
+  num4: (n) => n == null ? '—' : n.toFixed(4),
+  num2: (n) => n == null ? '—' : new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format(n),
+};
+
+function toast(msg, kind = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function getCodigoFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('codigo');
+}
+
+function hayCambiosSinGuardar() {
+  return state.composicionSucia
+      || state.inciSucio
+      || Object.keys(state.preciosSucio || {}).length > 0
+      || Object.keys(state.etiquetasSucio || {}).length > 0;
+}
+
+// Volver al dashboard de CORE.
+function volverAlDashboard() {
+  if (hayCambiosSinGuardar()) {
+    if (!confirm('Tenés cambios sin guardar que se perderán. ¿Salir igual?')) return;
+  }
+  location.href = '../index.html';
+}
+
+function volverAlListado() {
+  if (hayCambiosSinGuardar()) {
+    if (!confirm('Tenés cambios sin guardar que se perderán. ¿Volver al listado igual?')) return;
+  }
+  history.replaceState(null, '', window.location.pathname);
+  document.getElementById('editor-view').classList.add('hidden');
+  mostrarSelector();
+}
+
+// Tecla ESC: vuelve al inicio si no hay cambios pendientes
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (hayCambiosSinGuardar()) {
+    toast('Hay cambios sin guardar. Guardá o descartá antes de salir.', 'warn');
+    return;
+  }
+  volverAlDashboard();
+});
+
+// UX planilla: seleccionar todo el texto al enfocar
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (el && el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'text')) {
+    setTimeout(() => { try { el.select(); } catch (_) {} }, 0);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Auth
+// ═══════════════════════════════════════════════════════════════════════════
+async function checkAuth() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    document.getElementById('loading-screen').classList.add('hidden');
+    document.getElementById('login-screen').classList.remove('hidden');
+    return false;
+  }
+  state.user = session.user;
+  return true;
+}
+
+async function login() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('hidden');
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.classList.remove('hidden');
+    return;
+  }
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('loading-screen').classList.remove('hidden');
+  await init();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Carga inicial (Fase 1: crítico; Fase 2: secundario en background)
+// ═══════════════════════════════════════════════════════════════════════════
+async function init() {
+  try {
+    const [cotiz, paramIva, listas, escalones, objetivosMargen] = await Promise.all([
+      sb.from('cotizaciones_dolar').select('venta_oficial, fecha').order('fecha', { ascending: false }).limit(1).single(),
+      sb.from('parametros').select('valor').eq('clave', 'iva_pct').single(),
+      sb.from('listas_precios').select('id, nombre, tipo_lista, es_base_descuentos, estado').eq('estado', 'vigente'),
+      sb.from('escalones_descuento').select('descuento_pct, monto_minimo_ars').eq('estado', 'vigente').order('descuento_pct'),
+      sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts').order('orden'),
+    ]);
+
+    state.cotizacion = cotiz.data?.venta_oficial;
+    document.getElementById('cotizacion-usd').textContent =
+      state.cotizacion ? '$' + fmt.num2(state.cotizacion) : '—';
+
+    if (paramIva.data && paramIva.data.valor) state.iva = parseFloat(paramIva.data.valor);
+    const elIva = document.getElementById('iva-pct');
+    if (elIva) elIva.textContent = state.iva + '%';
+
+    state.listas = {};
+    for (const l of (listas.data || [])) {
+      if (l.tipo_lista === 'publico') state.listas.publico = l;
+      if (l.es_base_descuentos) state.listas.profesional_base = l;
+    }
+    state.escalones = escalones.data || [];
+
+    state.objetivosMargen = {};
+    for (const o of (objetivosMargen.data || [])) {
+      state.objetivosMargen[o.nivel] = {
+        objetivo: Number(o.objetivo_pct),
+        tolerancia: Number(o.tolerancia_pts),
+      };
+    }
+
+    state.relacionesPorSku = state.relacionesPorSku || {};
+    state.todosItems = state.todosItems || {};
+    state.catalogoComponentes = state.catalogoComponentes || [];
+    state.itemPorCodigo = state.itemPorCodigo || {};
+    state.formulaComponentesPorGranel = state.formulaComponentesPorGranel || {};
+    state.datosSecundariosListos = false;
+
+    state.codigoGranel = getCodigoFromUrl();
+    document.getElementById('loading-screen').classList.add('hidden');
+
+    if (state.codigoGranel) {
+      await cargarFormula(state.codigoGranel);
+    } else {
+      await mostrarSelector();
+    }
+
+    cargarDatosSecundarios();
+
+  } catch (err) {
+    console.error(err);
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function cargarDatosSecundarios() {
+  try {
+    const [rels, itemsAll, itemsCatalogo, formulasVig, todosComp] = await Promise.all([
+      sb.from('relaciones_precio').select('sku_destino, fuente_tipo, sku_origen, factor, operacion, redondeo_arriba_a, comentario'),
+      sb.from('items').select('codigo, nombre').in('tipo', ['SKU', 'PACK']),
+      sb.from('items').select('codigo, nombre, tipo, inci_name').eq('estado', 'vigente').order('nombre'),
+      sb.from('formulas').select('id, codigo_granel').eq('estado', 'vigente'),
+      sb.from('formula_componentes').select('formula_id, codigo_componente, composicion_pct, orden').order('orden'),
+    ]);
+
+    state.relacionesPorSku = {};
+    for (const r of (rels.data || [])) state.relacionesPorSku[r.sku_destino] = r;
+
+    state.todosItems = {};
+    for (const it of (itemsAll.data || [])) state.todosItems[it.codigo] = it.nombre;
+
+    state.catalogoComponentes = itemsCatalogo.data || [];
+    state.itemPorCodigo = {};
+    for (const it of state.catalogoComponentes) state.itemPorCodigo[it.codigo] = it;
+    refrescarDatalistComponentes();
+
+    const formulaIdToGranel = {};
+    for (const f of (formulasVig.data || [])) formulaIdToGranel[f.id] = f.codigo_granel;
+    state.formulaComponentesPorGranel = {};
+    for (const c of (todosComp.data || [])) {
+      const granel = formulaIdToGranel[c.formula_id];
+      if (!granel) continue;
+      if (!state.formulaComponentesPorGranel[granel]) state.formulaComponentesPorGranel[granel] = [];
+      state.formulaComponentesPorGranel[granel].push({
+        codigo: c.codigo_componente,
+        pct: Number(c.composicion_pct),
+      });
+    }
+
+    await cargarCachePreciosL1();
+    state.datosSecundariosListos = true;
+
+    if (state.codigoGranel && typeof renderInciAuto === 'function') {
+      try { renderInciAuto(); } catch (e) { /* noop */ }
+    }
+    if (state.codigoGranel && state.presentaciones) {
+      try {
+        if (typeof renderPrecios === 'function') renderPrecios();
+        if (typeof renderPanelRelaciones === 'function') renderPanelRelaciones();
+      } catch (e) { console.warn('Re-render fase 2:', e); }
+    }
+  } catch (err) {
+    console.error('Error cargando datos secundarios:', err);
+    toast('Algunas funciones (buscador, propagación) pueden tardar un instante más.', 'warn');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Selector de fórmula
+// ═══════════════════════════════════════════════════════════════════════════
+async function mostrarSelector() {
+  document.getElementById('selector-view').classList.remove('hidden');
+  document.getElementById('link-listado').style.display = 'none';
+
+  const { data: items } = await sb
+    .from('items')
+    .select('codigo, nombre, tipo, linea_id, lineas(nombre)')
+    .in('tipo', ['TE', 'SE'])
+    .eq('estado', 'vigente')
+    .order('codigo');
+
+  state.todasFormulas = items || [];
+  renderFormulaList();
+}
+
+function renderFormulaList() {
+  const filtro = document.getElementById('filter-input').value.toLowerCase().trim();
+  const lista = document.getElementById('formula-list');
+
+  const filtradas = state.todasFormulas.filter(f => {
+    if (!filtro) return true;
+    return f.codigo.includes(filtro) || f.nombre.toLowerCase().includes(filtro);
+  });
+
+  if (filtradas.length === 0) {
+    lista.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--muted)">Sin resultados</div>';
+    return;
+  }
+
+  lista.innerHTML = filtradas.map(f => `
+    <div class="formula-row" onclick="abrirFormula('${f.codigo}')">
+      <span class="codigo">${f.codigo}</span>
+      <span>${f.nombre}</span>
+      <span class="linea">${f.lineas?.nombre || ''}</span>
+    </div>
+  `).join('');
+}
+
+function filtrarFormulas() { renderFormulaList(); }
+function abrirFormula(codigo) { window.location.search = '?codigo=' + codigo; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cargar fórmula
+// ═══════════════════════════════════════════════════════════════════════════
+async function cargarFormula(codigo) {
+  document.getElementById('editor-view').classList.remove('hidden');
+  document.getElementById('link-listado').style.display = '';
+
+  const { data: granel } = await sb
+    .from('items')
+    .select('codigo, nombre, tipo, linea_id, lineas(nombre)')
+    .eq('codigo', codigo)
+    .single();
+
+  if (!granel) { toast('Fórmula no encontrada: ' + codigo, 'error'); return; }
+  state.granel = granel;
+
+  document.getElementById('f-codigo').textContent = granel.codigo;
+  document.getElementById('f-nombre').textContent = granel.nombre;
+  document.getElementById('f-linea').textContent = granel.lineas?.nombre || '—';
+
+  let query = sb
+    .from('formulas')
+    .select('id, version, estado, inci_completo, lote_referencia_kg, vigente_desde, notas')
+    .eq('codigo_granel', codigo);
+
+  if (state.versionIdAEditar) {
+    query = query.eq('id', state.versionIdAEditar);
+  } else {
+    query = query.eq('estado', 'vigente').order('version', { ascending: false }).limit(1);
+  }
+  const { data: formula } = await query.maybeSingle();
+
+  state.formula = formula || null;
+  state.versionIdAEditar = null;
+  if (!formula) {
+    toast('Granel nuevo: la fórmula se creará al guardar los componentes.');
+  }
+
+  await cargarComponentes();
+  await cargarPresentacionesYPrecios();
+  document.getElementById('inci-text').value = state.formula?.inci_completo || '';
+  renderInciAuto();
+  await renderPanelVersiones();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Panel de versiones
+// ═══════════════════════════════════════════════════════════════════════════
+async function renderPanelVersiones() {
+  const host = document.getElementById('panel-versiones');
+  if (!host) return;
+  const codigo = state.granel?.codigo;
+  if (!codigo) { host.innerHTML = ''; return; }
+
+  const { data: versiones } = await sb
+    .from('formulas')
+    .select('id, version, estado, notas, vigente_desde, vigente_hasta')
+    .eq('codigo_granel', codigo)
+    .order('version', { ascending: false });
+
+  const lista = versiones || [];
+  const idActual = state.formula?.id || null;
+  const vigentes = lista.filter(v => v.estado === 'vigente');
+  const desarrollos = lista.filter(v => v.estado === 'desarrollo');
+  const historial = lista.filter(v => v.estado === 'descontinuado');
+
+  const editandoDesarrollo = state.formula && state.formula.estado === 'desarrollo';
+
+  let html = `<div class="sec-head"><div>
+    <div class="sec-title">Versiones de la fórmula</div>
+    <div class="sec-sub">Solo la versión vigente afecta costos y precios</div>
+  </div>
+  <button class="btn primary btn-sm" onclick="abrirNuevaVersion()">+ Nueva versión</button>
+  </div>`;
+
+  if (editandoDesarrollo) {
+    html += `<div style="background:color-mix(in srgb, var(--warn) 13%, transparent); border:1px solid color-mix(in srgb, var(--warn) 32%, transparent); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:12px; font-size:13px; color:var(--warn);">
+      ✎ Estás editando un <strong>DESARROLLO (v${state.formula.version})</strong>. Los cambios no afectan los costos ni precios hasta que lo actives como vigente.
+    </div>`;
+  }
+
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  for (const v of vigentes)     html += filaVersion(v, 'vigente', v.id === idActual);
+  for (const v of desarrollos)  html += filaVersion(v, 'desarrollo', v.id === idActual);
+  html += '</div>';
+
+  if (historial.length > 0) {
+    html += `<details style="margin-top:12px;">
+      <summary style="cursor:pointer;font-size:13px;color:var(--accent);">Ver historial (${historial.length} descontinuada${historial.length>1?'s':''})</summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">`;
+    for (const v of historial) html += filaVersion(v, 'descontinuado', v.id === idActual);
+    html += '</div></details>';
+  }
+
+  host.innerHTML = html;
+}
+
+function filaVersion(v, estado, editando) {
+  const colores = {
+    vigente:       { bg:'color-mix(in srgb, var(--ok) 13%, transparent)',   bd:'color-mix(in srgb, var(--ok) 32%, transparent)',   txt:'var(--ok)',     label:'VIGENTE' },
+    desarrollo:    { bg:'color-mix(in srgb, var(--warn) 13%, transparent)', bd:'color-mix(in srgb, var(--warn) 32%, transparent)', txt:'var(--warn)',   label:'desarrollo' },
+    descontinuado: { bg:'var(--surface-2)',                                   bd:'var(--border)',                                     txt:'var(--muted)',  label:'descontinuada' },
+  };
+  const c = colores[estado] || colores.descontinuado;
+  const nota = v.notas ? escapeAttr(v.notas) : '<span style="color:var(--muted)">(sin nota)</span>';
+  const borde = editando ? `box-shadow:0 0 0 2px var(--accent);` : '';
+
+  let botones = '';
+  if (editando) botones += `<span style="font-size:11px;color:var(--accent);font-weight:600;align-self:center;">● editando</span>`;
+  if (estado === 'desarrollo') {
+    botones += `<button class="btn secondary btn-sm" onclick="event.stopPropagation();activarVersion(${v.id})">Activar</button>`;
+    botones += `<button class="btn ghost btn-sm" onclick="event.stopPropagation();archivarVersion(${v.id})">Archivar</button>`;
+  } else if (estado === 'descontinuado') {
+    botones += `<button class="btn secondary btn-sm" title="Volver a esta versión (la hace vigente)" onclick="event.stopPropagation();activarVersion(${v.id})">Reactivar</button>`;
+  }
+
+  const clickBarra = editando ? '' : `onclick="editarVersion(${v.id})"`;
+  const cursor = editando ? 'default' : 'pointer';
+  const hint = editando ? '' : ' title="Clic para ver/editar esta versión"';
+
+  return `<div ${clickBarra}${hint} style="display:flex;align-items:center;gap:12px;background:${c.bg};border:1px solid ${c.bd};${borde}border-radius:var(--radius-sm);padding:10px 14px;cursor:${cursor};transition:box-shadow .12s;">
+    <span style="font-family:var(--font-mono);font-weight:700;color:${c.txt};min-width:36px;">v${v.version}</span>
+    <span class="badge" style="background:${c.bd};color:${c.txt};">${c.label}</span>
+    <span style="flex:1;font-size:13px;color:var(--text);">${nota}</span>
+    <span style="display:flex;gap:6px;">${botones}</span>
+  </div>`;
+}
+
+async function abrirNuevaVersion() {
+  if (hayCambiosSinGuardar()) {
+    if (!confirm('Tenés cambios sin guardar que se perderán. ¿Continuar?')) return;
+    state.composicionSucia = false;
+    state.preciosSucio = {};
+    state.etiquetasSucio = {};
+    state.inciSucio = false;
+  }
+  const codigo = state.granel?.codigo;
+  if (!codigo) return;
+
+  const tieneVigente = state.formula && state.formula.estado === 'vigente';
+  let modo = 'mejora';
+  if (tieneVigente) {
+    const r = confirm('¿Crear como MEJORA de la fórmula vigente?\n\nAceptar = copia la composición actual para mejorarla.\nCancelar = empezar desde cero (composición vacía).');
+    modo = r ? 'mejora' : 'cero';
+  } else {
+    modo = 'cero';
+  }
+
+  const nota = prompt('Nota de esta versión (qué vas a cambiar/probar):', '');
+  if (nota === null) return;
+
+  const { data: nuevoId, error } = await sb.rpc('crear_version_formula', {
+    p_granel: codigo, p_modo: modo, p_nota: nota.trim() || null,
+  });
+  if (error) { toast('Error al crear versión: ' + error.message, 'error'); return; }
+
+  toast('Nueva versión creada en desarrollo');
+  state.versionIdAEditar = nuevoId;
+  await cargarFormula(codigo);
+}
+
+async function editarVersion(id) {
+  if (hayCambiosSinGuardar()) {
+    if (!confirm('Tenés cambios sin guardar. Si cambiás de versión se perderán.\n\n¿Descartar los cambios y continuar?')) return;
+    state.composicionSucia = false;
+    state.preciosSucio = {};
+    state.etiquetasSucio = {};
+    state.inciSucio = false;
+  }
+  state.versionIdAEditar = id;
+  await cargarFormula(state.granel.codigo);
+}
+
+async function activarVersion(id) {
+  if (!confirm('¿Activar esta versión como vigente?\n\nLa versión vigente actual pasará al historial (descontinuada). Esto SÍ afecta costos y precios.')) return;
+  const { error } = await sb.rpc('activar_version_formula', { p_id: id });
+  if (error) { toast('Error al activar: ' + error.message, 'error'); return; }
+  toast('Versión activada como vigente');
+  state.versionIdAEditar = null;
+  await cargarFormula(state.granel.codigo);
+}
+
+async function archivarVersion(id) {
+  if (!confirm('¿Archivar este desarrollo? Pasará al historial (descontinuado).')) return;
+  const { error } = await sb.rpc('archivar_version_formula', { p_id: id });
+  if (error) { toast('Error al archivar: ' + error.message, 'error'); return; }
+  toast('Desarrollo archivado');
+  state.versionIdAEditar = null;
+  await cargarFormula(state.granel.codigo);
+}
+
+async function cargarComponentes() {
+  if (!state.formula || !state.formula.id) {
+    state.componentes = [];
+    recalcularComposicion();
+    renderComposicion();
+    refrescarDatalistComponentes();
+    return;
+  }
+
+  const { data: comps, error } = await sb
+    .from('formula_componentes')
+    .select('id, codigo_componente, composicion_pct, orden, completa_a_100')
+    .eq('formula_id', state.formula.id)
+    .order('orden');
+
+  if (error) {
+    console.error('Error cargando componentes:', error);
+    toast('Error cargando componentes: ' + error.message, 'error');
+    state.componentes = [];
+    renderComposicion();
+    return;
+  }
+
+  if (!comps || comps.length === 0) {
+    state.componentes = [];
+    recalcularComposicion();
+    renderComposicion();
+    return;
+  }
+
+  const codigos = comps.map(c => c.codigo_componente);
+  const { data: items } = await sb
+    .from('items')
+    .select('codigo, nombre, tipo')
+    .in('codigo', codigos);
+  const itemPorCodigo = {};
+  for (const it of (items || [])) itemPorCodigo[it.codigo] = it;
+
+  state.componentes = await Promise.all(comps.map(async (c) => {
+    const it = itemPorCodigo[c.codigo_componente] || { nombre: c.codigo_componente, tipo: '?' };
+    const costoKg = await obtenerCostoKg(c.codigo_componente, it.tipo);
+    return {
+      id: c.id,
+      codigo: c.codigo_componente,
+      nombre: it.nombre,
+      tipo: it.tipo,
+      pct: parseFloat(c.composicion_pct),
+      orden: c.orden || 0,
+      costoKg: costoKg,
+      completa: !!c.completa_a_100,
+    };
+  }));
+
+  aplicarCompletado();
+  recalcularComposicion();
+  renderComposicion();
+  refrescarDatalistComponentes();
+}
+
+async function obtenerCostoKg(codigo, tipo) {
+  try {
+    if (tipo === 'TE' || tipo === 'SE') {
+      const { data } = await sb.rpc('calcular_costo_formula', { p_codigo_granel: codigo });
+      return data;
+    } else {
+      const { data } = await sb.rpc('precio_ars_final', { p_codigo: codigo });
+      return data;
+    }
+  } catch (e) {
+    console.error('Error obteniendo costo de ' + codigo, e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Componente que "completa hasta 100%"
+// ═══════════════════════════════════════════════════════════════════════════
+function aplicarCompletado() {
+  const idxCompleta = state.componentes.findIndex(c => c.completa);
+  if (idxCompleta === -1) return;
+
+  let sumaOtros = 0;
+  state.componentes.forEach((c, i) => {
+    if (i !== idxCompleta) sumaOtros += (c.pct || 0);
+  });
+
+  let restante = 100 - sumaOtros;
+  if (restante < 0) {
+    restante = 0;
+    toast('Los demás componentes ya superan el 100%. Revisá los valores.', 'warn');
+  }
+  state.componentes[idxCompleta].pct = Math.round(restante * 10000) / 10000;
+}
+
+function toggleCompleta(idx) {
+  const c = state.componentes[idx];
+  const activar = !c.completa;
+  state.componentes.forEach(x => { x.completa = false; });
+  c.completa = activar;
+
+  marcarComposicionSucia();
+  aplicarCompletado();
+  recalcularComposicion();
+  renderComposicion();
+  recalcularCostosPresentaciones();
+  renderPrecios();
+}
+
+function recalcularComposicion() {
+  let sumaPct = 0;
+  let costoTotal = 0;
+
+  for (const c of state.componentes) {
+    c.costoMPKg = (c.costoKg || 0) * c.pct / 100;
+    sumaPct += c.pct;
+    costoTotal += c.costoMPKg;
+  }
+  for (const c of state.componentes) {
+    c.costoPct = costoTotal > 0 ? (c.costoMPKg / costoTotal * 100) : 0;
+  }
+  state.sumaPct = sumaPct;
+  state.costoKgTotal = costoTotal;
+
+  document.getElementById('f-costo-kg').textContent =
+    state.costoKgTotal ? fmt.ars(state.costoKgTotal) + ' / Kg' : '—';
+}
+
+// ─── Drag & drop reordenar componentes ───
+let _dragIdx = null;
+
+function dragComponenteStart(ev, idx) {
+  _dragIdx = idx;
+  ev.dataTransfer.effectAllowed = 'move';
+  const tr = ev.target.closest('tr');
+  if (tr) setTimeout(() => { tr.style.opacity = '0.4'; }, 0);
+}
+function dragComponenteOver(ev, idx) {
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  const tr = ev.currentTarget;
+  if (tr && idx !== _dragIdx) tr.style.borderTop = '2px solid var(--accent)';
+}
+function dragComponenteLeave(ev, idx) {
+  const tr = ev.currentTarget;
+  if (tr) tr.style.borderTop = '';
+}
+function dragComponenteDrop(ev, idx) {
+  ev.preventDefault();
+  const tr = ev.currentTarget;
+  if (tr) tr.style.borderTop = '';
+  if (_dragIdx === null || _dragIdx === idx) return;
+
+  const movido = state.componentes.splice(_dragIdx, 1)[0];
+  state.componentes.splice(idx, 0, movido);
+  state.componentes.forEach((c, i) => { c.orden = i; });
+
+  marcarComposicionSucia();
+  recalcularComposicion();
+  renderComposicion();
+}
+function dragComponenteEnd(ev) {
+  _dragIdx = null;
+  document.querySelectorAll('#composicion-body tr').forEach(tr => {
+    tr.style.opacity = '';
+    tr.style.borderTop = '';
+  });
+}
+
+function renderComposicion() {
+  const body = document.getElementById('composicion-body');
+  body.innerHTML = state.componentes.map((c, i) => `
+    <tr data-idx="${i}" draggable="true"
+        ondragstart="dragComponenteStart(event, ${i})"
+        ondragover="dragComponenteOver(event, ${i})"
+        ondragleave="dragComponenteLeave(event, ${i})"
+        ondrop="dragComponenteDrop(event, ${i})"
+        ondragend="dragComponenteEnd(event)"
+        class="${c.completa ? 'fila-completa' : ''}">
+      <td class="codigo"><span class="drag-asa" title="Arrastrá para reordenar">⠿</span>${c.codigo}</td>
+      <td>${c.nombre} <span class="badge ${c.tipo === 'MP' ? 'ok' : 'warn'}" style="margin-left:6px">${c.tipo}</span>${c.completa ? ' <span class="badge info" style="margin-left:4px" title="Completa automáticamente hasta 100%">↑100%</span>' : ''}</td>
+      <td class="num">
+        <input class="cell" type="number" step="0.0001" value="${c.pct}"
+               ${c.completa ? 'readonly title="Se calcula solo para completar hasta 100%"' : ''}
+               onchange="actualizarPct(${i}, this.value)">
+      </td>
+      <td class="num text-muted">${fmt.num2(c.costoKg)}</td>
+      <td class="num">${fmt.num2(c.costoMPKg)}</td>
+      <td class="num text-muted">${c.costoPct.toFixed(1)}%</td>
+      <td style="white-space:nowrap">
+        <button class="btn secondary btn-sm" title="${c.completa ? 'Quitar: dejar de completar a 100%' : 'Completar: este componente rellena hasta 100%'}" onclick="toggleCompleta(${i})">${c.completa ? '✓ completa' : '↑ completar'}</button>
+        <button class="btn ghost btn-sm" style="color:var(--hot);" onclick="eliminarComponente(${i})">×</button>
+      </td>
+    </tr>
+  `).join('');
+
+  const sumaClass = Math.abs(state.sumaPct - 100) < 0.01 ? 'ok' :
+                    Math.abs(state.sumaPct - 100) < 1 ? 'warn' : 'error';
+  document.getElementById('composicion-foot').innerHTML = `
+    <tr class="totals">
+      <td colspan="2">Total</td>
+      <td class="num"><span class="badge ${sumaClass}">${state.sumaPct.toFixed(2)}%</span></td>
+      <td class="num"></td>
+      <td class="num"><strong>${fmt.num2(state.costoKgTotal)}</strong></td>
+      <td class="num">100%</td>
+      <td></td>
+    </tr>
+  `;
+}
+
+function actualizarPct(idx, valor) {
+  state.componentes[idx].pct = parseFloat(valor) || 0;
+  marcarComposicionSucia();
+  aplicarCompletado();
+  recalcularComposicion();
+  renderComposicion();
+  recalcularCostosPresentaciones();
+  renderPrecios();
+}
+
+function eliminarComponente(idx) {
+  if (!confirm('¿Eliminar ' + state.componentes[idx].nombre + ' de la fórmula?')) return;
+  state.componentes.splice(idx, 1);
+  marcarComposicionSucia();
+  aplicarCompletado();
+  recalcularComposicion();
+  renderComposicion();
+  refrescarDatalistComponentes();
+  recalcularCostosPresentaciones();
+  renderPrecios();
+}
+
+function refrescarDatalistComponentes() {
+  const dl = document.getElementById('lista-componentes');
+  if (!dl) return;
+  const yaUsados = new Set(state.componentes.map(c => c.codigo));
+  dl.innerHTML = state.catalogoComponentes
+    .filter(it => !yaUsados.has(it.codigo))
+    .map(it => `<option value="${escapeAttr(it.nombre)} — ${it.codigo} (${it.tipo})"></option>`)
+    .join('');
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function resolverComponente(texto) {
+  const t = texto.trim();
+  if (!t) return null;
+
+  const m = t.match(/—\s*([A-Za-z0-9]+)\s*\(/);
+  if (m) {
+    const cod = m[1];
+    const hit = state.catalogoComponentes.find(it => it.codigo === cod);
+    if (hit) return hit;
+  }
+  const porCodigo = state.catalogoComponentes.find(it => it.codigo === t);
+  if (porCodigo) return porCodigo;
+  const tLower = t.toLowerCase();
+  const porNombreExacto = state.catalogoComponentes.filter(it => it.nombre.toLowerCase() === tLower);
+  if (porNombreExacto.length === 1) return porNombreExacto[0];
+  const porNombreParcial = state.catalogoComponentes.filter(it => it.nombre.toLowerCase().includes(tLower));
+  if (porNombreParcial.length === 1) return porNombreParcial[0];
+  return null;
+}
+
+function agregarComponente() {
+  const input = document.getElementById('busca-componente');
+  const texto = input ? input.value : '';
+  if (!texto.trim()) { toast('Escribí un nombre o código para buscar.'); return; }
+  if (state.catalogoComponentes.length === 0) {
+    toast('El buscador de componentes está cargando. Esperá un segundo y volvé a intentar.', 'warn');
+    return;
+  }
+  const item = resolverComponente(texto);
+  if (!item) {
+    toast('No se encontró un componente para «' + texto.trim() + '». Elegí una opción de la lista de sugerencias.', 'error');
+    return;
+  }
+  if (state.componentes.some(c => c.codigo === item.codigo)) {
+    toast(item.nombre + ' ya está en la composición.', 'error');
+    if (input) input.value = '';
+    return;
+  }
+  obtenerCostoKg(item.codigo, item.tipo).then(costoKg => {
+    state.componentes.push({
+      id: null, codigo: item.codigo, nombre: item.nombre, tipo: item.tipo,
+      pct: 0, orden: state.componentes.length, costoKg: costoKg, completa: false,
+    });
+    marcarComposicionSucia();
+    if (input) input.value = '';
+    refrescarDatalistComponentes();
+    aplicarCompletado();
+    recalcularComposicion();
+    renderComposicion();
+    if (input) input.focus();
+  });
+}
+
+async function asegurarFormula() {
+  if (state.formula && state.formula.id) return state.formula.id;
+  if (!state.granel || !state.granel.codigo) {
+    throw new Error('No hay granel cargado para crear la fórmula.');
+  }
+  const { data: nueva, error } = await sb
+    .from('formulas')
+    .insert({ codigo_granel: state.granel.codigo })
+    .select('id, version, estado, inci_completo, lote_referencia_kg, vigente_desde')
+    .single();
+  if (error || !nueva) throw new Error('No se pudo crear la fórmula: ' + (error?.message || 'error desconocido'));
+  state.formula = nueva;
+  return nueva.id;
+}
+
+function marcarComposicionSucia() {
+  state.composicionSucia = true;
+  const bg = document.getElementById('btn-guardar-composicion');
+  const bd = document.getElementById('btn-descartar-composicion');
+  if (bg) bg.disabled = false;
+  if (bd) bd.disabled = false;
+}
+
+async function descartarCambiosComposicion() {
+  if (!confirm('¿Descartar los cambios sin guardar de la composición?')) return;
+  state.composicionSucia = false;
+  document.getElementById('btn-guardar-composicion').disabled = true;
+  document.getElementById('btn-descartar-composicion').disabled = true;
+  await cargarComponentes();
+  toast('Cambios descartados');
+}
+
+async function guardarComposicion() {
+  if (Math.abs(state.sumaPct - 100) > 0.01) {
+    if (!confirm('La suma de % es ' + state.sumaPct.toFixed(2) + '%, no 100%. ¿Guardar igual?')) return;
+  }
+  try {
+    const formulaId = await asegurarFormula();
+    const { error: delErr } = await sb.from('formula_componentes').delete().eq('formula_id', formulaId);
+    if (delErr) throw delErr;
+
+    const rows = state.componentes.map((c, i) => ({
+      formula_id: formulaId,
+      codigo_componente: c.codigo,
+      composicion_pct: c.pct,
+      orden: i,
+      completa_a_100: !!c.completa,
+    }));
+
+    const { error: insErr } = await sb.from('formula_componentes').insert(rows);
+    if (insErr) throw insErr;
+
+    state.composicionSucia = false;
+    document.getElementById('btn-guardar-composicion').disabled = true;
+    const bdDescartar = document.getElementById('btn-descartar-composicion');
+    if (bdDescartar) bdDescartar.disabled = true;
+
+    const editandoVigente = !state.formula || state.formula.estado === 'vigente' || !state.formula.estado;
+    if (editandoVigente) {
+      state.formulaComponentesPorGranel[state.granel.codigo] =
+        state.componentes.map(c => ({ codigo: c.codigo, pct: c.pct }));
+      try {
+        const { inci } = calcularInciDeCodigo(state.granel.codigo);
+        await sb.from('items').update({ inci_name: inci || null }).eq('codigo', state.granel.codigo);
+        const itCat = state.itemPorCodigo[state.granel.codigo];
+        if (itCat) itCat.inci_name = inci || null;
+        toast('Composición e INCI guardados', 'success');
+      } catch (e) {
+        toast('Composición guardada (INCI no se pudo recalcular)', 'success');
+      }
+    } else {
+      toast('Desarrollo guardado (no afecta costos ni INCI hasta activarlo)', 'success');
+    }
+    await cargarComponentes();
+  } catch (err) {
+    toast('Error al guardar: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Presentaciones y precios
+// ═══════════════════════════════════════════════════════════════════════════
+async function cargarPresentacionesYPrecios() {
+  const { data: pres, error: errPres } = await sb
+    .from('presentaciones')
+    .select('codigo_sku, codigo_granel, codigo_envase, codigo_etiqueta, tamanio_kg, etiquetas_por_hoja, descripcion_comercial')
+    .eq('codigo_granel', state.codigoGranel);
+
+  if (errPres) {
+    console.error('Error cargando presentaciones:', errPres);
+    toast('Error cargando presentaciones: ' + errPres.message, 'error');
+    return;
+  }
+  if (!pres || pres.length === 0) {
+    state.presentaciones = [];
+    state.precios = {};
+    renderPrecios();
+    return;
+  }
+
+  const codigosSku = pres.map(p => p.codigo_sku);
+  const { data: itemsSku } = await sb.from('items').select('codigo, nombre').in('codigo', codigosSku);
+  const nombrePorSku = {};
+  for (const it of (itemsSku || [])) nombrePorSku[it.codigo] = it.nombre;
+
+  const codigosEnvases  = [...new Set(pres.map(p => p.codigo_envase).filter(Boolean))];
+  const codigosEtiqueta = [...new Set(pres.map(p => p.codigo_etiqueta).filter(Boolean))];
+  const codigosInsumos  = [...new Set([...codigosEnvases, ...codigosEtiqueta])];
+
+  const costoPorCodigo = {};
+  if (codigosInsumos.length > 0) {
+    const resultados = await Promise.all(
+      codigosInsumos.map(async (cod) => {
+        try {
+          const { data } = await sb.rpc('precio_ars_final', { p_codigo: cod });
+          return [cod, parseFloat(data) || 0];
+        } catch (e) {
+          console.warn('No pude calcular precio de ' + cod, e);
+          return [cod, 0];
+        }
+      })
+    );
+    for (const [cod, val] of resultados) costoPorCodigo[cod] = val;
+  }
+
+  state.presentaciones = pres.map(p => {
+    const costoEnv = costoPorCodigo[p.codigo_envase] || 0;
+    const costoEtiqRaw = costoPorCodigo[p.codigo_etiqueta] || 0;
+    const costoEtiq = costoEtiqRaw / (p.etiquetas_por_hoja || 1);
+    return {
+      codigo_sku: p.codigo_sku,
+      nombre: nombrePorSku[p.codigo_sku] || p.descripcion_comercial || p.codigo_sku,
+      tamanio_kg: parseFloat(p.tamanio_kg),
+      etiquetas_por_hoja: p.etiquetas_por_hoja || 1,
+      codigo_granel: p.codigo_granel,
+      codigo_envase: p.codigo_envase,
+      codigo_etiqueta: p.codigo_etiqueta,
+      costo_envase: costoEnv,
+      costo_etiqueta: costoEtiq,
+      costo_etiqueta_hoja: costoEtiqRaw,
+      costo_unitario: 0,
+    };
+  });
+
+  recalcularCostosPresentaciones();
+
+  const { data: precios } = await sb
+    .from('items_lista_precio')
+    .select('codigo_vendible, lista_id, rentabilidad_pct, precio_iva_excl, precio_iva_incl, precio_publicado, derivado_de, desvinculado_en')
+    .in('codigo_vendible', codigosSku);
+
+  state.precios = {};
+  for (const cod of codigosSku) {
+    state.precios[cod] = { l1: {}, l2: {} };
+    state.estadoPorSku[cod] = { derivado_de: null, desvinculado_en: null };
+  }
+  for (const pr of (precios || [])) {
+    const slot = pr.lista_id === state.listas.publico?.id ? 'l1' :
+                 pr.lista_id === state.listas.profesional_base?.id ? 'l2' : null;
+    if (slot) {
+      const precioConIva = pr.precio_iva_incl ?? pr.precio_publicado;
+      state.precios[pr.codigo_vendible][slot] = {
+        rentab_objetivo: pr.rentabilidad_pct,
+        publicado: precioConIva,
+      };
+      if (slot === 'l1') {
+        state.estadoPorSku[pr.codigo_vendible] = {
+          derivado_de: pr.derivado_de,
+          desvinculado_en: pr.desvinculado_en,
+        };
+      }
+    }
+  }
+
+  renderPrecios();
+  renderPanelRelaciones();
+}
+
+function recalcularCostosPresentaciones() {
+  for (const p of state.presentaciones) {
+    p.costo_unitario = (state.costoKgTotal || 0) * p.tamanio_kg + p.costo_envase + p.costo_etiqueta;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cálculo de precios y márgenes (sobre precios SIN IVA)
+// ═══════════════════════════════════════════════════════════════════════════
+function calcularMargenReal(precioSinIva, costo) {
+  if (!precioSinIva || !costo || precioSinIva <= 0) return null;
+  return (precioSinIva - costo) / precioSinIva * 100;
+}
+function calcularGanancia(precioSinIva, costo) {
+  if (precioSinIva == null || costo == null) return null;
+  return precioSinIva - costo;
+}
+function precioSinIvaDesdeMargen(costo, margenPct) {
+  if (margenPct == null || costo == null) return null;
+  const denom = 1 - margenPct / 100;
+  if (denom <= 0) return null;
+  return costo / denom;
+}
+function sinIvaACon(p) { return p == null ? null : p * (1 + state.iva / 100); }
+function conIvaASin(p) { return p == null ? null : p / (1 + state.iva / 100); }
+
+function semaforoNivel(real, nivel) {
+  if (real == null) return 'empty';
+  const obj = state.objetivosMargen?.[nivel];
+  if (!obj) return real < 0 ? 'error' : real < 20 ? 'warn' : 'ok';
+  const verde = obj.objetivo + obj.tolerancia;
+  if (real >= verde)             return 'ok';
+  if (real >= obj.objetivo)      return 'warn';
+  return 'error';
+}
+function semaforoTitle(real, nivel) {
+  if (real == null) return 'Sin dato';
+  const obj = state.objetivosMargen?.[nivel];
+  if (!obj) return `Margen ${real.toFixed(1)}%`;
+  const verde = obj.objetivo + obj.tolerancia;
+  return `Margen ${real.toFixed(1)}% · Objetivo ${obj.objetivo}% · Verde ≥${verde}%`;
+}
+
+function renderPrecios() {
+  const body = document.getElementById('precios-body');
+  if (state.presentaciones.length === 0) {
+    body.innerHTML = '<tr><td colspan="15" style="text-align:center; padding: 20px; color: var(--muted)">Sin presentaciones cargadas para este granel</td></tr>';
+    return;
+  }
+  const pres = [...state.presentaciones].sort((a, b) => a.tamanio_kg - b.tamanio_kg);
+
+  body.innerHTML = pres.map(p => {
+    const pr = state.precios[p.codigo_sku] || { l1: {}, l2: {} };
+    const l1Obj   = pr.l1.rentab_objetivo;
+    const l1Con   = pr.l1.publicado;
+    const l1Sin   = conIvaASin(l1Con);
+    const l1Gan   = calcularGanancia(l1Sin, p.costo_unitario);
+    const l1Real  = calcularMargenReal(l1Sin, p.costo_unitario);
+
+    let l2Con = pr.l2.publicado;
+    if (l2Con == null && l1Con != null) l2Con = Math.round((l1Con * 0.70) / 100) * 100;
+    const l2Sin  = conIvaASin(l2Con);
+    const l2Gan  = calcularGanancia(l2Sin, p.costo_unitario);
+    const l2Real = calcularMargenReal(l2Sin, p.costo_unitario);
+
+    const esc20Con = l2Con != null ? l2Con * 0.80 : null;
+    const esc30Con = l2Con != null ? l2Con * 0.70 : null;
+    const esc35Con = l2Con != null ? l2Con * 0.65 : null;
+    const esc20Real = calcularMargenReal(conIvaASin(esc20Con), p.costo_unitario);
+    const esc30Real = calcularMargenReal(conIvaASin(esc30Con), p.costo_unitario);
+    const esc35Real = calcularMargenReal(conIvaASin(esc35Con), p.costo_unitario);
+
+    const tamañoStr = p.tamanio_kg >= 1 ? p.tamanio_kg + ' Kg' : (p.tamanio_kg * 1000) + ' g';
+
+    const rel = state.relacionesPorSku[p.codigo_sku];
+    const est = state.estadoPorSku[p.codigo_sku] || {};
+    let badgeHtml = '';
+    if (est.desvinculado_en) {
+      badgeHtml = `<span class="badge-vinculo desv" title="Editado manualmente. Click 'Volver a vincular' para recalcular desde el ancla.">
+        ✂ Desvinc.
+        <button class="link-action" onclick="revincularSku('${p.codigo_sku}')" title="Recalcular desde ancla">↺</button>
+      </span>`;
+    } else if (rel && rel.fuente_tipo === 'ancla') {
+      badgeHtml = `<span class="badge-vinculo ancla" title="Este SKU es un ANCLA. Otros precios derivan de éste.">⚓ Ancla</span>`;
+    } else if (rel && rel.fuente_tipo === 'sku') {
+      const op = rel.operacion === 'multiplicar' ? '×' : '÷';
+      const factor = parseFloat(rel.factor);
+      const factorStr = factor === 1 ? '=' : `${op}${factor}`;
+      const origenNombre = state.todosItems[rel.sku_origen] || rel.sku_origen;
+      badgeHtml = `<span class="badge-vinculo deriv" title="Derivado de ${origenNombre} ${factorStr}">↳ ${rel.sku_origen} ${factorStr}</span>`;
+    } else {
+      badgeHtml = `<span class="badge-vinculo manual" title="Sin relación definida, precio manual">—</span>`;
+    }
+
+    const escCell = (precioCon, margen, nivel) => {
+      if (precioCon == null) return '<td class="num text-muted col-esc">—</td>';
+      const cls = semaforoNivel(margen, nivel);
+      const margenStr = margen != null ? margen.toFixed(0) + '%' : '—';
+      const title = semaforoTitle(margen, nivel);
+      return `
+        <td class="num col-esc">
+          <div>${fmt.ars(precioCon)}</div>
+          <div class="small"><span class="rentab ${cls}" style="font-size:10px; padding:1px 4px" title="${title}">${margenStr}</span></div>
+        </td>`;
+    };
+
+    return `
+      <tr data-sku="${p.codigo_sku}">
+        <td class="codigo">${p.codigo_sku}</td>
+        <td>${p.nombre}</td>
+        <td class="num text-muted">${tamañoStr}</td>
+        <td>${badgeHtml}</td>
+        <td class="num costo-desglose" onclick="toggleDesglose('${p.codigo_sku}')"
+            style="cursor:pointer; user-select:none;" title="Click para ver el desglose del costo">
+          <span class="desglose-arrow" id="arrow-${p.codigo_sku}">▸</span>
+          <strong>${fmt.num2(p.costo_unitario)}</strong>
+        </td>
+
+        <td class="num col-l1">
+          <input class="cell" type="number" step="0.1" value="${l1Obj ?? ''}"
+                 placeholder="—" title="Margen objetivo sobre venta neta"
+                 onchange="actualizarObjetivo('${p.codigo_sku}', 'l1', this.value)">
+        </td>
+        <td class="num col-l1">
+          <input class="cell" type="number" step="100" value="${l1Con != null ? Math.round(l1Con) : ''}"
+                 placeholder="—" title="Precio final c/IVA (múltiplos de $100)"
+                 onchange="actualizarPrecio('${p.codigo_sku}', 'l1', this.value)">
+        </td>
+        <td class="num text-muted col-l1">${l1Gan != null ? fmt.num2(l1Gan) : '—'}</td>
+        <td class="num col-l1">
+          <span class="rentab ${semaforoNivel(l1Real, 'L1')}" title="${semaforoTitle(l1Real, 'L1')}">${l1Real != null ? l1Real.toFixed(1) + '%' : '—'}</span>
+        </td>
+
+        <td class="num col-l2">
+          <input class="cell" type="number" step="100" value="${l2Con != null ? Math.round(l2Con) : ''}"
+                 placeholder="—" title="L1 c/IVA × 0,70 redondeado. Sobreescribible."
+                 onchange="actualizarPrecio('${p.codigo_sku}', 'l2', this.value)">
+        </td>
+        <td class="num text-muted col-l2">${l2Gan != null ? fmt.num2(l2Gan) : '—'}</td>
+        <td class="num col-l2">
+          <span class="rentab ${semaforoNivel(l2Real, 'L2')}" title="${semaforoTitle(l2Real, 'L2')}">${l2Real != null ? l2Real.toFixed(1) + '%' : '—'}</span>
+        </td>
+
+        ${escCell(esc20Con, esc20Real, 'L2_20')}
+        ${escCell(esc30Con, esc30Real, 'L2_30')}
+        ${escCell(esc35Con, esc35Real, 'L2_35')}
+      </tr>
+      <tr class="fila-desglose" id="desglose-${p.codigo_sku}" style="display:none;">
+        <td colspan="15" style="padding:0;">
+          <div id="desglose-content-${p.codigo_sku}" style="padding:12px 16px;"></div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Desglose de costo por SKU
+// ═══════════════════════════════════════════════════════════════════════════
+function nombreItem(codigo) {
+  if (!codigo) return '—';
+  const it = state.catalogoComponentes.find(i => i.codigo === codigo);
+  return it ? it.nombre : codigo;
+}
+
+function toggleDesglose(sku) {
+  const fila = document.getElementById('desglose-' + sku);
+  const arrow = document.getElementById('arrow-' + sku);
+  if (!fila) return;
+  const visible = fila.style.display !== 'none';
+  if (visible) {
+    fila.style.display = 'none';
+    if (arrow) arrow.textContent = '▸';
+  } else {
+    document.getElementById('desglose-content-' + sku).innerHTML = renderDesglose(sku);
+    fila.style.display = '';
+    if (arrow) arrow.textContent = '▾';
+  }
+}
+
+function renderDesglose(sku) {
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return '<div class="text-muted">Sin datos de presentación.</div>';
+
+  const costoGranelKg = state.costoKgTotal || 0;
+  const aporteGranel  = costoGranelKg * p.tamanio_kg;
+  const aporteEnvase  = p.costo_envase || 0;
+  const aporteEtiq    = p.costo_etiqueta || 0;
+  const total         = aporteGranel + aporteEnvase + aporteEtiq;
+
+  const pct = (x) => total > 0 ? (x / total * 100).toFixed(1) + '%' : '—';
+  const tamStr = p.tamanio_kg >= 1 ? p.tamanio_kg + ' Kg' : (p.tamanio_kg * 1000) + ' g';
+
+  return `
+    <div style="font-weight:600; margin-bottom:8px; font-size:13px;">
+      Desglose de costo · ${sku} (${tamStr})
+    </div>
+    <table style="width:100%; max-width:680px; border-collapse:collapse; font-size:12.5px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border); color:var(--muted); text-align:left;">
+          <th style="padding:4px 8px;">Componente</th>
+          <th style="padding:4px 8px;">Detalle</th>
+          <th style="padding:4px 8px; text-align:right;">Costo</th>
+          <th style="padding:4px 8px; text-align:right;">%</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:4px 8px;">
+            <button class="btn secondary btn-sm" style="padding:1px 6px; font-size:11px;"
+                    onclick="toggleDesgloseGranel('${sku}')">
+              <span id="arrow-granel-${sku}">▸</span> Granel
+            </button>
+            ${nombreItem(p.codigo_granel)}
+          </td>
+          <td style="padding:4px 8px; color:var(--muted);">${fmt.num2(costoGranelKg)}/Kg × ${tamStr}</td>
+          <td style="padding:4px 8px; text-align:right;"><strong>${fmt.num2(aporteGranel)}</strong></td>
+          <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteGranel)}</td>
+        </tr>
+        <tr id="granel-detalle-${sku}" style="display:none;">
+          <td colspan="4" style="padding:0 8px 8px 36px; background:var(--surface-2);">
+            <div id="granel-detalle-content-${sku}"></div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 8px;">Envase</td>
+          <td style="padding:4px 8px; color:var(--muted);">${nombreItem(p.codigo_envase)}</td>
+          <td style="padding:4px 8px; text-align:right;">${fmt.num2(aporteEnvase)}</td>
+          <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteEnvase)}</td>
+        </tr>
+        <tr>
+          <td style="padding:4px 8px;">Etiqueta ${state.etiquetasSucio[sku] ? '<span style="color:var(--warn);" title="Cambio sin guardar">●</span>' : ''}</td>
+          <td style="padding:4px 8px; color:var(--muted);">
+            ${p.codigo_etiqueta
+              ? `${nombreItem(p.codigo_etiqueta)} (${fmt.num2(p.costo_etiqueta_hoja)}/hoja ÷
+                 <input type="number" min="1" step="1" value="${p.etiquetas_por_hoja}"
+                        style="width:48px; padding:1px 4px; border:1px solid var(--border); border-radius:3px; font-size:12px; text-align:center; background:var(--surface); color:var(--text);"
+                        title="Cuántas etiquetas entran en una hoja A4"
+                        onchange="actualizarEtiquetasPorHoja('${sku}', this.value)"> por hoja)`
+              : 'sin etiqueta'}
+          </td>
+          <td style="padding:4px 8px; text-align:right;" id="aporte-etiq-${sku}">${fmt.num2(aporteEtiq)}</td>
+          <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteEtiq)}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border); font-weight:600;">
+          <td style="padding:6px 8px;" colspan="2">Total costo unitario (s/IVA)</td>
+          <td style="padding:6px 8px; text-align:right;">${fmt.num2(total)}</td>
+          <td style="padding:6px 8px; text-align:right;">100%</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+}
+
+function toggleDesgloseGranel(sku) {
+  const fila = document.getElementById('granel-detalle-' + sku);
+  const arrow = document.getElementById('arrow-granel-' + sku);
+  if (!fila) return;
+  const visible = fila.style.display !== 'none';
+  if (visible) {
+    fila.style.display = 'none';
+    if (arrow) arrow.textContent = '▸';
+  } else {
+    document.getElementById('granel-detalle-content-' + sku).innerHTML = renderDesgloseGranel(sku);
+    fila.style.display = '';
+    if (arrow) arrow.textContent = '▾';
+  }
+}
+
+function renderDesgloseGranel(sku) {
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return '';
+  if (!state.componentes || state.componentes.length === 0) {
+    return '<div class="text-muted" style="padding:6px 0;">El granel no tiene composición cargada.</div>';
+  }
+  const tamañoKg = p.tamanio_kg;
+  let html = `
+    <div style="font-size:11.5px; color:var(--muted); margin:6px 0;">Composición del granel «${nombreItem(p.codigo_granel)}» para ${tamañoKg >= 1 ? tamañoKg + ' Kg' : (tamañoKg*1000)+' g'}:</div>
+    <table style="width:100%; max-width:600px; border-collapse:collapse; font-size:12px;">
+      <thead>
+        <tr style="color:var(--muted); text-align:left;">
+          <th style="padding:3px 8px;">Materia prima</th>
+          <th style="padding:3px 8px; text-align:right;">%</th>
+          <th style="padding:3px 8px; text-align:right;">Costo/Kg granel</th>
+          <th style="padding:3px 8px; text-align:right;">Aporte al SKU</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const c of state.componentes) {
+    const costoMPporKgGranel = c.costoMPKg || 0;
+    const aporteSku = costoMPporKgGranel * tamañoKg;
+    html += `
+      <tr>
+        <td style="padding:3px 8px;">${c.nombre}</td>
+        <td style="padding:3px 8px; text-align:right; color:var(--muted);">${(c.pct ?? 0).toFixed(1)}%</td>
+        <td style="padding:3px 8px; text-align:right; color:var(--muted);">${fmt.num2(costoMPporKgGranel)}</td>
+        <td style="padding:3px 8px; text-align:right;">${fmt.num2(aporteSku)}</td>
+      </tr>
+    `;
+  }
+  html += `
+      </tbody>
+      <tfoot>
+        <tr style="border-top:1px solid var(--border); font-weight:600;">
+          <td style="padding:4px 8px;" colspan="3">Total granel × ${tamañoKg >= 1 ? tamañoKg + ' Kg' : (tamañoKg*1000)+' g'}</td>
+          <td style="padding:4px 8px; text-align:right;">${fmt.num2((state.costoKgTotal || 0) * tamañoKg)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+  return html;
+}
+
+function actualizarEtiquetasPorHoja(sku, valor) {
+  const n = parseInt(valor, 10);
+  if (isNaN(n) || n < 1) { toast('Las etiquetas por hoja deben ser un número ≥ 1.', 'error'); return; }
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return;
+  p.etiquetas_por_hoja = n;
+  p.costo_etiqueta = (p.costo_etiqueta_hoja || 0) / n;
+  state.etiquetasSucio[sku] = true;
+  recalcularCostosPresentaciones();
+  document.getElementById('btn-guardar-precios').disabled = false;
+  renderPrecios();
+  toggleDesglose(sku);
+}
+
+function actualizarObjetivo(sku, lista, valor) {
+  const v = parseFloat(valor);
+  if (!state.precios[sku]) state.precios[sku] = { l1: {}, l2: {} };
+  state.precios[sku][lista].rentab_objetivo = isNaN(v) ? null : v;
+
+  const p = state.presentaciones.find(pp => pp.codigo_sku === sku);
+  if (p && !isNaN(v) && state.precios[sku][lista].publicado == null) {
+    const sinIvaSugerido = precioSinIvaDesdeMargen(p.costo_unitario, v);
+    if (sinIvaSugerido != null) {
+      const conIvaSugerido = sinIvaACon(sinIvaSugerido);
+      state.precios[sku][lista].publicado = Math.round(conIvaSugerido / 100) * 100;
+    }
+  }
+  state.preciosSucio[sku] = true;
+  document.getElementById('btn-guardar-precios').disabled = false;
+  renderPrecios();
+}
+
+function actualizarPrecio(sku, lista, valor) {
+  const v = parseFloat(valor);
+  const nuevoValor = isNaN(v) || v === 0 ? null : v;
+
+  if (lista === 'l1' && nuevoValor != null) {
+    const rel = state.relacionesPorSku[sku];
+    const est = state.estadoPorSku[sku] || {};
+    const valorAnterior = state.precios[sku]?.l1?.publicado;
+
+    if (rel && rel.fuente_tipo === 'sku' && !est.desvinculado_en && valorAnterior !== nuevoValor) {
+      renderPrecios();
+      confirmarDesvincular(sku, nuevoValor, async (confirmado) => {
+        if (!confirmado) return;
+        try {
+          await sb.rpc('desvincular_precio', { p_sku: sku, p_lista_id: state.listas.publico?.id });
+          state.estadoPorSku[sku].desvinculado_en = new Date().toISOString();
+          if (!state.precios[sku]) state.precios[sku] = { l1: {}, l2: {} };
+          state.precios[sku].l1.publicado = nuevoValor;
+          state.precios[sku].l2.publicado = null;
+          state.preciosSucio[sku] = true;
+          document.getElementById('btn-guardar-precios').disabled = false;
+          renderPrecios();
+          toast('SKU desvinculado del ancla', 'success');
+        } catch (err) {
+          toast('Error: ' + err.message, 'error');
+        }
+      });
+      return;
+    }
+  }
+
+  if (!state.precios[sku]) state.precios[sku] = { l1: {}, l2: {} };
+  state.precios[sku][lista].publicado = nuevoValor;
+  if (lista === 'l1') state.precios[sku].l2.publicado = null;
+
+  state.preciosSucio[sku] = true;
+  document.getElementById('btn-guardar-precios').disabled = false;
+  actualizarBotonesPropagacion();
+  renderPrecios();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Relaciones de precio (ancla / derivado / desvinculado)
+// ═══════════════════════════════════════════════════════════════════════════
+async function cargarCachePreciosL1() {
+  if (!state.listas.publico) return;
+  const { data } = await sb
+    .from('items_lista_precio')
+    .select('codigo_vendible, precio_iva_incl')
+    .eq('lista_id', state.listas.publico.id);
+  state.preciosAnclasCache = {};
+  for (const r of (data || [])) {
+    state.preciosAnclasCache[r.codigo_vendible] = r.precio_iva_incl != null ? Number(r.precio_iva_incl) : null;
+  }
+}
+
+function calcularPrecioDerivado(sku, preciosAncla) {
+  const rel = state.relacionesPorSku[sku];
+  if (!rel) return null;
+  if (rel.fuente_tipo === 'ancla') {
+    const v = preciosAncla[sku];
+    return v != null ? Number(v) : null;
+  }
+  const baseOrigen = calcularPrecioDerivado(rel.sku_origen, preciosAncla);
+  if (baseOrigen == null) return null;
+
+  let resultado = rel.operacion === 'multiplicar'
+    ? baseOrigen * parseFloat(rel.factor)
+    : baseOrigen / parseFloat(rel.factor);
+
+  const r = parseInt(rel.redondeo_arriba_a);
+  if (r && r > 0) resultado = Math.ceil(resultado / r) * r;
+  return resultado;
+}
+
+function obtenerMapaAnclas(skuAnclaModificado, precioAnclaNuevo) {
+  const map = { ...state.preciosAnclasCache };
+  if (skuAnclaModificado != null) map[skuAnclaModificado] = precioAnclaNuevo;
+  return map;
+}
+
+function renderPanelRelaciones() {
+  const host = document.getElementById('panel-relaciones-host');
+  if (!host) return;
+  const anclas = state.presentaciones
+    .map(p => p.codigo_sku)
+    .filter(sku => state.relacionesPorSku[sku]?.fuente_tipo === 'ancla');
+
+  if (anclas.length === 0) { host.innerHTML = ''; return; }
+
+  host.innerHTML = anclas.map(skuAncla => {
+    const nombre = state.todosItems[skuAncla] || skuAncla;
+    const derivados = listarDescendientes(skuAncla);
+    return `
+      <div class="panel-relaciones" data-ancla="${skuAncla}">
+        <h3>⚓ ${skuAncla} · ${nombre} <span style="font-size:11px; font-weight:400; color:var(--muted)">es un ancla maestra</span></h3>
+        <div class="subtitle">
+          ${derivados.length} SKUs derivan de este precio.
+          Al cambiar L1 c/IVA y aplicar, se recalculan automáticamente (salvo los desvinculados).
+        </div>
+        <div class="accion-row">
+          <button class="btn secondary btn-sm" onclick="togglePreviewDerivados('${skuAncla}')">Ver derivados →</button>
+          <button class="btn primary btn-sm" id="btn-aplicar-${skuAncla}" onclick="aplicarPropagacion('${skuAncla}')" disabled>
+            Aplicar a ${derivados.length} derivados
+          </button>
+          <span class="small text-muted" id="msg-propagacion-${skuAncla}"></span>
+        </div>
+        <div class="preview-derivados" id="preview-${skuAncla}"></div>
+      </div>
+    `;
+  }).join('');
+
+  actualizarBotonesPropagacion();
+}
+
+function listarDescendientes(skuAncla) {
+  const result = [];
+  const visit = (sku) => {
+    for (const [destino, rel] of Object.entries(state.relacionesPorSku)) {
+      if (rel.sku_origen === sku && rel.fuente_tipo === 'sku') {
+        result.push(destino);
+        visit(destino);
+      }
+    }
+  };
+  visit(skuAncla);
+  return result;
+}
+
+function actualizarBotonesPropagacion() {
+  for (const sku of Object.keys(state.relacionesPorSku)) {
+    const rel = state.relacionesPorSku[sku];
+    if (rel.fuente_tipo !== 'ancla') continue;
+    const btn = document.getElementById('btn-aplicar-' + sku);
+    if (btn) btn.disabled = !state.preciosSucio[sku];
+  }
+}
+
+function togglePreviewDerivados(skuAncla) {
+  const panel = document.getElementById('preview-' + skuAncla);
+  if (!panel) return;
+  if (panel.classList.contains('open')) { panel.classList.remove('open'); return; }
+
+  const precioNuevo = state.precios[skuAncla]?.l1?.publicado;
+  if (precioNuevo == null) {
+    panel.innerHTML = '<div style="padding:12px; color:var(--muted); font-size:12px">Sin precio cargado todavía en el ancla.</div>';
+    panel.classList.add('open');
+    return;
+  }
+  const anclasMap = obtenerMapaAnclas(skuAncla, precioNuevo);
+  const derivados = listarDescendientes(skuAncla);
+  const grupos = agruparPorFamilia(derivados);
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 60px">Cód.</th>
+          <th>SKU</th>
+          <th class="num" style="width: 95px">Actual</th>
+          <th class="num" style="width: 95px">Calculado</th>
+          <th class="num" style="width: 80px">Diff</th>
+          <th style="width: 70px"></th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const [grupoNombre, skus] of Object.entries(grupos)) {
+    html += `<tr class="grupo-header"><td colspan="6">${grupoNombre}</td></tr>`;
+    for (const sku of skus) {
+      const nuevo = calcularPrecioDerivado(sku, anclasMap);
+      const actual = state.preciosAnclasCache[sku] ?? null;
+      const est = state.estadoPorSku[sku] || {};
+      const desvinc = est.desvinculado_en != null;
+      let diffHtml = '—';
+      if (actual != null && nuevo != null) {
+        const diff = nuevo - actual;
+        const pct = actual > 0 ? (diff / actual * 100) : 0;
+        const cls = Math.abs(diff) < 1 ? 'diff-eq' : diff > 0 ? 'diff-up' : 'diff-down';
+        const signo = diff > 0 ? '+' : '';
+        diffHtml = `<span class="${cls}">${signo}${pct.toFixed(1)}%</span>`;
+      }
+      html += `
+        <tr>
+          <td class="codigo">${sku}</td>
+          <td>${state.todosItems[sku] || ''}</td>
+          <td class="num text-muted">${actual != null ? fmt.ars(actual) : '—'}</td>
+          <td class="num"><strong>${nuevo != null ? fmt.ars(nuevo) : '—'}</strong></td>
+          <td class="num">${diffHtml}</td>
+          <td>${desvinc ? '<span class="estado-desvinc">desvinc</span>' : ''}</td>
+        </tr>
+      `;
+    }
+  }
+  html += '</tbody></table>';
+  panel.innerHTML = html;
+  panel.classList.add('open');
+}
+
+function agruparPorFamilia(skus) {
+  const grupos = {};
+  for (const sku of skus) {
+    const nombre = state.todosItems[sku] || sku;
+    const familia = nombre.replace(/\s+\d+(\.\d+)?\s*(Kg|g|cc|L|Lts|ml)\s*$/i, '').trim();
+    if (!grupos[familia]) grupos[familia] = [];
+    grupos[familia].push(sku);
+  }
+  for (const g of Object.values(grupos)) {
+    g.sort((a, b) => (state.todosItems[a] || '').localeCompare(state.todosItems[b] || ''));
+  }
+  return grupos;
+}
+
+async function aplicarPropagacion(skuAncla) {
+  try {
+    const precioConIva = state.precios[skuAncla]?.l1?.publicado;
+    if (precioConIva == null) { toast('Cargá un precio L1 c/IVA antes de propagar', 'warn'); return; }
+    if (!state.listas.publico) { toast('No se encontró la lista pública', 'error'); return; }
+
+    const msg = document.getElementById('msg-propagacion-' + skuAncla);
+    if (msg) msg.textContent = 'Propagando...';
+
+    const { data, error } = await sb.rpc('propagar_precio_ancla', {
+      p_sku_ancla: skuAncla,
+      p_precio_iva_incl: precioConIva,
+      p_lista_id: state.listas.publico.id,
+    });
+    if (error) throw error;
+
+    const actualizados = (data || []).filter(r => r.estado === 'derivado_actualizado').length;
+    const omitidos    = (data || []).filter(r => r.estado === 'derivado_desvinculado_omitido').length;
+
+    delete state.preciosSucio[skuAncla];
+    actualizarBotonesPropagacion();
+
+    await cargarCachePreciosL1();
+    await cargarPresentacionesYPrecios();
+
+    let texto = `${actualizados + 1} SKUs actualizados`;
+    if (omitidos > 0) texto += ` · ${omitidos} desvinculados omitidos`;
+    toast('✓ ' + texto, 'success');
+    if (msg) msg.textContent = '';
+  } catch (err) {
+    console.error(err);
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+let _pendingDesvincular = null;
+function confirmarDesvincular(sku, nuevoValor, callback) {
+  const rel = state.relacionesPorSku[sku];
+  const origenNombre = state.todosItems[rel.sku_origen] || rel.sku_origen;
+  const op = rel.operacion === 'multiplicar' ? '×' : '÷';
+  const factor = parseFloat(rel.factor);
+  const factorStr = factor === 1 ? 'igual a' : `${op}${factor} de`;
+
+  document.getElementById('modal-desvincular-body').innerHTML = `
+    Este SKU se calcula automáticamente como <strong>${factorStr} ${rel.sku_origen}</strong>
+    (${origenNombre}).<br><br>
+    Si cargás un precio manual de <strong>${fmt.ars(nuevoValor)}</strong>, quedará
+    <strong>desvinculado</strong>: al cambiar el ancla en el futuro, este SKU no se actualizará.<br><br>
+    Podés volver a vincularlo cuando quieras desde el badge de la fila.
+  `;
+  _pendingDesvincular = { sku, nuevoValor, callback };
+  document.getElementById('modal-desvincular').classList.add('open');
+}
+function cerrarModalDesvincular(confirmado) {
+  document.getElementById('modal-desvincular').classList.remove('open');
+  if (_pendingDesvincular && _pendingDesvincular.callback) _pendingDesvincular.callback(confirmado);
+  _pendingDesvincular = null;
+}
+
+async function revincularSku(sku) {
+  if (!state.listas.publico) return;
+  try {
+    const { data, error } = await sb.rpc('revincular_precio', {
+      p_sku: sku, p_lista_id: state.listas.publico.id,
+    });
+    if (error) throw error;
+    toast('✓ Revinculado: nuevo precio ' + fmt.ars(data), 'success');
+    await cargarPresentacionesYPrecios();
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function guardarPrecios() {
+  try {
+    const rows = [];
+    for (const sku of Object.keys(state.preciosSucio)) {
+      const p = state.precios[sku];
+      for (const lista of ['l1', 'l2']) {
+        const datos = p[lista];
+        if (!datos || (datos.rentab_objetivo == null && datos.publicado == null)) continue;
+        const listaObj = lista === 'l1' ? state.listas.publico : state.listas.profesional_base;
+        if (!listaObj) continue;
+        const precioConIva = datos.publicado;
+        const precioSinIva = conIvaASin(precioConIva);
+        rows.push({
+          lista_id: listaObj.id,
+          codigo_vendible: sku,
+          rentabilidad_pct: datos.rentab_objetivo,
+          precio_iva_excl: precioSinIva != null ? Math.round(precioSinIva * 100) / 100 : null,
+          precio_iva_incl: precioConIva != null ? Math.round(precioConIva * 100) / 100 : null,
+          precio_publicado: precioConIva != null ? Math.round(precioConIva * 100) / 100 : null,
+        });
+      }
+    }
+
+    if (rows.length === 0 && Object.keys(state.etiquetasSucio).length === 0) {
+      toast('Nada que guardar', 'warn'); return;
+    }
+    if (rows.length > 0) {
+      const { error } = await sb.from('items_lista_precio').upsert(rows, { onConflict: 'lista_id,codigo_vendible' });
+      if (error) throw error;
+    }
+
+    const skusEtiq = Object.keys(state.etiquetasSucio);
+    for (const sku of skusEtiq) {
+      const pres = state.presentaciones.find(x => x.codigo_sku === sku);
+      if (!pres) continue;
+      const { error: eEtiq } = await sb.from('presentaciones').update({ etiquetas_por_hoja: pres.etiquetas_por_hoja }).eq('codigo_sku', sku);
+      if (eEtiq) throw eEtiq;
+    }
+    state.etiquetasSucio = {};
+    state.preciosSucio = {};
+    document.getElementById('btn-guardar-precios').disabled = true;
+    const msg = skusEtiq.length > 0
+      ? `Guardado: ${rows.length} precio(s) y ${skusEtiq.length} etiqueta(s)`
+      : `Precios guardados (${rows.length} filas)`;
+    toast(msg, 'success');
+  } catch (err) {
+    toast('Error al guardar: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INCI (explosión recursiva a MP)
+// ═══════════════════════════════════════════════════════════════════════════
+function explotarInci(codigoGranel, factor, acc, faltantes, visitados, componentesActuales) {
+  if (visitados.has(codigoGranel)) return;
+  visitados.add(codigoGranel);
+
+  const comps = componentesActuales || state.formulaComponentesPorGranel[codigoGranel] || [];
+
+  for (const c of comps) {
+    const pctReal = (c.pct || 0) * factor;
+    if (pctReal <= 0) continue;
+    const item = state.itemPorCodigo[c.codigo];
+    const esSubFormula = item && (item.tipo === 'SE' || item.tipo === 'TE')
+                         && state.formulaComponentesPorGranel[c.codigo];
+    if (esSubFormula) {
+      explotarInci(c.codigo, pctReal / 100, acc, faltantes, visitados, null);
+    } else {
+      const inci = item && item.inci_name ? item.inci_name.trim() : '';
+      if (!inci) {
+        faltantes.push(item ? `${item.codigo} · ${item.nombre}` : c.codigo);
+        continue;
+      }
+      const clave = inci.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!acc[clave]) acc[clave] = { inci, pct: 0 };
+      acc[clave].pct += pctReal;
+    }
+  }
+  visitados.delete(codigoGranel);
+}
+
+function calcularInciDeCodigo(codigo, componentesOverride) {
+  const acc = {};
+  const faltantes = [];
+  explotarInci(codigo, 1, acc, faltantes, new Set(), componentesOverride || null);
+  const lista = Object.values(acc).sort((a, b) => b.pct - a.pct);
+  const suma = lista.reduce((s, x) => s + x.pct, 0);
+  const inci = lista.map(x => x.inci).join(', ') + (lista.length ? '.' : '');
+  return { inci, suma, faltantes };
+}
+
+function aplicarCapitalizacion(texto) {
+  const modo = document.getElementById('inci-caps')?.value || 'upper';
+  if (modo === 'upper') return texto.toUpperCase();
+  return texto;
+}
+
+function renderInciAuto() {
+  const granel = state.codigoGranel;
+  if (!granel) { document.getElementById('inci-auto').textContent = '—'; return; }
+  const acc = {};
+  const faltantes = [];
+  const compsActuales = state.componentes.map(c => ({ codigo: c.codigo, pct: c.pct }));
+  explotarInci(granel, 1, acc, faltantes, new Set(), compsActuales);
+
+  const lista = Object.values(acc).sort((a, b) => b.pct - a.pct);
+  const sumaTotal = lista.reduce((s, x) => s + x.pct, 0);
+
+  const el = document.getElementById('inci-auto');
+  if (lista.length === 0 && faltantes.length === 0) {
+    el.innerHTML = '<span class="text-muted">Sin componentes cargados.</span>';
+    return;
+  }
+
+  const inciStr = aplicarCapitalizacion(lista.map(x => x.inci).join(', ')) + (lista.length ? '.' : '');
+  let html = `<div>${inciStr}</div>`;
+  if (lista.length > 0) {
+    const cuadra = Math.abs(sumaTotal - 100) < 0.5;
+    html += `<div class="small" style="margin-top:6px; color:${cuadra ? 'var(--ok)' : 'var(--warn)'};">
+      Suma: ${sumaTotal.toFixed(2)}% ${cuadra ? '✓' : '⚠ (revisá los % de la fórmula)'}
+    </div>`;
+  }
+  if (faltantes.length > 0) {
+    const unicos = [...new Set(faltantes)];
+    html += `<div class="small" style="margin-top:6px; color:var(--hot);">
+      ⚠ Faltan INCI de ${unicos.length} ingrediente(s): ${unicos.slice(0,6).join('; ')}${unicos.length>6?'…':''}.
+      Cargalos en la pestaña INCI del catálogo.
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function regenerarInci() {
+  renderInciAuto();
+  const granel = state.codigoGranel;
+  const acc = {};
+  const faltantes = [];
+  const compsActuales = state.componentes.map(c => ({ codigo: c.codigo, pct: c.pct }));
+  explotarInci(granel, 1, acc, faltantes, new Set(), compsActuales);
+  const lista = Object.values(acc).sort((a, b) => b.pct - a.pct);
+  const inciStr = aplicarCapitalizacion(lista.map(x => x.inci).join(', ')) + (lista.length ? '.' : '');
+  document.getElementById('inci-text').value = inciStr;
+  marcarInciSucio();
+}
+
+function marcarInciSucio() {
+  state.inciSucio = true;
+  document.getElementById('btn-guardar-inci').disabled = false;
+}
+
+async function guardarInci() {
+  try {
+    const formulaId = await asegurarFormula();
+    const inci = document.getElementById('inci-text').value.trim();
+    const { error } = await sb.from('formulas').update({ inci_completo: inci }).eq('id', formulaId);
+    if (error) throw error;
+    state.formula.inci_completo = inci;
+    state.inciSucio = false;
+    document.getElementById('btn-guardar-inci').disabled = true;
+    toast('INCI guardado', 'success');
+  } catch (err) {
+    toast('Error al guardar INCI: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Arranque
+// ═══════════════════════════════════════════════════════════════════════════
+(async () => {
+  if (await checkAuth()) {
+    document.getElementById('loading-screen').classList.remove('hidden');
+    await init();
+  }
+})();
+
+window.addEventListener('beforeunload', (e) => {
+  if (state.composicionSucia || Object.keys(state.preciosSucio).length > 0 || state.inciSucio) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Publicidad · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .header-actions {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .header-actions .spacer { flex: 1; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px; margin-bottom: 14px;
+    }
+    .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .card .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+
+    .motor-estado {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; border-radius: var(--radius-sm);
+      font-size: 13.5px; margin-bottom: 16px;
+    }
+    .motor-estado.on {
+      background: color-mix(in srgb, var(--ok) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+      color: var(--ok);
+    }
+    .motor-estado.off {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .motor-estado .icon { font-size: 20px; }
+    .motor-estado b { color: inherit; }
+
+    .switch-row {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+      padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm);
+    }
+    .switch-row input[type=checkbox] {
+      width: 20px; height: 20px; cursor: pointer; accent-color: var(--ok);
+    }
+    .switch-row .lbl { font-weight: 600; }
+    .switch-row .desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    .field-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px 18px;
+    }
+    .field label {
+      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+    }
+    .field input {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+      font: inherit;
+    }
+    .field input:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .field .help { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+    .resultado-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px; margin-bottom: 14px;
+    }
+    .rmet {
+      background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 14px;
+      text-align: center;
+    }
+    .rmet .v {
+      font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .rmet .l {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-top: 2px;
+    }
+    .rmet.hot .v { color: var(--hot); }
+    .rmet.warn .v { color: var(--warn); }
+
+    .sugerencias {
+      background: color-mix(in srgb, var(--ok) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent);
+      border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px;
+    }
+    .sugerencias b { color: var(--text); }
+    .sugerencias ul { margin: 6px 0 0; padding-left: 20px; }
+    .sugerencias li { margin-bottom: 4px; }
+
+    .alerta-presu {
+      background: color-mix(in srgb, var(--warn) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent);
+      color: var(--warn); padding: 10px 14px; border-radius: var(--radius-sm);
+      font-size: 13px; margin-bottom: 12px;
+    }
+
+    .modo-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+    }
+    .modo-badge.real { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .modo-badge.seco { background: var(--surface-2); color: var(--muted); }
+
+    /* Bitácora */
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 12.5px; }
+    .tbl th {
+      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 12px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .tbl td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td.mono {
+      font-family: var(--font-mono); color: var(--accent); font-size: 11.5px;
+    }
+    .tbl td.muted { color: var(--muted); }
+    .tbl td.date { white-space: nowrap; color: var(--muted); font-size: 11.5px; }
+
+    .empty-box {
+      padding: 32px 20px; text-align: center; color: var(--muted);
+      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    .save-status { font-size: 12px; color: var(--muted); margin-left: 8px; }
+    .save-status.ok { color: var(--ok); }
+    .save-status.err { color: var(--hot); }
+
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: var(--bg); padding: 12px 22px;
+      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
+      transition: all .25s; z-index: 200;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: var(--hot); color: var(--on-accent); }
+    .toast.ok { background: var(--ok); color: var(--on-accent); }
+  </style>
+</head>
+<body data-page="publicidad" data-title="Publicidad" data-subtitle="Automatización de ads en Mercado Libre">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="header-actions">
+    <span class="spacer"></span>
+    <button class="btn secondary" id="btnSyncAds">↻ Sincronizar gasto de ADS</button>
+  </div>
+
+  <div id="motor-estado" class="motor-estado off">
+    <span class="icon">⚪</span>
+    <div><b>Cargando estado del motor…</b></div>
+  </div>
+
+  <div class="card">
+    <h3>🤖 Motor de automatización</h3>
+    <div class="sub">Pausa publicaciones con ads que están rindiendo mal, según las reglas que definas abajo. La corrida real la ejecuta un cron en Supabase.</div>
+
+    <div class="switch-row">
+      <input type="checkbox" id="auto-activo">
+      <div>
+        <div class="lbl" id="auto-activo-lbl">Cargando…</div>
+        <div class="desc">Cuando está encendido, el motor ejecuta pausas reales en cada corrida. Apagado = solo calcula y registra en la bitácora, no toca ML.</div>
+      </div>
+    </div>
+
+    <div class="field-grid">
+      <div class="field">
+        <label>Frecuencia de corridas (horas)</label>
+        <input type="number" id="auto-frecuencia" step="1" min="1">
+        <div class="help">Cada cuánto corre el motor.</div>
+      </div>
+      <div class="field">
+        <label>Presupuesto mensual (ARS)</label>
+        <input type="number" id="auto-presupuesto" step="100" min="0">
+        <div class="help">Techo global de gasto en ads. Si se pasa, alerta.</div>
+      </div>
+      <div class="field">
+        <label>Rentabilidad mínima con ADS (%)</label>
+        <input type="number" id="auto-rentmin" step="1" min="0">
+        <div class="help">Por debajo de este margen, el aviso es candidato a pausar.</div>
+      </div>
+      <div class="field">
+        <label>Días malos consecutivos</label>
+        <input type="number" id="auto-diasmalos" step="1" min="1">
+        <div class="help">Cuántos días seguidos debe estar mal antes de pausar.</div>
+      </div>
+      <div class="field">
+        <label>Máx. acciones por corrida</label>
+        <input type="number" id="auto-maxacciones" step="1" min="1">
+        <div class="help">Tope de pausas por corrida (protección).</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:center; margin-top:18px;">
+      <button class="btn primary" id="btnSaveConfig">Guardar configuración</button>
+      <button class="btn secondary" id="btnCorrer">Correr en seco</button>
+      <span class="save-status" id="saveStatus"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Última corrida en seco</h3>
+    <div class="sub">Muestra qué haría el motor con los datos actuales. No modifica ML.</div>
+    <div id="resultado-corrida">
+      <div class="empty-box">Todavía no corriste el motor. Tocá "Correr en seco" para ver qué haría.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Bitácora</h3>
+    <div class="sub">Historial de corridas y acciones del motor. Se ve todo: reales y en seco.</div>
+    <div id="bitacora"><div class="empty-box">Cargando bitácora…</div></div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Publicidad ML — motor de automatización
+// Config en ml_parametros (claves ads_auto_*). Bitácora en ml_ads_bitacora.
+// Sync de gasto via edge function ml-ads-sync. Corrida del motor via ml-ads-auto.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CLAVES = [
+  'ads_auto_activo',
+  'ads_auto_frecuencia_hs',
+  'ads_auto_presupuesto_mensual',
+  'ads_auto_rentabilidad_min_pct',
+  'ads_auto_dias_malos',
+  'ads_auto_max_acciones_corrida',
+];
+
+const $ = s => document.querySelector(s);
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function cargarConfig() {
+  try {
+    const { data, error } = await sb.from('ml_parametros').select('clave, valor').in('clave', CLAVES);
+    if (error) throw error;
+    const P = {};
+    (data || []).forEach(r => { P[r.clave] = r.valor != null ? Number(r.valor) : null; });
+
+    const activo = P['ads_auto_activo'] === 1;
+    $('#auto-activo').checked = activo;
+    actualizarEstado(activo);
+
+    $('#auto-frecuencia').value = P['ads_auto_frecuencia_hs'] ?? 3;
+    $('#auto-presupuesto').value = P['ads_auto_presupuesto_mensual'] ?? 0;
+    $('#auto-rentmin').value = P['ads_auto_rentabilidad_min_pct'] ?? 15;
+    $('#auto-diasmalos').value = P['ads_auto_dias_malos'] ?? 3;
+    $('#auto-maxacciones').value = P['ads_auto_max_acciones_corrida'] ?? 3;
+  } catch (err) {
+    toast('Error al cargar config: ' + err.message, 'err');
+  }
+}
+
+function actualizarEstado(activo) {
+  const est = $('#motor-estado');
+  const lbl = $('#auto-activo-lbl');
+  if (activo) {
+    est.className = 'motor-estado on';
+    est.innerHTML = '<span class="icon">🟢</span><div><b>Motor encendido.</b> Pausa avisos que cumplen las reglas en cada corrida.</div>';
+    lbl.textContent = 'Encendido (pausa de verdad)';
+  } else {
+    est.className = 'motor-estado off';
+    est.innerHTML = '<span class="icon">⚪</span><div><b>Motor apagado.</b> Calcula y registra en la bitácora, pero no modifica ML.</div>';
+    lbl.textContent = 'Apagado';
+  }
+}
+
+$('#auto-activo').addEventListener('change', e => actualizarEstado(e.target.checked));
+
+async function guardarConfig() {
+  const btn = $('#btnSaveConfig'); btn.disabled = true;
+  const status = $('#saveStatus');
+  status.textContent = 'Guardando…'; status.className = 'save-status';
+  try {
+    const pares = [
+      ['ads_auto_activo', $('#auto-activo').checked ? 1 : 0],
+      ['ads_auto_frecuencia_hs', Number($('#auto-frecuencia').value) || 3],
+      ['ads_auto_presupuesto_mensual', Number($('#auto-presupuesto').value) || 0],
+      ['ads_auto_rentabilidad_min_pct', Number($('#auto-rentmin').value) || 15],
+      ['ads_auto_dias_malos', Number($('#auto-diasmalos').value) || 3],
+      ['ads_auto_max_acciones_corrida', Number($('#auto-maxacciones').value) || 3],
+    ];
+    for (const [clave, valor] of pares) {
+      const { error } = await sb.from('ml_parametros').update({
+        valor, actualizado_en: new Date().toISOString(),
+      }).eq('clave', clave);
+      if (error) throw new Error(clave + ': ' + error.message);
+    }
+    const activo = $('#auto-activo').checked;
+    actualizarEstado(activo);
+    status.textContent = '✓ Guardado'; status.className = 'save-status ok';
+    toast(activo ? 'Motor ENCENDIDO' : 'Motor apagado', 'ok');
+  } catch (err) {
+    status.textContent = '✗ ' + err.message; status.className = 'save-status err';
+    toast('Error: ' + err.message, 'err');
+  } finally { btn.disabled = false; }
+}
+
+async function correrEnSeco() {
+  const btn = $('#btnCorrer');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Corriendo…';
+  const out = $('#resultado-corrida');
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-auto', { body: { dry_run: true } });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error en el motor');
+
+    const sug = (data.sugerencias || []).map(s =>
+      `<li>${esc((s.titulo||'').replace(/ - Rosaint.*$/i,'').trim())} — rent ${Number(s.rent).toFixed(0)}%, ${s.ventas7} vts/7d</li>`
+    ).join('');
+
+    const modoBadge = data.modo === 'REAL'
+      ? '<span class="modo-badge real">🟢 REAL</span>'
+      : '<span class="modo-badge seco">⚪ en seco</span>';
+
+    out.innerHTML = `
+      ${data.exceso_presupuesto ? '<div class="alerta-presu">⚠ El gasto del mes supera el presupuesto configurado.</div>' : ''}
+      <div class="resultado-grid">
+        <div class="rmet"><div class="v">${data.ads_total || 0}</div><div class="l">Avisos</div></div>
+        <div class="rmet ${data.exceso_presupuesto?'warn':''}"><div class="v">$${Number(data.gasto_mes_total||0).toLocaleString('es-AR')}</div><div class="l">Gasto / mes</div></div>
+        <div class="rmet warn"><div class="v">${data.candidatos_hoy || 0}</div><div class="l">Malos hoy</div></div>
+        <div class="rmet hot"><div class="v">${data.a_pausar || 0}</div><div class="l">A pausar</div></div>
+      </div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+        Modo de esta corrida: ${modoBadge}
+      </div>
+      ${sug ? `
+        <div class="sugerencias">
+          <b>🚀 Sugerencias para invertir más:</b>
+          <ul>${sug}</ul>
+        </div>
+      ` : ''}
+    `;
+    await cargarBitacora();
+  } catch (err) {
+    out.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+async function sincronizarGasto() {
+  const btn = $('#btnSyncAds');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Trayendo ADS…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error al sincronizar');
+    const n = data?.guardadas ?? 0;
+    const cg = data?.conGasto ?? 0;
+    toast(`✓ ADS sincronizado: ${n} publicaciones, ${cg} con gasto`, 'ok');
+    await cargarBitacora();
+  } catch (err) {
+    toast('No se pudo sincronizar: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+async function cargarBitacora() {
+  const cont = $('#bitacora');
+  try {
+    const { data, error } = await sb.from('ml_ads_bitacora')
+      .select('*').order('ejecutado_en', { ascending: false }).limit(30);
+    if (error) throw error;
+    if (!data || !data.length) {
+      cont.innerHTML = '<div class="empty-box">Sin registros todavía.</div>';
+      return;
+    }
+    const ico = { ok: '✅', error: '❌', simulado: '⚪', omitido: '⏭️' };
+    cont.innerHTML = `
+      <table class="tbl">
+        <thead><tr>
+          <th>Fecha</th><th>Acción</th><th>Item ML</th><th>Motivo</th>
+        </tr></thead>
+        <tbody>
+          ${data.map(r => {
+            const f = new Date(r.ejecutado_en).toLocaleString('es-AR', {
+              day:'2-digit', month:'2-digit', year:'2-digit',
+              hour:'2-digit', minute:'2-digit',
+            });
+            const tag = r.accion === 'corrida' ? '🔄 corrida'
+                     : r.accion === 'pausar' ? '⏸️ pausar'
+                     : r.accion;
+            return `<tr>
+              <td class="date">${esc(f)}</td>
+              <td>${ico[r.resultado] || ''} ${esc(tag || '')}</td>
+              <td class="mono">${esc(r.item_id || '—')}</td>
+              <td class="muted">${esc(r.motivo || '—')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    cont.innerHTML = `<div class="empty-box" style="color:var(--hot);">No se pudo cargar: ${esc(err.message)}</div>`;
+  }
+}
+
+let toastT;
+function toast(msg, kind) {
+  const t = $('#toast'); t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+$('#btnSaveConfig').addEventListener('click', guardarConfig);
+$('#btnCorrer').addEventListener('click', correrEnSeco);
+$('#btnSyncAds').addEventListener('click', sincronizarGasto);
+
+cargarConfig();
+cargarBitacora();
+</script>
+</body>
+</html>
