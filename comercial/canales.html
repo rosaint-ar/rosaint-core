@@ -229,6 +229,17 @@
     .badge.sku { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-family: var(--font-mono); font-size: 10.5px; }
     .promo-tag { display: inline-block; font-size: 10px; color: var(--warn); margin-left: 4px; }
 
+    /* Divisor de la sección de pausadas (las inactivas van aparte, abajo) */
+    .divisor-inactivas {
+      display: flex; align-items: center; gap: 12px;
+      margin: 28px 0 12px; color: var(--muted);
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .divisor-inactivas::before, .divisor-inactivas::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .divisor-inactivas ~ .grupo { opacity: .72; }
+
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
       text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
@@ -878,15 +889,27 @@ function renderPubs() {
 
   if (!rows.length) { $('#pub-content').innerHTML = '<div class="empty-box">Sin publicaciones con esos filtros.</div>'; return; }
 
+  // Activas arriba; pausadas en su propia sección abajo — sin mezclar.
+  const activas = rows.filter(p => p.activa);
+  const inactivas = rows.filter(p => !p.activa);
+
+  let html = agruparPubs(activas).map(g => renderGrupoML(g)).join('');
+  if (inactivas.length) {
+    html += `<div class="divisor-inactivas">Pausadas · ${inactivas.length}</div>`;
+    html += agruparPubs(inactivas).map(g => renderGrupoML(g)).join('');
+  }
+  $('#pub-content').innerHTML = html;
+}
+
+// Agrupa publicaciones por product_number (variantes juntas), ordenadas por SKU.
+function agruparPubs(rows) {
   const grupos = {};
   for (const p of rows) {
     const k = p.product_number || p.item_id;
     if (!grupos[k]) grupos[k] = { titulo: p.titulo, sku: p.codigo_sku, rows: [] };
     grupos[k].rows.push(p);
   }
-  const arr = Object.values(grupos).sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
-
-  $('#pub-content').innerHTML = arr.map(g => renderGrupoML(g)).join('');
+  return Object.values(grupos).sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
 }
 
 // Panel superior: alertas accionables sobre publicidad + ADS.
@@ -1117,7 +1140,7 @@ function renderFilaPub(p, esCombo) {
   return `
     <tr${filaCls}>
       <td class="codigo" title="${esc(p.item_id)}"><a href="${urlML(p.item_id)}" target="_blank" style="color:var(--accent); text-decoration:none;">${esc(p.item_id.replace('MLA',''))}</a></td>
-      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}</td>
+      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}${!p.activa ? ' <span class="badge inactiva">pausada</span>' : ''}</td>
       <td>${tipoBadge}</td>
       <td>${cuotasBadge}</td>
       <td class="num">${precioCell}</td>
