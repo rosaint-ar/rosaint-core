@@ -227,6 +227,7 @@
     .badge.cuotas { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
     .badge.inactiva { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
     .badge.sku { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-family: var(--font-mono); font-size: 10.5px; }
+    .badge.sinsku { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
     .promo-tag { display: inline-block; font-size: 10px; color: var(--warn); margin-left: 4px; }
 
     /* Divisor de la sección de pausadas (las inactivas van aparte, abajo) */
@@ -1140,7 +1141,7 @@ function renderFilaPub(p, esCombo) {
   return `
     <tr${filaCls}>
       <td class="codigo" title="${esc(p.item_id)}"><a href="${urlML(p.item_id)}" target="_blank" style="color:var(--accent); text-decoration:none;">${esc(p.item_id.replace('MLA',''))}</a></td>
-      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}${!p.activa ? ' <span class="badge inactiva">pausada</span>' : ''}</td>
+      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}${!p.activa ? ' <span class="badge inactiva">pausada</span>' : ''}${(!p.codigo_sku && !p.codigo_combo) ? ' <span class="badge sinsku" title="Sin SKU mapeado — no se calcula costo ni rentabilidad">sin SKU</span>' : ''}</td>
       <td>${tipoBadge}</td>
       <td>${cuotasBadge}</td>
       <td class="num">${precioCell}</td>
