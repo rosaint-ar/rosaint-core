@@ -92,6 +92,18 @@
     .grupo td.item-id a { color: var(--accent); text-decoration: none; }
     .grupo td.item-id a:hover { text-decoration: underline; }
 
+    /* Divisor de la sección de pausadas (las inactivas van aparte, abajo) */
+    .divisor-inactivas {
+      display: flex; align-items: center; gap: 12px;
+      margin: 30px 0 14px; color: var(--muted);
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .divisor-inactivas::before, .divisor-inactivas::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    /* Grupos con solo pausadas: apagados visualmente */
+    .divisor-inactivas ~ .grupo { opacity: .72; }
+
     .badge {
       font-size: 10px; padding: 1px 6px; border-radius: 10px;
       font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
@@ -273,17 +285,27 @@ function render() {
     return;
   }
 
-  // Agrupar por product_number (variantes juntas)
+  // Separar activas (arriba) de pausadas (sección aparte, abajo) — sin mezclar.
+  const activas = rows.filter(p => p.activa);
+  const inactivas = rows.filter(p => !p.activa);
+
+  let html = agrupar(activas).map(g => renderGrupo(g)).join('');
+  if (inactivas.length) {
+    html += `<div class="divisor-inactivas">Pausadas · ${inactivas.length}</div>`;
+    html += agrupar(inactivas).map(g => renderGrupo(g)).join('');
+  }
+  $('#content').innerHTML = html;
+}
+
+// Agrupa publicaciones por product_number (variantes juntas), ordenadas por SKU.
+function agrupar(rows) {
   const grupos = {};
   for (const p of rows) {
     const k = p.product_number || p.item_id;
     if (!grupos[k]) grupos[k] = { titulo: p.titulo, sku: p.codigo_sku, rows: [] };
     grupos[k].rows.push(p);
   }
-  const gruposArr = Object.values(grupos)
-    .sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
-
-  $('#content').innerHTML = gruposArr.map(g => renderGrupo(g)).join('');
+  return Object.values(grupos).sort((a,b) => (a.sku || 'zz').localeCompare(b.sku || 'zz'));
 }
 
 function renderKPIs(rows) {
@@ -357,8 +379,8 @@ function renderFila(p) {
     ? '<span class="badge cat">Catálogo</span>'
     : '<span class="badge trad">Tradicional</span>';
   const cuotasBadge = p.con_cuotas
-    ? ` <span class="badge cuotas" data-toggle-cuotas="${esc(p.item_id)}" title="Click para quitar cuotas" style="cursor:pointer;">${p.cuotas_cantidad || 3}x</span>`
-    : ` <span class="badge" data-toggle-cuotas="${esc(p.item_id)}" title="Click para marcar con 3 cuotas" style="cursor:pointer; opacity:0.55; border:1px dashed currentColor;">+ cuotas</span>`;
+    ? ` <span class="badge cuotas" title="Ofrece ${p.cuotas_cantidad || 3} cuotas sin interés (dato real de ML)">${p.cuotas_cantidad || 3}x</span>`
+    : '';
   const inactivaBadge = !p.activa ? ' <span class="badge inactiva">Pausada</span>' : '';
 
   const precio = p.precio_con_descuento != null && p.precio_con_descuento > 0 ? p.precio_con_descuento : p.precio;
@@ -446,24 +468,8 @@ $('#filter-tipo').addEventListener('change', render);
 $('#filter-cuotas').addEventListener('change', render);
 $('#filter-activa').addEventListener('change', render);
 
-// Toggle cuotas inline: click en el badge marca/desmarca con_cuotas
-$('#content').addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-toggle-cuotas]');
-  if (!el) return;
-  const itemId = el.dataset.toggleCuotas;
-  const pub = PUBS.find(p => p.item_id === itemId);
-  if (!pub) return;
-  const nuevo = !pub.con_cuotas;
-  const cantidad = nuevo ? (pub.cuotas_cantidad || 3) : 1;
-  const { error } = await sb.from('ml_publicaciones')
-    .update({ con_cuotas: nuevo, cuotas_cantidad: cantidad })
-    .eq('item_id', itemId);
-  if (error) { toast('Error: ' + error.message, 'err'); return; }
-  pub.con_cuotas = nuevo;
-  pub.cuotas_cantidad = cantidad;
-  toast(nuevo ? '✓ Marcada con cuotas' : '✓ Cuotas removidas', 'ok');
-  render();
-});
+// (El toggle de cuotas se removió: con_cuotas ahora se deriva del dato real de ML
+//  en cada sync. Activar/desactivar cuotas sin interés se hace desde el panel de ML.)
 
 cargar();
 </script>
