@@ -260,27 +260,47 @@ function parsearFactura(lineas) {
   const comprobante = (texto.match(/\b(\d{3,5}-\d{8,12})\b/) || texto.match(/N[°º]?:?\s*(\d{3,5}-\d{6,12})/i) || [])[1] || '';
   const fecha = (texto.match(/emisi[oó]n:\s*([\d.\/]{8,10})/i) || texto.match(/fecha:\s*([\d.\/]{8,10})/i) || [])[1] || '';
   const conMonto = [];
-  lineas.forEach(l => {
+  lineas.forEach((l, idx) => {
     const monto = parseMontoFinal(l);
     if (monto !== null) {
       const concepto = l.replace(/\$?\s*[\d.]*[,.]\d{2}\s*$/,'').replace(/\$/g,'').trim();
-      if (concepto) conMonto.push({ concepto, monto, raw: l });
+      conMonto.push({ concepto, monto, raw: l, idx });
     }
   });
-  const { neto, ivas } = detectarNetoIva(conMonto);
-  return { cuitProv, comprobante, fecha, conMonto, neto, ivas };
+  // Detectar Total: puede aparecer como "Total $X,XX" en la misma línea,
+  // o como "Total" y el monto en la siguiente línea (formato ML/Perfit).
+  let total = null;
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i].trim();
+    if (/^total(?:\s+a\s+pagar)?\s*[:\-]?\s*$/i.test(l)) {
+      const m = parseMontoFinal(lineas[i + 1] || '');
+      if (m !== null) { total = m; break; }
+    }
+    const m2 = l.match(/\btotal(?:\s+a\s+pagar)?\s*[:\-]?\s*\$?\s*([\d.,]+)\s*$/i);
+    if (m2) {
+      const val = parseFloat(m2[1].replace(/\./g, '').replace(',', '.')) || parseFloat(m2[1]);
+      if (!isNaN(val) && val > 0) { total = val; break; }
+    }
+  }
+  const { neto, ivas } = detectarNetoIva(conMonto, total);
+  return { cuitProv, comprobante, fecha, conMonto, neto, ivas, total };
 }
 
-// Detecta subtotal (neto) e IVA con alícuota. Facturas argentinas típicas:
-// "Subtotal $X.XXX,XX", "Importe Neto Gravado", "Neto 21%", "IVA 21% $XXX,XX"
-function detectarNetoIva(conMonto) {
+// Detecta subtotal (neto) e IVA con alícuota.
+// - IVA: tolera paréntesis, guiones y espacios entre "IVA" y la alícuota.
+// - Neto: busca palabras clave. Si no aparece (facturas ML/Perfit), calcula
+//   neto = total - suma(IVA) - suma(percepciones).
+function detectarNetoIva(conMonto, total) {
   const NORM = s => String(s || '').toUpperCase().replace(/[.,]/g,' ').replace(/\s+/g,' ').trim();
   const RE_NETO = /(?:^|\b)(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)(?:\s+21|\s+10\s*5|\s+27|\s+5)?\b/;
-  const RE_IVA  = /\bIVA\b(?:\s*(?:INSCRIPTO|RES\.?|RG|CONTENIDO|DISCRIMINADO))?\s*(21|10\s*5|27|5|2\s*5)\s*%?/;
-  const RE_EXCLUIR_IVA = /PERCEP|RETENC|PERC\b|RET\b|PER\s+IVA/;
+  // IVA tolerante: acepta "IVA 21%", "IVA (21%)", "IVA - 21%", "IVA: 21%", etc.
+  const RE_IVA  = /\bIVA\b[^0-9A-Z]{0,10}?(21|10\s*5|27|5|2\s*5)\s*%?/;
+  const RE_EXCLUIR_IVA = /PERCEP|RETENC|\bPERC\b|\bRET\b|PER\s+IVA/;
+  const RE_PERC = /PERCEP|RETENC|\bPERC\b|\bRET\b/;
 
   const netos = [];
   const ivas = [];
+  let sumaPerc = 0;
   for (const x of conMonto) {
     const n = NORM(x.concepto);
     if (RE_NETO.test(n) && !/TOTAL(?!\s+NETO|\s+GRAVADO)/.test(n)) {
@@ -289,11 +309,19 @@ function detectarNetoIva(conMonto) {
     }
     const m = n.match(RE_IVA);
     if (m && !RE_EXCLUIR_IVA.test(n)) {
-      const alicuota = parseFloat(m[1].replace(/\s+/g, '.')); // "10 5" -> 10.5
+      const alicuota = parseFloat(m[1].replace(/\s+/g, '.'));
       ivas.push({ alicuota, monto: x.monto });
+      continue;
     }
+    if (RE_PERC.test(n)) sumaPerc += x.monto;
   }
-  const neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
+  let neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
+  // Si no hay neto explícito pero sí total + IVA, calcularlo por resta.
+  if (neto == null && total != null && ivas.length) {
+    const sumaIva = ivas.reduce((a,b)=>a + b.monto, 0);
+    neto = Math.round((total - sumaIva - sumaPerc) * 100) / 100;
+    if (neto <= 0) neto = null;
+  }
   return { neto, ivas };
 }
 
@@ -449,6 +477,7 @@ function renderPreview(fac, percLineas, grupos) {
       <div><span class="k">Fecha:</span> <span class="v">${fac.fecha||'—'}</span></div>
       <div><span class="k">Subtotal (neto):</span> <span class="v">${fac.neto != null ? money(fac.neto) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
       <div><span class="k">IVA:</span> <span class="v">${(fac.ivas||[]).length ? fac.ivas.map(v => `${v.alicuota}% = ${money(v.monto)}`).join(' · ') : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
+      <div><span class="k">Total factura:</span> <span class="v">${fac.total != null ? money(fac.total) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
       <div><span class="k">Percepciones:</span> <span class="v">${percLineas.length} → ${gruposArr.filter(g=>!g.sinMapeo).length} líneas agrupadas</span></div>
     </div>`;
 
