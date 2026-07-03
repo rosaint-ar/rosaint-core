@@ -356,7 +356,9 @@ function renderFila(p) {
   const tipoBadge = p.tipo_publicacion === 'catalogo'
     ? '<span class="badge cat">Catálogo</span>'
     : '<span class="badge trad">Tradicional</span>';
-  const cuotasBadge = p.con_cuotas ? ` <span class="badge cuotas">${p.cuotas_cantidad}x</span>` : '';
+  const cuotasBadge = p.con_cuotas
+    ? ` <span class="badge cuotas" data-toggle-cuotas="${esc(p.item_id)}" title="Click para quitar cuotas" style="cursor:pointer;">${p.cuotas_cantidad || 3}x</span>`
+    : ` <span class="badge" data-toggle-cuotas="${esc(p.item_id)}" title="Click para marcar con 3 cuotas" style="cursor:pointer; opacity:0.55; border:1px dashed currentColor;">+ cuotas</span>`;
   const inactivaBadge = !p.activa ? ' <span class="badge inactiva">Pausada</span>' : '';
 
   const precio = p.precio_con_descuento != null && p.precio_con_descuento > 0 ? p.precio_con_descuento : p.precio;
@@ -443,6 +445,25 @@ $('#search').addEventListener('input', render);
 $('#filter-tipo').addEventListener('change', render);
 $('#filter-cuotas').addEventListener('change', render);
 $('#filter-activa').addEventListener('change', render);
+
+// Toggle cuotas inline: click en el badge marca/desmarca con_cuotas
+$('#content').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-toggle-cuotas]');
+  if (!el) return;
+  const itemId = el.dataset.toggleCuotas;
+  const pub = PUBS.find(p => p.item_id === itemId);
+  if (!pub) return;
+  const nuevo = !pub.con_cuotas;
+  const cantidad = nuevo ? (pub.cuotas_cantidad || 3) : 1;
+  const { error } = await sb.from('ml_publicaciones')
+    .update({ con_cuotas: nuevo, cuotas_cantidad: cantidad })
+    .eq('item_id', itemId);
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
+  pub.con_cuotas = nuevo;
+  pub.cuotas_cantidad = cantidad;
+  toast(nuevo ? '✓ Marcada con cuotas' : '✓ Cuotas removidas', 'ok');
+  render();
+});
 
 cargar();
 </script>
