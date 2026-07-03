@@ -291,10 +291,17 @@ function parsearFactura(lineas) {
 // - Neto: busca palabras clave. Si no aparece (facturas ML/Perfit), calcula
 //   neto = total - suma(IVA) - suma(percepciones).
 function detectarNetoIva(conMonto, total) {
-  const NORM = s => String(s || '').toUpperCase().replace(/[.,]/g,' ').replace(/\s+/g,' ').trim();
+  // NORM: normaliza "I.V.A." → "IVA" antes de convertir puntos a espacios,
+  // así no perdemos la palabra IVA.
+  const NORM = s => String(s || '')
+    .toUpperCase()
+    .replace(/\bI\.?V\.?A\.?/g, 'IVA')
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const RE_NETO = /(?:^|\b)(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)(?:\s+21|\s+10\s*5|\s+27|\s+5)?\b/;
-  // IVA tolerante: acepta "IVA 21%", "IVA (21%)", "IVA - 21%", "IVA: 21%", etc.
-  const RE_IVA  = /\bIVA\b[^0-9A-Z]{0,10}?(21|10\s*5|27|5|2\s*5)\s*%?/;
+  // IVA tolerante: acepta "IVA 21%", "IVA (21%)", "IVA INSC 21%", "IVA - 21%", etc.
+  const RE_IVA  = /\bIVA\b[^\d]{0,30}?(21|10\s*5|27|5|2\s*5)\s*%?/;
   const RE_EXCLUIR_IVA = /PERCEP|RETENC|\bPERC\b|\bRET\b|PER\s+IVA/;
   const RE_PERC = /PERCEP|RETENC|\bPERC\b|\bRET\b/;
 
@@ -303,7 +310,8 @@ function detectarNetoIva(conMonto, total) {
   let sumaPerc = 0;
   for (const x of conMonto) {
     const n = NORM(x.concepto);
-    if (RE_NETO.test(n) && !/TOTAL(?!\s+NETO|\s+GRAVADO)/.test(n)) {
+    // Exclusión de TOTAL: usa \b para no matchear el "TOTAL" dentro de SUBTOTAL.
+    if (RE_NETO.test(n) && !/\bTOTAL\b(?!\s+NETO|\s+GRAVADO)/.test(n)) {
       netos.push(x.monto);
       continue;
     }
@@ -315,13 +323,8 @@ function detectarNetoIva(conMonto, total) {
     }
     if (RE_PERC.test(n)) sumaPerc += x.monto;
   }
-  let neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
-  // Si no hay neto explícito pero sí total + IVA, calcularlo por resta.
-  if (neto == null && total != null && ivas.length) {
-    const sumaIva = ivas.reduce((a,b)=>a + b.monto, 0);
-    neto = Math.round((total - sumaIva - sumaPerc) * 100) / 100;
-    if (neto <= 0) neto = null;
-  }
+  const neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
+  // Nota: no se calcula el neto por resta. Debe leerse explícito del PDF.
   return { neto, ivas };
 }
 
