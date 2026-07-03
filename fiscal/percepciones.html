@@ -394,6 +394,13 @@ $('filePdf').addEventListener('change', async (e) => {
     const buf = await f.arrayBuffer();
     const lineas = await extraerTextoPdf(buf);
     const fac = parsearFactura(lineas);
+    window._debugFactura = { lineas, fac };
+    console.log('=== DEBUG PDF ===');
+    console.log('Total líneas extraídas:', lineas.length);
+    console.log('Todas las líneas:', lineas);
+    console.log('Líneas con monto:', fac.conMonto);
+    console.log('Subtotal detectado:', fac.neto);
+    console.log('IVAs detectados:', fac.ivas);
 
     const percLineas = fac.conMonto.filter(x => esPercepcion(x.concepto));
     setStatus('load', `Encontradas ${percLineas.length} percepciones. Reconociendo…`);
