@@ -505,14 +505,19 @@ const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&g
 const fmtFecha = d => { if(!d) return '—'; const [y,m,da] = d.split('-'); return `${da}/${m}/${y}`; };
 
 async function api(path, opts) {
+  // Después del RLS necesitamos el JWT del usuario logueado, no la publishable key.
+  const { data: sess } = await sb.auth.getSession();
+  const token = (sess && sess.session && sess.session.access_token) || window.SUPABASE_KEY;
+  const baseHeaders = {
+    apikey: window.SUPABASE_KEY,
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+    Prefer: 'resolution=merge-duplicates',
+  };
+  const finalHeaders = opts && opts.headers ? { ...baseHeaders, ...opts.headers, Authorization: 'Bearer ' + token, apikey: window.SUPABASE_KEY } : baseHeaders;
   const r = await fetch(window.SUPABASE_URL + '/rest/v1/' + path, {
-    headers: {
-      apikey: window.SUPABASE_KEY,
-      Authorization: 'Bearer ' + window.SUPABASE_KEY,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates',
-    },
     ...opts,
+    headers: finalHeaders,
   });
   return r;
 }
@@ -815,15 +820,7 @@ async function doSync() {
   b.classList.add('spin');
   document.getElementById('btnSyncTxt').textContent = 'Sincronizando…';
   try {
-    await fetch(window.SUPABASE_URL + '/rest/v1/rpc/iniciar_sync_completo', {
-      method: 'POST',
-      headers: {
-        apikey: window.SUPABASE_KEY,
-        Authorization: 'Bearer ' + window.SUPABASE_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: '{}',
-    });
+    await api('rpc/iniciar_sync_completo', { method: 'POST', body: '{}' });
     document.getElementById('btnSyncTxt').textContent = 'Actualizando en segundo plano…';
     // El sync completo tarda varios minutos; recargamos cada 30s un rato para ir reflejando avances.
     let veces = 0;

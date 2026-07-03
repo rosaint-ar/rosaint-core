@@ -214,7 +214,15 @@ async function cargarImpuestosOdoo() {
       group_name: Array.isArray(t.tax_group_id) ? t.tax_group_id[1] : '',
       ...parseImpuesto(t.name),
     }));
+  // IVAs de compra (por grupo VAT NN% o IVA NN%, o por nombre "IVA 21%").
+  ivasOdoo = listaImpuestos
+    .filter(t => {
+      const gname = Array.isArray(t.tax_group_id) ? String(t.tax_group_id[1] || '') : '';
+      return /^VAT\s*\d/i.test(gname) || /^IVA\s*\d/i.test(gname) || /^IVA\s+\d/i.test(t.name);
+    })
+    .map(t => ({ id: t.id, name: t.name, amount: Number(t.amount || 0) }));
 }
+let ivasOdoo = [];
 
 // ─── Extraer texto del PDF ───
 async function extraerTextoPdf(arrayBuffer) {
@@ -259,7 +267,34 @@ function parsearFactura(lineas) {
       if (concepto) conMonto.push({ concepto, monto, raw: l });
     }
   });
-  return { cuitProv, comprobante, fecha, conMonto };
+  const { neto, ivas } = detectarNetoIva(conMonto);
+  return { cuitProv, comprobante, fecha, conMonto, neto, ivas };
+}
+
+// Detecta subtotal (neto) e IVA con alícuota. Facturas argentinas típicas:
+// "Subtotal $X.XXX,XX", "Importe Neto Gravado", "Neto 21%", "IVA 21% $XXX,XX"
+function detectarNetoIva(conMonto) {
+  const NORM = s => String(s || '').toUpperCase().replace(/[.,]/g,' ').replace(/\s+/g,' ').trim();
+  const RE_NETO = /(?:^|\b)(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)(?:\s+21|\s+10\s*5|\s+27|\s+5)?\b/;
+  const RE_IVA  = /\bIVA\b(?:\s*(?:INSCRIPTO|RES\.?|RG|CONTENIDO|DISCRIMINADO))?\s*(21|10\s*5|27|5|2\s*5)\s*%?/;
+  const RE_EXCLUIR_IVA = /PERCEP|RETENC|PERC\b|RET\b|PER\s+IVA/;
+
+  const netos = [];
+  const ivas = [];
+  for (const x of conMonto) {
+    const n = NORM(x.concepto);
+    if (RE_NETO.test(n) && !/TOTAL(?!\s+NETO|\s+GRAVADO)/.test(n)) {
+      netos.push(x.monto);
+      continue;
+    }
+    const m = n.match(RE_IVA);
+    if (m && !RE_EXCLUIR_IVA.test(n)) {
+      const alicuota = parseFloat(m[1].replace(/\s+/g, '.')); // "10 5" -> 10.5
+      ivas.push({ alicuota, monto: x.monto });
+    }
+  }
+  const neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
+  return { neto, ivas };
 }
 
 function esPercepcion(concepto) {
@@ -405,6 +440,8 @@ function renderPreview(fac, percLineas, grupos) {
       <div><span class="k">CUIT proveedor:</span> <span class="v">${fac.cuitProv||'—'}</span></div>
       <div><span class="k">Comprobante:</span> <span class="v">${fac.comprobante||'—'}</span></div>
       <div><span class="k">Fecha:</span> <span class="v">${fac.fecha||'—'}</span></div>
+      <div><span class="k">Subtotal (neto):</span> <span class="v">${fac.neto != null ? money(fac.neto) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
+      <div><span class="k">IVA:</span> <span class="v">${(fac.ivas||[]).length ? fac.ivas.map(v => `${v.alicuota}% = ${money(v.monto)}`).join(' · ') : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
       <div><span class="k">Percepciones:</span> <span class="v">${percLineas.length} → ${gruposArr.filter(g=>!g.sinMapeo).length} líneas agrupadas</span></div>
     </div>`;
 
@@ -425,6 +462,12 @@ function renderPreview(fac, percLineas, grupos) {
   h += `</tbody></table>`;
 
   h += `<div class="totales">`;
+  if (fac.neto != null) {
+    h += `<div class="row"><span class="lbl">Subtotal (neto):</span><span class="val">${money(fac.neto)}</span></div>`;
+  }
+  (fac.ivas || []).forEach(v => {
+    h += `<div class="row"><span class="lbl">IVA ${v.alicuota}%:</span><span class="val">${money(v.monto)}</span></div>`;
+  });
   gruposArr.filter(g=>!g.sinMapeo).forEach(g => {
     const detalle = g.lineas.length > 1
       ? ` <span style="font-size:11px;color:var(--muted);">(${g.lineas.length} sumadas)</span>`
@@ -489,13 +532,23 @@ async function confirmarEnOdoo() {
       btn.disabled = false; return;
     }
 
-    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Aplicando percepciones a ${match.name}…</div>`;
+    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Aplicando neto, IVA y percepciones a ${match.name}…</div>`;
     const percepciones = grupos.map(g => ({
       tax_id: g.tax_id, monto: Math.round(g.monto*100)/100,
     }));
+    // Elegir IVA de mayor alícuota (típicamente el 21%) y buscar su tax_id en Odoo
+    let iva_tax_id = null;
+    if ((fac.ivas || []).length && ivasOdoo.length) {
+      const ivaPrincipal = [...fac.ivas].sort((a,b)=>b.alicuota-a.alicuota)[0];
+      const found = ivasOdoo.find(t => Math.abs(t.amount - ivaPrincipal.alicuota) < 0.01);
+      if (found) iva_tax_id = found.id;
+    }
+    const payload = { modo: 'aplicar_percepciones', move_id: match.id, percepciones };
+    if (fac.neto != null && fac.neto > 0) payload.neto = Math.round(fac.neto*100)/100;
+    if (iva_tax_id) payload.iva_tax_id = iva_tax_id;
     r = await fetch(FN_URL(), {
       method: 'POST', headers,
-      body: JSON.stringify({ modo: 'aplicar_percepciones', move_id: match.id, percepciones }),
+      body: JSON.stringify(payload),
     });
     d = await r.json();
     if (!d.ok) throw new Error(d.error);
