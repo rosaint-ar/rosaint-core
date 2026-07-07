@@ -712,9 +712,10 @@ function mostrarPanelDistribucion(match, lineas) {
   </div>`;
   out.innerHTML = h;
 
-  // Wire inputs
+  // Wire inputs: change = commit (autocompletar la última al resto); input = validar en vivo
   document.querySelectorAll('.dist-input').forEach(inp => {
     inp.addEventListener('input', validarDistribucion);
+    inp.addEventListener('change', () => autocompletarResto(Number(inp.dataset.idx)));
   });
   $('btnAplicarDist').addEventListener('click', async () => {
     const dist = obtenerDistribucion();
@@ -781,6 +782,20 @@ function distrProporcional() {
     acum += v;
     inp.value = v.toFixed(2);
   });
+  validarDistribucion();
+}
+
+// Al editar una línea (no la última), completar la última con el resto del subtotal.
+function autocompletarResto(idxEditado) {
+  const fac = window._facActual;
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+  const inputs = document.querySelectorAll('.dist-input');
+  const lastIdx = inputs.length - 1;
+  if (idxEditado === lastIdx) return; // editó la última: no autocompletar
+  let suma = 0;
+  inputs.forEach((inp, i) => { if (i !== lastIdx) suma += Number(inp.value) || 0; });
+  const resto = Math.round((neto - suma) * 100) / 100;
+  inputs[lastIdx].value = Math.max(0, resto).toFixed(2);
   validarDistribucion();
 }
 
