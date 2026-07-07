@@ -937,6 +937,8 @@ document.getElementById('orden').onchange = e => { filtro.orden = e.target.value
 document.getElementById('fwa').onchange   = e => { filtro.fwa = e.target.value; renderLista(); };
 document.getElementById('modal').onclick  = e => { if (e.target.id === 'modal') closeModal(); };
 
+window.abrirConfigMensajes = abrirConfigMensajes;
+cargarPlantillas();
 load();
 </script>
 </body>
