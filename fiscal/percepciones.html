@@ -630,45 +630,221 @@ async function confirmarEnOdoo() {
       btn.disabled = false; return;
     }
 
-    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Aplicando neto, IVA y percepciones a ${match.name}…</div>`;
-    const percepciones = grupos.map(g => ({
-      tax_id: g.tax_id, monto: Math.round(g.monto*100)/100,
-    }));
-    // Elegir IVA de mayor alícuota (típicamente el 21%) y buscar su tax_id en Odoo
-    let iva_tax_id = null;
-    if ((fac.ivas || []).length && ivasOdoo.length) {
-      const ivaPrincipal = [...fac.ivas].sort((a,b)=>b.alicuota-a.alicuota)[0];
-      const found = ivasOdoo.find(t => Math.abs(t.amount - ivaPrincipal.alicuota) < 0.01);
-      if (found) iva_tax_id = found.id;
-    }
-    const payload = { modo: 'aplicar_percepciones', move_id: match.id, percepciones };
-    if (fac.neto != null && fac.neto > 0) payload.neto = Math.round(fac.neto*100)/100;
-    if (iva_tax_id) payload.iva_tax_id = iva_tax_id;
+    // Leer líneas del borrador para decidir si hay que distribuir
+    out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Leyendo líneas del borrador…</div>`;
     r = await fetch(FN_URL(), {
       method: 'POST', headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ modo: 'leer_borrador', move_id: match.id }),
     });
     d = await r.json();
     if (!d.ok) throw new Error(d.error);
 
-    let hh = `<div class="invoice" style="margin-top:14px;">
-      <div class="inv-head">
-        <div class="full">✓ Percepciones aplicadas a ${match.name}</div>
-        <div><span class="k">Total Odoo:</span> <span class="v">${money(d.cabecera.amount_total)}</span></div>
-        <div><span class="k">Aplicadas:</span> <span class="v">${d.aplicadas}</span></div>
-      </div>
-      <div class="totales">`;
-    (d.lineas_tax || []).forEach(l => {
-      hh += `<div class="row perc"><span class="lbl">${l.name}:</span><span class="val">${money(l.balance)}</span></div>`;
-    });
-    hh += `</div></div>
-      <div class="alerta ok">Listo. Revisá la factura en Odoo y confirmala a mano. El borrador NO fue posteado.</div>`;
-    out.innerHTML = hh;
+    window._borradorMatch = match;
+    if ((d.lineas_gasto || []).length > 1) {
+      // Multi-línea: mostrar panel de distribución
+      mostrarPanelDistribucion(match, d.lineas_gasto);
+      btn.disabled = false;
+      return;
+    }
+    // 1 línea: aplicar directo
+    await aplicarAOdoo(match.id, null);
   } catch (e) {
     out.innerHTML = `<div class="alerta err">Error: ${e.message}</div>`;
     btn.disabled = false;
   }
 }
+
+function mostrarPanelDistribucion(match, lineas) {
+  const fac = window._facActual;
+  const out = $('resultadoOdoo');
+  window._borradorLineas = lineas;
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+
+  // Distribución inicial: proporcional al price_unit actual del borrador
+  const totalActual = lineas.reduce((s,l)=>s + Number(l.price_unit || 0), 0);
+  const initial = totalActual > 0
+    ? lineas.map(l => Math.round((neto * Number(l.price_unit) / totalActual) * 100) / 100)
+    : lineas.map(() => Math.round((neto / lineas.length) * 100) / 100);
+  // Ajustar último para que sume exacto
+  const acumInicial = initial.slice(0, -1).reduce((a,b)=>a+b, 0);
+  initial[initial.length - 1] = Math.round((neto - acumInicial) * 100) / 100;
+
+  let h = `<div class="invoice" style="margin-top:14px; border-color: var(--muted);">
+    <div class="inv-head">
+      <div class="full">📊 Distribuir subtotal en ${lineas.length} líneas del borrador ${match.name}</div>
+      <div><span class="k">Subtotal PDF:</span> <span class="v">${money(neto)}</span></div>
+      <div><span class="k">IVA (a todas):</span> <span class="v">${money((fac.ivas||[]).reduce((s,v)=>s+v.monto,0))}</span></div>
+      <div><span class="k">Percepciones (a la 1ª):</span> <span class="v">${money((window._gruposActuales||[]).reduce((s,g)=>s+g.monto,0))}</span></div>
+    </div>
+    <div style="padding: 8px 4px; font-size:12px; color:var(--muted);">
+      Editá los montos manualmente o usá los shortcuts. La suma debe igualar el subtotal del PDF.
+    </div>
+    <div style="display: flex; gap:6px; flex-wrap: wrap; margin-bottom: 10px;">
+      <button class="btn secondary" style="font-size:12px; padding: 6px 10px;" onclick="distrEquitativa()">Repartir equitativo</button>
+      <button class="btn secondary" style="font-size:12px; padding: 6px 10px;" onclick="distrProporcional()">Proporcional al borrador</button>`;
+  lineas.forEach((l, i) => {
+    h += `<button class="btn secondary" style="font-size:12px; padding: 6px 10px;" onclick="distrTodoA(${i})">Todo a "${esc((l.producto || l.nombre || '').slice(0,25))}"</button>`;
+  });
+  h += `</div>
+    <table>
+      <thead><tr><th>Línea del borrador</th><th>Cuenta</th><th class="num">Actual</th><th class="num">Asignar</th></tr></thead>
+      <tbody>`;
+  lineas.forEach((l, i) => {
+    h += `<tr>
+      <td>${esc(l.producto || l.nombre || '(sin descripción)')}</td>
+      <td style="font-size:11px; color:var(--muted);">${esc(l.cuenta || '')}</td>
+      <td class="num" style="color:var(--muted);">${money(l.price_unit)}</td>
+      <td class="num">
+        <input type="number" step="0.01" min="0" class="dist-input" data-idx="${i}" value="${initial[i].toFixed(2)}" style="width: 130px; text-align: right; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-variant-numeric: tabular-nums;">
+      </td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+    <div class="totales" style="margin-top: 8px;">
+      <div class="row"><span class="lbl">Suma asignada:</span><span class="val" id="distSum">${money(neto)}</span></div>
+      <div class="row"><span class="lbl">Objetivo (subtotal PDF):</span><span class="val">${money(neto)}</span></div>
+      <div class="row" id="distDiff" style="font-size:12px;"></div>
+    </div>
+    <div class="actions-row" style="margin-top: 10px;">
+      <button class="btn secondary" onclick="cancelarDistribucion()">Cancelar</button>
+      <button class="btn primary" id="btnAplicarDist" disabled>Aplicar distribución a Odoo</button>
+    </div>
+  </div>`;
+  out.innerHTML = h;
+
+  // Wire inputs
+  document.querySelectorAll('.dist-input').forEach(inp => {
+    inp.addEventListener('input', validarDistribucion);
+  });
+  $('btnAplicarDist').addEventListener('click', async () => {
+    const dist = obtenerDistribucion();
+    await aplicarAOdoo(window._borradorMatch.id, dist);
+  });
+  validarDistribucion();
+}
+
+function obtenerDistribucion() {
+  const inputs = document.querySelectorAll('.dist-input');
+  const lineas = window._borradorLineas;
+  return Array.from(inputs).map((inp, i) => ({
+    line_id: lineas[i].id,
+    price_unit: Number(inp.value) || 0,
+  }));
+}
+
+function validarDistribucion() {
+  const fac = window._facActual;
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+  const dist = obtenerDistribucion();
+  const suma = Math.round(dist.reduce((s,d)=>s + d.price_unit, 0) * 100) / 100;
+  $('distSum').textContent = money(suma);
+  const dif = Math.round((suma - neto) * 100) / 100;
+  const diffEl = $('distDiff');
+  const btn = $('btnAplicarDist');
+  if (Math.abs(dif) < 0.01) {
+    diffEl.innerHTML = `<span class="lbl" style="color:#2ea043;">✓ Suma coincide con el subtotal</span><span class="val"></span>`;
+    btn.disabled = false;
+  } else if (dif > 0) {
+    diffEl.innerHTML = `<span class="lbl" style="color:#dc3545;">⚠ Sobra:</span><span class="val" style="color:#dc3545;">${money(dif)}</span>`;
+    btn.disabled = true;
+  } else {
+    diffEl.innerHTML = `<span class="lbl" style="color:#dc3545;">⚠ Falta:</span><span class="val" style="color:#dc3545;">${money(Math.abs(dif))}</span>`;
+    btn.disabled = true;
+  }
+}
+
+function distrEquitativa() {
+  const fac = window._facActual;
+  const inputs = document.querySelectorAll('.dist-input');
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+  const parte = Math.floor((neto / inputs.length) * 100) / 100;
+  inputs.forEach((inp, i) => {
+    inp.value = (i === inputs.length - 1
+      ? (neto - parte * (inputs.length - 1))
+      : parte).toFixed(2);
+  });
+  validarDistribucion();
+}
+
+function distrProporcional() {
+  const fac = window._facActual;
+  const inputs = document.querySelectorAll('.dist-input');
+  const lineas = window._borradorLineas;
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+  const total = lineas.reduce((s,l)=>s + Number(l.price_unit || 0), 0);
+  if (total <= 0) return distrEquitativa();
+  let acum = 0;
+  inputs.forEach((inp, i) => {
+    const v = i === inputs.length - 1
+      ? Math.round((neto - acum) * 100) / 100
+      : Math.round((neto * Number(lineas[i].price_unit) / total) * 100) / 100;
+    acum += v;
+    inp.value = v.toFixed(2);
+  });
+  validarDistribucion();
+}
+
+function distrTodoA(idx) {
+  const fac = window._facActual;
+  const inputs = document.querySelectorAll('.dist-input');
+  const neto = Math.round((fac.neto || 0) * 100) / 100;
+  inputs.forEach((inp, i) => inp.value = (i === idx ? neto : 0).toFixed(2));
+  validarDistribucion();
+}
+
+function cancelarDistribucion() {
+  $('resultadoOdoo').innerHTML = '';
+  $('btnConfirmar').disabled = false;
+}
+
+async function aplicarAOdoo(moveId, lineasDistribucion) {
+  const fac = window._facActual, grupos = window._gruposActuales;
+  const out = $('resultadoOdoo');
+  const headers = {
+    'Content-Type': 'application/json',
+    apikey: SB_KEY(),
+    Authorization: 'Bearer ' + SB_KEY(),
+  };
+  out.innerHTML = `<div class="status-bar"><span class="dot load"></span>Aplicando a Odoo…</div>`;
+  const percepciones = grupos.map(g => ({
+    tax_id: g.tax_id, monto: Math.round(g.monto*100)/100,
+  }));
+  let iva_tax_id = null;
+  if ((fac.ivas || []).length && ivasOdoo.length) {
+    const ivaPrincipal = [...fac.ivas].sort((a,b)=>b.alicuota-a.alicuota)[0];
+    const found = ivasOdoo.find(t => Math.abs(t.amount - ivaPrincipal.alicuota) < 0.01);
+    if (found) iva_tax_id = found.id;
+  }
+  const payload = { modo: 'aplicar_percepciones', move_id: moveId, percepciones };
+  if (iva_tax_id) payload.iva_tax_id = iva_tax_id;
+  if (lineasDistribucion) {
+    payload.lineas_distribucion = lineasDistribucion;
+  } else if (fac.neto != null && fac.neto > 0) {
+    payload.neto = Math.round(fac.neto*100)/100;
+  }
+  const r = await fetch(FN_URL(), { method: 'POST', headers, body: JSON.stringify(payload) });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error);
+
+  const match = window._borradorMatch || { name: 'borrador' };
+  let hh = `<div class="invoice" style="margin-top:14px;">
+    <div class="inv-head">
+      <div class="full">✓ Aplicado a ${match.name} ${d.modo === 'multi_linea' ? '(distribución multi-línea)' : ''}</div>
+      <div><span class="k">Total Odoo:</span> <span class="v">${money(d.cabecera.amount_total)}</span></div>
+      <div><span class="k">Percepciones aplicadas:</span> <span class="v">${d.aplicadas}</span></div>
+    </div>
+    <div class="totales">`;
+  (d.lineas_tax || []).forEach(l => {
+    hh += `<div class="row perc"><span class="lbl">${l.name}:</span><span class="val">${money(l.balance)}</span></div>`;
+  });
+  hh += `</div></div>
+    <div class="alerta ok">Listo. Revisá la factura en Odoo y confirmala a mano. El borrador NO fue posteado.</div>`;
+  out.innerHTML = hh;
+}
+window.distrEquitativa = distrEquitativa;
+window.distrProporcional = distrProporcional;
+window.distrTodoA = distrTodoA;
+window.cancelarDistribucion = cancelarDistribucion;
 </script>
 </body>
 </html>
