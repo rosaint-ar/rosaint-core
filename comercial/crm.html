@@ -411,6 +411,10 @@
     </div>
     <div class="tabs-actions">
       <span class="sync-info" id="syncInfo">…</span>
+      <button class="btn secondary" onclick="abrirConfigMensajes()" title="Configurar plantillas de mensaje">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Mensaje</span>
+      </button>
       <button class="btn secondary" id="btnSync" onclick="doSync()" title="Actualizar datos desde Odoo">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
         <span id="btnSyncTxt">Sincronizar</span>
@@ -787,15 +791,103 @@ function renderArchivados() {
     : '<div class="empty-view">No hay clientes archivados.</div>';
 }
 
+const LINK_LISTA_DEFAULT = 'https://rosaint.com.ar/listas/profesionales.html';
+// Fallback si la DB no responde (no debería pasar con sesión activa)
+const PLANTILLAS_FALLBACK = {
+  nunca_compro: 'Hola {nombre}! Te escribimos de {empresa}. Tenemos toda la línea profesional de cosmética con la mejor lista de precios. ¿Te comparto nuestra lista profesional actualizada? {link}',
+  reactivacion: 'Hola {nombre}! Te escribimos de {empresa}. Hace un tiempo no hacés tu pedido, ¿te comparto nuestra lista profesional actualizada para que veas si querés reponer stock? {link}',
+};
+let PLANTILLAS = { ...PLANTILLAS_FALLBACK };
+async function cargarPlantillas() {
+  try {
+    const { data } = await sb.from('crm_plantillas').select('clave, texto');
+    (data || []).forEach(p => { if (p.clave in PLANTILLAS_FALLBACK) PLANTILLAS[p.clave] = p.texto; });
+  } catch (_) { /* usa fallback */ }
+}
+function renderPlantilla(txt, ctx) {
+  return String(txt || '')
+    .replaceAll('{nombre}', ctx.nombre || '')
+    .replaceAll('{empresa}', ctx.empresa || EMPRESA)
+    .replaceAll('{link}', ctx.link || LINK_LISTA_DEFAULT)
+    .replaceAll('{producto}', ctx.producto || '');
+}
 function buildMsg(d) {
   const nombre = (d.nombre || '').split(' ')[0];
   const tp = topProd(d.partner_id);
-  if (d.segmento === 'nunca_compro')
-    return `Hola ${nombre}! Te escribimos de ${EMPRESA}. Tenemos toda la línea profesional de cosmética disponible con tu lista de precios. ¿Querés que te pasemos novedades y stock?`;
-  if (tp)
-    return `Hola ${nombre}! Te escribimos de ${EMPRESA}. Hace un tiempo no hacés tu pedido y queríamos saber si necesitás reponer ${tp.toLowerCase()} u otros productos. Tenemos stock disponible. ¿Te preparamos un pedido?`;
-  return `Hola ${nombre}! Te escribimos de ${EMPRESA}. Hace un tiempo no hacés tu pedido — ¿necesitás reponer stock? Estamos para ayudarte.`;
+  const clave = d.segmento === 'nunca_compro' ? 'nunca_compro' : 'reactivacion';
+  return renderPlantilla(PLANTILLAS[clave] || PLANTILLAS_FALLBACK[clave], {
+    nombre, empresa: EMPRESA, link: LINK_LISTA_DEFAULT, producto: tp ? tp.toLowerCase() : ''
+  });
 }
+
+// Modal de configuración de mensajes
+async function abrirConfigMensajes() {
+  await cargarPlantillas();
+  const html = `
+    <div class="modal-inner" style="max-width: 640px; padding: 24px;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px;">
+        <h2 style="margin:0; font-size:18px; font-weight:600;">Configurar mensajes de WhatsApp</h2>
+        <button onclick="cerrarConfigMensajes()" style="background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer;">×</button>
+      </div>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:14px; line-height:1.5;">
+        Podés usar estos placeholders: <code>{nombre}</code>, <code>{empresa}</code>, <code>{link}</code>, <code>{producto}</code>.
+        El link a la lista profesional es <code>${LINK_LISTA_DEFAULT}</code>.
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Clientes que nunca compraron</label>
+        <textarea id="tpl-nunca" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${PLANTILLAS.nunca_compro}</textarea>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Reactivación (dormidos / enfriándose / a reactivar)</label>
+        <textarea id="tpl-reactivacion" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${PLANTILLAS.reactivacion}</textarea>
+      </div>
+      <div id="tpl-preview" style="background:var(--surface-2); border-radius:6px; padding:12px; margin-bottom:14px; font-size:13px; line-height:1.5;">
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Previsualización con nombre "Georgina":</div>
+        <div id="tpl-preview-body"></div>
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button class="btn secondary" onclick="cerrarConfigMensajes()">Cancelar</button>
+        <button class="btn primary" id="btnGuardarTpl">Guardar</button>
+      </div>
+    </div>
+  `;
+  const bg = document.createElement('div');
+  bg.id = 'modalConfigMsg';
+  bg.className = 'modal-bg show';
+  bg.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;';
+  bg.innerHTML = `<div style="background:var(--surface); border-radius:12px; width:100%; max-width:640px; max-height:92vh; overflow-y:auto; border:1px solid var(--border);">${html}</div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e => { if (e.target === bg) cerrarConfigMensajes(); });
+
+  const preview = () => {
+    const nunca = document.getElementById('tpl-nunca').value;
+    const react = document.getElementById('tpl-reactivacion').value;
+    const previewBody = document.getElementById('tpl-preview-body');
+    previewBody.innerHTML = `<div style="margin-bottom:6px;"><b>Nunca compró:</b> ${renderPlantilla(nunca, { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT })}</div><div><b>Reactivación:</b> ${renderPlantilla(react, { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT, producto:'crema exfoliante corporal' })}</div>`;
+  };
+  document.getElementById('tpl-nunca').addEventListener('input', preview);
+  document.getElementById('tpl-reactivacion').addEventListener('input', preview);
+  preview();
+
+  document.getElementById('btnGuardarTpl').onclick = async () => {
+    const nunca = document.getElementById('tpl-nunca').value.trim();
+    const react = document.getElementById('tpl-reactivacion').value.trim();
+    if (!nunca || !react) { alert('Los mensajes no pueden estar vacíos'); return; }
+    const { error } = await sb.from('crm_plantillas').upsert([
+      { clave: 'nunca_compro', texto: nunca, actualizado_en: new Date().toISOString() },
+      { clave: 'reactivacion', texto: react, actualizado_en: new Date().toISOString() },
+    ], { onConflict: 'clave' });
+    if (error) { alert('Error al guardar: ' + error.message); return; }
+    PLANTILLAS.nunca_compro = nunca;
+    PLANTILLAS.reactivacion = react;
+    cerrarConfigMensajes();
+  };
+}
+function cerrarConfigMensajes() {
+  const el = document.getElementById('modalConfigMsg');
+  if (el) el.remove();
+}
+window.cerrarConfigMensajes = cerrarConfigMensajes;
 let MODAL_PID = null;
 function openModal(pid) {
   const d = DATA.find(x => x.partner_id === pid); if (!d) return;
