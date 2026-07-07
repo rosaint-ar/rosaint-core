@@ -176,6 +176,7 @@ function setStatus(dot, msg, cls = '') {
   $('status').className = 'status-bar ' + cls;
 }
 const money = (n) => '$ ' + (n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 function norm(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
 
 // De un nombre de impuesto Odoo extrae tipo/provincia/resolución/alcance
