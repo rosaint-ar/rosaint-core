@@ -254,11 +254,46 @@ function parseMontoFinal(s){
   if(m) return parseFloat(m[1]+'.'+m[2]);
   return null;
 }
+function detectarTipoComprobante(texto, lineas) {
+  // Letra: A / B / C / E / M — buscar palabra suelta en las primeras 20 líneas
+  const primeras = lineas.slice(0, 25).join('\n').toUpperCase();
+  let letra = null;
+  // Muchos PDFs ponen la letra en una línea sola tipo "A" o "COD. 01"
+  const mLetra = primeras.match(/^\s*(A|B|C|E|M)\s*$/m);
+  if (mLetra) letra = mLetra[1];
+  // Código AFIP típico (01=Fact A, 06=Fact B, 11=Fact C, 03=NC A, 08=NC B, 13=NC C)
+  const mCod = primeras.match(/\b(?:C[ÓO]?D(?:IGO)?\.?|CÓD\.?|COD)\.?\s*[:N°º]?\s*(\d{2,3})\b/);
+  const cod = mCod ? mCod[1].padStart(3, '0') : null;
+  // Determinar tipo textual
+  let tipo = null;
+  if (/NOTA\s+DE\s+CR[ÉE]DITO/.test(primeras) || /^\s*N\.?\s*C[ÓO]?\s+/.test(primeras)) tipo = 'NC';
+  else if (/NOTA\s+DE\s+D[ÉE]BITO/.test(primeras) || /^\s*N\.?\s*D[ÉE]?\s+/.test(primeras)) tipo = 'ND';
+  else if (/FACTURA/.test(primeras)) tipo = 'FC';
+  else if (/RECIBO/.test(primeras)) tipo = 'RC';
+  // Inferir letra desde código si no la detectamos
+  if (!letra && cod) {
+    const codLetra = { '001':'A','002':'A','003':'A','004':'A','005':'A',
+                       '006':'B','007':'B','008':'B','009':'B','010':'B',
+                       '011':'C','012':'C','013':'C','015':'C',
+                       '019':'E','021':'E','081':'A','082':'B','083':'C','118':'M' };
+    if (codLetra[cod]) letra = codLetra[cod];
+  }
+  const label = [
+    tipo === 'NC' ? 'Nota de Crédito' :
+    tipo === 'ND' ? 'Nota de Débito' :
+    tipo === 'RC' ? 'Recibo' :
+    tipo === 'FC' ? 'Factura' : 'Comprobante',
+    letra || '?'
+  ].join(' ');
+  return { letra, codigo: cod, tipo, label };
+}
+
 function parsearFactura(lineas) {
   const texto = lineas.join('\n');
   const cuitProv = (texto.match(/C\.?U\.?I\.?T\.?:?\s*([\d]{2}-?[\d]{8}-?[\d])/i)||[])[1] || '';
   const comprobante = (texto.match(/\b(\d{3,5}-\d{8,12})\b/) || texto.match(/N[°º]?:?\s*(\d{3,5}-\d{6,12})/i) || [])[1] || '';
   const fecha = (texto.match(/emisi[oó]n:\s*([\d.\/]{8,10})/i) || texto.match(/fecha:\s*([\d.\/]{8,10})/i) || [])[1] || '';
+  const tipoComp = detectarTipoComprobante(texto, lineas);
   const conMonto = [];
   lineas.forEach((l, idx) => {
     const monto = parseMontoFinal(l);
@@ -283,7 +318,7 @@ function parsearFactura(lineas) {
     }
   }
   const { neto, ivas } = detectarNetoIva(conMonto, total);
-  return { cuitProv, comprobante, fecha, conMonto, neto, ivas, total };
+  return { cuitProv, comprobante, fecha, tipoComp, conMonto, neto, ivas, total };
 }
 
 // Detecta subtotal (neto) e IVA con alícuota.
@@ -472,16 +507,14 @@ function renderPreview(fac, percLineas, grupos) {
   const gruposArr = Object.values(grupos);
   const totalPerc = percLineas.reduce((a,p)=>a+p.monto,0);
 
+  const tc = fac.tipoComp || {};
   let h = `<div class="invoice">
     <div class="inv-head">
-      <div class="full">Factura de compra</div>
+      <div class="full">${esc(tc.label || 'Comprobante')}</div>
       <div><span class="k">CUIT proveedor:</span> <span class="v">${fac.cuitProv||'—'}</span></div>
-      <div><span class="k">Comprobante:</span> <span class="v">${fac.comprobante||'—'}</span></div>
+      <div><span class="k">Nº comprobante:</span> <span class="v">${fac.comprobante||'—'}</span></div>
       <div><span class="k">Fecha:</span> <span class="v">${fac.fecha||'—'}</span></div>
-      <div><span class="k">Subtotal (neto):</span> <span class="v">${fac.neto != null ? money(fac.neto) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
-      <div><span class="k">IVA:</span> <span class="v">${(fac.ivas||[]).length ? fac.ivas.map(v => `${v.alicuota}% = ${money(v.monto)}`).join(' · ') : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
-      <div><span class="k">Total factura:</span> <span class="v">${fac.total != null ? money(fac.total) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>
-      <div><span class="k">Percepciones:</span> <span class="v">${percLineas.length} → ${gruposArr.filter(g=>!g.sinMapeo).length} líneas agrupadas</span></div>
+      <div><span class="k">Tipo:</span> <span class="v">${esc(tc.label || '—')}${tc.codigo ? ' <span style="color:var(--muted); font-size:11px;">(cód. '+tc.codigo+')</span>' : ''}</span></div>
     </div>`;
 
   h += `<table><thead><tr>
@@ -500,13 +533,22 @@ function renderPreview(fac, percLineas, grupos) {
   });
   h += `</tbody></table>`;
 
+  // Bloque de totales en ORDEN VISUAL claro: Subtotal → IVA → Percepciones → Total.
+  const sumaIva = (fac.ivas || []).reduce((s,v)=>s+v.monto, 0);
+  const netoLabel = fac.neto != null ? money(fac.neto) : '<span style="color:#dc3545;">no detectado</span>';
   h += `<div class="totales">`;
-  if (fac.neto != null) {
-    h += `<div class="row"><span class="lbl">Subtotal (neto):</span><span class="val">${money(fac.neto)}</span></div>`;
+  h += `<div class="row"><span class="lbl">Subtotal (neto):</span><span class="val">${netoLabel}</span></div>`;
+  if ((fac.ivas||[]).length === 0) {
+    h += `<div class="row"><span class="lbl">IVA:</span><span class="val" style="color:#dc3545;">no detectado</span></div>`;
+  } else {
+    (fac.ivas || []).forEach(v => {
+      h += `<div class="row"><span class="lbl">IVA ${v.alicuota}%:</span><span class="val">${money(v.monto)}</span></div>`;
+    });
   }
-  (fac.ivas || []).forEach(v => {
-    h += `<div class="row"><span class="lbl">IVA ${v.alicuota}%:</span><span class="val">${money(v.monto)}</span></div>`;
-  });
+  // Separador visual antes de percepciones
+  if (gruposArr.filter(g=>!g.sinMapeo).length) {
+    h += `<div class="row" style="height:6px;"></div>`;
+  }
   gruposArr.filter(g=>!g.sinMapeo).forEach(g => {
     const detalle = g.lineas.length > 1
       ? ` <span style="font-size:11px;color:var(--muted);">(${g.lineas.length} sumadas)</span>`
@@ -516,7 +558,19 @@ function renderPreview(fac, percLineas, grupos) {
   if (grupos['_SIN_MAPEO']) {
     h += `<div class="row perc"><span class="lbl">⚠ Sin mapear:</span><span class="val">${money(grupos['_SIN_MAPEO'].monto)}</span></div>`;
   }
-  h += `<div class="row total"><span class="lbl">Total percepciones:</span><span class="val">${money(totalPerc)}</span></div>`;
+  // Total factura (fuente de verdad del PDF)
+  h += `<div class="row" style="height:6px;"></div>`;
+  h += `<div class="row total"><span class="lbl">TOTAL factura:</span><span class="val">${fac.total != null ? money(fac.total) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>`;
+  // Validación cruzada: subtotal + IVA + percepciones debe dar total
+  if (fac.neto != null && fac.total != null) {
+    const calculado = fac.neto + sumaIva + totalPerc;
+    const dif = Math.abs(fac.total - calculado);
+    if (dif > 1) {
+      h += `<div class="row" style="color:#dc3545; font-size:12px;"><span class="lbl">⚠ Diferencia neto+IVA+perc vs Total:</span><span class="val">${money(dif)}</span></div>`;
+    } else {
+      h += `<div class="row" style="color:#2ea043; font-size:12px;"><span class="lbl">✓ Neto + IVA + Percepciones = Total</span><span class="val"></span></div>`;
+    }
+  }
   h += `</div></div>`;
 
   const faltantes = percLineas.filter(p => p.faltaCrear);
@@ -534,11 +588,15 @@ function renderPreview(fac, percLineas, grupos) {
 
   window._gruposActuales = gruposArr.filter(g=>!g.sinMapeo);
   window._facActual = fac;
+  // Ahora se puede aplicar aunque no haya percepciones (solo neto + IVA).
   const puedeConfirmar = !!fac.cuitProv && !!fac.comprobante && !grupos['_SIN_MAPEO'] && !faltantes.length;
+  const btnTxt = percLineas.length
+    ? 'Buscar borrador en Odoo y aplicar'
+    : 'Buscar borrador en Odoo y aplicar solo neto + IVA';
 
   h += `<div class="actions-row">
     <button class="btn secondary" id="btnOtra">Cargar otra</button>
-    <button class="btn primary" id="btnConfirmar" ${puedeConfirmar?'':'disabled'}>Buscar borrador en Odoo y aplicar percepciones</button>
+    <button class="btn primary" id="btnConfirmar" ${puedeConfirmar?'':'disabled'}>${btnTxt}</button>
   </div><div id="resultadoOdoo"></div>`;
 
   $('preview').innerHTML = h;
