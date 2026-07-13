@@ -389,7 +389,9 @@ function detectarNetoIva(conMonto, total, lineasCompletas) {
   const RE_EXCLUIR_IVA = /PERCEP|RETENC|\bPERC\b|\bRET\b|PER\s+IVA/;
   const RE_PERC = /PERCEP|RETENC|\bPERC\b|\bRET\b/;
   const RE_SUBTOTAL_SUELTO = /^(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)\s*[:\-]?\s*$/;
-  const RE_IVA_SUELTO = /^IVA(?:\s+INSC\.?)?(?:\s*[-–(:])?\s*(21|10\s*5|27|5|2\s*5)?\s*%?\s*[)]?\s*$/;
+  // IVA suelto: "IVA 21,00%" (queda "IVA 21 00%" tras NORM), "IVA INSC 21%", "IVA (21%)", etc.
+  // Capturamos la alícuota si aparece (opcional). El monto se busca aparte.
+  const RE_IVA_SUELTO = /^IVA\b[^\d]{0,20}?(21|10\s*5|27|5|2\s*5)?\b/;
 
   const netos = [];
   const ivas = [];
@@ -410,39 +412,57 @@ function detectarNetoIva(conMonto, total, lineasCompletas) {
     }
   }
   // Fallback multi-línea: pdfjs a veces fragmenta "IVA 21,00% 5.217,51" en varias
-  // líneas separadas por columnas. Buscamos "IVA XX%" suelto y tomamos el monto de
-  // la siguiente línea con número. Mismo para SUBTOTAL suelto.
+  // líneas separadas por columnas, y en algunos casos (Google Ads) el monto queda
+  // ANTES de la etiqueta "IVA 21%". Buscamos en ±3 líneas alrededor.
   if (Array.isArray(lineasCompletas)) {
+    const buscarMontoCerca = (i) => {
+      // Prioriza vecinos inmediatos y avanza. Devuelve el primer monto plausible.
+      const orden = [-1, 1, -2, 2, -3, 3];
+      for (const off of orden) {
+        const idx = i + off;
+        if (idx < 0 || idx >= lineasCompletas.length) continue;
+        const lineaCruda = lineasCompletas[idx];
+        const nSig = NORM(lineaCruda);
+        // Evitar tomar el monto de una línea que sea a su vez otro concepto (percepción, total, etc.)
+        if (/PERCEP|RETENC|\bPERC\b|\bRET\b|TOTAL|REGIMEN/.test(nSig)) continue;
+        // La línea debe ser básicamente un monto (con posible signo/moneda), no un concepto largo.
+        const soloMonto = /^\$?\s*[\d.]{1,15},\d{2}\s*$/.test(lineaCruda.trim());
+        if (!soloMonto) continue;
+        const mM = parseMontoFinal(lineaCruda);
+        if (mM !== null && mM > 0) return mM;
+      }
+      return null;
+    };
+    const buscarAlicuotaCerca = (i) => {
+      const orden = [-1, 1, -2, 2, -3, 3];
+      for (const off of orden) {
+        const idx = i + off;
+        if (idx < 0 || idx >= lineasCompletas.length) continue;
+        const sig = NORM(lineasCompletas[idx]);
+        const mA = sig.match(/^(21|10\s*5|27|5|2\s*5)\s*%?\s*$/);
+        if (mA) return parseFloat(mA[1].replace(/\s+/g,'.'));
+      }
+      return null;
+    };
     for (let i = 0; i < lineasCompletas.length; i++) {
       const n = NORM(lineasCompletas[i]);
       if (RE_EXCLUIR_IVA.test(n)) continue;
       const mIva = n.match(RE_IVA_SUELTO);
-      if (mIva) {
-        // La alícuota puede estar en esta línea o en la siguiente. Buscar en las 3 siguientes.
+      // Es "IVA suelto" solo si la línea no tenía monto propio (si tenía, ya se
+      // procesó en el bucle de conMonto).
+      const tieneMontoPropio = /\d[\d.]*,\d{2}\s*$/.test(lineasCompletas[i].trim());
+      if (mIva && !tieneMontoPropio) {
         let alic = mIva[1] ? parseFloat(mIva[1].replace(/\s+/g,'.')) : null;
-        let monto = null;
-        for (let k = 1; k <= 3 && (alic===null || monto===null); k++) {
-          const sig = NORM(lineasCompletas[i+k] || '');
-          if (!alic) {
-            const mA = sig.match(/^(21|10\s*5|27|5|2\s*5)\s*%?\s*$/);
-            if (mA) alic = parseFloat(mA[1].replace(/\s+/g,'.'));
-          }
-          if (!monto) {
-            const mM = parseMontoFinal(lineasCompletas[i+k] || '');
-            if (mM !== null && mM > 0) monto = mM;
-          }
-        }
+        if (alic === null) alic = buscarAlicuotaCerca(i);
+        const monto = buscarMontoCerca(i);
         if (alic && monto && !ivas.some(x => Math.abs(x.monto - monto) < 0.01)) {
           ivas.push({ alicuota: alic, monto });
         }
       }
       if (RE_SUBTOTAL_SUELTO.test(n)) {
-        for (let k = 1; k <= 3; k++) {
-          const mM = parseMontoFinal(lineasCompletas[i+k] || '');
-          if (mM !== null && mM > 0) {
-            if (!netos.some(v => Math.abs(v - mM) < 0.01)) netos.push(mM);
-            break;
-          }
+        const monto = buscarMontoCerca(i);
+        if (monto !== null && !netos.some(v => Math.abs(v - monto) < 0.01)) {
+          netos.push(monto);
         }
       }
     }
