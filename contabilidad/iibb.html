@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IIBB por jurisdicción · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month] {
+      font: inherit; padding: 9px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); color: var(--text); min-width: 160px;
+    }
+    .field input[type=month]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+    .status-bar { font-size: 13px; color: var(--muted); margin: 12px 2px 16px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+    .status-bar.err { color: var(--hot); }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .status-bar .dot.load { background: var(--warn); }
+    .status-bar .dot.on { background: var(--ok); }
+    .status-bar .dot.off { background: var(--muted); }
+
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .summary .card { padding: 14px 16px; }
+    .summary .card .n { font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+    .summary .card .l { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .summary .card.base .n { color: var(--accent); }
+
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    th.num { text-align: right; }
+    tr.total td { font-weight: 700; background: var(--surface-2); }
+
+    .group { margin-bottom: 24px; }
+    .group h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
+    .empty { color: var(--muted); font-style: italic; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+    .nota { font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; line-height: 1.5; }
+    .nota strong { color: var(--text); }
+    .actions { display: flex; gap: 10px; margin: 4px 0 18px; flex-wrap: wrap; }
+  </style>
+</head>
+<body data-page="iibb" data-title="IIBB · Ventas por jurisdicción" data-subtitle="Informe mensual para el contador · base de Ingresos Brutos">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="card" style="margin-bottom:12px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Período</span>
+        <input type="month" id="periodo">
+      </div>
+      <button class="btn primary" id="btnGenerar">Generar informe</button>
+    </div>
+    <div class="hint">Trae de Odoo las ventas del mes (facturas menos notas de crédito) agrupadas por provincia según los datos de la factura. El "Total imponible" es la base de IIBB (neto, sin IVA).</div>
+  </div>
+
+  <div class="status-bar" id="status"><span class="dot off"></span>Elegí un mes y generá el informe.</div>
+  <div id="results"></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// IIBB · Ventas por jurisdicción
+// Llama a la edge function odoo-iibb-ventas, muestra el detalle por provincia
+// y genera el Excel en el mismo formato que el reporte "IIBB - Ventas por
+// jurisdicción" de Odoo (Provincia / Total imponible / Total en moneda).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+const FN_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iibb-ventas';
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+let ultimo = null; // { mes, data }
+
+// Default: mes anterior
+(function () {
+  const d = new Date();
+  d.setDate(1); d.setMonth(d.getMonth() - 1);
+  $('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+})();
+
+const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const capitalizar = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+function setStatus(dot, msg, isErr) {
+  $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`;
+  $('status').className = 'status-bar' + (isErr ? ' err' : '');
+}
+function nombrePeriodo(mes) {
+  const [y, m] = mes.split('-').map(Number);
+  return capitalizar(MESES[m - 1]) + ' ' + y;
+}
+
+async function consultar(mes) {
+  const r = await fetch(FN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + window.SUPABASE_KEY,
+      'apikey': window.SUPABASE_KEY,
+    },
+    body: JSON.stringify({ mes }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || 'Error consultando Odoo');
+  return d;
+}
+
+$('btnGenerar').addEventListener('click', async () => {
+  const mes = $('periodo').value;
+  if (!mes) { setStatus('off', 'Elegí un mes.', true); return; }
+  $('btnGenerar').disabled = true;
+  setStatus('load', 'Consultando Odoo…');
+  try {
+    const d = await consultar(mes);
+    ultimo = d;
+    render(d);
+    setStatus('on', `Listo: ${nombrePeriodo(mes)} · ${d.netas_de_devoluciones.provincias.length} provincias.`);
+  } catch (err) {
+    setStatus('off', 'Error: ' + err.message, true);
+  }
+  $('btnGenerar').disabled = false;
+});
+
+function render(d) {
+  const netas = d.netas_de_devoluciones;
+  const solo = d.solo_facturas;
+  const ncs = d.detalle_notas_credito || [];
+  const hayNC = ncs.length > 0;
+
+  let h = `<div class="summary">
+    <div class="card base"><div class="n">${money(netas.total_imponible)}</div><div class="l">Total imponible (base IIBB)</div></div>
+    <div class="card"><div class="n">${money(netas.total_con_iva)}</div><div class="l">Total con IVA</div></div>
+    <div class="card"><div class="n">${netas.provincias.length}</div><div class="l">Jurisdicciones</div></div>
+  </div>`;
+
+  h += `<div class="actions">
+    <button class="btn primary" onclick="descargarExcel()">↓ Descargar Excel para el contador</button>
+  </div>`;
+
+  h += `<div class="group"><h2>Ventas por provincia — ${nombrePeriodo(d.mes)}</h2>
+    <table><thead><tr>
+      <th>Provincia</th><th class="num">Total imponible</th><th class="num">Total en moneda</th>
+    </tr></thead><tbody>`;
+  for (const p of netas.provincias) {
+    h += `<tr><td>${p.provincia}</td><td class="num">${money(p.imponible)}</td><td class="num">${money(p.total)}</td></tr>`;
+  }
+  h += `<tr class="total"><td>TOTAL</td><td class="num">${money(netas.total_imponible)}</td><td class="num">${money(netas.total_con_iva)}</td></tr>`;
+  h += `</tbody></table></div>`;
+
+  if (hayNC) {
+    h += `<div class="group"><h2>Notas de crédito del mes <span class="badge">${ncs.length}</span></h2>
+      <p class="nota">Estas notas de crédito <strong>ya están restadas</strong> del total de arriba (la base de IIBB va neta de devoluciones). Sin restarlas, el imponible sería ${money(solo.total_imponible)}.</p>
+      <table><thead><tr>
+        <th>Comprobante</th><th>Fecha</th><th>Cliente</th><th>Provincia</th><th class="num">Imponible</th><th>Motivo</th>
+      </tr></thead><tbody>`;
+    for (const n of ncs) {
+      h += `<tr>
+        <td>${n.comprobante || ''}</td>
+        <td>${n.fecha || ''}</td>
+        <td>${n.cliente || ''}</td>
+        <td>${n.provincia || ''}</td>
+        <td class="num">${money(n.imponible)}</td>
+        <td>${n.motivo || ''}</td>
+      </tr>`;
+    }
+    h += `</tbody></table></div>`;
+  } else {
+    h += `<p class="nota">No hubo notas de crédito en el mes.</p>`;
+  }
+
+  $('results').innerHTML = h;
+}
+
+function descargarExcel() {
+  if (!ultimo) return;
+  const d = ultimo;
+  const netas = d.netas_de_devoluciones;
+  const [y, m] = d.mes.split('-').map(Number);
+  const nombreMes = MESES[m - 1];
+
+  // Mismo formato que el reporte de Odoo: fila Total, fila del mes, y provincias.
+  const aoa = [];
+  aoa.push(['', 'Total', '']);
+  aoa.push(['', 'Total imponible', 'Total en moneda']);
+  aoa.push(['Total', netas.total_imponible, netas.total_con_iva]);
+  aoa.push(['     ' + nombreMes + ' ' + y, netas.total_imponible, netas.total_con_iva]);
+  for (const p of netas.provincias) {
+    aoa.push(['          ' + p.provincia, p.imponible, p.total]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 40 }, { wch: 18 }, { wch: 18 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ventas por jurisdicción');
+  XLSX.writeFile(wb, `Análisis de facturas ventas - ${capitalizar(nombreMes)} ${y}.xlsx`);
+}
+</script>
+</body>
+</html>

@@ -31,6 +31,10 @@ const MENU = [
   { type: 'item', id: 'calidad',        label: 'Calidad',         href: '#',                        status: 'soon' },
   { type: 'item', id: 'administracion', label: 'Administración',  href: '#',                        status: 'soon' },
 
+  { type: 'group', label: 'Contabilidad' },
+  { type: 'item', id: 'iibb',        label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',       status: 'ready' },
+  { type: 'item', id: 'librosiva',   label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html', status: 'soon' },
+
   { type: 'group', label: 'Sistema' },
   { type: 'item', id: 'sistema',       label: 'Sistema',       href: 'sistema/index.html', status: 'ready' },
 ];
@@ -101,6 +105,8 @@ const MODULE_ICONS = {
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  iibb:           '<svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>',
+  librosiva:      '<svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
   calidad:        '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>',
   administracion: '<svg viewBox="0 0 24 24"><path d="M3 7h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/><circle cx="16" cy="13" r="1.3"/></svg>',
   sistema:        '<svg viewBox="0 0 24 24"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.4"/><circle cx="15" cy="16" r="2.4"/></svg>',
