@@ -343,10 +343,11 @@ function detectarNetoIva(conMonto, total) {
 
   const netos = [];
   const ivas = [];
-  let sumaPerc = 0;
   for (const x of conMonto) {
     const n = NORM(x.concepto);
-    // Exclusión de TOTAL: usa \b para no matchear el "TOTAL" dentro de SUBTOTAL.
+    // Excluir líneas de "Regímenes Especiales" o "Total percepciones" (son subtotales,
+    // no percepciones individuales). También excluir "TOTAL" que no sea "TOTAL NETO/GRAVADO".
+    if (/REGIMENES?\s+ESPECIALES?|TOTAL\s+PERCEP|SUMA\s+PERCEP/.test(n)) continue;
     if (RE_NETO.test(n) && !/\bTOTAL\b(?!\s+NETO|\s+GRAVADO)/.test(n)) {
       netos.push(x.monto);
       continue;
@@ -357,10 +358,26 @@ function detectarNetoIva(conMonto, total) {
       ivas.push({ alicuota, monto: x.monto });
       continue;
     }
-    if (RE_PERC.test(n)) sumaPerc += x.monto;
   }
-  const neto = netos.length ? netos.reduce((a,b)=>a+b, 0) : null;
-  // Nota: no se calcula el neto por resta. Debe leerse explícito del PDF.
+  // Si hay múltiples subtotales detectados (típico de Google Ads: uno con IVA
+  // incluido y otro neto), tomar el que sea coherente con: neto + IVA = otro_subtotal.
+  let neto = null;
+  if (netos.length === 1) {
+    neto = netos[0];
+  } else if (netos.length > 1) {
+    const sumaIva = ivas.reduce((a,b)=>a + b.monto, 0);
+    // Buscar el par (menor, mayor) tal que menor + iva = mayor
+    let mejor = null; let mejorDif = Infinity;
+    for (let i = 0; i < netos.length; i++) {
+      for (let j = 0; j < netos.length; j++) {
+        if (i === j) continue;
+        const dif = Math.abs(netos[i] + sumaIva - netos[j]);
+        if (dif < mejorDif) { mejorDif = dif; mejor = netos[i]; }
+      }
+    }
+    // Si la ecuación no cuadra bien, fallback: tomar el subtotal más chico (más probable neto puro)
+    neto = mejorDif < 2 ? mejor : Math.min(...netos);
+  }
   return { neto, ivas };
 }
 
