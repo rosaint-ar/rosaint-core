@@ -390,8 +390,8 @@ function detectarNetoIva(conMonto, total, lineasCompletas) {
   const RE_PERC = /PERCEP|RETENC|\bPERC\b|\bRET\b/;
   const RE_SUBTOTAL_SUELTO = /^(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)\s*[:\-]?\s*$/;
   // IVA suelto: "IVA 21,00%" (queda "IVA 21 00%" tras NORM), "IVA INSC 21%", "IVA (21%)", etc.
-  // Capturamos la alícuota si aparece (opcional). El monto se busca aparte.
-  const RE_IVA_SUELTO = /^IVA\b[^\d]{0,20}?(21|10\s*5|27|5|2\s*5)?\b/;
+  // La alícuota es OBLIGATORIA en el match: así descartamos "IVA: Responsable Inscripto".
+  const RE_IVA_SUELTO = /^IVA\b[^\d]{0,20}(21|10\s*5|27|5|2\s*5)\b/;
 
   const netos = [];
   const ivas = [];
