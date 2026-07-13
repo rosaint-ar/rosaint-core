@@ -187,11 +187,50 @@ function parseImpuesto(name) {
   }
   const m = n.match(/IIBB\s+(.+?)\s*[–-]\s*(.+)$/);
   if (m) {
-    const prov = m[1].trim(), resto = m[2].trim();
+    // Limpiar paréntesis del prov: "CABA (AGIP)" → "CABA"
+    const prov = m[1].trim().replace(/\s*\(.*?\)\s*/g, '').trim();
+    const resto = m[2].trim();
     const rm = resto.match(/(?:RG|RES\.?|R\.?)\s*([\d/]+)/i);
     return { tipo:'IIBB', prov, res: rm? rm[1].replace(/\/.*$/,'') : null, alcance: /esp|elec/i.test(resto)?'especial':'general' };
   }
   return { tipo:'?', prov:null, res:null, alcance:'general' };
+}
+
+// Diccionario de sinónimos de jurisdicción. Mapea nombres cortos, alias, organismos,
+// abreviaturas al nombre canónico. Se usa tanto para matchear en el PDF como para
+// normalizar nombres de Odoo.
+const SINONIMOS_PROV = [
+  { canon: 'CABA', re: /\b(CAP\s*FEDERAL|CAPITAL\s+FEDERAL|CABA|C\s*A\s*B\s*A|CIUDAD\s+(?:AUT[OÓ]NOMA\s+DE\s+)?BUENOS\s+AIRES|AGIP)\b/i },
+  { canon: 'Buenos Aires', re: /\b(BUENOS\s+AIRES|BS\s*AS|PROV(?:INCIA)?\s+(?:DE\s+)?BS\s*AS|PBA|ARBA)\b/i },
+  { canon: 'Santa Fe',   re: /\b(SANTA\s+FE|API\s+SANTA\s+FE|API)\b/i },
+  { canon: 'Córdoba',    re: /\b(C[OÓ]RDOBA|CBA)\b/i },
+  { canon: 'Mendoza',    re: /\b(MENDOZA|ATM)\b/i },
+  { canon: 'Chaco',      re: /\bCHACO\b/i },
+  { canon: 'Misiones',   re: /\bMISIONES\b/i },
+  { canon: 'Tucumán',    re: /\b(TUCUM|DGR\s+TUCUM)/i },
+  { canon: 'Entre Ríos', re: /\b(ENTRE\s+R[IÍ]OS|ATER)\b/i },
+  { canon: 'Salta',      re: /\bSALTA\b/i },
+  { canon: 'Neuquén',    re: /\b(NEUQU|DPR\s+NEUQU)/i },
+  { canon: 'Río Negro',  re: /\bR[IÍ]O\s+NEGRO\b/i },
+  { canon: 'Jujuy',      re: /\bJUJUY\b/i },
+  { canon: 'La Rioja',   re: /\bLA\s+RIOJA\b/i },
+  { canon: 'Chubut',     re: /\bCHUBUT\b/i },
+  { canon: 'Formosa',    re: /\bFORMOSA\b/i },
+  { canon: 'Corrientes', re: /\bCORRIENTES\b/i },
+  { canon: 'San Juan',   re: /\bSAN\s+JUAN\b/i },
+  { canon: 'San Luis',   re: /\bSAN\s+LUIS\b/i },
+  { canon: 'La Pampa',   re: /\bLA\s+PAMPA\b/i },
+  { canon: 'Santa Cruz', re: /\bSANTA\s+CRUZ\b/i },
+  { canon: 'Tierra del Fuego', re: /\bTIERRA\s+DEL\s+FUEGO\b/i },
+  { canon: 'Catamarca',  re: /\bCATAMARCA\b/i },
+  { canon: 'Santiago del Estero', re: /\bSANTIAGO\s+DEL\s+ESTERO\b/i },
+];
+function detectarJurisdiccion(texto) {
+  const t = String(texto || '');
+  for (const s of SINONIMOS_PROV) {
+    if (s.re.test(t)) return s.canon;
+  }
+  return null;
 }
 
 async function cargarImpuestosOdoo() {
@@ -412,30 +451,22 @@ function clasificarReglas(concepto) {
   if (/(PERC?\.?|PERCEP\w*|RET\.?)\s*\.?\s*(IVA|VALOR AGREGADO)|(IVA|VALOR AGREGADO)\s*[-.]?\s*(PERC|RET|RG)/.test(n) && !/IIBB|INGRESOS BRUTOS|ING\.? BRUTOS/.test(n)) {
     return { tipo:'IVA', prov:null, res:null, alcance: /ESPECIAL/.test(n)?'especial':'general' };
   }
+  // Detectar jurisdicción usando el diccionario global de sinónimos.
   const provincias = [...new Set(impuestosParseados.filter(t=>t.prov).map(t=>t.prov))];
-  const organismos = [
-    { re: /\bAGIP\b/, prov: 'CABA' },
-    { re: /\bARBA\b/, prov: 'Buenos Aires' },
-    { re: /\bAPI\b/, prov: 'Santa Fe' },
-    { re: /\bATM\b/, prov: 'Mendoza' },
-    { re: /\bDGR\b.*C[OÓ]RDOBA|RENTAS C[OÓ]RDOBA/, prov: 'Córdoba' },
-    { re: /\bDGR\b.*TUCUM/, prov: 'Tucumán' },
-    { re: /\bATER\b/, prov: 'Entre Ríos' },
-    { re: /\bDGR\b.*SALTA/, prov: 'Salta' },
-    { re: /\bDPR\b.*NEUQU|\bDPR\b NEUQU/, prov: 'Neuquén' },
-  ];
+  const canonDetectada = detectarJurisdiccion(n);
   let provDetectada = null;
-  for (const pr of provincias) {
-    const prN = norm(pr);
-    if (n.includes(prN)) { provDetectada = pr; break; }
-    if (prN==='CABA' && /CIUDAD.*BUENOS AIRES|C\.?A\.?B\.?A/.test(n)) { provDetectada = pr; break; }
+  if (canonDetectada) {
+    // Match contra las provincias de Odoo (que también pueden tener sinónimos).
+    provDetectada = provincias.find(p => {
+      const pCanon = detectarJurisdiccion(p) || p;
+      return pCanon === canonDetectada || norm(p) === norm(canonDetectada);
+    }) || null;
   }
   if (!provDetectada) {
-    for (const o of organismos) {
-      if (o.re.test(n)) {
-        const found = provincias.find(p => norm(p)===norm(o.prov));
-        if (found) { provDetectada = found; break; }
-      }
+    // Fallback legado: por si un tax de Odoo tiene un nombre raro que no matchea sinónimos.
+    for (const pr of provincias) {
+      const prN = norm(pr);
+      if (n.includes(prN)) { provDetectada = pr; break; }
     }
   }
   const rm = n.match(/(?:RG|RES\.?|RESOLUCION|NORMA|R\.?)\s*N?[°º]?\s*(\d+)/);
