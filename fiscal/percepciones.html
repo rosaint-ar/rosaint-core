@@ -671,6 +671,21 @@ function renderPreview(fac, percLineas, grupos) {
   }
   h += `</div></div>`;
 
+  // Panel de debug: siempre visible como <details> colapsado. Muestra el texto
+  // crudo que pdfjs extrajo del PDF. Sirve para diagnosticar por qué algo no se
+  // detecta sin necesidad de abrir la consola.
+  const lineasCrudas = (window._debugFactura && window._debugFactura.lineas) || [];
+  h += `<details style="margin-top:12px; background:#f7f5f2; border:1px solid #e5e0d8; border-radius:6px; padding:10px 14px;">
+    <summary style="cursor:pointer; font-weight:600; font-size:13px; color:#666;">🔍 Ver texto crudo del PDF (${lineasCrudas.length} líneas) — para diagnosticar detecciones</summary>
+    <div style="margin-top:10px; font-family:monospace; font-size:11px; background:#fff; padding:10px; border-radius:4px; max-height:400px; overflow:auto; white-space:pre-wrap;">${
+      lineasCrudas.map((l, i) => `<div><span style="color:#999;">${String(i+1).padStart(3,' ')}:</span> ${esc(l)}</div>`).join('')
+    }</div>
+    <div style="margin-top:8px; font-size:11px; color:#666;">
+      Copiá el bloque completo y pasámelo si algún campo no se detecta.
+      <button class="btn secondary" style="padding:2px 10px; font-size:11px; margin-left:8px;" onclick="navigator.clipboard.writeText(JSON.stringify(window._debugFactura.lineas, null, 2))">Copiar</button>
+    </div>
+  </details>`;
+
   const faltantes = percLineas.filter(p => p.faltaCrear);
   if (faltantes.length) {
     h += `<div class="alerta err"><b>Faltan crear ${faltantes.length} impuesto(s) en Odoo:</b><br>`;
