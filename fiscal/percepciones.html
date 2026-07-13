@@ -199,31 +199,34 @@ function parseImpuesto(name) {
 // Diccionario de sinónimos de jurisdicción. Mapea nombres cortos, alias, organismos,
 // abreviaturas al nombre canónico. Se usa tanto para matchear en el PDF como para
 // normalizar nombres de Odoo.
+// Los separadores toleran punto (Cap. Federal), espacio o guión.
+const SEP = '[\\s.\\-]*';
+const SEP1 = '[\\s.\\-]+';
 const SINONIMOS_PROV = [
-  { canon: 'CABA', re: /\b(CAP\s*FEDERAL|CAPITAL\s+FEDERAL|CABA|C\s*A\s*B\s*A|CIUDAD\s+(?:AUT[OÓ]NOMA\s+DE\s+)?BUENOS\s+AIRES|AGIP)\b/i },
-  { canon: 'Buenos Aires', re: /\b(BUENOS\s+AIRES|BS\s*AS|PROV(?:INCIA)?\s+(?:DE\s+)?BS\s*AS|PBA|ARBA)\b/i },
-  { canon: 'Santa Fe',   re: /\b(SANTA\s+FE|API\s+SANTA\s+FE|API)\b/i },
+  { canon: 'CABA', re: new RegExp(`\\b(CAP${SEP}FEDERAL|CAPITAL${SEP1}FEDERAL|CABA|C${SEP}A${SEP}B${SEP}A|CIUDAD${SEP1}(?:AUT[OÓ]NOMA${SEP1}DE${SEP1})?BUENOS${SEP1}AIRES|AGIP)\\b`, 'i') },
+  { canon: 'Buenos Aires', re: new RegExp(`\\b(BUENOS${SEP1}AIRES|BS${SEP}AS|PROV(?:INCIA)?${SEP1}(?:DE${SEP1})?BS${SEP}AS|PBA|ARBA)\\b`, 'i') },
+  { canon: 'Santa Fe',   re: new RegExp(`\\b(SANTA${SEP1}FE|API${SEP1}SANTA${SEP1}FE|API)\\b`, 'i') },
   { canon: 'Córdoba',    re: /\b(C[OÓ]RDOBA|CBA)\b/i },
   { canon: 'Mendoza',    re: /\b(MENDOZA|ATM)\b/i },
   { canon: 'Chaco',      re: /\bCHACO\b/i },
   { canon: 'Misiones',   re: /\bMISIONES\b/i },
-  { canon: 'Tucumán',    re: /\b(TUCUM|DGR\s+TUCUM)/i },
-  { canon: 'Entre Ríos', re: /\b(ENTRE\s+R[IÍ]OS|ATER)\b/i },
+  { canon: 'Tucumán',    re: /\b(TUCUM|DGR[\s.\-]+TUCUM)/i },
+  { canon: 'Entre Ríos', re: new RegExp(`\\b(ENTRE${SEP1}R[IÍ]OS|ATER)\\b`, 'i') },
   { canon: 'Salta',      re: /\bSALTA\b/i },
-  { canon: 'Neuquén',    re: /\b(NEUQU|DPR\s+NEUQU)/i },
-  { canon: 'Río Negro',  re: /\bR[IÍ]O\s+NEGRO\b/i },
+  { canon: 'Neuquén',    re: /\b(NEUQU|DPR[\s.\-]+NEUQU)/i },
+  { canon: 'Río Negro',  re: new RegExp(`\\bR[IÍ]O${SEP1}NEGRO\\b`, 'i') },
   { canon: 'Jujuy',      re: /\bJUJUY\b/i },
-  { canon: 'La Rioja',   re: /\bLA\s+RIOJA\b/i },
+  { canon: 'La Rioja',   re: new RegExp(`\\bLA${SEP1}RIOJA\\b`, 'i') },
   { canon: 'Chubut',     re: /\bCHUBUT\b/i },
   { canon: 'Formosa',    re: /\bFORMOSA\b/i },
   { canon: 'Corrientes', re: /\bCORRIENTES\b/i },
-  { canon: 'San Juan',   re: /\bSAN\s+JUAN\b/i },
-  { canon: 'San Luis',   re: /\bSAN\s+LUIS\b/i },
-  { canon: 'La Pampa',   re: /\bLA\s+PAMPA\b/i },
-  { canon: 'Santa Cruz', re: /\bSANTA\s+CRUZ\b/i },
-  { canon: 'Tierra del Fuego', re: /\bTIERRA\s+DEL\s+FUEGO\b/i },
+  { canon: 'San Juan',   re: new RegExp(`\\bSAN${SEP1}JUAN\\b`, 'i') },
+  { canon: 'San Luis',   re: new RegExp(`\\bSAN${SEP1}LUIS\\b`, 'i') },
+  { canon: 'La Pampa',   re: new RegExp(`\\bLA${SEP1}PAMPA\\b`, 'i') },
+  { canon: 'Santa Cruz', re: new RegExp(`\\bSANTA${SEP1}CRUZ\\b`, 'i') },
+  { canon: 'Tierra del Fuego', re: new RegExp(`\\bTIERRA${SEP1}DEL${SEP1}FUEGO\\b`, 'i') },
   { canon: 'Catamarca',  re: /\bCATAMARCA\b/i },
-  { canon: 'Santiago del Estero', re: /\bSANTIAGO\s+DEL\s+ESTERO\b/i },
+  { canon: 'Santiago del Estero', re: new RegExp(`\\bSANTIAGO${SEP1}DEL${SEP1}ESTERO\\b`, 'i') },
 ];
 function detectarJurisdiccion(texto) {
   const t = String(texto || '');
@@ -271,13 +274,19 @@ async function extraerTextoPdf(arrayBuffer) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    const porY = {};
-    tc.items.forEach(it => {
-      const y = Math.round(it.transform[5]);
-      (porY[y] = porY[y] || []).push({ x: it.transform[4], s: it.str });
-    });
-    Object.keys(porY).sort((a,b)=>b-a).forEach(y => {
-      const linea = porY[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();
+    // Agrupar por Y con tolerancia: dos items con Y que difiere en ≤2px van a la
+    // misma línea. Google Ads y otros PDFs suelen tener diferencias de fracción
+    // por baseline que rompen la agrupación exacta.
+    const items = tc.items.map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str }))
+                          .sort((a,b) => b.y - a.y);
+    const grupos = [];
+    for (const it of items) {
+      const g = grupos.find(g => Math.abs(g.y - it.y) <= 2);
+      if (g) g.items.push(it);
+      else grupos.push({ y: it.y, items: [it] });
+    }
+    grupos.forEach(g => {
+      const linea = g.items.sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();
       if (linea) lineas.push(linea);
     });
   }
@@ -357,7 +366,7 @@ function parsearFactura(lineas) {
       if (!isNaN(val) && val > 0) { total = val; break; }
     }
   }
-  const { neto, ivas } = detectarNetoIva(conMonto, total);
+  const { neto, ivas } = detectarNetoIva(conMonto, total, lineas);
   return { cuitProv, comprobante, fecha, tipoComp, conMonto, neto, ivas, total };
 }
 
@@ -365,7 +374,7 @@ function parsearFactura(lineas) {
 // - IVA: tolera paréntesis, guiones y espacios entre "IVA" y la alícuota.
 // - Neto: busca palabras clave. Si no aparece (facturas ML/Perfit), calcula
 //   neto = total - suma(IVA) - suma(percepciones).
-function detectarNetoIva(conMonto, total) {
+function detectarNetoIva(conMonto, total, lineasCompletas) {
   // NORM: normaliza "I.V.A." → "IVA" antes de convertir puntos a espacios,
   // así no perdemos la palabra IVA.
   const NORM = s => String(s || '')
@@ -379,6 +388,8 @@ function detectarNetoIva(conMonto, total) {
   const RE_IVA  = /\bIVA\b[^\d]{0,30}?(21|10\s*5|27|5|2\s*5)\s*%?/;
   const RE_EXCLUIR_IVA = /PERCEP|RETENC|\bPERC\b|\bRET\b|PER\s+IVA/;
   const RE_PERC = /PERCEP|RETENC|\bPERC\b|\bRET\b/;
+  const RE_SUBTOTAL_SUELTO = /^(SUBTOTAL|IMPORTE\s+NETO|IMP\s+NETO|NETO\s+GRAVADO|BASE\s+IMPONIBLE|NETO(?:\s+GRAV\w*)?)\s*[:\-]?\s*$/;
+  const RE_IVA_SUELTO = /^IVA(?:\s+INSC\.?)?(?:\s*[-–(:])?\s*(21|10\s*5|27|5|2\s*5)?\s*%?\s*[)]?\s*$/;
 
   const netos = [];
   const ivas = [];
@@ -396,6 +407,44 @@ function detectarNetoIva(conMonto, total) {
       const alicuota = parseFloat(m[1].replace(/\s+/g, '.'));
       ivas.push({ alicuota, monto: x.monto });
       continue;
+    }
+  }
+  // Fallback multi-línea: pdfjs a veces fragmenta "IVA 21,00% 5.217,51" en varias
+  // líneas separadas por columnas. Buscamos "IVA XX%" suelto y tomamos el monto de
+  // la siguiente línea con número. Mismo para SUBTOTAL suelto.
+  if (Array.isArray(lineasCompletas)) {
+    for (let i = 0; i < lineasCompletas.length; i++) {
+      const n = NORM(lineasCompletas[i]);
+      if (RE_EXCLUIR_IVA.test(n)) continue;
+      const mIva = n.match(RE_IVA_SUELTO);
+      if (mIva) {
+        // La alícuota puede estar en esta línea o en la siguiente. Buscar en las 3 siguientes.
+        let alic = mIva[1] ? parseFloat(mIva[1].replace(/\s+/g,'.')) : null;
+        let monto = null;
+        for (let k = 1; k <= 3 && (alic===null || monto===null); k++) {
+          const sig = NORM(lineasCompletas[i+k] || '');
+          if (!alic) {
+            const mA = sig.match(/^(21|10\s*5|27|5|2\s*5)\s*%?\s*$/);
+            if (mA) alic = parseFloat(mA[1].replace(/\s+/g,'.'));
+          }
+          if (!monto) {
+            const mM = parseMontoFinal(lineasCompletas[i+k] || '');
+            if (mM !== null && mM > 0) monto = mM;
+          }
+        }
+        if (alic && monto && !ivas.some(x => Math.abs(x.monto - monto) < 0.01)) {
+          ivas.push({ alicuota: alic, monto });
+        }
+      }
+      if (RE_SUBTOTAL_SUELTO.test(n)) {
+        for (let k = 1; k <= 3; k++) {
+          const mM = parseMontoFinal(lineasCompletas[i+k] || '');
+          if (mM !== null && mM > 0) {
+            if (!netos.some(v => Math.abs(v - mM) < 0.01)) netos.push(mM);
+            break;
+          }
+        }
+      }
     }
   }
   // Si hay múltiples subtotales detectados (típico de Google Ads: uno con IVA
