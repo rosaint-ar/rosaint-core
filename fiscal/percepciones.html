@@ -340,7 +340,14 @@ function detectarTipoComprobante(texto, lineas) {
 function parsearFactura(lineas) {
   const texto = lineas.join('\n');
   const cuitProv = (texto.match(/C\.?U\.?I\.?T\.?:?\s*([\d]{2}-?[\d]{8}-?[\d])/i)||[])[1] || '';
-  const comprobante = (texto.match(/\b(\d{3,5}-\d{8,12})\b/) || texto.match(/N[°º]?:?\s*(\d{3,5}-\d{6,12})/i) || [])[1] || '';
+  // Nº comprobante: tolera espacios alrededor del guion (Google escribe "0011 - 01342819",
+  // Mercado Libre lo pega "0011-01342819"). Prioriza el que viene tras "N°"; el fallback
+  // exige punto de venta de 4-5 dígitos para no confundir con el Nº de Ingresos Brutos
+  // del proveedor (ej. "901-2188512").
+  let comprobante = '';
+  const mComp = texto.match(/N[°º]\s*:?\s*(\d{3,5})\s*-\s*(\d{6,12})/i)
+             || texto.match(/\b(\d{4,5})\s*-\s*(\d{7,12})\b/);
+  if (mComp) comprobante = mComp[1] + '-' + mComp[2];
   const fecha = (texto.match(/emisi[oó]n:\s*([\d.\/]{8,10})/i) || texto.match(/fecha:\s*([\d.\/]{8,10})/i) || [])[1] || '';
   const tipoComp = detectarTipoComprobante(texto, lineas);
   const conMonto = [];
