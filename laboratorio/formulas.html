@@ -324,6 +324,50 @@
       padding: 4px 10px; font-size: 12px;
       display: inline-flex; align-items: center; gap: 4px;
     }
+
+    /* ---- Más ancho para el editor + scroll horizontal en tablas anchas ---- */
+    /* (evita que se corten las columnas de precios) */
+    #app-content { max-width: 1560px; }
+    .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #precios-table { min-width: 1240px; }
+    .lab-table th, .lab-table td.num { white-space: nowrap; }
+
+    /* ---- Modal "Agregar presentación" ---- */
+    .modal-form { max-width: 640px; width: 100%; max-height: 88vh; overflow-y: auto; }
+    .mf-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .mf-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px 14px; }
+    .mf-grid .full, .mf-grid-3 .full { grid-column: 1 / -1; }
+    .mf .campo { margin-bottom: 12px; }
+    .mf label {
+      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 4px;
+    }
+    .mf input, .mf select {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit;
+    }
+    .mf input:focus, .mf select:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
+    }
+    .mf input[type=radio], .mf input[type=checkbox] { width: auto; }
+    .mf .help { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .mf .fixed-val {
+      padding: 8px 12px; background: var(--surface-2);
+      border-radius: var(--radius-sm); font-size: 13px; color: var(--text);
+    }
+    .precio-box {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 6px;
+    }
+    .precio-opt { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .precio-opt label {
+      margin: 0; text-transform: none; letter-spacing: normal;
+      font-weight: 500; color: var(--text); font-size: 13px;
+    }
+    .deriv-fields { display: none; margin: 4px 0 6px 24px; }
+    .deriv-fields.on { display: block; }
+    .preview-precio { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .preview-precio b { color: var(--ok); }
   </style>
 </head>
 <body data-page="laboratorio" data-title="Editor de fórmula" data-subtitle="Composición · precios · INCI">
@@ -405,6 +449,7 @@
           <button class="btn primary btn-sm" id="btn-guardar-composicion" onclick="guardarComposicion()" disabled>Guardar cambios</button>
         </div>
       </div>
+      <div class="table-scroll">
       <table class="lab-table">
         <thead>
           <tr>
@@ -420,6 +465,7 @@
         <tbody id="composicion-body"></tbody>
         <tfoot id="composicion-foot"></tfoot>
       </table>
+      </div>
     </div>
 
     <!-- Presentaciones y precios -->
@@ -429,11 +475,15 @@
           <div class="sec-title">Presentaciones y precios</div>
           <div class="sec-sub">Una fila por SKU. Editá la rentabilidad objetivo o el precio final; el otro se recalcula. Semáforo de margen real por columna.</div>
         </div>
-        <button class="btn primary btn-sm" id="btn-guardar-precios" onclick="guardarPrecios()" disabled>Guardar cambios</button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn secondary btn-sm" onclick="abrirNuevaPresentacion()">+ Agregar presentación</button>
+          <button class="btn primary btn-sm" id="btn-guardar-precios" onclick="guardarPrecios()" disabled>Guardar cambios</button>
+        </div>
       </div>
 
       <div id="panel-relaciones-host"></div>
 
+      <div class="table-scroll">
       <table id="precios-table" class="lab-table">
         <thead>
           <tr>
@@ -461,6 +511,7 @@
         </thead>
         <tbody id="precios-body"></tbody>
       </table>
+      </div>
     </div>
 
     <!-- INCI -->
@@ -496,6 +547,112 @@
     <div class="actions">
       <button class="btn secondary btn-sm" onclick="cerrarModalDesvincular(false)">Cancelar</button>
       <button class="btn primary btn-sm" onclick="cerrarModalDesvincular(true)">Sí, desvincular</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: agregar una nueva presentación (SKU) a este granel -->
+<div class="modal-overlay" id="modal-presentacion" onclick="if(event.target===this)cerrarModalPresentacion()">
+  <div class="modal-box modal-form mf">
+    <h4>Agregar presentación</h4>
+    <div class="sec-sub" style="margin-bottom:14px;">
+      Se crea un SKU nuevo del granel <strong id="mp2-granel-nombre">—</strong> y se define su sistema de precios.
+    </div>
+
+    <div class="mf-grid">
+      <div class="campo">
+        <label>Código SKU</label>
+        <input type="text" id="mp2-codigo" maxlength="5" inputmode="numeric">
+        <div class="help" id="mp2-cod-help"></div>
+      </div>
+      <div class="campo">
+        <label>Estado</label>
+        <select id="mp2-estado">
+          <option value="vigente">vigente</option>
+          <option value="desarrollo">desarrollo</option>
+          <option value="descontinuado">descontinuado</option>
+        </select>
+      </div>
+      <div class="campo full">
+        <label>Nombre comercial</label>
+        <input type="text" id="mp2-nombre" placeholder="Ej: Aceite para Masajes «Neutro» 5 Lts">
+      </div>
+      <div class="campo">
+        <label>Envase</label>
+        <input type="text" id="mp2-envase" list="mp2-insumos" placeholder="Nombre o código…">
+      </div>
+      <div class="campo">
+        <label>Etiqueta (opcional)</label>
+        <input type="text" id="mp2-etiqueta" list="mp2-insumos" placeholder="Nombre o código…">
+      </div>
+      <datalist id="mp2-insumos"></datalist>
+    </div>
+
+    <div class="mf-grid-3">
+      <div class="campo">
+        <label>Tamaño (Kg / L)</label>
+        <input type="number" id="mp2-tamanio" step="0.001" min="0" placeholder="5">
+      </div>
+      <div class="campo">
+        <label>Etiquetas por hoja</label>
+        <input type="number" id="mp2-etiq-hoja" step="1" min="1" value="1">
+      </div>
+      <div class="campo">
+        <label>Granel</label>
+        <div class="fixed-val" id="mp2-granel">—</div>
+      </div>
+    </div>
+
+    <label style="display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; margin-bottom:4px;">Sistema de precios</label>
+    <div class="precio-box">
+      <div class="precio-opt">
+        <input type="radio" name="mp2-precio-modo" id="mp2-modo-deriv" value="deriv" checked onchange="onModoPrecio()">
+        <label for="mp2-modo-deriv">Múltiplo de un ancla (recomendado)</label>
+      </div>
+      <div class="deriv-fields on" id="mp2-deriv">
+        <div class="mf-grid-3">
+          <div class="campo full">
+            <label>Ancla de referencia</label>
+            <select id="mp2-origen" onchange="calcPreviewDerivado()"></select>
+          </div>
+          <div class="campo">
+            <label>Operación</label>
+            <select id="mp2-operacion" onchange="calcPreviewDerivado()">
+              <option value="multiplicar">× multiplicar</option>
+              <option value="dividir">÷ dividir</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label>Factor</label>
+            <input type="number" id="mp2-factor" step="0.01" min="0" value="1" oninput="calcPreviewDerivado()">
+          </div>
+          <div class="campo">
+            <label>Redondear a</label>
+            <select id="mp2-redondeo" onchange="calcPreviewDerivado()">
+              <option value="100">$100</option>
+              <option value="50">$50</option>
+              <option value="1000">$1000</option>
+              <option value="0">Sin redondeo</option>
+            </select>
+          </div>
+        </div>
+        <div class="preview-precio" id="mp2-preview">—</div>
+      </div>
+
+      <div class="precio-opt" style="margin-top:8px;">
+        <input type="radio" name="mp2-precio-modo" id="mp2-modo-ancla" value="ancla" onchange="onModoPrecio()">
+        <label for="mp2-modo-ancla">Es un ancla nueva (precio base propio)</label>
+      </div>
+      <div class="precio-opt">
+        <input type="radio" name="mp2-precio-modo" id="mp2-modo-manual" value="manual" onchange="onModoPrecio()">
+        <label for="mp2-modo-manual">Precio manual (lo cargo después en la tabla)</label>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:18px;">
+      <span id="mp2-error" style="color:var(--hot); font-size:12px; flex:1; align-self:center;"></span>
+      <button class="btn secondary btn-sm" onclick="cerrarModalPresentacion()">Cancelar</button>
+      <button class="btn primary btn-sm" id="mp2-guardar" onclick="guardarNuevaPresentacion()">Crear presentación</button>
     </div>
   </div>
 </div>
@@ -2147,6 +2304,236 @@ async function guardarPrecios() {
     toast(msg, 'success');
   } catch (err) {
     toast('Error al guardar: ' + err.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Agregar nueva presentación (SKU) + su sistema de precios
+// ═══════════════════════════════════════════════════════════════════════════
+async function siguienteCodigoSku() {
+  // SKUs comerciales viven en el rango 10000-19999
+  const { data } = await sb.from('items').select('codigo');
+  const usados = new Set((data || []).map(r => parseInt(r.codigo, 10)).filter(n => n >= 10000 && n <= 19999));
+  for (let n = 10101; n <= 19999; n++) if (!usados.has(n)) return String(n);
+  return '';
+}
+
+function codigoInsumo(texto) {
+  const t = (texto || '').trim();
+  if (!t) return '';
+  const m = [...t.matchAll(/\(([^)]+)\)/g)];
+  const cod = m.length ? m[m.length - 1][1].trim() : t;
+  if (state.itemPorCodigo[cod]) return cod;
+  const hit = state.catalogoComponentes.find(i => i.nombre.toLowerCase() === t.toLowerCase());
+  return hit ? hit.codigo : '';
+}
+
+// Sube por la cadena de derivación hasta el ancla raíz
+function rootAncla(sku) {
+  let cur = sku, guard = 0;
+  while (cur && guard++ < 20) {
+    const rel = state.relacionesPorSku[cur];
+    if (!rel) return null;
+    if (rel.fuente_tipo === 'ancla') return cur;
+    cur = rel.sku_origen;
+  }
+  return null;
+}
+
+// Ancla de la familia del granel que está abierto (si existe)
+function anclaDeGranelActual() {
+  for (const p of state.presentaciones) {
+    const r = state.relacionesPorSku[p.codigo_sku];
+    if (r && r.fuente_tipo === 'ancla') return p.codigo_sku;
+  }
+  return null;
+}
+
+function poblarOrigenAnclas() {
+  const sel = document.getElementById('mp2-origen');
+  const anclas = Object.values(state.relacionesPorSku)
+    .filter(r => r.fuente_tipo === 'ancla')
+    .map(r => r.sku_destino);
+  anclas.sort((a, b) => (state.todosItems[a] || a).localeCompare(state.todosItems[b] || b));
+  if (anclas.length === 0) {
+    sel.innerHTML = '<option value="">(No hay anclas definidas)</option>';
+    calcPreviewDerivado();
+    return;
+  }
+  const anclaGranel = anclaDeGranelActual();
+  sel.innerHTML = anclas.map(sku =>
+    `<option value="${sku}" ${sku === anclaGranel ? 'selected' : ''}>${sku} · ${escapeAttr(state.todosItems[sku] || sku)}</option>`
+  ).join('');
+  calcPreviewDerivado();
+}
+
+function calcPreviewDerivado() {
+  const el = document.getElementById('mp2-preview');
+  if (!el) return;
+  const origen = document.getElementById('mp2-origen').value;
+  const op = document.getElementById('mp2-operacion').value;
+  const factor = parseFloat(document.getElementById('mp2-factor').value);
+  const red = parseInt(document.getElementById('mp2-redondeo').value, 10);
+  if (!origen) { el.innerHTML = 'Elegí un ancla de referencia.'; return; }
+  const base = state.preciosAnclasCache[origen];
+  if (base == null) {
+    el.innerHTML = 'El ancla elegida todavía no tiene precio cargado. Podés crear igual; el precio se calculará cuando cargues/propagues el ancla.';
+    return;
+  }
+  if (isNaN(factor) || factor <= 0) { el.innerHTML = 'Ingresá un factor mayor a 0.'; return; }
+  let r = op === 'multiplicar' ? base * factor : base / factor;
+  if (red && red > 0) r = Math.ceil(r / red) * red;
+  el.innerHTML = `Ancla ${fmt.ars(base)} c/IVA &rarr; esta presentación &asymp; <b>${fmt.ars(r)}</b> c/IVA (Lista 1 · Público).`;
+}
+
+function onModoPrecio() {
+  const modo = document.querySelector('input[name=mp2-precio-modo]:checked').value;
+  document.getElementById('mp2-deriv').classList.toggle('on', modo === 'deriv');
+}
+
+function cerrarModalPresentacion() {
+  document.getElementById('modal-presentacion').classList.remove('open');
+}
+
+function abrirNuevaPresentacion() {
+  if (!state.codigoGranel || !state.granel) { toast('Primero abrí una fórmula.', 'warn'); return; }
+  if (!state.datosSecundariosListos || state.catalogoComponentes.length === 0) {
+    toast('Los datos todavía están cargando. Esperá un segundo y volvé a intentar.', 'warn');
+    return;
+  }
+
+  document.getElementById('mp2-granel').textContent = `${state.granel.nombre} (${state.codigoGranel})`;
+  document.getElementById('mp2-granel-nombre').textContent = state.granel.nombre;
+
+  // Código sugerido (async)
+  const help = document.getElementById('mp2-cod-help');
+  document.getElementById('mp2-codigo').value = '';
+  help.textContent = 'Buscando código libre…';
+  siguienteCodigoSku().then(c => {
+    document.getElementById('mp2-codigo').value = c;
+    help.textContent = c ? `Sugerido: ${c} (podés cambiarlo).` : 'Sin código libre en 10000-19999.';
+  });
+
+  // Reset de campos
+  ['mp2-nombre', 'mp2-envase', 'mp2-etiqueta', 'mp2-tamanio'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('mp2-etiq-hoja').value = 1;
+  document.getElementById('mp2-estado').value = 'vigente';
+  document.getElementById('mp2-factor').value = 1;
+  document.getElementById('mp2-operacion').value = 'multiplicar';
+  document.getElementById('mp2-redondeo').value = '100';
+  document.getElementById('mp2-error').textContent = '';
+  document.getElementById('mp2-modo-deriv').checked = true;
+  onModoPrecio();
+
+  // Datalist de insumos (envases + etiquetas)
+  const dl = document.getElementById('mp2-insumos');
+  dl.innerHTML = state.catalogoComponentes
+    .filter(i => i.tipo === 'IN')
+    .map(i => `<option value="${escapeAttr(i.nombre)} (${i.codigo})"></option>`)
+    .join('');
+
+  poblarOrigenAnclas();
+  document.getElementById('modal-presentacion').classList.add('open');
+  setTimeout(() => document.getElementById('mp2-nombre').focus(), 60);
+}
+
+async function guardarNuevaPresentacion() {
+  const err = document.getElementById('mp2-error');
+  err.textContent = '';
+
+  const codigo = document.getElementById('mp2-codigo').value.trim();
+  const nombre = document.getElementById('mp2-nombre').value.trim();
+  const envaseTxt = document.getElementById('mp2-envase').value.trim();
+  const etiqTxt = document.getElementById('mp2-etiqueta').value.trim();
+  const envase = codigoInsumo(envaseTxt);
+  const etiq = codigoInsumo(etiqTxt);
+  const tam = parseFloat(document.getElementById('mp2-tamanio').value);
+  const etiqHoja = parseInt(document.getElementById('mp2-etiq-hoja').value, 10) || 1;
+  const estado = document.getElementById('mp2-estado').value;
+  const modo = document.querySelector('input[name=mp2-precio-modo]:checked').value;
+  const granel = state.codigoGranel;
+
+  if (!/^\d{5}$/.test(codigo)) { err.textContent = 'El código debe tener 5 dígitos.'; return; }
+  if (state.todosItems[codigo] || state.itemPorCodigo[codigo]) { err.textContent = 'Ese código ya está en uso.'; return; }
+  if (!nombre) { err.textContent = 'Falta el nombre comercial.'; return; }
+  if (!envase) { err.textContent = 'Elegí un envase de la lista.'; return; }
+  if (etiqTxt && !etiq) { err.textContent = 'Etiqueta no reconocida (dejala vacía o elegí de la lista).'; return; }
+  if (!tam || tam <= 0) { err.textContent = 'El tamaño debe ser mayor a 0.'; return; }
+
+  let origen, op, factor, red;
+  if (modo === 'deriv') {
+    origen = document.getElementById('mp2-origen').value;
+    op = document.getElementById('mp2-operacion').value;
+    factor = parseFloat(document.getElementById('mp2-factor').value);
+    red = parseInt(document.getElementById('mp2-redondeo').value, 10);
+    if (!origen) { err.textContent = 'Elegí el ancla de referencia (o usá otro sistema de precios).'; return; }
+    if (origen === codigo) { err.textContent = 'El ancla no puede ser la misma presentación.'; return; }
+    if (isNaN(factor) || factor <= 0) { err.textContent = 'El factor debe ser mayor a 0.'; return; }
+  }
+
+  const btn = document.getElementById('mp2-guardar');
+  btn.disabled = true;
+  try {
+    // 1) Ítem (SKU comercial)
+    const { error: eI } = await sb.from('items').insert({
+      codigo, nombre, tipo: 'SKU', estado, linea_id: state.granel.linea_id || null,
+    });
+    if (eI) throw new Error('Ítem: ' + eI.message);
+
+    // 2) Presentación (vinculada a ESTE granel)
+    const { error: eP } = await sb.from('presentaciones').insert({
+      codigo_sku: codigo, codigo_granel: granel, codigo_envase: envase,
+      codigo_etiqueta: etiq || null, tamanio_kg: tam, etiquetas_por_hoja: etiqHoja,
+    });
+    if (eP) throw new Error('Presentación: ' + eP.message);
+
+    // 3) Canales por defecto (Odoo + lista profesional)
+    await sb.from('item_canales').upsert([
+      { codigo_item: codigo, canal: 'odoo', activo: true },
+      { codigo_item: codigo, canal: 'lista_profesional', activo: true },
+    ], { onConflict: 'codigo_item,canal' });
+
+    // 4) Sistema de precios
+    if (modo === 'deriv') {
+      const { error: eR } = await sb.from('relaciones_precio').upsert({
+        sku_destino: codigo, fuente_tipo: 'sku', sku_origen: origen,
+        factor, operacion: op, redondeo_arriba_a: red,
+      }, { onConflict: 'sku_destino' });
+      if (eR) throw new Error('Relación de precio: ' + eR.message);
+      state.relacionesPorSku[codigo] = {
+        sku_destino: codigo, fuente_tipo: 'sku', sku_origen: origen,
+        factor, operacion: op, redondeo_arriba_a: red,
+      };
+      // Propagar desde el ancla raíz para calcular el precio del SKU nuevo
+      const raiz = rootAncla(origen);
+      const precioRaiz = raiz != null ? state.preciosAnclasCache[raiz] : null;
+      if (raiz != null && precioRaiz != null && state.listas.publico) {
+        const { error: ePr } = await sb.rpc('propagar_precio_ancla', {
+          p_sku_ancla: raiz, p_precio_iva_incl: precioRaiz, p_lista_id: state.listas.publico.id,
+        });
+        if (ePr) console.warn('No se pudo propagar el precio automáticamente:', ePr.message);
+      }
+    } else if (modo === 'ancla') {
+      const { error: eR } = await sb.from('relaciones_precio').upsert({
+        sku_destino: codigo, fuente_tipo: 'ancla',
+      }, { onConflict: 'sku_destino' });
+      if (eR) throw new Error('Relación de precio: ' + eR.message);
+      state.relacionesPorSku[codigo] = {
+        sku_destino: codigo, fuente_tipo: 'ancla', sku_origen: null,
+        factor: null, operacion: null, redondeo_arriba_a: 100,
+      };
+    }
+    // modo === 'manual': no se crea relación; el precio se carga en la tabla
+
+    state.todosItems[codigo] = nombre;
+    cerrarModalPresentacion();
+    await cargarCachePreciosL1();
+    await cargarPresentacionesYPrecios();
+    toast('Presentación ' + codigo + ' creada', 'success');
+  } catch (e) {
+    err.textContent = e.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 
