@@ -607,13 +607,14 @@
     <div class="precio-box">
       <div class="precio-opt">
         <input type="radio" name="mp2-precio-modo" id="mp2-modo-deriv" value="deriv" checked onchange="onModoPrecio()">
-        <label for="mp2-modo-deriv">Múltiplo de un ancla (recomendado)</label>
+        <label for="mp2-modo-deriv">Múltiplo de otra presentación (recomendado)</label>
       </div>
       <div class="deriv-fields on" id="mp2-deriv">
         <div class="mf-grid-3">
           <div class="campo full">
-            <label>Ancla de referencia</label>
+            <label>Precio de referencia</label>
             <select id="mp2-origen" onchange="calcPreviewDerivado()"></select>
+            <div class="help">Puede ser el ancla o cualquier derivado (cascada). Ej: Lavanda 5 L atado a Lavanda 2 L.</div>
           </div>
           <div class="campo">
             <label>Operación</label>
@@ -2349,21 +2350,43 @@ function anclaDeGranelActual() {
   return null;
 }
 
-function poblarOrigenAnclas() {
+// Etiqueta de un nodo del grafo de precios (ancla o derivado en cascada)
+function etiquetaNodoPrecio(sku) {
+  const r = state.relacionesPorSku[sku];
+  const nom = state.todosItems[sku] || sku;
+  if (!r) return `${sku} · ${nom}`;
+  if (r.fuente_tipo === 'ancla') return `${sku} · ${nom}  ⚓ ancla`;
+  const op = r.operacion === 'multiplicar' ? '×' : '÷';
+  return `${sku} · ${nom}  (↳ ${r.sku_origen} ${op}${parseFloat(r.factor)})`;
+}
+
+// Llena el selector de "precio de referencia": cualquier nodo del grafo puede
+// ser origen (ancla o derivado). Se prioriza a las presentaciones de este granel.
+function poblarOrigenPrecio() {
   const sel = document.getElementById('mp2-origen');
-  const anclas = Object.values(state.relacionesPorSku)
-    .filter(r => r.fuente_tipo === 'ancla')
-    .map(r => r.sku_destino);
-  anclas.sort((a, b) => (state.todosItems[a] || a).localeCompare(state.todosItems[b] || b));
-  if (anclas.length === 0) {
-    sel.innerHTML = '<option value="">(No hay anclas definidas)</option>';
+  const nodos = Object.keys(state.relacionesPorSku); // todos los nodos con relación de precio
+  if (nodos.length === 0) {
+    sel.innerHTML = '<option value="">(No hay precios de referencia definidos)</option>';
     calcPreviewDerivado();
     return;
   }
-  const anclaGranel = anclaDeGranelActual();
-  sel.innerHTML = anclas.map(sku =>
-    `<option value="${sku}" ${sku === anclaGranel ? 'selected' : ''}>${sku} · ${escapeAttr(state.todosItems[sku] || sku)}</option>`
-  ).join('');
+
+  const setEste = new Set(state.presentaciones.map(p => p.codigo_sku).filter(s => state.relacionesPorSku[s]));
+  const deEste = [...setEste];
+  const otros = nodos.filter(s => !setEste.has(s));
+  const byName = (a, b) => (state.todosItems[a] || a).localeCompare(state.todosItems[b] || b);
+  deEste.sort(byName);
+  otros.sort(byName);
+
+  // Default: el ancla de la familia si existe; si no, la primera de este granel.
+  const def = anclaDeGranelActual() || deEste[0] || nodos[0] || '';
+  const opt = (s) => `<option value="${s}" ${s === def ? 'selected' : ''}>${escapeAttr(etiquetaNodoPrecio(s))}</option>`;
+
+  let html = '';
+  if (deEste.length) html += `<optgroup label="De este granel">${deEste.map(opt).join('')}</optgroup>`;
+  if (otros.length)  html += `<optgroup label="Otras familias">${otros.map(opt).join('')}</optgroup>`;
+  sel.innerHTML = html;
+  if (def) sel.value = def;
   calcPreviewDerivado();
 }
 
@@ -2374,16 +2397,17 @@ function calcPreviewDerivado() {
   const op = document.getElementById('mp2-operacion').value;
   const factor = parseFloat(document.getElementById('mp2-factor').value);
   const red = parseInt(document.getElementById('mp2-redondeo').value, 10);
-  if (!origen) { el.innerHTML = 'Elegí un ancla de referencia.'; return; }
+  if (!origen) { el.innerHTML = 'Elegí una presentación de referencia.'; return; }
   const base = state.preciosAnclasCache[origen];
+  const nomRef = state.todosItems[origen] || origen;
   if (base == null) {
-    el.innerHTML = 'El ancla elegida todavía no tiene precio cargado. Podés crear igual; el precio se calculará cuando cargues/propagues el ancla.';
+    el.innerHTML = 'La referencia elegida todavía no tiene precio cargado. Podés crear igual; el precio se calculará cuando el ancla de la familia tenga precio y se propague.';
     return;
   }
   if (isNaN(factor) || factor <= 0) { el.innerHTML = 'Ingresá un factor mayor a 0.'; return; }
   let r = op === 'multiplicar' ? base * factor : base / factor;
   if (red && red > 0) r = Math.ceil(r / red) * red;
-  el.innerHTML = `Ancla ${fmt.ars(base)} c/IVA &rarr; esta presentación &asymp; <b>${fmt.ars(r)}</b> c/IVA (Lista 1 · Público).`;
+  el.innerHTML = `${escapeAttr(nomRef)} = ${fmt.ars(base)} c/IVA &rarr; esta presentación &asymp; <b>${fmt.ars(r)}</b> c/IVA (Lista 1 · Público).`;
 }
 
 function onModoPrecio() {
@@ -2432,7 +2456,7 @@ function abrirNuevaPresentacion() {
     .map(i => `<option value="${escapeAttr(i.nombre)} (${i.codigo})"></option>`)
     .join('');
 
-  poblarOrigenAnclas();
+  poblarOrigenPrecio();
   document.getElementById('modal-presentacion').classList.add('open');
   setTimeout(() => document.getElementById('mp2-nombre').focus(), 60);
 }
@@ -2466,8 +2490,8 @@ async function guardarNuevaPresentacion() {
     op = document.getElementById('mp2-operacion').value;
     factor = parseFloat(document.getElementById('mp2-factor').value);
     red = parseInt(document.getElementById('mp2-redondeo').value, 10);
-    if (!origen) { err.textContent = 'Elegí el ancla de referencia (o usá otro sistema de precios).'; return; }
-    if (origen === codigo) { err.textContent = 'El ancla no puede ser la misma presentación.'; return; }
+    if (!origen) { err.textContent = 'Elegí la presentación de referencia (o usá otro sistema de precios).'; return; }
+    if (origen === codigo) { err.textContent = 'La referencia no puede ser la misma presentación.'; return; }
     if (isNaN(factor) || factor <= 0) { err.textContent = 'El factor debe ser mayor a 0.'; return; }
   }
 
