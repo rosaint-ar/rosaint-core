@@ -33,7 +33,7 @@ const MENU = [
 
   { type: 'group', label: 'Contabilidad' },
   { type: 'item', id: 'iibb',        label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',       status: 'ready' },
-  { type: 'item', id: 'librosiva',   label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html', status: 'soon' },
+  { type: 'item', id: 'librosiva',   label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html', status: 'ready' },
 
   { type: 'group', label: 'Sistema' },
   { type: 'item', id: 'sistema',       label: 'Sistema',       href: 'sistema/index.html', status: 'ready' },
