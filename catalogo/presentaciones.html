@@ -201,6 +201,7 @@
 
     <label style="margin-top:12px;">Publicar en canales <span style="text-transform:none; letter-spacing:normal; font-weight:400; color:var(--muted); font-size:11px;">(Odoo incluye todo por defecto)</span></label>
     <div class="canales-row">
+      <label title="Si está tildado, aparece en el Cotizador"><input type="checkbox" class="canal-check" data-canal="cotizador"> 🧮 Cotizador</label>
       <label><input type="checkbox" class="canal-check" data-canal="lista_profesional"> 📋 Lista profesional</label>
       <label><input type="checkbox" class="canal-check" data-canal="tienda_nube"> 🔵 Tienda Nube</label>
       <label class="disabled" title="Mercado Libre se gestiona por sincronización de publicaciones">
@@ -436,8 +437,8 @@ function abrirNueva() {
   $('#mp-etiq-hoja').value = 1;
   $('#mp-estado').value = 'vigente';
   $('#mp-linea').value = '';
-  // Por defecto va en lista profesional
-  $$('.canal-check').forEach(c => { c.checked = c.dataset.canal === 'lista_profesional'; });
+  // Por defecto: Cotizador + Lista profesional
+  $$('.canal-check').forEach(c => { c.checked = (c.dataset.canal === 'lista_profesional' || c.dataset.canal === 'cotizador'); });
   $('#mpBtnDel').style.display = 'none';
   $('#mp-costo').textContent = 'se calcula al guardar';
   $('#mp-costo-detalle').textContent = '';
@@ -466,7 +467,11 @@ function abrirEditar(sku) {
   $('#mp-linea').value = it.linea_id || '';
 
   const canales = ITEM_CANALES[sku] || {};
-  $$('.canal-check').forEach(c => { c.checked = !!canales[c.dataset.canal]; });
+  $$('.canal-check').forEach(c => {
+    // 'cotizador' se muestra tildado salvo que esté explícitamente desactivado
+    if (c.dataset.canal === 'cotizador') c.checked = canales.cotizador !== false;
+    else c.checked = !!canales[c.dataset.canal];
+  });
   $('#mpBtnDel').style.display = '';
 
   const costo = COSTOS[sku];

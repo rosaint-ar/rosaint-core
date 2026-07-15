@@ -307,7 +307,7 @@ const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 // ─── Carga inicial ───
 async function init() {
   try {
-    const [precios, escalones, packsRes, packCompsRes] = await Promise.all([
+    const [precios, escalones, packsRes, packCompsRes, canalesCot] = await Promise.all([
       sb.from('v_precios_listas_completos')
         .select('codigo_sku,nombre_sku,linea,l1_publicado,l2_publicado'),
       sb.from('escalones_descuento')
@@ -320,14 +320,23 @@ async function init() {
         .eq('estado', 'vigente'),
       sb.from('pack_componentes')
         .select('codigo_pack, codigo_sku, cantidad'),
+      sb.from('item_canales')
+        .select('codigo_item, activo')
+        .eq('canal', 'cotizador'),
     ]);
 
     if (precios.error) throw precios.error;
     if (escalones.error) throw escalones.error;
 
+    // SKUs ocultos del cotizador: los que tienen el canal 'cotizador' desactivado
+    // (activo=false). Si no hay registro, el producto se muestra por defecto.
+    const ocultosCotizador = new Set(
+      (canalesCot.data || []).filter(c => c.activo === false).map(c => c.codigo_item)
+    );
+
     // ── Catálogo de SKUs individuales ──
     const catalogoSkus = (precios.data || [])
-      .filter(r => r.l2_publicado != null || r.l1_publicado != null)
+      .filter(r => (r.l2_publicado != null || r.l1_publicado != null) && !ocultosCotizador.has(r.codigo_sku))
       .map(r => ({
         codigo: r.codigo_sku,
         nombre: r.nombre_sku,
@@ -354,6 +363,7 @@ async function init() {
       .map(p => {
         const comp = compsPorPack[p.codigo];
         if (!comp) return null;
+        if (ocultosCotizador.has(comp.codigo_sku)) return null;
         const sku = skusPorCodigo[comp.codigo_sku];
         if (!sku || sku.l2 == null) return null;
         return {

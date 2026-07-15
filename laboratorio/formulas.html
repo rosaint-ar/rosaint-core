@@ -2515,6 +2515,7 @@ async function guardarNuevaPresentacion() {
     await sb.from('item_canales').upsert([
       { codigo_item: codigo, canal: 'odoo', activo: true },
       { codigo_item: codigo, canal: 'lista_profesional', activo: true },
+      { codigo_item: codigo, canal: 'cotizador', activo: true },
     ], { onConflict: 'codigo_item,canal' });
 
     // 4) Sistema de precios
