@@ -261,7 +261,9 @@ async function cargar() {
   try {
     const [pres, items, canales, lineas, costos] = await Promise.all([
       sb.from('presentaciones').select('*'),
-      sb.from('items').select('codigo, nombre, tipo, estado, linea_id').eq('estado', 'vigente'),
+      // Todos los ítems (no solo vigentes): así el listado muestra el nombre y
+      // el estado de las presentaciones en desarrollo/testeo, no solo su código.
+      sb.from('items').select('codigo, nombre, tipo, estado, linea_id'),
       sb.from('item_canales').select('codigo_item, canal, activo'),
       sb.from('lineas').select('id, nombre, orden').order('orden'),
       sb.from('v_costos_skus').select('codigo_sku, costo_unitario'),
@@ -272,9 +274,10 @@ async function cargar() {
     PRES = (pres.data || []);
     ITEMS = {};
     (items.data || []).forEach(i => { ITEMS[i.codigo] = i; });
-    GRANELES = (items.data || []).filter(i => i.tipo === 'TE' || i.tipo === 'SE')
+    // Para el modal de alta solo ofrecemos graneles/insumos vigentes.
+    GRANELES = (items.data || []).filter(i => (i.tipo === 'TE' || i.tipo === 'SE') && i.estado === 'vigente')
                                   .sort((a,b) => a.nombre.localeCompare(b.nombre, 'es'));
-    INSUMOS = (items.data || []).filter(i => i.tipo === 'IN')
+    INSUMOS = (items.data || []).filter(i => i.tipo === 'IN' && i.estado === 'vigente')
                                  .sort((a,b) => a.nombre.localeCompare(b.nombre, 'es'));
     LINEAS = lineas.data || [];
 
