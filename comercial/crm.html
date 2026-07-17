@@ -383,6 +383,60 @@
       border: 1px solid var(--border); font-size: 13px; font-weight: 500;
     }
 
+    /* ═══ Panel informativo (botón ⓘ) ═══ */
+    .modal.wide { max-width: 640px; }
+    .info-sec { margin-bottom: 18px; }
+    .info-sec h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .info-sec p { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 8px; }
+    .seg-list { display: flex; flex-direction: column; gap: 6px; }
+    .seg-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 12.5px; }
+    .seg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .seg-row .n { font-weight: 600; min-width: 92px; }
+    .seg-row .d { color: var(--muted); }
+    .info-formula { background: var(--surface-2); border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12.5px; margin: 8px 0; }
+
+    /* ═══ Barra de progreso / gamificación ═══ */
+    .gami { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
+    .gami .meta { flex: 1; min-width: 190px; }
+    .gami .meta-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+    .gami .meta-top span { color: var(--muted); }
+    .bar { height: 8px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, var(--accent), #FF8A7A); transition: width .6s cubic-bezier(.2,.8,.2,1); }
+    .bar.full i { background: linear-gradient(90deg, var(--ok), #5FD39A); }
+    .gchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 6px 11px; border-radius: 20px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+    .gchip b { color: var(--text); }
+    .gchip.fire { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+    .gchip.win  { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); cursor: pointer; }
+    .frase { font-size: 12.5px; color: var(--muted); font-style: italic; }
+
+    /* ═══ Logros ═══ */
+    .logro { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px; animation: slideIn .35s both; }
+    .logro .em { font-size: 22px; }
+    .logro .info { flex: 1; min-width: 0; }
+    .logro .nm { font-weight: 600; font-size: 14px; }
+    .logro .dt { font-size: 12px; color: var(--muted); }
+    .logro .dias { text-align: right; }
+    .logro .dias .v { font-size: 20px; font-weight: 700; color: var(--ok); line-height: 1.1; }
+    .logro .dias .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .win-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); padding: 2px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+
+    /* ═══ Celebración ═══ */
+    .celebra { position: fixed; top: 70px; left: 50%; transform: translateX(-50%) translateY(-160%); z-index: 120; transition: transform .45s cubic-bezier(.2,1.2,.3,1); }
+    .celebra.show { transform: translateX(-50%) translateY(0); }
+    .celebra-box { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow-menu); max-width: 92vw; }
+    .cel-emoji { font-size: 26px; animation: pop .5s both; }
+    .cel-txt { display: flex; flex-direction: column; }
+    .cel-txt b { font-size: 14px; } .cel-txt span { font-size: 12px; color: var(--muted); }
+    .cel-x { background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
+    #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 200; display: none; }
+
+    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes pop { 0% { transform: scale(.4); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .logro, .cel-emoji { animation: none !important; }
+      .bar i, .celebra { transition: none !important; }
+    }
+
     @media (max-width: 680px) {
       .kpis { grid-template-columns: repeat(2, 1fr); }
       .row { grid-template-columns: 1fr; gap: 12px; }
@@ -407,10 +461,14 @@
       <button class="tab active" data-tab="cola" onclick="setTab('cola')">▶ Cola de contacto<span class="cnt" id="tab-cola"></span></button>
       <button class="tab" data-tab="lista" onclick="setTab('lista')">Lista completa<span class="cnt" id="tab-lista"></span></button>
       <button class="tab" data-tab="contactados" onclick="setTab('contactados')">Contactados<span class="cnt" id="tab-cont"></span></button>
+      <button class="tab" data-tab="logros" onclick="setTab('logros')">🏆 Logros<span class="cnt" id="tab-logros"></span></button>
       <button class="tab" data-tab="archivados" onclick="setTab('archivados')">Archivados<span class="cnt" id="tab-arch"></span></button>
     </div>
     <div class="tabs-actions">
       <span class="sync-info" id="syncInfo">…</span>
+      <button class="btn secondary" onclick="abrirInfo()" title="¿Cómo funciona este módulo?" aria-label="Cómo funciona">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      </button>
       <button class="btn secondary" onclick="abrirConfigMensajes()" title="Configurar plantillas de mensaje">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Mensaje</span>
@@ -451,12 +509,77 @@
     <div class="count" id="count-cont"></div>
     <div id="list-cont"></div>
   </div>
+  <div id="view-logros" style="display:none">
+    <div class="kpis" id="kpis-logros"></div>
+    <div class="count" id="count-logros"></div>
+    <div id="list-logros"></div>
+  </div>
+
   <div id="view-archivados" style="display:none">
     <div class="count" id="count-arch"></div>
     <div id="list-arch"></div>
   </div>
 
 </main>
+
+<!-- Panel informativo: qué significa cada cosa -->
+<div class="modal-bg" id="modalInfo" onclick="if(event.target===this)cerrarInfo()">
+  <div class="modal wide">
+    <h3>¿Cómo funciona el CRM?</h3>
+
+    <div class="info-sec">
+      <h4>🎯 Qué es un cliente para el sistema</h4>
+      <p>Una "compra" es un <b>pedido confirmado</b> en Odoo (no la factura). Se suman las dos empresas, y los montos son <b>netos, sin IVA</b>.</p>
+    </div>
+
+    <div class="info-sec">
+      <h4>📊 Cómo se clasifica cada contacto</h4>
+      <p>No usamos días fijos: cada cliente se mide contra <b>su propio ritmo</b>. El ritmo es la <b>mediana</b> de días entre sus compras.</p>
+      <div class="info-formula">ritmo del cliente = mediana de días entre sus compras<br>ratio = días sin comprar ÷ su ritmo</div>
+      <div class="seg-list">
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-activo)"></span><span class="n">Activo</span><span class="d">compró hace menos de 1× su ritmo</span></div>
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-enfri)"></span><span class="n">Enfriándose</span><span class="d">entre 1× y 2× su ritmo</span></div>
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-react)"></span><span class="n">A reactivar</span><span class="d">entre 2× y 4× su ritmo — el más recuperable</span></div>
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-dorm)"></span><span class="n">Dormido</span><span class="d">4× su ritmo o más — el más perdido</span></div>
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-nunca)"></span><span class="n">Nunca compró</span><span class="d">está en la base pero nunca pidió</span></div>
+      </div>
+      <p style="margin-top:10px"><b>Ejemplo:</b> compra cada 30 días y hace 75 que no compra → 2,5× → <i>A reactivar</i>.</p>
+      <p><b>Si tiene una sola compra</b> no hay ritmo que calcular, así que ahí sí van días fijos: menos de 60 = Activo · 60 a 119 = Enfriándose · 120 a 239 = A reactivar · 240+ = Dormido.</p>
+    </div>
+
+    <div class="info-sec">
+      <h4>🔥 Por qué aparecen en ese orden</h4>
+      <p>La cola prioriza <b>A reactivar</b> → <b>Enfriándose</b> → <b>Dormido</b> → <b>Nunca compró</b>. Los <i>A reactivar</i> van primero porque son los más recuperables (se atrasaron, pero no desaparecieron). Dentro de cada grupo, primero los que más te compraron históricamente.</p>
+      <p>Los <b>Activos</b> no entran a la cola (ya te están comprando), y tampoco los que no tienen WhatsApp cargado.</p>
+    </div>
+
+    <div class="info-sec">
+      <h4>🏆 Qué cuenta como logro</h4>
+      <p>Si marcás a alguien como contactado y <b>confirma un pedido dentro de los <span id="infoVentana">21</span> días</b>, se registra como logro tuyo. Se detecta solo, cruzando tu contacto con los pedidos confirmados de Odoo.</p>
+    </div>
+
+    <div class="info-sec">
+      <h4>🔄 Cuándo se actualizan los datos</h4>
+      <p>Automático, <b>todos los días a las 08:00</b>: se traen los pedidos nuevos de Odoo y se recalculan todos los segmentos. Los logros se detectan a las 08:20. Igual podés forzarlo con <b>Sincronizar</b>.</p>
+      <p>Un contacto marcado vuelve solo a la cola después de <b>15 días</b> sin comprar.</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn primary" onclick="cerrarInfo()">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<!-- Celebración de logros nuevos -->
+<div class="celebra" id="celebra">
+  <div class="celebra-box">
+    <div class="cel-emoji">🎉</div>
+    <div class="cel-txt"><b id="celTitulo"></b><span id="celSub"></span></div>
+    <button class="btn primary" onclick="verLogros()">Ver</button>
+    <button class="cel-x" onclick="cerrarCelebra()" aria-label="Cerrar">×</button>
+  </div>
+</div>
+<canvas id="confetti"></canvas>
 
 <div class="modal-bg" id="modal">
   <div class="modal">
@@ -489,6 +612,22 @@
 const EMPRESA = 'Rosaint';
 const ODOO_URL = 'https://rosaint.odoo.com';
 const DIAS_CONTACTADO = 15; // se considera "contactado" si fue hace menos de N días
+const DIAS_ATRIBUCION = 21; // si compra dentro de N días del contacto, cuenta como logro
+const META_DIARIA = 10;     // objetivo de contactos por día
+
+const FRASES = [
+  'Cada mensaje es una puerta que se abre 🚪',
+  'El que no contacta, no vende 💪',
+  'Uno más y estás más cerca 🎯',
+  'Los dormidos también se despiertan ☕',
+  'Tu próxima venta está a un mensaje 📲',
+  'Constancia > suerte 🔁',
+];
+const FRASES_META = [
+  '¡Meta del día cumplida! 🏅',
+  '¡Crack! Objetivo alcanzado 🎉',
+  'Día redondo. A descansar 😎',
+];
 
 const SEG = {
   a_reactivar: { label: 'A reactivar',  c: 'var(--t-react)' },
@@ -499,7 +638,7 @@ const SEG = {
 };
 const ORDEN_SEG = ['a_reactivar','enfriandose','dormido','nunca_compro','activo'];
 
-let DATA = [], PRODS = {}, ESTADO = {}, tab = 'cola';
+let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONV_POR_PID = {}, tab = 'cola';
 let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos' };
 let queueIdx = 0, pendingContact = null;
 
@@ -537,8 +676,10 @@ async function load() {
     const e = await apiGet('cliente_estado?select=*&limit=5000');
     ESTADO = {};
     (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
+    await cargarLogros();
     document.getElementById('syncInfo').textContent = DATA.length + ' clientes';
     renderAll();
+    celebrarNuevos();
   } catch(err) {
     document.getElementById('view-cola').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + err.message + '</div>';
   }
@@ -566,7 +707,13 @@ async function setEstado(pid, campos) {
     body,
   });
 }
-async function marcarContactado(pid)   { await setEstado(pid, { contactado_at: new Date().toISOString() }); renderAll(); }
+async function marcarContactado(pid) {
+  const antes = statsGami().hoy;
+  await setEstado(pid, { contactado_at: new Date().toISOString() });
+  renderAll();
+  // Festejo justo cuando se alcanza la meta del día
+  if (antes < META_DIARIA && statsGami().hoy >= META_DIARIA) confetti();
+}
 async function desmarcarContactado(pid){ await setEstado(pid, { contactado_at: null }); renderAll(); }
 async function archivar(pid)           { await setEstado(pid, { archivado: true,  archivado_at: new Date().toISOString() }); renderAll(); }
 async function desarchivar(pid)        { await setEstado(pid, { archivado: false, archivado_at: null }); renderAll(); }
@@ -598,10 +745,147 @@ function colaPendiente() {
   return objetivos().filter(d => !estaContactado(d.partner_id)).sort((a,b) => priorityScore(b) - priorityScore(a));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Logros (conversiones) y gamificación
+// ═══════════════════════════════════════════════════════════════════════════
+const dayKey = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'); };
+
+async function cargarLogros() {
+  // Detección al vuelo (idempotente) por si compró después del último cron.
+  try { await api('rpc/detectar_conversiones', { method: 'POST', body: JSON.stringify({ ventana: DIAS_ATRIBUCION }) }); }
+  catch (_) { /* si falla, mostramos lo que ya detectó el cron */ }
+  const c = await apiGet('crm_conversiones?select=*&order=fecha_pedido.desc&limit=500');
+  CONV = Array.isArray(c) ? c : [];
+  CONV_POR_PID = {};
+  CONV.forEach(x => { if (!CONV_POR_PID[x.partner_id]) CONV_POR_PID[x.partner_id] = x; });
+}
+
+function statsGami() {
+  const hoyK = dayKey(new Date());
+  const hace7 = Date.now() - 7 * 86400000;
+  const dias = new Set();
+  let hoy = 0, semana = 0;
+  Object.values(ESTADO).forEach(e => {
+    if (!e.contactado_at) return;
+    const k = dayKey(e.contactado_at);
+    dias.add(k);
+    if (k === hoyK) hoy++;
+    if (new Date(e.contactado_at).getTime() >= hace7) semana++;
+  });
+  let racha = 0; const d = new Date();
+  if (!dias.has(dayKey(d))) d.setDate(d.getDate() - 1); // si hoy todavía no arrancó, mirar desde ayer
+  while (dias.has(dayKey(d))) { racha++; d.setDate(d.getDate() - 1); }
+  const hoyD = new Date();
+  const logrosMes = CONV.filter(x => { const f = new Date(x.fecha_pedido + 'T00:00:00'); return f.getMonth() === hoyD.getMonth() && f.getFullYear() === hoyD.getFullYear(); }).length;
+  return { hoy, semana, racha, logrosMes };
+}
+
+function gamiHtml() {
+  const s = statsGami();
+  const pct = Math.min(100, Math.round(s.hoy / META_DIARIA * 100));
+  const full = s.hoy >= META_DIARIA;
+  const frase = full ? FRASES_META[s.hoy % FRASES_META.length] : FRASES[s.hoy % FRASES.length];
+  return `
+    <div class="gami">
+      <div class="meta">
+        <div class="meta-top"><b>Hoy: ${s.hoy} de ${META_DIARIA}</b><span>${full ? '¡meta cumplida!' : (META_DIARIA - s.hoy) + ' para la meta'}</span></div>
+        <div class="bar ${full ? 'full' : ''}"><i style="width:${pct}%"></i></div>
+      </div>
+      ${s.racha > 0 ? `<span class="gchip fire" title="Días seguidos contactando">🔥 Racha <b>${s.racha}</b> ${s.racha === 1 ? 'día' : 'días'}</span>` : ''}
+      <span class="gchip" title="Contactos de los últimos 7 días">💬 <b>${s.semana}</b> esta semana</span>
+      <span class="gchip win" onclick="setTab('logros')" title="Contactos que compraron este mes">🏆 <b>${s.logrosMes}</b> ${s.logrosMes === 1 ? 'logro' : 'logros'} del mes</span>
+      <span class="frase">${frase}</span>
+    </div>`;
+}
+
+function winTag(pid) {
+  const c = CONV_POR_PID[pid];
+  return c ? `<span class="win-tag" title="Te compró ${c.dias_hasta_compra} día(s) después de que lo contactaras">🏆 convirtió</span>` : '';
+}
+
+function renderLogros() {
+  const s = statsGami();
+  const prom = CONV.length ? Math.round(CONV.reduce((a, x) => a + (x.dias_hasta_compra || 0), 0) / CONV.length) : 0;
+  document.getElementById('kpis-logros').innerHTML = `
+    <div class="kpi-seg" style="--c:var(--t-activo)"><div class="n">${CONV.length}</div><div class="l">Logros totales</div></div>
+    <div class="kpi-seg" style="--c:var(--t-activo)"><div class="n">${s.logrosMes}</div><div class="l">Este mes</div></div>
+    <div class="kpi-seg" style="--c:var(--t-enfri)"><div class="n">${prom} d</div><div class="l">Tardan en comprar</div></div>
+    <div class="kpi-seg" style="--c:var(--t-dorm)"><div class="n">${DIAS_ATRIBUCION} d</div><div class="l">Ventana</div></div>`;
+  document.getElementById('count-logros').textContent =
+    `${CONV.length} ${CONV.length === 1 ? 'logro' : 'logros'} · pedidos confirmados dentro de ${DIAS_ATRIBUCION} días del contacto`;
+  const cont = document.getElementById('list-logros');
+  if (!CONV.length) {
+    cont.innerHTML = `<div class="queue-done"><div class="big">🏆</div><h2>Todavía no hay logros</h2><div>Cuando contactes a alguien y confirme un pedido dentro de los ${DIAS_ATRIBUCION} días, va a aparecer acá.</div></div>`;
+    return;
+  }
+  cont.innerHTML = CONV.map((x, i) => {
+    const url = x.pedido_id ? `${ODOO_URL}/odoo/sales/${x.pedido_id}` : null;
+    const em = x.dias_hasta_compra <= 2 ? '⚡' : x.dias_hasta_compra <= 7 ? '🎯' : '🏆';
+    return `<div class="logro" style="animation-delay:${Math.min(i * 0.03, 0.4)}s">
+      <div class="em">${em}</div>
+      <div class="info">
+        <div class="nm">${esc(x.nombre || ('Contacto ' + x.partner_id))}</div>
+        <div class="dt">Contactado el ${fmtFecha(dayKey(x.contactado_at))} · pidió el ${fmtFecha(x.fecha_pedido)}${url ? ` · <a href="${url}" target="_blank" style="color:var(--accent)">${esc(x.pedido_name || 'ver pedido')} →</a>` : ''}</div>
+      </div>
+      <div class="dias"><div class="v">${x.dias_hasta_compra}</div><div class="k">${x.dias_hasta_compra === 1 ? 'día' : 'días'}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function celebrarNuevos() {
+  const nuevos = CONV.filter(x => !x.visto);
+  if (!nuevos.length) return;
+  const n = nuevos.length, nom = nuevos[0].nombre || '';
+  document.getElementById('celTitulo').textContent = n === 1 ? '¡Un contacto tuyo compró!' : `¡${n} contactos tuyos compraron!`;
+  document.getElementById('celSub').textContent = n === 1
+    ? `${nom} — pidió a los ${nuevos[0].dias_hasta_compra} días`
+    : `Incluye a ${nom} y ${n - 1} más`;
+  document.getElementById('celebra').classList.add('show');
+  confetti();
+  marcarLogrosVistos();
+  setTimeout(cerrarCelebra, 9000);
+}
+async function marcarLogrosVistos() {
+  try {
+    await api('crm_conversiones?visto=eq.false', { method: 'PATCH', body: JSON.stringify({ visto: true }) });
+    CONV.forEach(x => { x.visto = true; });
+  } catch (_) { /* no bloquea */ }
+}
+function verLogros() { cerrarCelebra(); setTab('logros'); }
+function cerrarCelebra() { document.getElementById('celebra').classList.remove('show'); }
+function abrirInfo() { document.getElementById('infoVentana').textContent = DIAS_ATRIBUCION; document.getElementById('modalInfo').classList.add('show'); }
+function cerrarInfo() { document.getElementById('modalInfo').classList.remove('show'); }
+
+function confetti() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.getElementById('confetti'); if (!cv) return;
+  const ctx = cv.getContext('2d');
+  cv.width = innerWidth; cv.height = innerHeight; cv.style.display = 'block';
+  const cols = ['#F93549', '#2F8F5B', '#B8860B', '#34495E', '#FF8A7A'];
+  const P = Array.from({ length: 90 }, () => ({
+    x: innerWidth / 2 + (Math.random() - .5) * 260, y: -20 - Math.random() * 120,
+    vx: (Math.random() - .5) * 3, vy: 2 + Math.random() * 3.5,
+    s: 5 + Math.random() * 6, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .25,
+    c: cols[(Math.random() * cols.length) | 0],
+  }));
+  let t = 0;
+  (function frame() {
+    t++;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of P) {
+      p.x += p.vx; p.y += p.vy; p.vy += .045; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+      ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6); ctx.restore();
+    }
+    if (t < 220) requestAnimationFrame(frame);
+    else { ctx.clearRect(0, 0, cv.width, cv.height); cv.style.display = 'none'; }
+  })();
+}
+
 function setTab(t) {
   tab = t;
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
-  ['cola','lista','contactados','archivados'].forEach(v => {
+  ['cola','lista','contactados','logros','archivados'].forEach(v => {
     document.getElementById('view-' + v).style.display = (v === t ? '' : 'none');
   });
   renderAll();
@@ -612,9 +896,11 @@ function renderAll() {
   document.getElementById('tab-lista').textContent = DATA.filter(d => !estaArchivado(d.partner_id)).length;
   document.getElementById('tab-cont').textContent  = DATA.filter(d => estaContactado(d.partner_id) && !estaArchivado(d.partner_id)).length;
   document.getElementById('tab-arch').textContent  = DATA.filter(d => estaArchivado(d.partner_id)).length;
+  document.getElementById('tab-logros').textContent = CONV.length;
   if (tab === 'cola') renderCola();
   if (tab === 'lista') { renderKPIs(); renderLista(); }
   if (tab === 'contactados') renderContactados();
+  if (tab === 'logros') renderLogros();
   if (tab === 'archivados') renderArchivados();
 }
 
@@ -623,7 +909,7 @@ function renderCola() {
   const cola = colaPendiente();
   const cont = document.getElementById('view-cola');
   if (!cola.length) {
-    cont.innerHTML = '<div class="queue-done"><div class="big">🎉</div><h2>¡Cola al día!</h2><div>No quedan clientes prioritarios sin contactar.<br>Volvé más tarde o revisá la lista completa.</div></div>';
+    cont.innerHTML = gamiHtml() + '<div class="queue-done"><div class="big">🎉</div><h2>¡Cola al día!</h2><div>No quedan clientes prioritarios sin contactar.<br>Volvé más tarde o revisá la lista completa.</div></div>';
     return;
   }
   if (queueIdx >= cola.length) queueIdx = 0;
@@ -631,13 +917,13 @@ function renderCola() {
   const seg = SEG[d.segmento]; const tp = topProd(d.partner_id); const dias = d.dias_desde_ultima;
   const pedidoUrl = (d.ultimo_pedido_id && d.ultimo_pedido_id > 0) ? `${ODOO_URL}/odoo/sales/${d.ultimo_pedido_id}` : null;
   const contactoUrl = `${ODOO_URL}/odoo/contacts/${d.partner_id}`;
-  cont.innerHTML = `
+  cont.innerHTML = gamiHtml() + `
     <div class="queue-wrap">
       <div class="queue-head"><div class="big">Quedan <b>${cola.length}</b> por contactar · mostrando el más prioritario</div></div>
       <div class="qcard">
         <div class="stripe" style="--c:${seg.c};background:var(--c)"></div>
         <div class="qcard-body" style="--c:${seg.c}">
-          <div class="qtop"><div class="qname">${esc(d.nombre)}</div><span class="qbadge">${seg.label}</span></div>
+          <div class="qtop"><div class="qname">${esc(d.nombre)}${winTag(d.partner_id)}</div><span class="qbadge">${seg.label}</span></div>
           <div class="qmetrics">
             <div class="qm"><div class="v hot">${dias!=null?dias+' d':'—'}</div><div class="k">sin comprar</div></div>
             <div class="qm"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="k">histórico</div></div>
