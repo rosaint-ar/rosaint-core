@@ -426,8 +426,18 @@
     .win-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); padding: 2px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
 
     /* ═══ Celebración ═══ */
-    .celebra { position: fixed; top: 70px; left: 50%; transform: translateX(-50%) translateY(-160%); z-index: 120; transition: transform .45s cubic-bezier(.2,1.2,.3,1); }
-    .celebra.show { transform: translateX(-50%) translateY(0); }
+    /* Oculto de verdad: no alcanza con el transform (el % es relativo al alto
+       del propio banner y le dejaba una franja asomando arriba). */
+    .celebra {
+      position: fixed; top: 70px; left: 50%; z-index: 120;
+      transform: translateX(-50%) translateY(-16px);
+      opacity: 0; visibility: hidden; pointer-events: none;
+      transition: transform .45s cubic-bezier(.2,1.2,.3,1), opacity .28s ease, visibility .45s;
+    }
+    .celebra.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1; visibility: visible; pointer-events: auto;
+    }
     .celebra-box { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow-menu); max-width: 92vw; }
     .cel-emoji { font-size: 26px; animation: pop .5s both; }
     .cel-txt { display: flex; flex-direction: column; }
