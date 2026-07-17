@@ -346,6 +346,11 @@
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); max-width: 480px; width: 100%;
       padding: 24px;
+      /* Si el contenido es largo (ej. el panel de info), scrollea la ventana
+         en vez de cortarse. overscroll-behavior evita arrastrar el fondo. */
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .modal h3 { font-size: 16px; margin-bottom: 4px; color: var(--text); }
     .modal .who { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
