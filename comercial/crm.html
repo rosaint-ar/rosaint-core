@@ -1400,7 +1400,6 @@ function abrirDrawer(c, d, isNew) {
   FEDIT = { id: c.id, isNew };
   const comp = completar(c);
   const tipo = c.company_type || 'person';
-  const rubroOpts = `<option value="">— elegir rubro —</option>` + RUBROS.map(r => `<option value="${r.v}" ${rubroActual(c) === r.v ? 'selected' : ''}>${esc(r.l)}</option>`).join('');
   let intel = '';
   if (!isNew && d) {
     const seg = SEG[d.segmento] || { label: d.segmento };
@@ -1437,7 +1436,6 @@ function abrirDrawer(c, d, isNew) {
           <option value="person" ${tipo !== 'company' ? 'selected' : ''}>Persona</option><option value="company" ${tipo === 'company' ? 'selected' : ''}>Empresa</option></select></div>
         <div class="fld"><label id="ff_lbl_name">${tipo === 'company' ? 'Razón social' : 'Apellido y nombre'} ${comp.has.name || isNew ? '' : '<span class="miss">falta</span>'}</label>
           <input id="ff_name" value="${esc(c.name || '')}" placeholder="${tipo === 'company' ? 'Ej: Estética Bella S.R.L.' : 'Ej: Pérez, Juana'}"></div>
-        <div class="fld"><label>Rubro</label><select id="ff_rubro">${rubroOpts}</select></div>
         <div class="fld"><label>Teléfono ${comp.has.tel || isNew ? '' : '<span class="miss">falta</span>'}</label>
           <input id="ff_phone" value="${esc(c.phone || c.mobile || '')}" oninput="prevTelF()" placeholder="0341 155033943">
           <div class="hint">Área sin 0, celular sin 15. Se guarda formateado.</div><div class="prev" id="ff_prev_phone"></div></div>
@@ -1483,13 +1481,12 @@ async function guardarFicha() {
     vat: val('ff_vat') ? fmtDoc(val('ff_vat'), idtype) : false,
     l10n_ar_afip_responsibility_type_id: num('ff_fiscal'),
   };
-  const rubro = num('ff_rubro');
-  if (rubro) vals.category_id = [[4, rubro]];
   if (!vals.name) { btn.disabled = false; btn.textContent = FEDIT.isNew ? 'Crear contacto' : 'Guardar ficha'; toastF('⚠ Falta el nombre'); return; }
   try {
     let id = FEDIT.id;
     const wasNew = FEDIT.isNew;
-    if (wasNew) { const created = await orpc('res.partner', 'create', [vals]); id = Array.isArray(created) ? created[0] : created; }
+    // Todo contacto creado desde el módulo es Profesional (etiqueta id 1)
+    if (wasNew) { vals.category_id = [[4, 1]]; const created = await orpc('res.partner', 'create', [vals]); id = Array.isArray(created) ? created[0] : created; }
     else { await orpc('res.partner', 'write', [[id], vals]); }
     const fresh = (await orpc('res.partner', 'read', [[id]], { fields: PF }))[0];
     FICHA[id] = fresh;
