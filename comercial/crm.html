@@ -1347,7 +1347,10 @@ const fichaPct = pid => FICHA[pid] ? completar(FICHA[pid]).pct : 999;
 function rubroActual(c) { for (const t of (c.category_id || [])) if (RUBRO_IDS.has(t)) return t; return ''; }
 
 async function cargarFichas() {
+  const info = document.getElementById('syncInfo');
+  const base = info ? info.textContent : '';
   try {
+    if (info) info.textContent = base + ' · cargando fichas…';
     if (!CATFISCAL.length) {
       const [fiscal, idt, prov] = await Promise.all([
         orpc('l10n_ar.afip.responsibility.type', 'search_read', [[]], { fields: ['id','name'] }),
@@ -1357,15 +1360,20 @@ async function cargarFichas() {
       CATFISCAL = fiscal; CATIDT = idt; CATPROV = prov;
     }
     const ids = DATA.map(d => d.partner_id);
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 300) chunks.push(ids.slice(i, i + 300));
+    // En paralelo (no una tanda tras otra)
+    const results = await Promise.all(chunks.map(ch =>
+      orpc('res.partner', 'search_read', [[['id','in',ch]]], { fields: PF, limit: 0 })));
     const nueva = {};
-    for (let i = 0; i < ids.length; i += 400) {
-      const chunk = ids.slice(i, i + 400);
-      const parts = await orpc('res.partner', 'search_read', [[['id','in',chunk]]], { fields: PF, limit: 0 });
-      parts.forEach(p => { nueva[p.id] = p; });
-    }
+    results.forEach(parts => (parts || []).forEach(p => { nueva[p.id] = p; }));
     FICHA = nueva;
+    if (info) info.textContent = base;
     renderAll();
-  } catch (e) { console.warn('No pude cargar fichas de Odoo:', e.message); }
+  } catch (e) {
+    console.warn('No pude cargar fichas de Odoo:', e.message);
+    if (info) info.textContent = base + ' · fichas: error';
+  }
 }
 
 function nuevoContacto() { abrirDrawer({ id: null, company_type: 'person', category_id: [] }, null, true); }
