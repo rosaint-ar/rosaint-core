@@ -452,6 +452,45 @@
       .bar i, .celebra { transition: none !important; }
     }
 
+    /* ═══ Editor de ficha: drawer + formulario ═══ */
+    .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: .2s; z-index: 60; }
+    .scrim.on { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: 520px; max-width: 96vw; background: var(--surface); z-index: 70; box-shadow: -8px 0 40px rgba(0,0,0,.22); transform: translateX(100%); transition: transform .24s; display: flex; flex-direction: column; }
+    .drawer.on { transform: none; }
+    .dhead { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--accent); color: #fff; }
+    .dhead .x { float: right; cursor: pointer; font-size: 22px; opacity: .9; line-height: 1; border: 0; background: none; color: #fff; }
+    .dhead h3 { font-size: 17px; font-weight: 700; padding-right: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dhead .cbar { margin-top: 10px; height: 8px; background: rgba(255,255,255,.28); border-radius: 6px; overflow: hidden; }
+    .dhead .cbar .f { height: 100%; background: #fff; border-radius: 6px; transition: width .5s; }
+    .dhead .cpct { font-size: 12px; margin-top: 6px; opacity: .95; }
+    .dbody { overflow-y: auto; flex: 1; }
+    .intel { padding: 14px 20px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+    .intel h4, .dform h4 { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .istat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+    .istat .b { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 6px; text-align: center; }
+    .istat .b .v { font-size: 15px; font-weight: 800; line-height: 1.1; } .istat .b .l { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .dprod { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+    .dprod .q { color: var(--accent); font-weight: 700; white-space: nowrap; }
+    .wa-big { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; background: #25D366; color: #fff; border: 0; border-radius: 10px; padding: 11px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 10px; text-decoration: none; }
+    .wa-big[data-off] { background: var(--surface); color: var(--muted); border: 1px solid var(--border); cursor: default; }
+    .dform { padding: 16px 20px; }
+    .fld { margin-bottom: 12px; }
+    .fld label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    .fld label .miss { color: var(--hot); font-weight: 700; margin-left: 6px; font-size: 11px; }
+    .fld input, .fld select { width: 100%; font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--text); background: var(--surface); }
+    .fld input:focus, .fld select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+    .fld .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .fld .prev { font-size: 11.5px; color: var(--accent); font-weight: 600; margin-top: 4px; min-height: 14px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dfoot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: var(--surface); }
+    .dfoot .btn { flex: 1; justify-content: center; }
+    .chip.ficha { cursor: pointer; }
+    .badge-notel { display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--hot); background: color-mix(in srgb, var(--hot) 12%, transparent); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+    .ftoast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--surface); padding: 12px 20px; border-radius: 24px; font-weight: 600; font-size: 14px; opacity: 0; transition: .3s; z-index: 100; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+    .ftoast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .ftoast.win { background: var(--ok); color: #fff; }
+    @media (max-width: 560px) { .istat { grid-template-columns: repeat(2, 1fr); } }
+
     @media (max-width: 680px) {
       .kpis { grid-template-columns: repeat(2, 1fr); }
       .row { grid-template-columns: 1fr; gap: 12px; }
@@ -481,6 +520,7 @@
     </div>
     <div class="tabs-actions">
       <span class="sync-info" id="syncInfo">…</span>
+      <button class="btn primary" onclick="nuevoContacto()" title="Crear un contacto nuevo en Odoo">＋ Nuevo contacto</button>
       <button class="btn secondary" onclick="abrirInfo()" title="¿Cómo funciona este módulo?" aria-label="Cómo funciona">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
       </button>
@@ -509,11 +549,13 @@
         <option value="dias">Más días sin comprar</option>
         <option value="monto">Mayor monto histórico</option>
         <option value="reciente">Compra más reciente</option>
+        <option value="ficha">Ficha incompleta primero</option>
       </select>
       <select id="fwa" class="picker">
         <option value="todos">Todos</option>
         <option value="con">Con WhatsApp</option>
         <option value="sin">Sin WhatsApp</option>
+        <option value="sintel">Sin teléfono</option>
       </select>
     </div>
     <div class="count" id="count"></div>
@@ -595,6 +637,11 @@
   </div>
 </div>
 <canvas id="confetti"></canvas>
+
+<!-- Editor de ficha (drawer) -->
+<div class="scrim" id="fscrim" onclick="cerrarDrawer()"></div>
+<div class="drawer" id="fdrawer" aria-hidden="true"></div>
+<div class="ftoast" id="ftoast"></div>
 
 <div class="modal-bg" id="modal">
   <div class="modal">
@@ -695,6 +742,7 @@ async function load() {
     document.getElementById('syncInfo').textContent = DATA.length + ' clientes';
     renderAll();
     celebrarNuevos();
+    cargarFichas(); // trae las fichas de Odoo en segundo plano (completitud, editar)
   } catch(err) {
     document.getElementById('view-cola').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + err.message + '</div>';
   }
@@ -1014,9 +1062,11 @@ function renderLista() {
   if (filtro.q) { const q = filtro.q.toLowerCase(); rows = rows.filter(d => (d.nombre||'').toLowerCase().includes(q)); }
   if (filtro.fwa === 'con') rows = rows.filter(d => d.telefono_wa);
   if (filtro.fwa === 'sin') rows = rows.filter(d => !d.telefono_wa);
+  if (filtro.fwa === 'sintel') rows = rows.filter(d => !d.telefono);
   rows.sort((a,b) => {
     const ca = estaContactado(a.partner_id) ? 1 : 0, cb = estaContactado(b.partner_id) ? 1 : 0;
     if (ca !== cb) return ca - cb;
+    if (filtro.orden === 'ficha') return fichaPct(a.partner_id) - fichaPct(b.partner_id);
     if (filtro.orden === 'dias') return (b.dias_desde_ultima||-1) - (a.dias_desde_ultima||-1);
     if (filtro.orden === 'monto') return (b.total_gastado||0) - (a.total_gastado||0);
     if (filtro.orden === 'reciente') return new Date(b.ultima_compra||0) - new Date(a.ultima_compra||0);
@@ -1036,7 +1086,7 @@ function rowHtml(d) {
   const arch = estaArchivado(d.partner_id);
   return `<div class="row ${cont?'contactado':''}" style="--c:${seg.c}">
     <div class="main">
-      <div class="row-top"><span class="name">${esc(d.nombre||'Sin nombre')}</span><span class="row-badge">${seg.label}</span></div>
+      <div class="row-top"><span class="name">${esc(d.nombre||'Sin nombre')}</span>${!d.telefono?'<span class="badge-notel">📞 Falta tel.</span>':''}<span class="row-badge">${seg.label}</span></div>
       <div class="metrics">
         <div class="m"><div class="v ${hot?'hot':''}">${dias==null?'—':dias+' d'}</div><div class="k">sin comprar</div></div>
         <div class="m"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="k">histórico</div></div>
@@ -1046,6 +1096,7 @@ function rowHtml(d) {
       <div class="prod">${tp?`Suele comprar: <b>${esc(tp)}</b>`:'<span class="none">Sin productos registrados</span>'}</div>
       ${pulseHtml(d)}
       <div class="chips">
+        <span class="chip ficha" onclick="abrirFicha(${d.partner_id})">✎ Ficha${FICHA[d.partner_id]?' '+completar(FICHA[d.partner_id]).pct+'%':''}</span>
         ${tieneCompras?`<span class="chip" onclick="toggleBox('ult-${d.partner_id}')">📅 Última compra</span>`:''}
         ${(PRODS[d.partner_id]||[]).length?`<span class="chip" onclick="toggleTopList(${d.partner_id})">📊 Top productos</span>`:''}
         <a class="chip" href="${contactoUrl}" target="_blank">👤 Odoo</a>
@@ -1237,6 +1288,211 @@ document.getElementById('q').oninput      = e => { filtro.q = e.target.value; re
 document.getElementById('orden').onchange = e => { filtro.orden = e.target.value; renderLista(); };
 document.getElementById('fwa').onchange   = e => { filtro.fwa = e.target.value; renderLista(); };
 document.getElementById('modal').onclick  = e => { if (e.target.id === 'modal') closeModal(); };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Editor de ficha del contacto (lee/escribe Odoo vía odoo-rpc)
+// ═══════════════════════════════════════════════════════════════════════════
+async function orpc(model, method, args, kwargs) {
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess && sess.session && sess.session.access_token;
+  const r = await fetch(window.SUPABASE_URL + '/functions/v1/odoo-rpc', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ model, method, args, kwargs: kwargs || {} }),
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'Error Odoo');
+  return j.result;
+}
+
+const IDT = { cuit: 4, dni: 5, cuil: 6 };
+const RUBROS = [
+  { v: 47, l: 'Centro de estética' }, { v: 48, l: 'Spa' }, { v: 49, l: 'Peluquería / Salón de belleza' },
+  { v: 50, l: 'Cosmetóloga / Cosmiatra' }, { v: 51, l: 'Farmacia / Perfumería' }, { v: 52, l: 'Masajista' },
+  { v: 53, l: 'Revendedor / Distribuidor' }, { v: 54, l: 'Profesional independiente' },
+];
+const RUBRO_IDS = new Set(RUBROS.map(r => r.v));
+const PF = ['id','name','company_type','street','zip','city','state_id','phone','mobile','email','vat','l10n_ar_afip_responsibility_type_id','l10n_latam_identification_type_id','category_id'];
+const REQ_FICHA = ['name','tel','email','street','zip','city','state','idtype','vat','fiscal'];
+let FICHA = {}, CATFISCAL = [], CATIDT = [], CATPROV = [], FEDIT = null;
+
+const digs = s => (s || '').replace(/\D/g, '');
+function fmtDoc(raw, idtypeId) {
+  const d = digs(raw); if (!d) return '';
+  if (idtypeId === IDT.dni) { if (d.length < 7 || d.length > 8) return raw.trim(); return d.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  if (idtypeId === IDT.cuit || idtypeId === IDT.cuil) { if (d.length !== 11) return raw.trim(); return d.slice(0,2) + '-' + d.slice(2,10) + '-' + d.slice(10); }
+  return raw.trim();
+}
+function fmtTel(raw) {
+  let d = digs(raw); if (!d) return '';
+  if (d.startsWith('0054')) d = d.slice(4);
+  if (d.startsWith('54')) d = d.slice(2);
+  d = d.replace(/^0/, '');
+  if (d.length > 10) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, '$1$2');
+  if (d.length < 8) return raw.trim();
+  let area, local;
+  if (d.length === 10) { if (d.startsWith('11')) { area = '11'; local = d.slice(2); } else { area = d.slice(0,3); local = d.slice(3); } }
+  else if (d.length === 11) { area = d.slice(0,4); local = d.slice(4); }
+  else return '+54 ' + d;
+  const ls = local.length >= 8 ? local.slice(0,4) + '-' + local.slice(4) : local.slice(0,3) + '-' + local.slice(3);
+  return '+54 ' + area + ' ' + ls;
+}
+function oracion(s) { s = (s || '').trim().replace(/\s+/g, ' '); if (!s) return ''; return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
+function waNum(tel) { let d = digs(tel); if (d.length < 8) return ''; if (d.startsWith('54')) d = d.slice(2); d = d.replace(/^0/, ''); if (d.length > 10) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, '$1$2'); return d.length >= 10 ? '549' + d : ''; }
+
+function completar(c) {
+  const has = {
+    name: !!c.name, tel: !!(c.phone || c.mobile), email: !!c.email, street: !!c.street, zip: !!c.zip, city: !!c.city,
+    state: !!(c.state_id && c.state_id[0]), idtype: !!(c.l10n_latam_identification_type_id && c.l10n_latam_identification_type_id[0]),
+    vat: !!c.vat, fiscal: !!(c.l10n_ar_afip_responsibility_type_id && c.l10n_ar_afip_responsibility_type_id[0]),
+  };
+  const pct = Math.round(REQ_FICHA.filter(k => has[k]).length / REQ_FICHA.length * 100);
+  return { has, pct };
+}
+const fichaPct = pid => FICHA[pid] ? completar(FICHA[pid]).pct : 999;
+function rubroActual(c) { for (const t of (c.category_id || [])) if (RUBRO_IDS.has(t)) return t; return ''; }
+
+async function cargarFichas() {
+  try {
+    if (!CATFISCAL.length) {
+      const [fiscal, idt, prov] = await Promise.all([
+        orpc('l10n_ar.afip.responsibility.type', 'search_read', [[]], { fields: ['id','name'] }),
+        orpc('l10n_latam.identification.type', 'search_read', [[['active','=',true]]], { fields: ['id','name'] }),
+        orpc('res.country.state', 'search_read', [[['country_id.code','=','AR']]], { fields: ['id','name'], limit: 0 }),
+      ]);
+      CATFISCAL = fiscal; CATIDT = idt; CATPROV = prov;
+    }
+    const ids = DATA.map(d => d.partner_id);
+    const nueva = {};
+    for (let i = 0; i < ids.length; i += 400) {
+      const chunk = ids.slice(i, i + 400);
+      const parts = await orpc('res.partner', 'search_read', [[['id','in',chunk]]], { fields: PF, limit: 0 });
+      parts.forEach(p => { nueva[p.id] = p; });
+    }
+    FICHA = nueva;
+    renderAll();
+  } catch (e) { console.warn('No pude cargar fichas de Odoo:', e.message); }
+}
+
+function nuevoContacto() { abrirDrawer({ id: null, company_type: 'person', category_id: [] }, null, true); }
+function abrirFicha(pid) {
+  const c = FICHA[pid];
+  if (!c) { toastF('Estoy cargando las fichas desde Odoo, probá en unos segundos.'); return; }
+  abrirDrawer(c, DATA.find(x => x.partner_id === pid), false);
+}
+function cerrarDrawer() { document.getElementById('fdrawer').classList.remove('on'); document.getElementById('fscrim').classList.remove('on'); FEDIT = null; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarDrawer(); });
+
+function fOpt(cat, sel, ph) {
+  const s = Array.isArray(sel) ? sel[0] : sel;
+  return `<option value="">${ph || '— elegir —'}</option>` + cat.map(o => `<option value="${o.id}" ${s === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+}
+
+function abrirDrawer(c, d, isNew) {
+  FEDIT = { id: c.id, isNew };
+  const comp = completar(c);
+  const tipo = c.company_type || 'person';
+  const rubroOpts = `<option value="">— elegir rubro —</option>` + RUBROS.map(r => `<option value="${r.v}" ${rubroActual(c) === r.v ? 'selected' : ''}>${esc(r.l)}</option>`).join('');
+  let intel = '';
+  if (!isNew && d) {
+    const seg = SEG[d.segmento] || { label: d.segmento };
+    const dias = d.dias_desde_ultima;
+    const tps = (PRODS[d.partner_id] || []).slice(0, cuantosTop(d));
+    const wa = c.phone || c.mobile;
+    intel = `<div class="intel"><h4>Actividad comercial</h4>
+      <div class="istat">
+        <div class="b"><div class="v">${dias == null ? '—' : (dias === 0 ? 'hoy' : dias + 'd')}</div><div class="l">sin comprar</div></div>
+        <div class="b"><div class="v">${d.total_facturas || 0}</div><div class="l">compras</div></div>
+        <div class="b"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="l">histórico</div></div>
+        <div class="b"><div class="v">${d.intervalo_tipico_dias ? Math.round(d.intervalo_tipico_dias) + 'd' : '—'}</div><div class="l">su ritmo</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Segmento: <b style="color:var(--text)">${seg.label}</b></div>
+      ${tps.length ? ('<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:8px 0 4px">Lo que más compra</div>' + tps.map(p => `<div class="dprod"><span>${esc(cleanProd(p.product_name))}</span><span class="q">${fmtMoney(p.monto_total)}</span></div>`).join('')) : ''}
+      ${wa ? `<a class="wa-big" href="https://wa.me/${waNum(wa)}?text=${encodeURIComponent(buildMsg(d))}" target="_blank" onclick="marcarContactado(${d.partner_id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>Contactar por WhatsApp</a>` : `<div class="wa-big" data-off>Sin teléfono — cargalo abajo para poder contactar</div>`}
+    </div>`;
+  }
+  document.getElementById('fdrawer').innerHTML = `
+    <div class="dhead"><button class="x" onclick="cerrarDrawer()" aria-label="Cerrar">✕</button>
+      <h3>${isNew ? 'Nuevo contacto' : esc(c.name || '')}</h3>
+      <div class="cbar"><div class="f" style="width:${isNew ? 0 : comp.pct}%"></div></div>
+      <div class="cpct">${isNew ? 'Completá los datos del nuevo contacto' : 'Ficha ' + comp.pct + '% completa'}</div>
+    </div>
+    <div class="dbody">
+      ${intel}
+      <div class="dform"><h4>${isNew ? 'Datos del contacto' : 'Completar / corregir ficha'}</h4>
+        <div class="fld"><label>Tipo</label><select id="ff_type" onchange="onTipoFicha()">
+          <option value="person" ${tipo !== 'company' ? 'selected' : ''}>Persona</option><option value="company" ${tipo === 'company' ? 'selected' : ''}>Empresa</option></select></div>
+        <div class="fld"><label id="ff_lbl_name">${tipo === 'company' ? 'Razón social' : 'Apellido y nombre'} ${comp.has.name || isNew ? '' : '<span class="miss">falta</span>'}</label>
+          <input id="ff_name" value="${esc(c.name || '')}" placeholder="${tipo === 'company' ? 'Ej: Estética Bella S.R.L.' : 'Ej: Pérez, Juana'}"></div>
+        <div class="fld"><label>Rubro</label><select id="ff_rubro">${rubroOpts}</select></div>
+        <div class="fld"><label>Teléfono ${comp.has.tel || isNew ? '' : '<span class="miss">falta</span>'}</label>
+          <input id="ff_phone" value="${esc(c.phone || c.mobile || '')}" oninput="prevTelF()" placeholder="0341 155033943">
+          <div class="hint">Área sin 0, celular sin 15. Se guarda formateado.</div><div class="prev" id="ff_prev_phone"></div></div>
+        <div class="fld"><label>Email ${comp.has.email || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_email" value="${esc(c.email || '')}" placeholder="nombre@dominio.com"></div>
+        <div class="fld"><label>Dirección ${comp.has.street || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_street" value="${esc(c.street || '')}" placeholder="San Martín 1234"><div class="hint">Se guarda tipo oración.</div></div>
+        <div class="grid2">
+          <div class="fld"><label>Código postal ${comp.has.zip || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_zip" value="${esc(c.zip || '')}" placeholder="2000"></div>
+          <div class="fld"><label>Localidad ${comp.has.city || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_city" value="${esc(c.city || '')}" placeholder="Rosario"></div>
+        </div>
+        <div class="fld"><label>Provincia ${comp.has.state || isNew ? '' : '<span class="miss">falta</span>'}</label><select id="ff_state">${fOpt(CATPROV, c.state_id, '— provincia —')}</select></div>
+        <div class="grid2">
+          <div class="fld"><label>Tipo de documento ${comp.has.idtype || isNew ? '' : '<span class="miss">falta</span>'}</label><select id="ff_idtype" onchange="prevDocF()">${fOpt(CATIDT, c.l10n_latam_identification_type_id, '— tipo —')}</select></div>
+          <div class="fld"><label>Número ${comp.has.vat || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_vat" value="${esc(c.vat || '')}" oninput="prevDocF()" placeholder="20-12345678-9"><div class="prev" id="ff_prev_doc"></div></div>
+        </div>
+        <div class="fld"><label>Condición fiscal (AFIP) ${comp.has.fiscal || isNew ? '' : '<span class="miss">falta</span>'}</label><select id="ff_fiscal">${fOpt(CATFISCAL, c.l10n_ar_afip_responsibility_type_id, '— condición —')}</select></div>
+      </div>
+    </div>
+    <div class="dfoot"><button class="btn primary" id="ff_save" onclick="guardarFicha()">${isNew ? 'Crear contacto' : 'Guardar ficha'}</button></div>`;
+  document.getElementById('fdrawer').classList.add('on');
+  document.getElementById('fscrim').classList.add('on');
+  prevTelF(); prevDocF();
+}
+function onTipoFicha() {
+  const t = document.getElementById('ff_type').value;
+  document.getElementById('ff_lbl_name').innerHTML = t === 'company' ? 'Razón social' : 'Apellido y nombre';
+  document.getElementById('ff_name').placeholder = t === 'company' ? 'Ej: Estética Bella S.R.L.' : 'Ej: Pérez, Juana';
+}
+function prevTelF() { const v = document.getElementById('ff_phone').value; const el = document.getElementById('ff_prev_phone'); if (el) el.textContent = v ? ('Se guardará: ' + fmtTel(v)) : ''; }
+function prevDocF() { const t = parseInt(document.getElementById('ff_idtype').value || 0, 10); const v = document.getElementById('ff_vat').value; const el = document.getElementById('ff_prev_doc'); if (el) el.textContent = v ? ('→ ' + fmtDoc(v, t)) : ''; }
+
+async function guardarFicha() {
+  if (!FEDIT) return;
+  const btn = document.getElementById('ff_save'); btn.disabled = true; btn.textContent = 'Guardando…';
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const num = id => { const x = val(id); return x ? parseInt(x, 10) : false; };
+  const idtype = num('ff_idtype');
+  const vals = {
+    company_type: val('ff_type'), name: val('ff_name'),
+    phone: val('ff_phone') ? fmtTel(val('ff_phone')) : false, mobile: false,
+    email: val('ff_email') || false, street: val('ff_street') ? oracion(val('ff_street')) : false,
+    zip: val('ff_zip') || false, city: val('ff_city') ? oracion(val('ff_city')) : false,
+    state_id: num('ff_state'), l10n_latam_identification_type_id: idtype,
+    vat: val('ff_vat') ? fmtDoc(val('ff_vat'), idtype) : false,
+    l10n_ar_afip_responsibility_type_id: num('ff_fiscal'),
+  };
+  const rubro = num('ff_rubro');
+  if (rubro) vals.category_id = [[4, rubro]];
+  if (!vals.name) { btn.disabled = false; btn.textContent = FEDIT.isNew ? 'Crear contacto' : 'Guardar ficha'; toastF('⚠ Falta el nombre'); return; }
+  try {
+    let id = FEDIT.id;
+    const wasNew = FEDIT.isNew;
+    if (wasNew) { const created = await orpc('res.partner', 'create', [vals]); id = Array.isArray(created) ? created[0] : created; }
+    else { await orpc('res.partner', 'write', [[id], vals]); }
+    const fresh = (await orpc('res.partner', 'read', [[id]], { fields: PF }))[0];
+    FICHA[id] = fresh;
+    const pct = completar(fresh).pct;
+    const i = DATA.findIndex(x => x.partner_id === id);
+    if (i >= 0) { DATA[i].nombre = fresh.name; DATA[i].telefono = fresh.phone || fresh.mobile || null; DATA[i].telefono_wa = waNum(fresh.phone || fresh.mobile) || null; }
+    else if (wasNew) { DATA.push({ partner_id: id, nombre: fresh.name, segmento: 'nunca_compro', es_profesional: true, telefono: fresh.phone || fresh.mobile || null, telefono_wa: waNum(fresh.phone || fresh.mobile) || null, total_facturas: 0, dias_desde_ultima: null, total_gastado: 0 }); }
+    cerrarDrawer();
+    if (wasNew) { toastF('🎉 Contacto creado en Odoo', true); confetti(); }
+    else { toastF(pct >= 100 ? '🎉 ¡Ficha completa!' : 'Ficha guardada ✓', pct >= 100); if (pct >= 100) confetti(); }
+    renderAll();
+  } catch (e) { btn.disabled = false; btn.textContent = FEDIT && FEDIT.isNew ? 'Crear contacto' : 'Guardar ficha'; toastF('⚠ No se pudo guardar: ' + e.message); }
+}
+
+let _ftoastT;
+function toastF(msg, win) { const t = document.getElementById('ftoast'); t.textContent = msg; t.className = 'ftoast on' + (win ? ' win' : ''); clearTimeout(_ftoastT); _ftoastT = setTimeout(() => t.className = 'ftoast', 2800); }
 
 window.abrirConfigMensajes = abrirConfigMensajes;
 cargarPlantillas();
