@@ -7,13 +7,15 @@
   <meta name="app-root" content="../">
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
-    /* ---- Resumen ---- */
+    /* ---- Resumen (clickeable = filtro) ---- */
     .seg-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 130px; display: flex; flex-direction: column; gap: 1px; }
+    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 130px; display: flex; flex-direction: column; gap: 1px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+    .seg-chip:hover { border-color: var(--muted); }
     .seg-chip .n { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
     .seg-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
     .seg-chip.avisar { border-left: 3px solid var(--accent); } .seg-chip.avisar .n { color: var(--accent); }
     .seg-chip.despachar { border-left: 3px solid var(--warn); } .seg-chip.despachar .n { color: var(--warn); }
+    .seg-chip.sel { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 
     /* ---- Controles ---- */
     .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -34,8 +36,8 @@
     details.tpl-box[open] > summary::before { transform: rotate(90deg); }
     .tpl-body { padding: 4px 15px 15px; display: grid; gap: 12px; }
     .tpl-field label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
-    .tpl-field textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
-    .tpl-vars { font-size: 11.5px; color: var(--muted); }
+    .tpl-field textarea { width: 100%; min-height: 150px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .tpl-vars { font-size: 11.5px; color: var(--muted); line-height: 1.9; }
     .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
     .tpl-actions { display: flex; gap: 8px; }
 
@@ -54,13 +56,14 @@
     .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
     .b-pend { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
 
-    /* fila de acciones + chips */
     .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
     .chip { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; gap: 4px; }
     .chip:hover { border-color: var(--muted); color: var(--text); }
     .chip.on { background: color-mix(in srgb, var(--ok) 14%, transparent); border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
     .chip.on::before { content: '✓'; font-weight: 700; }
+    .chip.pedido { color: var(--structure); border-color: color-mix(in srgb, var(--structure) 35%, transparent); }
+    .chip.pedido.on { background: color-mix(in srgb, var(--structure) 12%, transparent); color: var(--structure); }
     .chip[data-f="avisado"].on { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
 
     .seg-acts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
@@ -71,14 +74,13 @@
     .mini.wa.off { background: var(--muted); border-color: var(--muted); pointer-events: none; opacity: .6; }
     .mini.track { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
-    /* zona expandible: productos + mensaje */
     .seg-more { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
     .seg-more.open { display: block; }
     .seg-prods { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
     .seg-prods .p { font-size: 12.5px; display: flex; gap: 7px; }
     .seg-prods .p .q { color: var(--muted); font-variant-numeric: tabular-nums; }
     .seg-prods .p .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; margin-left: auto; }
-    .seg-more textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .seg-more textarea { width: 100%; min-height: 190px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
     .seg-more-acts { display: flex; gap: 8px; margin-top: 8px; }
 
     .seg-empty, .seg-loading { text-align: center; padding: 42px 20px; color: var(--muted); }
@@ -93,9 +95,9 @@
 <main id="app-content">
 
   <div class="seg-resumen" id="resumen">
-    <div class="seg-chip avisar"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
-    <div class="seg-chip despachar"><span class="n" id="r-despachar">—</span><span class="l">Por despachar</span></div>
-    <div class="seg-chip"><span class="n" id="r-total">—</span><span class="l">Ventas con envío</span></div>
+    <div class="seg-chip avisar sel" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
+    <div class="seg-chip despachar" data-tab="despachar" onclick="setTab('despachar')"><span class="n" id="r-despachar">—</span><span class="l">Por despachar</span></div>
+    <div class="seg-chip" data-tab="todos" onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Ventas con envío</span></div>
   </div>
   <div class="seg-aviso" id="aviso"></div>
 
@@ -104,7 +106,11 @@
     <div class="tpl-body">
       <div class="tpl-field"><label>Pedido despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
       <div class="tpl-field"><label>Pedido por despachar (aún sin salir)</label><textarea id="tpl-pendiente"></textarea></div>
-      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{numero}</code> <code>{so}</code> <code>{transportista}</code> <code>{tracking}</code> <code>{link}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code></div>
+      <div class="tpl-vars">Variables:
+        <code>{nombre}</code> <code>{titular}</code> <code>{servicio}</code> <code>{modalidad}</code>
+        <code>{fecha_despacho}</code> <code>{link}</code> <code>{tracking}</code>
+        <code>{numero}</code> <code>{so}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
+      </div>
       <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
     </div>
   </details>
@@ -136,23 +142,30 @@
 // ---- Plantillas ----
 const TPL_DEF = {
   despachado:
-`¡Hola {nombre}! 👋 Te escribimos de Rosaint 🌿
+`Hola {nombre} 😊
 
-Tu pedido #{numero} ya está en camino 📦
-Lo despachamos por {transportista}.
+Te informamos que tu pedido ya fue despachado.
 
-Seguí tu envío acá:
-🔗 {link}
-📇 N° de seguimiento: {tracking}
+📦 Servicio: {servicio}
+📦 Modalidad: {modalidad}
+📅 Fecha de despacho: {fecha_despacho}
+👤 Titular del envío: {titular}
 
-Cualquier cosa quedamos a disposición. ¡Gracias por elegirnos! 💛`,
+🔎 Podés realizar el seguimiento desde acá:
+{link}
+
+Muchas gracias por confiar en nosotros.
+
+Rosaint Cosmética Profesional 💛`,
   pendiente:
-`¡Hola {nombre}! 👋 Te escribimos de Rosaint 🌿
+`Hola {nombre} 😊
 
-¡Recibimos tu pedido #{numero}! Ya lo estamos preparando para despacharlo.
+¡Recibimos tu pedido! Ya lo estamos preparando para despacharlo.
 En cuanto salga te enviamos el código de seguimiento por acá.
 
-¡Gracias por tu compra! 💛`
+Muchas gracias por confiar en nosotros.
+
+Rosaint Cosmética Profesional 💛`
 };
 const LS_TPL = 'seg-plantillas';
 function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(localStorage.getItem(LS_TPL)||'{}')); } catch { return {...TPL_DEF}; } }
@@ -161,13 +174,17 @@ function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(loc
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 function fmtFecha(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('es-AR',{day:'numeric',month:'short'}); }
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
+function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
 function aplicarPlantilla(tpl,o){
   return tpl
     .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
+    .replace(/\{titular\}/g, o.titular||o.cliente||'')
+    .replace(/\{servicio\}/g, o.transportista||'')
+    .replace(/\{modalidad\}/g, o.modalidad||'')
+    .replace(/\{fecha_despacho\}/g, hoyDMY())
     .replace(/\{numero\}/g, o.numero||'')
     .replace(/\{so\}/g, o.odoo_so||'')
-    .replace(/\{transportista\}/g, o.transportista||'el correo')
     .replace(/\{tracking\}/g, o.tracking_code||'—')
     .replace(/\{link\}/g, o.tracking_url||'')
     .replace(/\{productos\}/g, listaProductos(o.productos))
@@ -178,12 +195,14 @@ function aplicarPlantilla(tpl,o){
 // ---- Estado ----
 let DATA = [];
 let TAB = 'avisar';
-let ESTADO = {};        // tn_id -> {listo,etiqueta,despachado,avisado}
+let ESTADO = {};        // tn_id -> {pedido,armado,empaquetado,etiqueta,despachado,avisado}
 const SO = {};          // tn_id -> odoo_so
+const PDF = {};         // tn_id -> pedido_pdf_url
 
 function setTab(t){
   TAB = t;
   document.querySelectorAll('.seg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.querySelectorAll('.seg-chip[data-tab]').forEach(c => c.classList.toggle('sel', c.dataset.tab === t));
   render();
 }
 
@@ -204,7 +223,7 @@ async function cargar(){
     DATA = rSeg.ordenes || [];
     ESTADO = {};
     for (const e of (estRes.data || [])) ESTADO[e.tn_id] = e;
-    for (const o of DATA) SO[o.id] = o.odoo_so || null;
+    for (const o of DATA) { SO[o.id] = o.odoo_so || null; PDF[o.id] = o.pedido_pdf_url || null; }
 
     document.getElementById('r-avisar').textContent    = rSeg.resumen.para_avisar;
     document.getElementById('r-despachar').textContent = rSeg.resumen.por_despachar;
@@ -214,7 +233,7 @@ async function cargar(){
 
     const av = document.getElementById('aviso');
     if (!rSeg.odoo_ok) av.innerHTML = '⚠ No se pudo consultar Odoo — mostrando todas las ventas de Tienda Nube sin cruzar.';
-    else if (rSeg.resumen.sin_odoo) av.innerHTML = 'Cruzado con Odoo. <b>' + rSeg.resumen.sin_odoo + '</b> venta(s) de Tienda Nube con envío aún no aparecen en Odoo (ocultas).';
+    else if (rSeg.resumen.sin_odoo) av.innerHTML = 'Ventas de Odoo con envío, cruzadas con Tienda Nube. <b>' + rSeg.resumen.sin_odoo + '</b> venta(s) de TN aún no aparecen en Odoo (ocultas).';
     else av.innerHTML = 'Ventas de Odoo con envío, cruzadas con Tienda Nube.';
 
     render();
@@ -253,6 +272,7 @@ function render(){
     ).join('');
 
     const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog(${o.id},'${f}',this)">${label}</button>`;
+    const chipPedido = `<button class="chip pedido${st.pedido?' on':''}" data-f="pedido" title="Descargar el pedido de venta de Odoo para imprimir" onclick="pedidoClick(${o.id},this)">🖨 Pedido</button>`;
 
     html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${o.id}">
       <div class="seg-top">
@@ -262,7 +282,7 @@ function render(){
         <span class="seg-badges">${estadoBadge}<span class="b-tag b-carrier">${esc(o.transportista)}</span><span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span></span>
       </div>
       <div class="seg-row2">
-        <div class="chips">${chip('listo','Listo')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
+        <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
         <div class="seg-acts">
           ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
           <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick(${o.id},this)">💬 WhatsApp</a>
@@ -284,13 +304,20 @@ function render(){
 }
 
 function toggleMore(id){ const el = document.getElementById('more-'+id); if(el) el.classList.toggle('open'); }
-
 function copiarMsg(id){
   const ta = document.getElementById('msg-'+id); if(!ta) return;
   navigator.clipboard.writeText(ta.value).then(()=>{ const b=event.target; const t=b.textContent; b.textContent='✓ Copiado'; setTimeout(()=>b.textContent=t,1300); });
 }
 
-// Sincroniza el link de WhatsApp con el texto (por si lo editaron) y marca Avisado.
+// Badge "Pedido": abre el PDF del pedido de Odoo para imprimir + marca el paso.
+function pedidoClick(id, btn){
+  const url = PDF[id];
+  if (url) window.open(url, '_blank', 'noopener');
+  else alert('Esta venta todavía no tiene pedido de Odoo asociado.');
+  if (!(ESTADO[id] && ESTADO[id].pedido)) tog(id, 'pedido', btn);
+}
+
+// WhatsApp: sincroniza el texto (por si lo editaron) y marca Avisado.
 function waClick(id, a){
   const ta = document.getElementById('msg-'+id);
   if (ta && a.href) a.href = a.href.split('?text=')[0] + '?text=' + encodeURIComponent(ta.value);
@@ -298,7 +325,7 @@ function waClick(id, a){
   if (chip && !(ESTADO[id] && ESTADO[id].avisado)) tog(id, 'avisado', chip);
 }
 
-// Toggle de estado interno -> persiste en Supabase (seg_estado)
+// Toggle de paso interno -> persiste en Supabase (seg_estado)
 async function tog(id, field, btn){
   const cur = !!(ESTADO[id] && ESTADO[id][field]);
   const val = !cur;
