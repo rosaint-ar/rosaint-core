@@ -7,7 +7,6 @@
   <meta name="app-root" content="../">
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
-    /* ---- Resumen (clickeable = filtro) ---- */
     .seg-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
     .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 130px; display: flex; flex-direction: column; gap: 1px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
     .seg-chip:hover { border-color: var(--muted); }
@@ -17,7 +16,6 @@
     .seg-chip.despachar { border-left: 3px solid var(--warn); } .seg-chip.despachar .n { color: var(--warn); }
     .seg-chip.sel { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 
-    /* ---- Controles ---- */
     .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .seg-tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 4px; }
     .seg-tab { padding: 7px 13px; border-radius: var(--radius-sm); border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s, color .12s; }
@@ -28,7 +26,6 @@
     .seg-aviso { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
     .seg-aviso b { color: var(--text); }
 
-    /* ---- Plantilla ---- */
     details.tpl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
     details.tpl-box > summary { list-style: none; cursor: pointer; padding: 11px 15px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--muted); }
     details.tpl-box > summary::-webkit-details-marker { display: none; }
@@ -41,10 +38,10 @@
     .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
     .tpl-actions { display: flex; gap: 8px; }
 
-    /* ---- Lista compacta ---- */
     .seg-list { display: flex; flex-direction: column; gap: 8px; }
     .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s; }
     .seg-card.avisado { opacity: .55; }
+    .seg-card.falta { border-left: 3px solid var(--hot); }
 
     .seg-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .seg-so { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); padding: 1px 7px; border-radius: 5px; }
@@ -55,6 +52,7 @@
     .b-carrier { background: color-mix(in srgb, var(--structure) 14%, transparent); color: var(--structure); }
     .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
     .b-pend { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .b-falta { background: color-mix(in srgb, var(--hot) 15%, transparent); color: var(--hot); }
 
     .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -172,7 +170,7 @@ function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(loc
 
 // ---- Utils ----
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
-function fmtFecha(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('es-AR',{day:'numeric',month:'short'}); }
+function fmtFecha(iso){ if(!iso) return ''; const d=new Date(String(iso).replace(' ','T')); return isNaN(d)?'':d.toLocaleDateString('es-AR',{day:'numeric',month:'short'}); }
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
@@ -183,7 +181,7 @@ function aplicarPlantilla(tpl,o){
     .replace(/\{servicio\}/g, o.transportista||'')
     .replace(/\{modalidad\}/g, o.modalidad||'')
     .replace(/\{fecha_despacho\}/g, hoyDMY())
-    .replace(/\{numero\}/g, o.numero||'')
+    .replace(/\{numero\}/g, o.numero||o.odoo_so||'')
     .replace(/\{so\}/g, o.odoo_so||'')
     .replace(/\{tracking\}/g, o.tracking_code||'—')
     .replace(/\{link\}/g, o.tracking_url||'')
@@ -195,15 +193,29 @@ function aplicarPlantilla(tpl,o){
 // ---- Estado ----
 let DATA = [];
 let TAB = 'avisar';
-let ESTADO = {};        // tn_id -> {pedido,armado,empaquetado,etiqueta,despachado,avisado}
-const SO = {};          // tn_id -> odoo_so
-const PDF = {};         // tn_id -> pedido_pdf_url
+let ESTADO = {};        // estado_key -> {pedido,armado,empaquetado,etiqueta,despachado,avisado}
+const SO = {};          // estado_key -> odoo_so
+const PDF = {};         // estado_key -> pedido_pdf_url
+
+// Un pedido está "despachado" si TN lo dice O si lo marcamos a mano.
+function efDesp(o){ return !!o.despachado || !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].despachado); }
+function isAvisado(o){ return !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].avisado); }
 
 function setTab(t){
   TAB = t;
   document.querySelectorAll('.seg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.seg-chip[data-tab]').forEach(c => c.classList.toggle('sel', c.dataset.tab === t));
   render();
+}
+
+function updateCounts(){
+  const avisar = DATA.filter(o => efDesp(o) && !isAvisado(o)).length;
+  const desp   = DATA.filter(o => !efDesp(o)).length;
+  document.getElementById('r-avisar').textContent    = avisar;
+  document.getElementById('r-despachar').textContent = desp;
+  document.getElementById('r-total').textContent     = DATA.length;
+  document.getElementById('t-avisar').textContent    = '(' + avisar + ')';
+  document.getElementById('t-despachar').textContent = '(' + desp + ')';
 }
 
 async function cargar(){
@@ -222,20 +234,15 @@ async function cargar(){
     if (!rSeg.ok) throw new Error(rSeg.error || 'Error al leer ventas');
     DATA = rSeg.ordenes || [];
     ESTADO = {};
-    for (const e of (estRes.data || [])) ESTADO[e.tn_id] = e;
-    for (const o of DATA) { SO[o.id] = o.odoo_so || null; PDF[o.id] = o.pedido_pdf_url || null; }
-
-    document.getElementById('r-avisar').textContent    = rSeg.resumen.para_avisar;
-    document.getElementById('r-despachar').textContent = rSeg.resumen.por_despachar;
-    document.getElementById('r-total').textContent     = rSeg.resumen.total;
-    document.getElementById('t-avisar').textContent    = '(' + rSeg.resumen.para_avisar + ')';
-    document.getElementById('t-despachar').textContent = '(' + rSeg.resumen.por_despachar + ')';
+    for (const e of (estRes.data || [])) ESTADO[String(e.tn_id)] = e;
+    for (const o of DATA) { SO[o.estado_key] = o.odoo_so || null; PDF[o.estado_key] = o.pedido_pdf_url || null; }
 
     const av = document.getElementById('aviso');
-    if (!rSeg.odoo_ok) av.innerHTML = '⚠ No se pudo consultar Odoo — mostrando todas las ventas de Tienda Nube sin cruzar.';
-    else if (rSeg.resumen.sin_odoo) av.innerHTML = 'Ventas de Odoo con envío, cruzadas con Tienda Nube. <b>' + rSeg.resumen.sin_odoo + '</b> venta(s) de TN aún no aparecen en Odoo (ocultas).';
-    else av.innerHTML = 'Ventas de Odoo con envío, cruzadas con Tienda Nube.';
+    let txt = rSeg.odoo_ok ? 'Ventas de Odoo con envío, cruzadas con Tienda Nube.' : '⚠ No se pudo consultar Odoo — mostrando todo Tienda Nube sin cruzar.';
+    if (rSeg.resumen.pendientes_tn) txt += ' <b>' + rSeg.resumen.pendientes_tn + '</b> venta(s) manual(es) por correo sin envío creado en Tienda Nube.';
+    av.innerHTML = txt;
 
+    updateCounts();
     render();
   } catch (e) {
     salida.innerHTML = '<div class="seg-error">No pude cargar los pedidos: ' + esc(e.message) + '</div>';
@@ -243,8 +250,8 @@ async function cargar(){
 }
 
 function filtrar(){
-  if (TAB === 'avisar')    return DATA.filter(o => o.necesita_seguimiento && !(ESTADO[o.id] && ESTADO[o.id].avisado));
-  if (TAB === 'despachar') return DATA.filter(o => !o.despachado);
+  if (TAB === 'avisar')    return DATA.filter(o => efDesp(o) && !isAvisado(o));
+  if (TAB === 'despachar') return DATA.filter(o => !efDesp(o));
   return DATA;
 }
 
@@ -259,41 +266,44 @@ function render(){
   }
   let html = '<div class="seg-list">';
   for (const o of lista){
-    const st = ESTADO[o.id] || {};
-    const enCamino = o.necesita_seguimiento;
+    const k = o.estado_key;
+    const st = ESTADO[k] || {};
+    const enCamino = efDesp(o);
     const tpl = enCamino ? tpls.despachado : tpls.pendiente;
     const msg = aplicarPlantilla(tpl, o);
     const waHref = o.telefono_wa ? ('https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg)) : '';
     const nProds = (o.productos||[]).length;
-    const estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
+
+    let estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
+    const faltaBadge = o.solo_odoo ? '<span class="b-tag b-falta">⚠ Falta envío en Tienda Nube</span>' : '';
 
     const prodHtml = (o.productos||[]).map(p =>
       `<div class="p"><span class="q">${p.cantidad}×</span><span>${esc(p.nombre)}</span>${p.sku?`<span class="sku">${esc(p.sku)}</span>`:''}</div>`
     ).join('');
 
-    const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog(${o.id},'${f}',this)">${label}</button>`;
-    const chipPedido = `<button class="chip pedido${st.pedido?' on':''}" data-f="pedido" title="Descargar el pedido de venta de Odoo para imprimir" onclick="pedidoClick(${o.id},this)">🖨 Pedido</button>`;
+    const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog('${k}','${f}',this)">${label}</button>`;
+    const chipPedido = `<button class="chip pedido${st.pedido?' on':''}" data-f="pedido" title="Descargar el pedido de venta de Odoo para imprimir" onclick="pedidoClick('${k}',this)">🖨 Pedido</button>`;
 
-    html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${o.id}">
+    html += `<div class="seg-card${st.avisado?' avisado':''}${o.solo_odoo?' falta':''}" data-id="${k}">
       <div class="seg-top">
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
         <span class="seg-meta">· ${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
-        <span class="seg-badges">${estadoBadge}<span class="b-tag b-carrier">${esc(o.transportista)}</span><span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span></span>
+        <span class="seg-badges">${faltaBadge}${estadoBadge}<span class="b-tag b-carrier">${esc(o.transportista)}</span>${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
       </div>
       <div class="seg-row2">
         <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
         <div class="seg-acts">
           ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
-          <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick(${o.id},this)">💬 WhatsApp</a>
-          <button class="mini" onclick="toggleMore(${o.id})">✎ Mensaje</button>
+          <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
+          <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>
         </div>
       </div>
-      <div class="seg-more" id="more-${o.id}">
+      <div class="seg-more" id="more-${k}">
         <div class="seg-prods">${prodHtml}</div>
-        <textarea id="msg-${o.id}">${esc(msg)}</textarea>
+        <textarea id="msg-${k}">${esc(msg)}</textarea>
         <div class="seg-more-acts">
-          <button class="btn secondary" onclick="copiarMsg(${o.id})">Copiar mensaje</button>
+          <button class="btn secondary" onclick="copiarMsg('${k}')">Copiar mensaje</button>
           ${!o.telefono_wa?'<span style="font-size:12px;color:var(--warn);align-self:center">Sin teléfono cargado</span>':''}
         </div>
       </div>
@@ -303,44 +313,46 @@ function render(){
   salida.innerHTML = html;
 }
 
-function toggleMore(id){ const el = document.getElementById('more-'+id); if(el) el.classList.toggle('open'); }
-function copiarMsg(id){
-  const ta = document.getElementById('msg-'+id); if(!ta) return;
+function toggleMore(k){ const el = document.getElementById('more-'+k); if(el) el.classList.toggle('open'); }
+function copiarMsg(k){
+  const ta = document.getElementById('msg-'+k); if(!ta) return;
   navigator.clipboard.writeText(ta.value).then(()=>{ const b=event.target; const t=b.textContent; b.textContent='✓ Copiado'; setTimeout(()=>b.textContent=t,1300); });
 }
 
 // Badge "Pedido": abre el PDF del pedido de Odoo para imprimir + marca el paso.
-function pedidoClick(id, btn){
-  const url = PDF[id];
-  if (url) window.open(url, '_blank', 'noopener');
+function pedidoClick(k, btn){
+  const u = PDF[k];
+  if (u) window.open(u, '_blank', 'noopener');
   else alert('Esta venta todavía no tiene pedido de Odoo asociado.');
-  if (!(ESTADO[id] && ESTADO[id].pedido)) tog(id, 'pedido', btn);
+  if (!(ESTADO[k] && ESTADO[k].pedido)) tog(k, 'pedido', btn);
 }
 
 // WhatsApp: sincroniza el texto (por si lo editaron) y marca Avisado.
-function waClick(id, a){
-  const ta = document.getElementById('msg-'+id);
+function waClick(k, a){
+  const ta = document.getElementById('msg-'+k);
   if (ta && a.href) a.href = a.href.split('?text=')[0] + '?text=' + encodeURIComponent(ta.value);
-  const chip = document.querySelector('.seg-card[data-id="'+id+'"] .chip[data-f="avisado"]');
-  if (chip && !(ESTADO[id] && ESTADO[id].avisado)) tog(id, 'avisado', chip);
+  const chip = document.querySelector('.seg-card[data-id="'+k+'"] .chip[data-f="avisado"]');
+  if (!(ESTADO[k] && ESTADO[k].avisado)) tog(k, 'avisado', chip);
 }
 
-// Toggle de paso interno -> persiste en Supabase (seg_estado)
-async function tog(id, field, btn){
-  const cur = !!(ESTADO[id] && ESTADO[id][field]);
+// Toggle de paso interno -> persiste en Supabase (seg_estado).
+// Al cambiar Despachado o Avisado, re-renderiza para que la venta cambie de pestaña sola.
+async function tog(k, field, btn){
+  const cur = !!(ESTADO[k] && ESTADO[k][field]);
   const val = !cur;
-  ESTADO[id] = Object.assign({}, ESTADO[id], { [field]: val });
-  btn.classList.toggle('on', val);
-  if (field === 'avisado') { const card = btn.closest('.seg-card'); if (card) card.classList.toggle('avisado', val); }
+  ESTADO[k] = Object.assign({}, ESTADO[k], { [field]: val });
+  if (btn) btn.classList.toggle('on', val);
+  if (field === 'avisado' && btn) { const c = btn.closest('.seg-card'); if (c) c.classList.toggle('avisado', val); }
   try {
     const { error } = await sb.from('seg_estado').upsert(
-      { tn_id: id, so_number: SO[id] || null, [field]: val, updated_at: new Date().toISOString() },
+      { tn_id: Number(k), so_number: SO[k] || null, [field]: val, updated_at: new Date().toISOString() },
       { onConflict: 'tn_id' }
     );
     if (error) throw error;
+    if (field === 'despachado' || field === 'avisado') { updateCounts(); render(); }
   } catch (e) {
-    ESTADO[id][field] = cur; btn.classList.toggle('on', cur);
-    if (field === 'avisado') { const card = btn.closest('.seg-card'); if (card) card.classList.toggle('avisado', cur); }
+    ESTADO[k][field] = cur;
+    if (btn) { btn.classList.toggle('on', cur); if (field === 'avisado') { const c = btn.closest('.seg-card'); if (c) c.classList.toggle('avisado', cur); } }
     alert('No se pudo guardar el estado: ' + (e.message || e));
   }
 }
