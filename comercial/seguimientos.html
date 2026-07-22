@@ -8,83 +8,85 @@
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
     /* ---- Resumen ---- */
-    .seg-resumen { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-    .seg-chip {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 12px 16px; min-width: 150px;
-      display: flex; flex-direction: column; gap: 2px;
-    }
-    .seg-chip .n { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
-    .seg-chip .l { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-    .seg-chip.avisar { border-left: 4px solid var(--accent); }
-    .seg-chip.avisar .n { color: var(--accent); }
-    .seg-chip.despachar { border-left: 4px solid var(--warn); }
-    .seg-chip.despachar .n { color: var(--warn); }
+    .seg-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 130px; display: flex; flex-direction: column; gap: 1px; }
+    .seg-chip .n { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+    .seg-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .seg-chip.avisar { border-left: 3px solid var(--accent); } .seg-chip.avisar .n { color: var(--accent); }
+    .seg-chip.despachar { border-left: 3px solid var(--warn); } .seg-chip.despachar .n { color: var(--warn); }
 
     /* ---- Controles ---- */
-    .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .seg-tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 4px; }
-    .seg-tab {
-      padding: 8px 14px; border-radius: var(--radius-sm); border: none; background: none;
-      cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s, color .12s;
-    }
+    .seg-tab { padding: 7px 13px; border-radius: var(--radius-sm); border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s, color .12s; }
     .seg-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     .seg-tab .cnt { font-variant-numeric: tabular-nums; opacity: .7; }
     .seg-spacer { flex: 1; }
-    select.seg-sel { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 13px; }
+    select.seg-sel { padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 13px; }
+    .seg-aviso { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
+    .seg-aviso b { color: var(--text); }
 
     /* ---- Plantilla ---- */
-    details.tpl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
-    details.tpl-box > summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    details.tpl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+    details.tpl-box > summary { list-style: none; cursor: pointer; padding: 11px 15px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--muted); }
     details.tpl-box > summary::-webkit-details-marker { display: none; }
-    details.tpl-box > summary::before { content: '▸'; color: var(--muted); font-size: 10px; transition: transform .15s; }
+    details.tpl-box > summary::before { content: '▸'; font-size: 10px; transition: transform .15s; }
     details.tpl-box[open] > summary::before { transform: rotate(90deg); }
-    .tpl-body { padding: 4px 16px 16px; display: grid; gap: 14px; }
+    .tpl-body { padding: 4px 15px 15px; display: grid; gap: 12px; }
     .tpl-field label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
-    .tpl-field textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .tpl-field textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
     .tpl-vars { font-size: 11.5px; color: var(--muted); }
     .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
     .tpl-actions { display: flex; gap: 8px; }
 
-    /* ---- Card de pedido ---- */
-    .seg-list { display: grid; gap: 14px; }
-    .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); overflow: hidden; }
-    .seg-card.avisado { opacity: .58; }
-    .seg-head { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; flex-wrap: wrap; }
-    .seg-head .who { flex: 1; min-width: 180px; }
-    .seg-head .who .name { font-size: 15px; font-weight: 700; }
-    .seg-head .who .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-    .seg-head .badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    .b-tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
-    .b-num { background: var(--surface-2); color: var(--muted); font-family: var(--font-mono); }
+    /* ---- Lista compacta ---- */
+    .seg-list { display: flex; flex-direction: column; gap: 8px; }
+    .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s; }
+    .seg-card.avisado { opacity: .55; }
+
+    .seg-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .seg-so { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); padding: 1px 7px; border-radius: 5px; }
+    .seg-name { font-size: 14.5px; font-weight: 700; }
+    .seg-meta { font-size: 12px; color: var(--muted); }
+    .seg-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+    .b-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
     .b-carrier { background: color-mix(in srgb, var(--structure) 14%, transparent); color: var(--structure); }
     .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
     .b-pend { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
 
-    .seg-prods { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 3px; }
-    .seg-prods .p { font-size: 13px; display: flex; gap: 8px; }
-    .seg-prods .p .q { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-    .seg-prods .p .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+    /* fila de acciones + chips */
+    .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+    .chips { display: flex; gap: 5px; flex-wrap: wrap; }
+    .chip { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; gap: 4px; }
+    .chip:hover { border-color: var(--muted); color: var(--text); }
+    .chip.on { background: color-mix(in srgb, var(--ok) 14%, transparent); border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+    .chip.on::before { content: '✓'; font-weight: 700; }
+    .chip[data-f="avisado"].on { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
 
-    .seg-track { padding: 0 16px 12px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .seg-track .code { font-family: var(--font-mono); background: var(--surface-2); padding: 2px 8px; border-radius: 6px; }
-    .seg-track a { color: var(--accent); font-weight: 600; }
+    .seg-acts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+    .mini { font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .mini:hover { border-color: var(--muted); }
+    .mini.wa { background: #25D366; border-color: #25D366; color: #fff; }
+    .mini.wa:hover { background: #1eb958; }
+    .mini.wa.off { background: var(--muted); border-color: var(--muted); pointer-events: none; opacity: .6; }
+    .mini.track { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
-    .seg-msg { border-top: 1px solid var(--border); background: var(--surface-2); padding: 12px 16px; }
-    .seg-msg textarea { width: 100%; min-height: 118px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
-    .seg-msg-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-    .btn-wa { background: #25D366; color: #fff; font-weight: 600; }
-    .btn-wa:hover { background: #1eb958; }
-    .btn-wa[disabled] { background: var(--muted); cursor: not-allowed; }
-    .seg-done { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none; }
-    .seg-done input { width: 15px; height: 15px; accent-color: var(--accent); }
+    /* zona expandible: productos + mensaje */
+    .seg-more { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+    .seg-more.open { display: block; }
+    .seg-prods { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+    .seg-prods .p { font-size: 12.5px; display: flex; gap: 7px; }
+    .seg-prods .p .q { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .seg-prods .p .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; margin-left: auto; }
+    .seg-more textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .seg-more-acts { display: flex; gap: 8px; margin-top: 8px; }
 
-    .seg-empty { text-align: center; padding: 48px 20px; color: var(--muted); }
-    .seg-loading { text-align: center; padding: 48px 20px; color: var(--muted); }
+    .seg-empty, .seg-loading { text-align: center; padding: 42px 20px; color: var(--muted); }
     .seg-error { background: color-mix(in srgb, var(--hot) 8%, transparent); border: 1px solid color-mix(in srgb, var(--hot) 30%, transparent); color: var(--hot); padding: 14px 16px; border-radius: var(--radius); font-size: 13px; }
+    @media (max-width: 620px) { .seg-badges { margin-left: 0; width: 100%; } .seg-acts { margin-left: 0; } }
   </style>
 </head>
-<body data-page="seguimientos" data-title="Seguimientos" data-subtitle="Avisá el envío a tus clientes de Tienda Nube">
+<body data-page="seguimientos" data-title="Seguimientos" data-subtitle="Avisá el envío a tus clientes">
 
 <div id="app-shell"></div>
 
@@ -95,26 +97,15 @@
     <div class="seg-chip despachar"><span class="n" id="r-despachar">—</span><span class="l">Por despachar</span></div>
     <div class="seg-chip"><span class="n" id="r-total">—</span><span class="l">Ventas con envío</span></div>
   </div>
+  <div class="seg-aviso" id="aviso"></div>
 
   <details class="tpl-box">
     <summary>⚙ Plantillas de mensaje</summary>
     <div class="tpl-body">
-      <div class="tpl-field">
-        <label>Pedido despachado (con tracking)</label>
-        <textarea id="tpl-despachado"></textarea>
-      </div>
-      <div class="tpl-field">
-        <label>Pedido por despachar (aún sin salir)</label>
-        <textarea id="tpl-pendiente"></textarea>
-      </div>
-      <div class="tpl-vars">
-        Variables: <code>{nombre}</code> <code>{numero}</code> <code>{transportista}</code>
-        <code>{tracking}</code> <code>{link}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
-      </div>
-      <div class="tpl-actions">
-        <button class="btn primary" onclick="guardarPlantillas()">Guardar</button>
-        <button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button>
-      </div>
+      <div class="tpl-field"><label>Pedido despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
+      <div class="tpl-field"><label>Pedido por despachar (aún sin salir)</label><textarea id="tpl-pendiente"></textarea></div>
+      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{numero}</code> <code>{so}</code> <code>{transportista}</code> <code>{tracking}</code> <code>{link}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code></div>
+      <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
     </div>
   </details>
 
@@ -127,16 +118,14 @@
     <div class="seg-spacer"></div>
     <label style="font-size:12px;color:var(--muted)">Últimos
       <select class="seg-sel" id="dias" onchange="cargar()">
-        <option value="15">15 días</option>
-        <option value="30" selected>30 días</option>
-        <option value="60">60 días</option>
-        <option value="90">90 días</option>
+        <option value="15">15 días</option><option value="30" selected>30 días</option>
+        <option value="60">60 días</option><option value="90">90 días</option>
       </select>
     </label>
     <button class="btn secondary" onclick="cargar()">↻ Refrescar</button>
   </div>
 
-  <div id="salida"><div class="seg-loading">Cargando ventas de Tienda Nube…</div></div>
+  <div id="salida"><div class="seg-loading">Cargando ventas…</div></div>
 
 </main>
 
@@ -144,7 +133,7 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
-// ---- Plantillas por defecto ----
+// ---- Plantillas ----
 const TPL_DEF = {
   despachado:
 `¡Hola {nombre}! 👋 Te escribimos de Rosaint 🌿
@@ -166,48 +155,31 @@ En cuanto salga te enviamos el código de seguimiento por acá.
 ¡Gracias por tu compra! 💛`
 };
 const LS_TPL = 'seg-plantillas';
-const LS_AVISADOS = 'seg-avisados';
-
-function getPlantillas() {
-  try { return Object.assign({}, TPL_DEF, JSON.parse(localStorage.getItem(LS_TPL) || '{}')); }
-  catch { return { ...TPL_DEF }; }
-}
-function getAvisados() {
-  try { return new Set(JSON.parse(localStorage.getItem(LS_AVISADOS) || '[]')); }
-  catch { return new Set(); }
-}
-function setAvisado(id, on) {
-  const s = getAvisados();
-  if (on) s.add(String(id)); else s.delete(String(id));
-  localStorage.setItem(LS_AVISADOS, JSON.stringify([...s]));
-}
+function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(localStorage.getItem(LS_TPL)||'{}')); } catch { return {...TPL_DEF}; } }
 
 // ---- Utils ----
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 function fmtFecha(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('es-AR',{day:'numeric',month:'short'}); }
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
-function limpiarProd(nombre){ return String(nombre||'').replace(/\s*\d+\s*(g|gr|kg|cc|ml|lts?|l)\b.*$/i, m=>m).trim(); }
-
-function listaProductos(prods){
-  return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', ');
-}
-
-function aplicarPlantilla(tpl, o){
-  const prods = listaProductos(o.productos);
+function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
+function aplicarPlantilla(tpl,o){
   return tpl
-    .replace(/\{nombre\}/g, o.primer_nombre || o.cliente || '')
-    .replace(/\{numero\}/g, o.numero || '')
-    .replace(/\{transportista\}/g, o.transportista || 'el correo')
-    .replace(/\{tracking\}/g, o.tracking_code || '—')
-    .replace(/\{link\}/g, o.tracking_url || '')
-    .replace(/\{productos\}/g, prods)
-    .replace(/\{ciudad\}/g, o.ciudad || '')
-    .replace(/\{provincia\}/g, o.provincia || '');
+    .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
+    .replace(/\{numero\}/g, o.numero||'')
+    .replace(/\{so\}/g, o.odoo_so||'')
+    .replace(/\{transportista\}/g, o.transportista||'el correo')
+    .replace(/\{tracking\}/g, o.tracking_code||'—')
+    .replace(/\{link\}/g, o.tracking_url||'')
+    .replace(/\{productos\}/g, listaProductos(o.productos))
+    .replace(/\{ciudad\}/g, o.ciudad||'')
+    .replace(/\{provincia\}/g, o.provincia||'');
 }
 
 // ---- Estado ----
 let DATA = [];
 let TAB = 'avisar';
+let ESTADO = {};        // tn_id -> {listo,etiqueta,despachado,avisado}
+const SO = {};          // tn_id -> odoo_so
 
 function setTab(t){
   TAB = t;
@@ -217,22 +189,34 @@ function setTab(t){
 
 async function cargar(){
   const salida = document.getElementById('salida');
-  salida.innerHTML = '<div class="seg-loading">Cargando ventas de Tienda Nube…</div>';
+  salida.innerHTML = '<div class="seg-loading">Cargando ventas…</div>';
   const dias = document.getElementById('dias').value;
   try {
     const { data: sess } = await sb.auth.getSession();
     const token = sess && sess.session && sess.session.access_token;
-    const r = await fetch(window.SUPABASE_URL + '/functions/v1/tn-seguimientos?dias=' + dias, {
-      headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token }
-    });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error al leer Tienda Nube');
-    DATA = j.ordenes || [];
-    document.getElementById('r-avisar').textContent    = j.resumen.para_avisar;
-    document.getElementById('r-despachar').textContent = j.resumen.por_despachar;
-    document.getElementById('r-total').textContent     = j.resumen.total;
-    document.getElementById('t-avisar').textContent    = '(' + j.resumen.para_avisar + ')';
-    document.getElementById('t-despachar').textContent = '(' + j.resumen.por_despachar + ')';
+    const [rSeg, estRes] = await Promise.all([
+      fetch(window.SUPABASE_URL + '/functions/v1/tn-seguimientos?dias=' + dias, {
+        headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token }
+      }).then(r => r.json()),
+      sb.from('seg_estado').select('*')
+    ]);
+    if (!rSeg.ok) throw new Error(rSeg.error || 'Error al leer ventas');
+    DATA = rSeg.ordenes || [];
+    ESTADO = {};
+    for (const e of (estRes.data || [])) ESTADO[e.tn_id] = e;
+    for (const o of DATA) SO[o.id] = o.odoo_so || null;
+
+    document.getElementById('r-avisar').textContent    = rSeg.resumen.para_avisar;
+    document.getElementById('r-despachar').textContent = rSeg.resumen.por_despachar;
+    document.getElementById('r-total').textContent     = rSeg.resumen.total;
+    document.getElementById('t-avisar').textContent    = '(' + rSeg.resumen.para_avisar + ')';
+    document.getElementById('t-despachar').textContent = '(' + rSeg.resumen.por_despachar + ')';
+
+    const av = document.getElementById('aviso');
+    if (!rSeg.odoo_ok) av.innerHTML = '⚠ No se pudo consultar Odoo — mostrando todas las ventas de Tienda Nube sin cruzar.';
+    else if (rSeg.resumen.sin_odoo) av.innerHTML = 'Cruzado con Odoo. <b>' + rSeg.resumen.sin_odoo + '</b> venta(s) de Tienda Nube con envío aún no aparecen en Odoo (ocultas).';
+    else av.innerHTML = 'Ventas de Odoo con envío, cruzadas con Tienda Nube.';
+
     render();
   } catch (e) {
     salida.innerHTML = '<div class="seg-error">No pude cargar los pedidos: ' + esc(e.message) + '</div>';
@@ -240,7 +224,7 @@ async function cargar(){
 }
 
 function filtrar(){
-  if (TAB === 'avisar')    return DATA.filter(o => o.necesita_seguimiento);
+  if (TAB === 'avisar')    return DATA.filter(o => o.necesita_seguimiento && !(ESTADO[o.id] && ESTADO[o.id].avisado));
   if (TAB === 'despachar') return DATA.filter(o => !o.despachado);
   return DATA;
 }
@@ -248,61 +232,49 @@ function filtrar(){
 function render(){
   const salida = document.getElementById('salida');
   const tpls = getPlantillas();
-  const avisados = getAvisados();
   const lista = filtrar();
-
-  if (!lista.length) {
-    const msg = TAB === 'avisar' ? '✓ No hay pedidos despachados pendientes de avisar.'
-      : TAB === 'despachar' ? '✓ No hay pedidos por despachar.'
-      : 'No hay ventas con envío en el período.';
+  if (!lista.length){
+    const msg = TAB==='avisar' ? '✓ Nada pendiente de avisar.' : TAB==='despachar' ? '✓ Nada por despachar.' : 'No hay ventas con envío en el período.';
     salida.innerHTML = '<div class="seg-empty">' + msg + '</div>';
     return;
   }
-
-  // Avisados al final
-  lista.sort((a,b) => (avisados.has(String(a.id))?1:0) - (avisados.has(String(b.id))?1:0));
-
   let html = '<div class="seg-list">';
-  for (const o of lista) {
-    const yaAvisado = avisados.has(String(o.id));
+  for (const o of lista){
+    const st = ESTADO[o.id] || {};
     const enCamino = o.necesita_seguimiento;
     const tpl = enCamino ? tpls.despachado : tpls.pendiente;
     const msg = aplicarPlantilla(tpl, o);
     const waHref = o.telefono_wa ? ('https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg)) : '';
+    const nProds = (o.productos||[]).length;
+    const estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
 
     const prodHtml = (o.productos||[]).map(p =>
       `<div class="p"><span class="q">${p.cantidad}×</span><span>${esc(p.nombre)}</span>${p.sku?`<span class="sku">${esc(p.sku)}</span>`:''}</div>`
     ).join('');
 
-    const estadoBadge = enCamino
-      ? '<span class="b-tag b-camino">📦 En camino</span>'
-      : '<span class="b-tag b-pend">⏳ Por despachar</span>';
+    const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog(${o.id},'${f}',this)">${label}</button>`;
 
-    const trackHtml = o.tracking_code
-      ? `<div class="seg-track"><span>Seguimiento:</span><span class="code">${esc(o.tracking_code)}</span>${o.tracking_url?`<a href="${esc(o.tracking_url)}" target="_blank" rel="noopener">Ver en ${esc(o.transportista)} →</a>`:''}</div>`
-      : '';
-
-    html += `<div class="seg-card${yaAvisado?' avisado':''}" data-id="${o.id}">
-      <div class="seg-head">
-        <div class="who">
-          <div class="name">${esc(o.cliente)}</div>
-          <div class="meta">${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))}</div>
-        </div>
-        <div class="badges">
-          ${estadoBadge}
-          <span class="b-tag b-carrier">${esc(o.transportista)}</span>
-          <span class="b-tag b-num">#${esc(o.numero)}</span>
+    html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${o.id}">
+      <div class="seg-top">
+        ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
+        <span class="seg-name">${esc(o.cliente)}</span>
+        <span class="seg-meta">· ${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
+        <span class="seg-badges">${estadoBadge}<span class="b-tag b-carrier">${esc(o.transportista)}</span><span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span></span>
+      </div>
+      <div class="seg-row2">
+        <div class="chips">${chip('listo','Listo')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
+        <div class="seg-acts">
+          ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
+          <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick(${o.id},this)">💬 WhatsApp</a>
+          <button class="mini" onclick="toggleMore(${o.id})">✎ Mensaje</button>
         </div>
       </div>
-      <div class="seg-prods">${prodHtml}</div>
-      ${trackHtml}
-      <div class="seg-msg">
+      <div class="seg-more" id="more-${o.id}">
+        <div class="seg-prods">${prodHtml}</div>
         <textarea id="msg-${o.id}">${esc(msg)}</textarea>
-        <div class="seg-msg-actions">
-          <a class="btn btn-wa" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:'disabled'} onclick="marcarEnvio(${o.id})">WhatsApp</a>
+        <div class="seg-more-acts">
           <button class="btn secondary" onclick="copiarMsg(${o.id})">Copiar mensaje</button>
-          ${!o.telefono_wa?'<span style="font-size:12px;color:var(--warn);align-self:center">Sin teléfono</span>':''}
-          <label class="seg-done"><input type="checkbox" ${yaAvisado?'checked':''} onchange="toggleAvisado(${o.id}, this.checked)"> Avisado</label>
+          ${!o.telefono_wa?'<span style="font-size:12px;color:var(--warn);align-self:center">Sin teléfono cargado</span>':''}
         </div>
       </div>
     </div>`;
@@ -311,51 +283,45 @@ function render(){
   salida.innerHTML = html;
 }
 
+function toggleMore(id){ const el = document.getElementById('more-'+id); if(el) el.classList.toggle('open'); }
+
 function copiarMsg(id){
-  const ta = document.getElementById('msg-' + id);
-  if (!ta) return;
-  navigator.clipboard.writeText(ta.value).then(() => {
-    const btn = event.target; const t = btn.textContent; btn.textContent = '✓ Copiado';
-    setTimeout(() => btn.textContent = t, 1400);
-  });
+  const ta = document.getElementById('msg-'+id); if(!ta) return;
+  navigator.clipboard.writeText(ta.value).then(()=>{ const b=event.target; const t=b.textContent; b.textContent='✓ Copiado'; setTimeout(()=>b.textContent=t,1300); });
 }
-// El link de WhatsApp usa el texto de la plantilla al renderizar; si el usuario
-// editó el textarea, actualizamos el href al vuelo antes de abrir.
-function marcarEnvio(id){
-  const ta = document.getElementById('msg-' + id);
-  const a = document.querySelector('.seg-card[data-id="'+id+'"] .btn-wa');
-  if (ta && a && a.href) {
-    const base = a.href.split('?text=')[0];
-    a.href = base + '?text=' + encodeURIComponent(ta.value);
+
+// Sincroniza el link de WhatsApp con el texto (por si lo editaron) y marca Avisado.
+function waClick(id, a){
+  const ta = document.getElementById('msg-'+id);
+  if (ta && a.href) a.href = a.href.split('?text=')[0] + '?text=' + encodeURIComponent(ta.value);
+  const chip = document.querySelector('.seg-card[data-id="'+id+'"] .chip[data-f="avisado"]');
+  if (chip && !(ESTADO[id] && ESTADO[id].avisado)) tog(id, 'avisado', chip);
+}
+
+// Toggle de estado interno -> persiste en Supabase (seg_estado)
+async function tog(id, field, btn){
+  const cur = !!(ESTADO[id] && ESTADO[id][field]);
+  const val = !cur;
+  ESTADO[id] = Object.assign({}, ESTADO[id], { [field]: val });
+  btn.classList.toggle('on', val);
+  if (field === 'avisado') { const card = btn.closest('.seg-card'); if (card) card.classList.toggle('avisado', val); }
+  try {
+    const { error } = await sb.from('seg_estado').upsert(
+      { tn_id: id, so_number: SO[id] || null, [field]: val, updated_at: new Date().toISOString() },
+      { onConflict: 'tn_id' }
+    );
+    if (error) throw error;
+  } catch (e) {
+    ESTADO[id][field] = cur; btn.classList.toggle('on', cur);
+    if (field === 'avisado') { const card = btn.closest('.seg-card'); if (card) card.classList.toggle('avisado', cur); }
+    alert('No se pudo guardar el estado: ' + (e.message || e));
   }
-}
-function toggleAvisado(id, on){
-  setAvisado(id, on);
-  const card = document.querySelector('.seg-card[data-id="'+id+'"]');
-  if (card) card.classList.toggle('avisado', on);
 }
 
 // ---- Plantillas UI ----
-function pintarPlantillas(){
-  const t = getPlantillas();
-  document.getElementById('tpl-despachado').value = t.despachado;
-  document.getElementById('tpl-pendiente').value = t.pendiente;
-}
-function guardarPlantillas(){
-  const t = {
-    despachado: document.getElementById('tpl-despachado').value,
-    pendiente: document.getElementById('tpl-pendiente').value,
-  };
-  localStorage.setItem(LS_TPL, JSON.stringify(t));
-  render();
-  const b = event.target; const txt = b.textContent; b.textContent = '✓ Guardado';
-  setTimeout(() => b.textContent = txt, 1400);
-}
-function restaurarPlantillas(){
-  localStorage.removeItem(LS_TPL);
-  pintarPlantillas();
-  render();
-}
+function pintarPlantillas(){ const t=getPlantillas(); document.getElementById('tpl-despachado').value=t.despachado; document.getElementById('tpl-pendiente').value=t.pendiente; }
+function guardarPlantillas(){ localStorage.setItem(LS_TPL, JSON.stringify({ despachado:document.getElementById('tpl-despachado').value, pendiente:document.getElementById('tpl-pendiente').value })); render(); const b=event.target; const t=b.textContent; b.textContent='✓ Guardado'; setTimeout(()=>b.textContent=t,1300); }
+function restaurarPlantillas(){ localStorage.removeItem(LS_TPL); pintarPlantillas(); render(); }
 
 pintarPlantillas();
 cargar();
