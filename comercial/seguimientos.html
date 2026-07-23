@@ -295,7 +295,7 @@ function render(){
     const tpl = enCamino ? tpls.despachado : tpls.pendiente;
     const eff = efectivoTracking(o);
     const msg = aplicarPlantilla(tpl, o);
-    const waHref = o.telefono_wa ? ('https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg)) : '';
+    const waHref = o.telefono_wa ? ('https://api.whatsapp.com/send?phone=' + o.telefono_wa + '&text=' + encodeURIComponent(msg)) : '';
     const nProds = (o.productos||[]).length;
 
     let estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
@@ -372,7 +372,7 @@ function setTracking(k, val){
   const msg = aplicarPlantilla(efDesp(o) ? tpls.despachado : tpls.pendiente, o);
   const ta = document.getElementById('msg-'+k); if (ta) ta.value = msg;
   const wa = document.querySelector('.seg-card[data-id="'+k+'"] .mini.wa');
-  if (wa && o.telefono_wa) wa.href = 'https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg);
+  if (wa && o.telefono_wa) wa.href = 'https://api.whatsapp.com/send?phone=' + o.telefono_wa + '&text=' + encodeURIComponent(msg);
 }
 
 // Badge "Pedido": abre el PDF del pedido de Odoo para imprimir + marca el paso.
@@ -386,7 +386,7 @@ function pedidoClick(k, btn){
 // WhatsApp: sincroniza el texto (por si lo editaron) y marca Avisado.
 function waClick(k, a){
   const ta = document.getElementById('msg-'+k);
-  if (ta && a.href) a.href = a.href.split('?text=')[0] + '?text=' + encodeURIComponent(ta.value);
+  if (ta && a.href) a.href = a.href.split('&text=')[0] + '&text=' + encodeURIComponent(ta.value);
   const chip = document.querySelector('.seg-card[data-id="'+k+'"] .chip[data-f="avisado"]');
   if (!(ESTADO[k] && ESTADO[k].avisado)) tog(k, 'avisado', chip);
 }
