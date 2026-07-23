@@ -342,20 +342,22 @@ function toggleMore(k){ const el = document.getElementById('more-'+k); if(el) el
 async function copiarMsg(k, btn){
   const ta = document.getElementById('msg-'+k); if(!ta) return;
   const text = ta.value;
-  let ok = false;
-  try {
-    if (navigator.clipboard && window.ClipboardItem) {
-      await navigator.clipboard.write([ new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }) }) ]);
-      ok = true;
-    } else if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      ok = true;
-    }
-  } catch (e) { ok = false; }
-  if (!ok) {
-    try { ta.focus(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); if (window.getSelection) window.getSelection().removeAllRanges(); } catch (e) { ok = false; }
+  const feedback = (ok) => { if (btn) { const t = btn.textContent; btn.textContent = ok ? '✓ Copiado' : 'No se pudo copiar'; setTimeout(()=>btn.textContent=t,1400); } };
+  // 1) API moderna: writeText escribe texto Unicode real (CF_UNICODETEXT en Windows).
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try { await navigator.clipboard.writeText(text); feedback(true); return; } catch (e) { /* cae al fallback */ }
   }
-  if (btn) { const t = btn.textContent; btn.textContent = ok ? '✓ Copiado' : 'No se pudo copiar'; setTimeout(()=>btn.textContent=t,1400); }
+  // 2) Fallback: textarea temporal + execCommand (también preserva Unicode).
+  try {
+    const tmp = document.createElement('textarea');
+    tmp.value = text; tmp.setAttribute('readonly', '');
+    tmp.style.position = 'fixed'; tmp.style.top = '-1000px'; tmp.style.opacity = '0';
+    document.body.appendChild(tmp);
+    tmp.focus(); tmp.select(); tmp.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(tmp);
+    feedback(ok);
+  } catch (e) { feedback(false); }
 }
 
 // Guarda el tracking cargado a mano y actualiza el mensaje sin re-render.
