@@ -174,17 +174,40 @@ function fmtFecha(iso){ if(!iso) return ''; const d=new Date(String(iso).replace
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
+
+// De un link de tracking saca el número de seguimiento.
+function extractCode(u){
+  if(!u) return '';
+  let m = u.match(/[?&]id=([^&]+)/i); if(m) return m[1];
+  m = u.match(/envio\/([\w-]+)/i); if(m) return m[1];
+  m = u.match(/(\d{8,})/); if(m) return m[1];
+  return '';
+}
+// Tracking efectivo: el de TN si existe, o el que cargaste a mano (link o número).
+function efectivoTracking(o){
+  const st = ESTADO[o.estado_key] || {};
+  const manual = (st.tracking||'').trim();
+  const esUrl = /^https?:\/\//i.test(manual);
+  const link = o.tracking_url || (esUrl ? manual : '');
+  let code = o.tracking_code || (esUrl ? extractCode(manual) : manual) || '';
+  let servicio = o.transportista || 'Correo';
+  const src = ((o.envio_opcion||'') + ' ' + manual).toLowerCase();
+  if (/andreani/.test(src)) servicio = 'Andreani';
+  else if (/correo\s*argentino|correoargentino/.test(src)) servicio = 'Correo Argentino';
+  return { link, code: code || '—', servicio };
+}
 function aplicarPlantilla(tpl,o){
+  const t = efectivoTracking(o);
   return tpl
     .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
     .replace(/\{titular\}/g, o.titular||o.cliente||'')
-    .replace(/\{servicio\}/g, o.transportista||'')
+    .replace(/\{servicio\}/g, t.servicio)
     .replace(/\{modalidad\}/g, o.modalidad||'')
     .replace(/\{fecha_despacho\}/g, hoyDMY())
     .replace(/\{numero\}/g, o.numero||o.odoo_so||'')
     .replace(/\{so\}/g, o.odoo_so||'')
-    .replace(/\{tracking\}/g, o.tracking_code||'—')
-    .replace(/\{link\}/g, o.tracking_url||'')
+    .replace(/\{tracking\}/g, t.code)
+    .replace(/\{link\}/g, t.link)
     .replace(/\{productos\}/g, listaProductos(o.productos))
     .replace(/\{ciudad\}/g, o.ciudad||'')
     .replace(/\{provincia\}/g, o.provincia||'');
@@ -198,7 +221,7 @@ const SO = {};          // estado_key -> odoo_so
 const PDF = {};         // estado_key -> pedido_pdf_url
 
 // Un pedido está "despachado" si TN lo dice O si lo marcamos a mano.
-function efDesp(o){ return !!o.despachado || !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].despachado); }
+function efDesp(o){ return !!o.despachado || (o.odoo_delivery_status === 'full') || !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].despachado); }
 function isAvisado(o){ return !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].avisado); }
 
 function setTab(t){
@@ -270,6 +293,7 @@ function render(){
     const st = ESTADO[k] || {};
     const enCamino = efDesp(o);
     const tpl = enCamino ? tpls.despachado : tpls.pendiente;
+    const eff = efectivoTracking(o);
     const msg = aplicarPlantilla(tpl, o);
     const waHref = o.telefono_wa ? ('https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg)) : '';
     const nProds = (o.productos||[]).length;
@@ -294,16 +318,17 @@ function render(){
       <div class="seg-row2">
         <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
         <div class="seg-acts">
-          ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
+          ${eff.link?`<a class="mini track" href="${esc(eff.link)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
           <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
           <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>
         </div>
       </div>
       <div class="seg-more" id="more-${k}">
         <div class="seg-prods">${prodHtml}</div>
+        ${!o.tracking_url?`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">🔗 Seguimiento — pegá el link o número de Correo/Andreani (esta venta no tiene envío en Tienda Nube)</label><input class="input" style="width:100%" id="trk-${k}" value="${esc((ESTADO[k]||{}).tracking||'')}" placeholder="https://www.correoargentino.com.ar/...  o  360003042950940" onchange="setTracking('${k}',this.value)"></div>`:''}
         <textarea id="msg-${k}">${esc(msg)}</textarea>
         <div class="seg-more-acts">
-          <button class="btn secondary" onclick="copiarMsg('${k}')">Copiar mensaje</button>
+          <button class="btn secondary" onclick="copiarMsg('${k}',this)">Copiar mensaje</button>
           ${!o.telefono_wa?'<span style="font-size:12px;color:var(--warn);align-self:center">Sin teléfono cargado</span>':''}
         </div>
       </div>
@@ -314,9 +339,38 @@ function render(){
 }
 
 function toggleMore(k){ const el = document.getElementById('more-'+k); if(el) el.classList.toggle('open'); }
-function copiarMsg(k){
+async function copiarMsg(k, btn){
   const ta = document.getElementById('msg-'+k); if(!ta) return;
-  navigator.clipboard.writeText(ta.value).then(()=>{ const b=event.target; const t=b.textContent; b.textContent='✓ Copiado'; setTimeout(()=>b.textContent=t,1300); });
+  const text = ta.value;
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([ new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }) }) ]);
+      ok = true;
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (e) { ok = false; }
+  if (!ok) {
+    try { ta.focus(); ta.setSelectionRange(0, text.length); ok = document.execCommand('copy'); if (window.getSelection) window.getSelection().removeAllRanges(); } catch (e) { ok = false; }
+  }
+  if (btn) { const t = btn.textContent; btn.textContent = ok ? '✓ Copiado' : 'No se pudo copiar'; setTimeout(()=>btn.textContent=t,1400); }
+}
+
+// Guarda el tracking cargado a mano y actualiza el mensaje sin re-render.
+function setTracking(k, val){
+  ESTADO[k] = Object.assign({}, ESTADO[k], { tracking: val });
+  sb.from('seg_estado').upsert(
+    { tn_id: Number(k), so_number: SO[k] || null, tracking: val, updated_at: new Date().toISOString() },
+    { onConflict: 'tn_id' }
+  ).then(({ error }) => { if (error) alert('No se pudo guardar el tracking: ' + error.message); });
+  const o = DATA.find(x => x.estado_key === k); if (!o) return;
+  const tpls = getPlantillas();
+  const msg = aplicarPlantilla(efDesp(o) ? tpls.despachado : tpls.pendiente, o);
+  const ta = document.getElementById('msg-'+k); if (ta) ta.value = msg;
+  const wa = document.querySelector('.seg-card[data-id="'+k+'"] .mini.wa');
+  if (wa && o.telefono_wa) wa.href = 'https://wa.me/' + o.telefono_wa + '?text=' + encodeURIComponent(msg);
 }
 
 // Badge "Pedido": abre el PDF del pedido de Odoo para imprimir + marca el paso.
