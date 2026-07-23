@@ -540,6 +540,7 @@
       <button class="btn secondary" onclick="abrirConfigMensajes()" title="Configurar plantillas de mensaje">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span>Mensaje</span>
+        <span id="momInd" onclick="event.stopPropagation(); toggleMomQuick();" title="Mensaje momentáneo ACTIVO — clic para apagarlo" style="display:none; margin-left:6px; font-size:10.5px; font-weight:700; background:var(--accent); color:#fff; padding:1px 7px; border-radius:10px;">momentáneo ✕</span>
       </button>
       <button class="btn secondary" id="btnSync" onclick="doSync()" title="Actualizar datos desde Odoo">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
@@ -1144,12 +1145,26 @@ const PLANTILLAS_FALLBACK = {
   reactivacion: 'Hola {nombre}! Te escribimos de {empresa}. Hace un tiempo no hacés tu pedido, ¿te comparto nuestra lista profesional actualizada para que veas si querés reponer stock? {link}',
 };
 let PLANTILLAS = { ...PLANTILLAS_FALLBACK };
+let MOMENTANEO = { texto: '', activo: false };  // mensaje puntual que reemplaza a los de arriba
 async function cargarPlantillas() {
   try {
     const { data } = await sb.from('crm_plantillas').select('clave, texto');
-    (data || []).forEach(p => { if (p.clave in PLANTILLAS_FALLBACK) PLANTILLAS[p.clave] = p.texto; });
+    (data || []).forEach(p => {
+      if (p.clave in PLANTILLAS_FALLBACK) PLANTILLAS[p.clave] = p.texto;
+      else if (p.clave === 'momentaneo') MOMENTANEO.texto = p.texto || '';
+      else if (p.clave === 'momentaneo_activo') MOMENTANEO.activo = (p.texto === '1');
+    });
   } catch (_) { /* usa fallback */ }
+  refreshMomInd();
 }
+function momentaneoOn() { return MOMENTANEO.activo && !!MOMENTANEO.texto.trim(); }
+function refreshMomInd() { const el = document.getElementById('momInd'); if (el) el.style.display = momentaneoOn() ? 'inline-block' : 'none'; }
+async function toggleMomQuick() {
+  MOMENTANEO.activo = false;  // el indicador solo sirve para apagar rápido
+  refreshMomInd();
+  try { await sb.from('crm_plantillas').upsert([{ clave: 'momentaneo_activo', texto: '0', actualizado_en: new Date().toISOString() }], { onConflict: 'clave' }); } catch (_) {}
+}
+window.toggleMomQuick = toggleMomQuick;
 function renderPlantilla(txt, ctx) {
   return String(txt || '')
     .replaceAll('{nombre}', ctx.nombre || '')
@@ -1160,10 +1175,10 @@ function renderPlantilla(txt, ctx) {
 function buildMsg(d) {
   const nombre = (d.nombre || '').split(' ')[0];
   const tp = topProd(d.partner_id);
+  const ctx = { nombre, empresa: EMPRESA, link: LINK_LISTA_DEFAULT, producto: tp ? tp.toLowerCase() : '' };
+  if (momentaneoOn()) return renderPlantilla(MOMENTANEO.texto, ctx);  // reemplaza al por defecto
   const clave = d.segmento === 'nunca_compro' ? 'nunca_compro' : 'reactivacion';
-  return renderPlantilla(PLANTILLAS[clave] || PLANTILLAS_FALLBACK[clave], {
-    nombre, empresa: EMPRESA, link: LINK_LISTA_DEFAULT, producto: tp ? tp.toLowerCase() : ''
-  });
+  return renderPlantilla(PLANTILLAS[clave] || PLANTILLAS_FALLBACK[clave], ctx);
 }
 
 // Modal de configuración de mensajes
@@ -1187,6 +1202,14 @@ async function abrirConfigMensajes() {
         <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Reactivación (dormidos / enfriándose / a reactivar)</label>
         <textarea id="tpl-reactivacion" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${PLANTILLAS.reactivacion}</textarea>
       </div>
+      <div style="margin-bottom:16px; border:1px solid var(--accent); border-radius:8px; padding:12px 14px; background:var(--accent-tint);">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:6px;">
+          <input type="checkbox" id="tpl-mom-on" ${MOMENTANEO.activo ? 'checked' : ''} style="width:18px; height:18px; accent-color:var(--accent);">
+          <span style="font-size:13.5px; font-weight:700;">📣 Mensaje momentáneo — reemplaza a los de arriba para TODOS los contactos</span>
+        </label>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Para una campaña puntual. Prendelo cuando lo quieras usar y apagalo para volver a los mensajes por defecto.</div>
+        <textarea id="tpl-mom" rows="4" placeholder="Ej: Hola {nombre}! Esta semana 20% OFF en toda la línea corporal 🎉 {link}" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); resize:vertical;">${MOMENTANEO.texto || ''}</textarea>
+      </div>
       <div id="tpl-preview" style="background:var(--surface-2); border-radius:6px; padding:12px; margin-bottom:14px; font-size:13px; line-height:1.5;">
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Previsualización con nombre "Georgina":</div>
         <div id="tpl-preview-body"></div>
@@ -1208,24 +1231,40 @@ async function abrirConfigMensajes() {
   const preview = () => {
     const nunca = document.getElementById('tpl-nunca').value;
     const react = document.getElementById('tpl-reactivacion').value;
-    const previewBody = document.getElementById('tpl-preview-body');
-    previewBody.innerHTML = `<div style="margin-bottom:6px;"><b>Nunca compró:</b> ${renderPlantilla(nunca, { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT })}</div><div><b>Reactivación:</b> ${renderPlantilla(react, { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT, producto:'crema exfoliante corporal' })}</div>`;
+    const mom = document.getElementById('tpl-mom').value;
+    const momOn = document.getElementById('tpl-mom-on').checked;
+    const c = { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT, producto:'crema exfoliante corporal' };
+    let h = '';
+    if (momOn && mom.trim()) h += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--border); color:var(--accent);"><b>📣 Momentáneo (ACTIVO, va a todos):</b> ${renderPlantilla(mom, c)}</div>`;
+    h += `<div style="margin-bottom:6px;${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Nunca compró:</b> ${renderPlantilla(nunca, c)}</div><div style="${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Reactivación:</b> ${renderPlantilla(react, c)}</div>`;
+    document.getElementById('tpl-preview-body').innerHTML = h;
   };
   document.getElementById('tpl-nunca').addEventListener('input', preview);
   document.getElementById('tpl-reactivacion').addEventListener('input', preview);
+  document.getElementById('tpl-mom').addEventListener('input', preview);
+  document.getElementById('tpl-mom-on').addEventListener('change', preview);
   preview();
 
   document.getElementById('btnGuardarTpl').onclick = async () => {
     const nunca = document.getElementById('tpl-nunca').value.trim();
     const react = document.getElementById('tpl-reactivacion').value.trim();
-    if (!nunca || !react) { alert('Los mensajes no pueden estar vacíos'); return; }
+    const mom = document.getElementById('tpl-mom').value.trim();
+    const momOn = document.getElementById('tpl-mom-on').checked;
+    if (!nunca || !react) { alert('Los mensajes por defecto no pueden estar vacíos'); return; }
+    if (momOn && !mom) { alert('Activaste el mensaje momentáneo pero está vacío'); return; }
+    const now = new Date().toISOString();
     const { error } = await sb.from('crm_plantillas').upsert([
-      { clave: 'nunca_compro', texto: nunca, actualizado_en: new Date().toISOString() },
-      { clave: 'reactivacion', texto: react, actualizado_en: new Date().toISOString() },
+      { clave: 'nunca_compro', texto: nunca, actualizado_en: now },
+      { clave: 'reactivacion', texto: react, actualizado_en: now },
+      { clave: 'momentaneo', texto: mom, actualizado_en: now },
+      { clave: 'momentaneo_activo', texto: momOn ? '1' : '0', actualizado_en: now },
     ], { onConflict: 'clave' });
     if (error) { alert('Error al guardar: ' + error.message); return; }
     PLANTILLAS.nunca_compro = nunca;
     PLANTILLAS.reactivacion = react;
+    MOMENTANEO.texto = mom;
+    MOMENTANEO.activo = momOn;
+    refreshMomInd();
     cerrarConfigMensajes();
   };
 }
@@ -1453,7 +1492,10 @@ function abrirDrawer(c, d, isNew) {
         <div class="fld"><label>Condición fiscal (AFIP) ${comp.has.fiscal || isNew ? '' : '<span class="miss">falta</span>'}</label><select id="ff_fiscal">${fOpt(CATFISCAL, c.l10n_ar_afip_responsibility_type_id, '— condición —')}</select></div>
       </div>
     </div>
-    <div class="dfoot"><button class="btn primary" id="ff_save" onclick="guardarFicha()">${isNew ? 'Crear contacto' : 'Guardar ficha'}</button></div>`;
+    <div class="dfoot">
+      <button class="btn secondary" onclick="cerrarDrawer()">${isNew ? 'Cancelar' : 'Cerrar'}</button>
+      <button class="btn primary" id="ff_save" onclick="guardarFicha()">${isNew ? 'Crear contacto' : 'Guardar ficha'}</button>
+    </div>`;
   document.getElementById('fdrawer').classList.add('on');
   document.getElementById('fscrim').classList.add('on');
   prevTelF(); prevDocF();
