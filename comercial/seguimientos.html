@@ -36,6 +36,20 @@
     .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
     .tpl-actions { display: flex; gap: 8px; }
 
+    /* total en gris dentro de la tarjeta-filtro */
+    .seg-chip .tot { color: var(--muted); font-weight: 600; font-size: 10px; text-transform: none; letter-spacing: 0; }
+    /* buscador */
+    .seg-search { display: flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 11px; color: var(--muted); flex: 1; min-width: 200px; max-width: 380px; transition: border-color .12s; }
+    .seg-search:focus-within { border-color: var(--accent); }
+    .seg-search input { border: none; outline: none; background: transparent; color: var(--text); font-size: 13px; width: 100%; }
+    /* modal de plantillas */
+    .tpl-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 100; align-items: flex-start; justify-content: center; padding: 5vh 16px; }
+    .tpl-modal.open { display: flex; }
+    .tpl-modal-inner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 640px; max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow-menu); }
+    .tpl-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); font-size: 15px; }
+    .tpl-x { font-size: 18px; color: var(--muted); cursor: pointer; background: none; border: none; }
+    .tpl-x:hover { color: var(--text); }
+
     .seg-list { display: flex; flex-direction: column; gap: 8px; }
     .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s; }
     .seg-card.avisado { opacity: .55; }
@@ -106,31 +120,19 @@
 
   <div class="seg-resumen" id="resumen">
     <div class="seg-chip avisar sel" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
-    <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo</span></div>
-    <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario</span></div>
-    <div class="seg-chip retiro"  data-tab="retiro"  onclick="setTab('retiro')"><span class="n" id="r-retiro">—</span><span class="l">Retiro</span></div>
-    <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre</span></div>
+    <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo <span class="tot" id="r-correo-tot"></span></span></div>
+    <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario <span class="tot" id="r-rosario-tot"></span></span></div>
+    <div class="seg-chip retiro"  data-tab="retiro"  onclick="setTab('retiro')"><span class="n" id="r-retiro">—</span><span class="l">Retiro <span class="tot" id="r-retiro-tot"></span></span></div>
+    <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre <span class="tot" id="r-ml-tot"></span></span></div>
     <div class="seg-chip"         data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
   </div>
   <div class="seg-aviso" id="aviso"></div>
 
-  <details class="tpl-box">
-    <summary>⚙ Plantillas de mensaje</summary>
-    <div class="tpl-body">
-      <div class="tpl-field"><label>Correo · despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
-      <div class="tpl-field"><label>Correo · por despachar</label><textarea id="tpl-pendiente"></textarea></div>
-      <div class="tpl-field"><label>Envío en Rosario</label><textarea id="tpl-rosario"></textarea></div>
-      <div class="tpl-field"><label>Retiro en el local</label><textarea id="tpl-retiro"></textarea></div>
-      <div class="tpl-vars">Variables:
-        <code>{nombre}</code> <code>{titular}</code> <code>{servicio}</code> <code>{modalidad}</code>
-        <code>{fecha_despacho}</code> <code>{link}</code> <code>{tracking}</code>
-        <code>{so}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
-      </div>
-      <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
-    </div>
-  </details>
-
   <div class="seg-controls">
+    <div class="seg-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input id="q" type="search" placeholder="Buscar cliente, N° de venta o teléfono…" oninput="onSearch(this.value)" autocomplete="off">
+    </div>
     <div class="seg-spacer"></div>
     <label style="font-size:12px;color:var(--muted)">Últimos
       <select class="seg-sel" id="dias" onchange="cargar()">
@@ -138,7 +140,26 @@
         <option value="60">60 días</option><option value="90">90 días</option>
       </select>
     </label>
-    <button class="btn secondary" onclick="cargar()">↻ Refrescar</button>
+    <button class="btn secondary" onclick="cargar()" title="Refrescar">↻</button>
+    <button class="btn secondary" onclick="abrirConfig()" title="Plantillas de mensaje">⚙</button>
+  </div>
+
+  <div class="tpl-modal" id="tplModal" onclick="if(event.target===this)cerrarConfig()">
+    <div class="tpl-modal-inner">
+      <div class="tpl-modal-head"><b>⚙ Plantillas de mensaje</b><button class="tpl-x" onclick="cerrarConfig()" aria-label="Cerrar">✕</button></div>
+      <div class="tpl-body">
+        <div class="tpl-field"><label>Correo · despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
+        <div class="tpl-field"><label>Correo · por despachar</label><textarea id="tpl-pendiente"></textarea></div>
+        <div class="tpl-field"><label>Envío en Rosario</label><textarea id="tpl-rosario"></textarea></div>
+        <div class="tpl-field"><label>Retiro en el local</label><textarea id="tpl-retiro"></textarea></div>
+        <div class="tpl-vars">Variables:
+          <code>{nombre}</code> <code>{titular}</code> <code>{servicio}</code> <code>{modalidad}</code>
+          <code>{fecha_despacho}</code> <code>{link}</code> <code>{tracking}</code>
+          <code>{so}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
+        </div>
+        <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
+      </div>
+    </div>
   </div>
 
   <div id="salida"><div class="seg-loading">Cargando ventas…</div></div>
@@ -229,6 +250,7 @@ function templateFor(o, tpls){
 // ---- Estado ----
 let DATA = [];
 let TAB = 'avisar';
+let Q = '';             // texto de búsqueda de contactos
 let ESTADO = {};
 let ETIQUETAS = [];     // [{id,name}] opciones de prioridad (Hoy/1 día/...)
 const SO = {};
@@ -239,19 +261,27 @@ function isAvisado(o){ return !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].av
 
 function setTab(t){
   TAB = t;
+  Q = ''; const qi = document.getElementById('q'); if (qi) qi.value = '';
   document.querySelectorAll('.seg-chip[data-tab]').forEach(c => c.classList.toggle('sel', c.dataset.tab === t));
   render();
 }
+function onSearch(v){ Q = (v || '').trim(); render(); }
+function abrirConfig(){ document.getElementById('tplModal').classList.add('open'); }
+function cerrarConfig(){ document.getElementById('tplModal').classList.remove('open'); }
+
+// "Pendiente" = todavía no despachado/entregado (sigue en el flujo)
+function pendiente(o){ return !efDesp(o); }
 
 function updateCounts(){
-  const c = cat => DATA.filter(o => o.categoria === cat).length;
+  const pend = cat => DATA.filter(o => o.categoria === cat && pendiente(o)).length;
+  const tot  = cat => DATA.filter(o => o.categoria === cat).length;
   const avisar = DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o)).length;
-  document.getElementById('r-avisar').textContent  = avisar;
-  document.getElementById('r-correo').textContent  = c('correo');
-  document.getElementById('r-rosario').textContent = c('rosario');
-  document.getElementById('r-retiro').textContent  = c('retiro');
-  document.getElementById('r-ml').textContent      = c('ml');
-  document.getElementById('r-total').textContent   = DATA.length;
+  document.getElementById('r-avisar').textContent = avisar;
+  for (const cat of ['correo','rosario','retiro','ml']) {
+    document.getElementById('r-'+cat).textContent = pend(cat);
+    const t = document.getElementById('r-'+cat+'-tot'); if (t) t.textContent = 'de ' + tot(cat);
+  }
+  document.getElementById('r-total').textContent = DATA.length;
 }
 
 async function cargar(){
@@ -282,9 +312,17 @@ async function cargar(){
 }
 
 function filtrar(){
+  if (Q) {  // la búsqueda es global (todas las categorías y estados)
+    const q = Q.toLowerCase(); const qd = q.replace(/\D/g, '');
+    return DATA.filter(o =>
+      (o.cliente||'').toLowerCase().includes(q) ||
+      String(o.odoo_so||'').toLowerCase().includes(q) ||
+      (qd && String(o.telefono_wa||'').includes(qd))
+    );
+  }
   if (TAB === 'avisar')  return DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o));
   if (TAB === 'todos')   return DATA;
-  return DATA.filter(o => o.categoria === TAB);
+  return DATA.filter(o => o.categoria === TAB && pendiente(o));  // solo pendientes de la categoría
 }
 
 function render(){
@@ -292,7 +330,10 @@ function render(){
   const tpls = getPlantillas();
   const lista = filtrar();
   if (!lista.length){
-    const msg = TAB==='avisar' ? '✓ Nada pendiente de avisar.' : 'No hay ventas en esta categoría.';
+    const msg = Q ? 'Sin resultados para "' + esc(Q) + '".'
+      : TAB==='avisar' ? '✓ Nada pendiente de avisar.'
+      : TAB==='todos' ? 'No hay ventas en el período.'
+      : '✓ Nada pendiente en esta categoría.';
     salida.innerHTML = '<div class="seg-empty">' + msg + '</div>';
     return;
   }
