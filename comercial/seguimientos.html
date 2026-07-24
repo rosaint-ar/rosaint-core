@@ -106,6 +106,11 @@
     .etiq { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .12s; }
     .etiq:hover { border-color: var(--muted); color: var(--text); }
     .etiq.on { border-color: var(--accent); background: var(--accent-tint); color: var(--text); }
+    /* selector de prioridad (¿para cuándo?) */
+    .prio { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .prio-lbl { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+    .etiq-sel { font-size: 12.5px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; }
+    .etiq-sel:hover { border-color: var(--muted); }
 
     .seg-empty, .seg-loading { text-align: center; padding: 42px 20px; color: var(--muted); }
     .seg-error { background: color-mix(in srgb, var(--hot) 8%, transparent); border: 1px solid color-mix(in srgb, var(--hot) 30%, transparent); color: var(--hot); padding: 14px 16px; border-radius: var(--radius); font-size: 13px; }
@@ -119,12 +124,12 @@
 <main id="app-content">
 
   <div class="seg-resumen" id="resumen">
-    <div class="seg-chip avisar sel" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
+    <div class="seg-chip avisar" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
     <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo <span class="tot" id="r-correo-tot"></span></span></div>
     <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario <span class="tot" id="r-rosario-tot"></span></span></div>
     <div class="seg-chip retiro"  data-tab="retiro"  onclick="setTab('retiro')"><span class="n" id="r-retiro">—</span><span class="l">Retiro <span class="tot" id="r-retiro-tot"></span></span></div>
     <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre <span class="tot" id="r-ml-tot"></span></span></div>
-    <div class="seg-chip"         data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
+    <div class="seg-chip sel"     data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
   </div>
   <div class="seg-aviso" id="aviso"></div>
 
@@ -249,7 +254,7 @@ function templateFor(o, tpls){
 
 // ---- Estado ----
 let DATA = [];
-let TAB = 'avisar';
+let TAB = 'todos';
 let Q = '';             // texto de búsqueda de contactos
 let ESTADO = {};
 let ETIQUETAS = [];     // [{id,name}] opciones de prioridad (Hoy/1 día/...)
@@ -271,11 +276,13 @@ function cerrarConfig(){ document.getElementById('tplModal').classList.remove('o
 
 // "Pendiente" = todavía no despachado/entregado (sigue en el flujo)
 function pendiente(o){ return !efDesp(o); }
+// "Para avisar" = ya despachado/entregado pero sin avisar al cliente (ML se gestiona aparte)
+function paraAvisar(o){ return o.categoria !== 'ml' && efDesp(o) && !isAvisado(o); }
 
 function updateCounts(){
   const pend = cat => DATA.filter(o => o.categoria === cat && pendiente(o)).length;
   const tot  = cat => DATA.filter(o => o.categoria === cat).length;
-  const avisar = DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o)).length;
+  const avisar = DATA.filter(paraAvisar).length;
   document.getElementById('r-avisar').textContent = avisar;
   for (const cat of ['correo','rosario','retiro','ml']) {
     document.getElementById('r-'+cat).textContent = pend(cat);
@@ -320,7 +327,7 @@ function filtrar(){
       (qd && String(o.telefono_wa||'').includes(qd))
     );
   }
-  if (TAB === 'avisar')  return DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o));
+  if (TAB === 'avisar')  return DATA.filter(o => paraAvisar(o));
   if (TAB === 'todos')   return DATA;
   return DATA.filter(o => o.categoria === TAB && pendiente(o));  // solo pendientes de la categoría
 }
@@ -367,18 +374,21 @@ function render(){
       const col = pct >= 100 ? 'var(--ok)' : pct > 0 ? 'var(--warn)' : 'var(--hot)';
       stockBar = `<div class="stockbar" title="${pct}% de las unidades del pedido ya están en stock"><div class="stockbar-fill" style="width:${pct}%;background:${col}"></div><span class="stockbar-lbl">${pct}% en stock</span></div>`;
     }
-    const pills = ETIQUETAS.map(t => `<button class="etiq${o.etiqueta===t.id?' on':''}" data-tag="${t.id}" onclick="setEtiqueta('${k}',${o.odoo_id},${t.id})">${esc(t.name)}</button>`).join('');
-    const row3 = `<div class="seg-row3">${stockBar}<div class="etiq-pills"><span class="lbl">Listo:</span>${pills}</div></div>`;
+    const prioSel = `<div class="prio"><span class="prio-lbl">¿Para cuándo?</span><select class="etiq-sel" title="Prioridad — sincroniza con Odoo" onchange="setEtiquetaSel('${k}',${o.odoo_id},this.value)"><option value="">— sin fecha —</option>${ETIQUETAS.map(t=>`<option value="${t.id}"${o.etiqueta===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}</select></div>`;
 
     html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${k}">
       <div class="seg-top">
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
-        <span class="seg-meta">· ${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
+        <span class="seg-meta">${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
         <span class="seg-badges"><span class="b-tag b-cat ${cat}">${CATLBL[cat]||cat}</span>${estadoBadge}${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
       </div>
       <div class="seg-row2">
         <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${esML?'':chip('avisado','Avisado')}</div>
+        ${prioSel}
+      </div>
+      <div class="seg-row3">
+        ${stockBar}
         <div class="seg-acts">
           ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
           ${esML ? '<span style="font-size:12px;color:var(--muted)">Gestionado por Mercado Libre</span>'
@@ -386,7 +396,6 @@ function render(){
                     <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>`}
         </div>
       </div>
-      ${row3}
       ${esML ? '' : `<div class="seg-more" id="more-${k}">
         <div class="seg-prods">${prodHtml}</div>
         <textarea id="msg-${k}">${esc(msg)}</textarea>
@@ -439,27 +448,25 @@ async function tog(k, field, btn){
 }
 
 // ---- Etiqueta de prioridad (sincroniza con Odoo) ----
-function actualizarPills(key){
+async function setEtiquetaSel(key, odooId, val){
   const o = DATA.find(x => x.estado_key === key); if (!o) return;
-  document.querySelectorAll('.seg-card[data-id="'+key+'"] .etiq').forEach(el => el.classList.toggle('on', Number(el.dataset.tag) === o.etiqueta));
-}
-async function setEtiqueta(key, odooId, tagId){
-  const o = DATA.find(x => x.estado_key === key); if (!o) return;
+  const tagId = val ? Number(val) : null;
   const prev = o.etiqueta;
-  o.etiqueta = (o.etiqueta === tagId) ? null : tagId;  // toggle
-  actualizarPills(key);
+  o.etiqueta = tagId;
   try {
     const { data: sess } = await sb.auth.getSession();
     const token = sess && sess.session && sess.session.access_token;
     const r = await fetch(window.SUPABASE_URL + '/functions/v1/tn-set-etiqueta', {
       method: 'POST',
       headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ odoo_id: odooId, tag_id: o.etiqueta })
+      body: JSON.stringify({ odoo_id: odooId, tag_id: tagId })
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'Error');
   } catch (e) {
-    o.etiqueta = prev; actualizarPills(key);
+    o.etiqueta = prev;
+    const selEl = document.querySelector('.seg-card[data-id="'+key+'"] .etiq-sel');
+    if (selEl) selEl.value = prev == null ? '' : String(prev);
     alert('No se pudo guardar la etiqueta en Odoo: ' + (e.message || e));
   }
 }
