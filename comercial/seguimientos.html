@@ -7,24 +7,22 @@
   <meta name="app-root" content="../">
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
-    .seg-resumen { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; min-width: 130px; display: flex; flex-direction: column; gap: 1px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+    .seg-resumen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 13px; min-width: 108px; display: flex; flex-direction: column; gap: 1px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
     .seg-chip:hover { border-color: var(--muted); }
-    .seg-chip .n { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
-    .seg-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .seg-chip .n { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+    .seg-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
     .seg-chip.avisar { border-left: 3px solid var(--accent); } .seg-chip.avisar .n { color: var(--accent); }
-    .seg-chip.despachar { border-left: 3px solid var(--warn); } .seg-chip.despachar .n { color: var(--warn); }
+    .seg-chip.correo   { border-left: 3px solid var(--structure); }
+    .seg-chip.rosario  { border-left: 3px solid var(--ok); }
+    .seg-chip.retiro   { border-left: 3px solid var(--warn); }
+    .seg-chip.ml       { border-left: 3px solid #b8860b; }
     .seg-chip.sel { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 
     .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-    .seg-tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 4px; }
-    .seg-tab { padding: 7px 13px; border-radius: var(--radius-sm); border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s, color .12s; }
-    .seg-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    .seg-tab .cnt { font-variant-numeric: tabular-nums; opacity: .7; }
     .seg-spacer { flex: 1; }
     select.seg-sel { padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 13px; }
-    .seg-aviso { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
-    .seg-aviso b { color: var(--text); }
+    .seg-aviso { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
 
     details.tpl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
     details.tpl-box > summary { list-style: none; cursor: pointer; padding: 11px 15px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--muted); }
@@ -33,7 +31,7 @@
     details.tpl-box[open] > summary::before { transform: rotate(90deg); }
     .tpl-body { padding: 4px 15px 15px; display: grid; gap: 12px; }
     .tpl-field label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
-    .tpl-field textarea { width: 100%; min-height: 150px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .tpl-field textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
     .tpl-vars { font-size: 11.5px; color: var(--muted); line-height: 1.9; }
     .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
     .tpl-actions { display: flex; gap: 8px; }
@@ -41,7 +39,6 @@
     .seg-list { display: flex; flex-direction: column; gap: 8px; }
     .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s; }
     .seg-card.avisado { opacity: .55; }
-    .seg-card.falta { border-left: 3px solid var(--hot); }
 
     .seg-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .seg-so { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); padding: 1px 7px; border-radius: 5px; }
@@ -49,10 +46,14 @@
     .seg-meta { font-size: 12px; color: var(--muted); }
     .seg-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; }
     .b-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+    .b-cat { color: #fff; }
+    .b-cat.correo  { background: var(--structure); }
+    .b-cat.rosario { background: var(--ok); }
+    .b-cat.retiro  { background: var(--warn); }
+    .b-cat.ml      { background: #b8860b; }
     .b-carrier { background: color-mix(in srgb, var(--structure) 14%, transparent); color: var(--structure); }
     .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
     .b-pend { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
-    .b-falta { background: color-mix(in srgb, var(--hot) 15%, transparent); color: var(--hot); }
 
     .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -78,7 +79,7 @@
     .seg-prods .p { font-size: 12.5px; display: flex; gap: 7px; }
     .seg-prods .p .q { color: var(--muted); font-variant-numeric: tabular-nums; }
     .seg-prods .p .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; margin-left: auto; }
-    .seg-more textarea { width: 100%; min-height: 190px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
+    .seg-more textarea { width: 100%; min-height: 180px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
     .seg-more-acts { display: flex; gap: 8px; margin-top: 8px; }
 
     .seg-empty, .seg-loading { text-align: center; padding: 42px 20px; color: var(--muted); }
@@ -86,7 +87,7 @@
     @media (max-width: 620px) { .seg-badges { margin-left: 0; width: 100%; } .seg-acts { margin-left: 0; } }
   </style>
 </head>
-<body data-page="seguimientos" data-title="Seguimientos" data-subtitle="Avisá el envío a tus clientes">
+<body data-page="seguimientos" data-title="Seguimientos" data-subtitle="Seguimiento de todas tus ventas">
 
 <div id="app-shell"></div>
 
@@ -94,31 +95,31 @@
 
   <div class="seg-resumen" id="resumen">
     <div class="seg-chip avisar sel" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
-    <div class="seg-chip despachar" data-tab="despachar" onclick="setTab('despachar')"><span class="n" id="r-despachar">—</span><span class="l">Por despachar</span></div>
-    <div class="seg-chip" data-tab="todos" onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Ventas con envío</span></div>
+    <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo</span></div>
+    <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario</span></div>
+    <div class="seg-chip retiro"  data-tab="retiro"  onclick="setTab('retiro')"><span class="n" id="r-retiro">—</span><span class="l">Retiro</span></div>
+    <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre</span></div>
+    <div class="seg-chip"         data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
   </div>
   <div class="seg-aviso" id="aviso"></div>
 
   <details class="tpl-box">
     <summary>⚙ Plantillas de mensaje</summary>
     <div class="tpl-body">
-      <div class="tpl-field"><label>Pedido despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
-      <div class="tpl-field"><label>Pedido por despachar (aún sin salir)</label><textarea id="tpl-pendiente"></textarea></div>
+      <div class="tpl-field"><label>Correo · despachado (con tracking)</label><textarea id="tpl-despachado"></textarea></div>
+      <div class="tpl-field"><label>Correo · por despachar</label><textarea id="tpl-pendiente"></textarea></div>
+      <div class="tpl-field"><label>Envío en Rosario</label><textarea id="tpl-rosario"></textarea></div>
+      <div class="tpl-field"><label>Retiro en el local</label><textarea id="tpl-retiro"></textarea></div>
       <div class="tpl-vars">Variables:
         <code>{nombre}</code> <code>{titular}</code> <code>{servicio}</code> <code>{modalidad}</code>
         <code>{fecha_despacho}</code> <code>{link}</code> <code>{tracking}</code>
-        <code>{numero}</code> <code>{so}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
+        <code>{so}</code> <code>{productos}</code> <code>{ciudad}</code> <code>{provincia}</code>
       </div>
       <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
     </div>
   </details>
 
   <div class="seg-controls">
-    <div class="seg-tabs">
-      <button class="seg-tab active" data-tab="avisar" onclick="setTab('avisar')">Para avisar <span class="cnt" id="t-avisar"></span></button>
-      <button class="seg-tab" data-tab="despachar" onclick="setTab('despachar')">Por despachar <span class="cnt" id="t-despachar"></span></button>
-      <button class="seg-tab" data-tab="todos" onclick="setTab('todos')">Todos</button>
-    </div>
     <div class="seg-spacer"></div>
     <label style="font-size:12px;color:var(--muted)">Últimos
       <select class="seg-sel" id="dias" onchange="cargar()">
@@ -137,7 +138,7 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
-// ---- Plantillas ----
+// ---- Plantillas por categoría ----
 const TPL_DEF = {
   despachado:
 `Hola {nombre} 😊
@@ -163,10 +164,30 @@ En cuanto salga te enviamos el código de seguimiento por acá.
 
 Muchas gracias por confiar en nosotros.
 
+Rosaint Cosmética Profesional 💛`,
+  rosario:
+`Hola {nombre} 😊
+
+¡Tu pedido ya está listo! Te lo enviamos con nuestro reparto en Rosario.
+Nos comunicamos para coordinar día y horario de entrega.
+
+Muchas gracias por confiar en nosotros.
+
+Rosaint Cosmética Profesional 💛`,
+  retiro:
+`Hola {nombre} 😊
+
+¡Tu pedido ya está listo para retirar! Te esperamos en nuestro local.
+📍 (Cargá acá tu dirección y horario de atención)
+
+Cualquier consulta quedamos a disposición. ¡Gracias por tu compra!
+
 Rosaint Cosmética Profesional 💛`
 };
 const LS_TPL = 'seg-plantillas';
 function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(localStorage.getItem(LS_TPL)||'{}')); } catch { return {...TPL_DEF}; } }
+
+const CATLBL = { correo:'Correo', rosario:'Rosario', retiro:'Retiro', ml:'Mercado Libre' };
 
 // ---- Utils ----
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -174,71 +195,51 @@ function fmtFecha(iso){ if(!iso) return ''; const d=new Date(String(iso).replace
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
-
-// De un link de tracking saca el número de seguimiento.
-function extractCode(u){
-  if(!u) return '';
-  let m = u.match(/[?&]id=([^&]+)/i); if(m) return m[1];
-  m = u.match(/envio\/([\w-]+)/i); if(m) return m[1];
-  m = u.match(/(\d{8,})/); if(m) return m[1];
-  return '';
-}
-// Tracking efectivo: el de TN si existe, o el que cargaste a mano (link o número).
-function efectivoTracking(o){
-  const st = ESTADO[o.estado_key] || {};
-  const manual = (st.tracking||'').trim();
-  const esUrl = /^https?:\/\//i.test(manual);
-  const link = o.tracking_url || (esUrl ? manual : '');
-  let code = o.tracking_code || (esUrl ? extractCode(manual) : manual) || '';
-  let servicio = o.transportista || 'Correo';
-  const src = ((o.envio_opcion||'') + ' ' + manual).toLowerCase();
-  if (/andreani/.test(src)) servicio = 'Andreani';
-  else if (/correo\s*argentino|correoargentino/.test(src)) servicio = 'Correo Argentino';
-  return { link, code: code || '—', servicio };
-}
 function aplicarPlantilla(tpl,o){
-  const t = efectivoTracking(o);
   return tpl
     .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
     .replace(/\{titular\}/g, o.titular||o.cliente||'')
-    .replace(/\{servicio\}/g, t.servicio)
+    .replace(/\{servicio\}/g, o.transportista||'')
     .replace(/\{modalidad\}/g, o.modalidad||'')
     .replace(/\{fecha_despacho\}/g, hoyDMY())
-    .replace(/\{numero\}/g, o.numero||o.odoo_so||'')
     .replace(/\{so\}/g, o.odoo_so||'')
-    .replace(/\{tracking\}/g, t.code)
-    .replace(/\{link\}/g, t.link)
+    .replace(/\{tracking\}/g, o.tracking_code||'—')
+    .replace(/\{link\}/g, o.tracking_url||'')
     .replace(/\{productos\}/g, listaProductos(o.productos))
     .replace(/\{ciudad\}/g, o.ciudad||'')
     .replace(/\{provincia\}/g, o.provincia||'');
+}
+function templateFor(o, tpls){
+  if (o.categoria === 'rosario') return tpls.rosario;
+  if (o.categoria === 'retiro')  return tpls.retiro;
+  return efDesp(o) ? tpls.despachado : tpls.pendiente;
 }
 
 // ---- Estado ----
 let DATA = [];
 let TAB = 'avisar';
-let ESTADO = {};        // estado_key -> {pedido,armado,empaquetado,etiqueta,despachado,avisado}
-const SO = {};          // estado_key -> odoo_so
-const PDF = {};         // estado_key -> pedido_pdf_url
+let ESTADO = {};
+const SO = {};
+const PDF = {};
 
-// Un pedido está "despachado" si TN lo dice O si lo marcamos a mano.
-function efDesp(o){ return !!o.despachado || (o.odoo_delivery_status === 'full') || !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].despachado); }
+function efDesp(o){ return !!o.despachado || !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].despachado); }
 function isAvisado(o){ return !!(ESTADO[o.estado_key] && ESTADO[o.estado_key].avisado); }
 
 function setTab(t){
   TAB = t;
-  document.querySelectorAll('.seg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.seg-chip[data-tab]').forEach(c => c.classList.toggle('sel', c.dataset.tab === t));
   render();
 }
 
 function updateCounts(){
-  const avisar = DATA.filter(o => efDesp(o) && !isAvisado(o)).length;
-  const desp   = DATA.filter(o => !efDesp(o)).length;
-  document.getElementById('r-avisar').textContent    = avisar;
-  document.getElementById('r-despachar').textContent = desp;
-  document.getElementById('r-total').textContent     = DATA.length;
-  document.getElementById('t-avisar').textContent    = '(' + avisar + ')';
-  document.getElementById('t-despachar').textContent = '(' + desp + ')';
+  const c = cat => DATA.filter(o => o.categoria === cat).length;
+  const avisar = DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o)).length;
+  document.getElementById('r-avisar').textContent  = avisar;
+  document.getElementById('r-correo').textContent  = c('correo');
+  document.getElementById('r-rosario').textContent = c('rosario');
+  document.getElementById('r-retiro').textContent  = c('retiro');
+  document.getElementById('r-ml').textContent      = c('ml');
+  document.getElementById('r-total').textContent   = DATA.length;
 }
 
 async function cargar(){
@@ -259,12 +260,7 @@ async function cargar(){
     ESTADO = {};
     for (const e of (estRes.data || [])) ESTADO[String(e.tn_id)] = e;
     for (const o of DATA) { SO[o.estado_key] = o.odoo_so || null; PDF[o.estado_key] = o.pedido_pdf_url || null; }
-
-    const av = document.getElementById('aviso');
-    let txt = rSeg.odoo_ok ? 'Ventas de Odoo con envío, cruzadas con Tienda Nube.' : '⚠ No se pudo consultar Odoo — mostrando todo Tienda Nube sin cruzar.';
-    if (rSeg.resumen.pendientes_tn) txt += ' <b>' + rSeg.resumen.pendientes_tn + '</b> venta(s) manual(es) por correo sin envío creado en Tienda Nube.';
-    av.innerHTML = txt;
-
+    document.getElementById('aviso').innerHTML = 'Todas las ventas confirmadas de Odoo, categorizadas por tipo de entrega. El tracking de correo se cruza con Tienda Nube.';
     updateCounts();
     render();
   } catch (e) {
@@ -273,9 +269,9 @@ async function cargar(){
 }
 
 function filtrar(){
-  if (TAB === 'avisar')    return DATA.filter(o => efDesp(o) && !isAvisado(o));
-  if (TAB === 'despachar') return DATA.filter(o => !efDesp(o));
-  return DATA;
+  if (TAB === 'avisar')  return DATA.filter(o => o.categoria==='correo' && efDesp(o) && !isAvisado(o));
+  if (TAB === 'todos')   return DATA;
+  return DATA.filter(o => o.categoria === TAB);
 }
 
 function render(){
@@ -283,7 +279,7 @@ function render(){
   const tpls = getPlantillas();
   const lista = filtrar();
   if (!lista.length){
-    const msg = TAB==='avisar' ? '✓ Nada pendiente de avisar.' : TAB==='despachar' ? '✓ Nada por despachar.' : 'No hay ventas con envío en el período.';
+    const msg = TAB==='avisar' ? '✓ Nada pendiente de avisar.' : 'No hay ventas en esta categoría.';
     salida.innerHTML = '<div class="seg-empty">' + msg + '</div>';
     return;
   }
@@ -291,15 +287,18 @@ function render(){
   for (const o of lista){
     const k = o.estado_key;
     const st = ESTADO[k] || {};
+    const cat = o.categoria;
+    const esML = cat === 'ml';
     const enCamino = efDesp(o);
-    const tpl = enCamino ? tpls.despachado : tpls.pendiente;
-    const eff = efectivoTracking(o);
-    const msg = aplicarPlantilla(tpl, o);
-    const waHref = o.telefono_wa ? ('https://api.whatsapp.com/send?phone=' + o.telefono_wa + '&text=' + encodeURIComponent(msg)) : '';
+    const msg = esML ? '' : aplicarPlantilla(templateFor(o, tpls), o);
+    const puedeWa = !esML && o.telefono_wa;
+    const waHref = puedeWa ? ('https://api.whatsapp.com/send?phone=' + o.telefono_wa + '&text=' + encodeURIComponent(msg)) : '';
     const nProds = (o.productos||[]).length;
 
-    let estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
-    const faltaBadge = o.solo_odoo ? '<span class="b-tag b-falta">⚠ Falta envío en Tienda Nube</span>' : '';
+    let estadoBadge;
+    if (cat === 'retiro') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Entregado</span>' : '<span class="b-tag b-pend">⏳ Preparando</span>';
+    else if (cat === 'ml') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Despachado</span>' : '<span class="b-tag b-pend">⏳ Pendiente</span>';
+    else estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
 
     const prodHtml = (o.productos||[]).map(p =>
       `<div class="p"><span class="q">${p.cantidad}×</span><span>${esc(p.nombre)}</span>${p.sku?`<span class="sku">${esc(p.sku)}</span>`:''}</div>`
@@ -308,30 +307,30 @@ function render(){
     const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog('${k}','${f}',this)">${label}</button>`;
     const chipPedido = `<button class="chip pedido${st.pedido?' on':''}" data-f="pedido" title="Descargar el pedido de venta de Odoo para imprimir" onclick="pedidoClick('${k}',this)">🖨 Pedido</button>`;
 
-    html += `<div class="seg-card${st.avisado?' avisado':''}${o.solo_odoo?' falta':''}" data-id="${k}">
+    html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${k}">
       <div class="seg-top">
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
         <span class="seg-meta">· ${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
-        <span class="seg-badges">${faltaBadge}${estadoBadge}<span class="b-tag b-carrier">${esc(o.transportista)}</span>${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
+        <span class="seg-badges"><span class="b-tag b-cat ${cat}">${CATLBL[cat]||cat}</span>${estadoBadge}${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
       </div>
       <div class="seg-row2">
-        <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${chip('avisado','Avisado')}</div>
+        <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${esML?'':chip('avisado','Avisado')}</div>
         <div class="seg-acts">
-          ${eff.link?`<a class="mini track" href="${esc(eff.link)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
-          <a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
-          <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>
+          ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
+          ${esML ? '<span style="font-size:12px;color:var(--muted)">Gestionado por Mercado Libre</span>'
+                 : `<a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
+                    <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>`}
         </div>
       </div>
-      <div class="seg-more" id="more-${k}">
+      ${esML ? '' : `<div class="seg-more" id="more-${k}">
         <div class="seg-prods">${prodHtml}</div>
-        ${!o.tracking_url?`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">🔗 Seguimiento — pegá el link o número de Correo/Andreani (esta venta no tiene envío en Tienda Nube)</label><input class="input" style="width:100%" id="trk-${k}" value="${esc((ESTADO[k]||{}).tracking||'')}" placeholder="https://www.correoargentino.com.ar/...  o  360003042950940" onchange="setTracking('${k}',this.value)"></div>`:''}
         <textarea id="msg-${k}">${esc(msg)}</textarea>
         <div class="seg-more-acts">
-          <button class="btn secondary" onclick="copiarMsg('${k}',this)">Copiar mensaje</button>
+          <button class="btn secondary" onclick="copiarMsg('${k}')">Copiar mensaje</button>
           ${!o.telefono_wa?'<span style="font-size:12px;color:var(--warn);align-self:center">Sin teléfono cargado</span>':''}
         </div>
-      </div>
+      </div>`}
     </div>`;
   }
   html += '</div>';
@@ -339,60 +338,22 @@ function render(){
 }
 
 function toggleMore(k){ const el = document.getElementById('more-'+k); if(el) el.classList.toggle('open'); }
-async function copiarMsg(k, btn){
+function copiarMsg(k){
   const ta = document.getElementById('msg-'+k); if(!ta) return;
-  const text = ta.value;
-  const feedback = (ok) => { if (btn) { const t = btn.textContent; btn.textContent = ok ? '✓ Copiado' : 'No se pudo copiar'; setTimeout(()=>btn.textContent=t,1400); } };
-  // 1) API moderna: writeText escribe texto Unicode real (CF_UNICODETEXT en Windows).
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    try { await navigator.clipboard.writeText(text); feedback(true); return; } catch (e) { /* cae al fallback */ }
-  }
-  // 2) Fallback: textarea temporal + execCommand (también preserva Unicode).
-  try {
-    const tmp = document.createElement('textarea');
-    tmp.value = text; tmp.setAttribute('readonly', '');
-    tmp.style.position = 'fixed'; tmp.style.top = '-1000px'; tmp.style.opacity = '0';
-    document.body.appendChild(tmp);
-    tmp.focus(); tmp.select(); tmp.setSelectionRange(0, text.length);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(tmp);
-    feedback(ok);
-  } catch (e) { feedback(false); }
+  navigator.clipboard.writeText(ta.value).then(()=>{ const b=event.target; const t=b.textContent; b.textContent='✓ Copiado'; setTimeout(()=>b.textContent=t,1300); });
 }
-
-// Guarda el tracking cargado a mano y actualiza el mensaje sin re-render.
-function setTracking(k, val){
-  ESTADO[k] = Object.assign({}, ESTADO[k], { tracking: val });
-  sb.from('seg_estado').upsert(
-    { tn_id: Number(k), so_number: SO[k] || null, tracking: val, updated_at: new Date().toISOString() },
-    { onConflict: 'tn_id' }
-  ).then(({ error }) => { if (error) alert('No se pudo guardar el tracking: ' + error.message); });
-  const o = DATA.find(x => x.estado_key === k); if (!o) return;
-  const tpls = getPlantillas();
-  const msg = aplicarPlantilla(efDesp(o) ? tpls.despachado : tpls.pendiente, o);
-  const ta = document.getElementById('msg-'+k); if (ta) ta.value = msg;
-  const wa = document.querySelector('.seg-card[data-id="'+k+'"] .mini.wa');
-  if (wa && o.telefono_wa) wa.href = 'https://api.whatsapp.com/send?phone=' + o.telefono_wa + '&text=' + encodeURIComponent(msg);
-}
-
-// Badge "Pedido": abre el PDF del pedido de Odoo para imprimir + marca el paso.
 function pedidoClick(k, btn){
   const u = PDF[k];
   if (u) window.open(u, '_blank', 'noopener');
   else alert('Esta venta todavía no tiene pedido de Odoo asociado.');
   if (!(ESTADO[k] && ESTADO[k].pedido)) tog(k, 'pedido', btn);
 }
-
-// WhatsApp: sincroniza el texto (por si lo editaron) y marca Avisado.
 function waClick(k, a){
   const ta = document.getElementById('msg-'+k);
   if (ta && a.href) a.href = a.href.split('&text=')[0] + '&text=' + encodeURIComponent(ta.value);
   const chip = document.querySelector('.seg-card[data-id="'+k+'"] .chip[data-f="avisado"]');
-  if (!(ESTADO[k] && ESTADO[k].avisado)) tog(k, 'avisado', chip);
+  if (chip && !(ESTADO[k] && ESTADO[k].avisado)) tog(k, 'avisado', chip);
 }
-
-// Toggle de paso interno -> persiste en Supabase (seg_estado).
-// Al cambiar Despachado o Avisado, re-renderiza para que la venta cambie de pestaña sola.
 async function tog(k, field, btn){
   const cur = !!(ESTADO[k] && ESTADO[k][field]);
   const val = !cur;
@@ -414,8 +375,17 @@ async function tog(k, field, btn){
 }
 
 // ---- Plantillas UI ----
-function pintarPlantillas(){ const t=getPlantillas(); document.getElementById('tpl-despachado').value=t.despachado; document.getElementById('tpl-pendiente').value=t.pendiente; }
-function guardarPlantillas(){ localStorage.setItem(LS_TPL, JSON.stringify({ despachado:document.getElementById('tpl-despachado').value, pendiente:document.getElementById('tpl-pendiente').value })); render(); const b=event.target; const t=b.textContent; b.textContent='✓ Guardado'; setTimeout(()=>b.textContent=t,1300); }
+function pintarPlantillas(){ const t=getPlantillas(); document.getElementById('tpl-despachado').value=t.despachado; document.getElementById('tpl-pendiente').value=t.pendiente; document.getElementById('tpl-rosario').value=t.rosario; document.getElementById('tpl-retiro').value=t.retiro; }
+function guardarPlantillas(){
+  localStorage.setItem(LS_TPL, JSON.stringify({
+    despachado: document.getElementById('tpl-despachado').value,
+    pendiente:  document.getElementById('tpl-pendiente').value,
+    rosario:    document.getElementById('tpl-rosario').value,
+    retiro:     document.getElementById('tpl-retiro').value,
+  }));
+  render();
+  const b=event.target; const t=b.textContent; b.textContent='✓ Guardado'; setTimeout(()=>b.textContent=t,1300);
+}
 function restaurarPlantillas(){ localStorage.removeItem(LS_TPL); pintarPlantillas(); render(); }
 
 pintarPlantillas();
