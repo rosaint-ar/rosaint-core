@@ -61,7 +61,9 @@
     .seg-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; }
     .b-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
     .b-cat { color: #fff; }
-    .b-cat.correo  { background: var(--structure); }
+    .b-cat.correo      { background: var(--structure); }
+    .b-cat.correo-arg  { background: var(--structure); }   /* Correo Argentino · ese azul */
+    .b-cat.andreani    { background: #E4002B; }   /* Andreani · rojo */
     .b-cat.rosario { background: var(--ok); }
     .b-cat.retiro  { background: var(--warn); }
     .b-cat.ml      { background: #b8860b; }
@@ -361,6 +363,17 @@ function render(){
     else if (cat === 'ml') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Despachado</span>' : '<span class="b-tag b-pend">⏳ Pendiente</span>';
     else estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
 
+    // Badge de categoría: para correo, distingue Correo Argentino (azul) vs Andreani (rojo)
+    let catBadge;
+    if (cat === 'correo') {
+      const t = (o.transportista || '').toLowerCase();
+      if (/andreani/.test(t)) catBadge = '<span class="b-tag b-cat andreani">Andreani</span>';
+      else if (/correo/.test(t)) catBadge = '<span class="b-tag b-cat correo-arg">Correo Argentino</span>';
+      else catBadge = '<span class="b-tag b-cat correo">Correo</span>';
+    } else {
+      catBadge = `<span class="b-tag b-cat ${cat}">${CATLBL[cat]||cat}</span>`;
+    }
+
     const prodHtml = (o.productos||[]).map(p =>
       `<div class="p"><span class="q">${p.cantidad}×</span><span>${esc(p.nombre)}</span>${p.sku?`<span class="sku">${esc(p.sku)}</span>`:''}</div>`
     ).join('');
@@ -381,7 +394,7 @@ function render(){
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
         <span class="seg-meta">${esc([o.ciudad,o.provincia].filter(Boolean).join(', '))} · ${fmtFecha(o.fecha)} · ${esc(fmtMoney(o.total))} · ${nProds} art.</span>
-        <span class="seg-badges"><span class="b-tag b-cat ${cat}">${CATLBL[cat]||cat}</span>${estadoBadge}${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
+        <span class="seg-badges">${catBadge}${estadoBadge}${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
       </div>
       <div class="seg-row2">
         <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${esML?'':chip('avisado','Avisado')}</div>
