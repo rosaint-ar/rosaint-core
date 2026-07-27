@@ -474,7 +474,7 @@
       <div class="sec-head">
         <div>
           <div class="sec-title">Presentaciones y precios</div>
-          <div class="sec-sub">Una fila por SKU. Editá la rentabilidad objetivo o el precio final; el otro se recalcula. Semáforo de margen real por columna.</div>
+          <div class="sec-sub">Una fila por SKU. Abrí el desglose de costo (▸) para editar tamaño, envase y etiqueta. Editá rentabilidad o precio; el otro se recalcula.</div>
         </div>
         <div style="display:flex; gap:6px;">
           <button class="btn secondary btn-sm" onclick="abrirNuevaPresentacion()">+ Agregar presentación</button>
@@ -555,9 +555,10 @@
 <!-- Modal: agregar una nueva presentación (SKU) a este granel -->
 <div class="modal-overlay" id="modal-presentacion" onclick="if(event.target===this)cerrarModalPresentacion()">
   <div class="modal-box modal-form mf">
-    <h4>Agregar presentación</h4>
+    <h4 id="mp2-titulo">Agregar presentación</h4>
     <div class="sec-sub" style="margin-bottom:14px;">
-      Se crea un SKU nuevo del granel <strong id="mp2-granel-nombre">—</strong> y se define su sistema de precios.
+      Se crea un SKU nuevo del producto <strong id="mp2-granel-nombre">—</strong> y se define su sistema de precios.
+      Podés cambiar el producto destino más abajo.
     </div>
 
     <div class="mf-grid">
@@ -599,10 +600,12 @@
         <input type="number" id="mp2-etiq-hoja" step="1" min="1" value="1">
       </div>
       <div class="campo">
-        <label>Granel</label>
-        <div class="fixed-val" id="mp2-granel">—</div>
+        <label>Producto (granel) destino</label>
+        <input type="text" id="mp2-granel" list="mp2-graneles" placeholder="Nombre o código…" autocomplete="off">
+        <div class="help" id="mp2-granel-help"></div>
       </div>
     </div>
+    <datalist id="mp2-graneles"></datalist>
 
     <label style="display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; margin-bottom:4px;">Sistema de precios</label>
     <div class="precio-box">
@@ -659,6 +662,8 @@
   </div>
 </div>
 
+<datalist id="desglose-insumos"></datalist>
+
 <div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -698,8 +703,13 @@ const state = {
 
   composicionSucia: false,
   preciosSucio: {},
-  etiquetasSucio: {},
+  presSucia: {},            // sku -> cambios en tamaño/envase/etiqueta/etiq-hoja sin guardar
   inciSucio: false,
+
+  costoInsumoCache: {},     // codigo insumo -> costo unitario (precio_ars_final)
+  desglosesAbiertos: new Set(), // skus con el desglose de costo abierto (se preserva al re-renderizar)
+  todosGraneles: [],        // {codigo, nombre, linea_id} de todas las fórmulas TE/SE vigentes
+  granelPorCodigo: {},
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -733,7 +743,7 @@ function hayCambiosSinGuardar() {
   return state.composicionSucia
       || state.inciSucio
       || Object.keys(state.preciosSucio || {}).length > 0
-      || Object.keys(state.etiquetasSucio || {}).length > 0;
+      || Object.keys(state.presSucia || {}).length > 0;
 }
 
 // Volver al dashboard de CORE.
@@ -864,13 +874,18 @@ async function init() {
 
 async function cargarDatosSecundarios() {
   try {
-    const [rels, itemsAll, itemsCatalogo, formulasVig, todosComp] = await Promise.all([
+    const [rels, itemsAll, itemsCatalogo, formulasVig, todosComp, graneles] = await Promise.all([
       sb.from('relaciones_precio').select('sku_destino, fuente_tipo, sku_origen, factor, operacion, redondeo_arriba_a, comentario'),
       sb.from('items').select('codigo, nombre').in('tipo', ['SKU', 'PACK']),
       sb.from('items').select('codigo, nombre, tipo, inci_name').eq('estado', 'vigente').order('nombre'),
       sb.from('formulas').select('id, codigo_granel').eq('estado', 'vigente'),
       sb.from('formula_componentes').select('formula_id, codigo_componente, composicion_pct, orden').order('orden'),
+      sb.from('items').select('codigo, nombre, linea_id').in('tipo', ['TE', 'SE']).eq('estado', 'vigente').order('nombre'),
     ]);
+
+    state.todosGraneles = graneles.data || [];
+    state.granelPorCodigo = {};
+    for (const g of state.todosGraneles) state.granelPorCodigo[g.codigo] = g;
 
     state.relacionesPorSku = {};
     for (const r of (rels.data || [])) state.relacionesPorSku[r.sku_destino] = r;
@@ -882,6 +897,7 @@ async function cargarDatosSecundarios() {
     state.itemPorCodigo = {};
     for (const it of state.catalogoComponentes) state.itemPorCodigo[it.codigo] = it;
     refrescarDatalistComponentes();
+    refrescarDatalistInsumos();
 
     const formulaIdToGranel = {};
     for (const f of (formulasVig.data || [])) formulaIdToGranel[f.id] = f.codigo_granel;
@@ -1091,7 +1107,7 @@ async function abrirNuevaVersion() {
     if (!confirm('Tenés cambios sin guardar que se perderán. ¿Continuar?')) return;
     state.composicionSucia = false;
     state.preciosSucio = {};
-    state.etiquetasSucio = {};
+    state.presSucia = {};
     state.inciSucio = false;
   }
   const codigo = state.granel?.codigo;
@@ -1124,7 +1140,7 @@ async function editarVersion(id) {
     if (!confirm('Tenés cambios sin guardar. Si cambiás de versión se perderán.\n\n¿Descartar los cambios y continuar?')) return;
     state.composicionSucia = false;
     state.preciosSucio = {};
-    state.etiquetasSucio = {};
+    state.presSucia = {};
     state.inciSucio = false;
   }
   state.versionIdAEditar = id;
@@ -1221,6 +1237,39 @@ async function obtenerCostoKg(codigo, tipo) {
     console.error('Error obteniendo costo de ' + codigo, e);
     return null;
   }
+}
+
+// Costo unitario de un insumo (envase / etiqueta), cacheado.
+async function costoInsumo(codigo) {
+  if (!codigo) return 0;
+  if (state.costoInsumoCache[codigo] != null) return state.costoInsumoCache[codigo];
+  try {
+    const { data } = await sb.rpc('precio_ars_final', { p_codigo: codigo });
+    const v = parseFloat(data) || 0;
+    state.costoInsumoCache[codigo] = v;
+    return v;
+  } catch (e) {
+    console.warn('No pude calcular costo del insumo ' + codigo, e);
+    return 0;
+  }
+}
+
+// Etiqueta legible de un insumo para prellenar inputs con datalist.
+function insumoLabel(codigo) {
+  if (!codigo) return '';
+  const it = state.itemPorCodigo[codigo] || state.catalogoComponentes.find(i => i.codigo === codigo);
+  const nom = it ? it.nombre : (state.todosItems[codigo] || codigo);
+  return `${nom} (${codigo})`;
+}
+
+// Datalist compartido de insumos (envases + etiquetas) para editar en el desglose.
+function refrescarDatalistInsumos() {
+  const dl = document.getElementById('desglose-insumos');
+  if (!dl) return;
+  dl.innerHTML = state.catalogoComponentes
+    .filter(i => i.tipo === 'IN')
+    .map(i => `<option value="${escapeAttr(i.nombre)} (${i.codigo})"></option>`)
+    .join('');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1569,7 +1618,10 @@ async function cargarPresentacionesYPrecios() {
         }
       })
     );
-    for (const [cod, val] of resultados) costoPorCodigo[cod] = val;
+    for (const [cod, val] of resultados) {
+      costoPorCodigo[cod] = val;
+      state.costoInsumoCache[cod] = val;
+    }
   }
 
   state.presentaciones = pres.map(p => {
@@ -1734,11 +1786,15 @@ function renderPrecios() {
     return `
       <tr data-sku="${p.codigo_sku}">
         <td class="codigo">${p.codigo_sku}</td>
-        <td>${p.nombre}</td>
+        <td>${p.nombre}
+          <button class="btn ghost btn-sm" style="padding:1px 6px; font-size:12px;"
+                  title="Duplicar esta presentación (para éste u otro producto)"
+                  onclick="duplicarPresentacion('${p.codigo_sku}')">⧉</button>
+        </td>
         <td class="num text-muted">${tamañoStr}</td>
         <td>${badgeHtml}</td>
         <td class="num costo-desglose" onclick="toggleDesglose('${p.codigo_sku}')"
-            style="cursor:pointer; user-select:none;" title="Click para ver el desglose del costo">
+            style="cursor:pointer; user-select:none;" title="Click para ver y editar el desglose del costo">
           <span class="desglose-arrow" id="arrow-${p.codigo_sku}">▸</span>
           <strong>${fmt.num2(p.costo_unitario)}</strong>
         </td>
@@ -1779,6 +1835,17 @@ function renderPrecios() {
       </tr>
     `;
   }).join('');
+
+  // Re-abrir los desgloses que estaban abiertos antes del re-render
+  for (const sku of state.desglosesAbiertos) {
+    const fila = document.getElementById('desglose-' + sku);
+    const cont = document.getElementById('desglose-content-' + sku);
+    if (!fila || !cont) continue;
+    cont.innerHTML = renderDesglose(sku);
+    fila.style.display = '';
+    const arrow = document.getElementById('arrow-' + sku);
+    if (arrow) arrow.textContent = '▾';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1798,10 +1865,12 @@ function toggleDesglose(sku) {
   if (visible) {
     fila.style.display = 'none';
     if (arrow) arrow.textContent = '▸';
+    state.desglosesAbiertos.delete(sku);
   } else {
     document.getElementById('desglose-content-' + sku).innerHTML = renderDesglose(sku);
     fila.style.display = '';
     if (arrow) arrow.textContent = '▾';
+    state.desglosesAbiertos.add(sku);
   }
 }
 
@@ -1817,16 +1886,26 @@ function renderDesglose(sku) {
 
   const pct = (x) => total > 0 ? (x / total * 100).toFixed(1) + '%' : '—';
   const tamStr = p.tamanio_kg >= 1 ? p.tamanio_kg + ' Kg' : (p.tamanio_kg * 1000) + ' g';
+  const dirty = !!state.presSucia[sku];
+
+  // Tamaño editable en la unidad más natural (g si es < 1 Kg)
+  const usaGramos = p.tamanio_kg < 1;
+  const tamVal = usaGramos ? +(p.tamanio_kg * 1000).toFixed(3) : +Number(p.tamanio_kg).toFixed(4);
+  const inpStyle = 'padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-size:12px; background:var(--surface); color:var(--text);';
 
   return `
-    <div style="font-weight:600; margin-bottom:8px; font-size:13px;">
-      Desglose de costo · ${sku} (${tamStr})
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+      <div style="font-weight:600; font-size:13px;">
+        Desglose de costo · ${sku} (${tamStr}) ${dirty ? '<span style="color:var(--warn);" title="Cambios sin guardar">● sin guardar</span>' : ''}
+      </div>
+      <button class="btn secondary btn-sm" onclick="duplicarPresentacion('${sku}')"
+              title="Crear otra presentación heredando esta base (mismo u otro producto)">⧉ Duplicar</button>
     </div>
-    <table style="width:100%; max-width:680px; border-collapse:collapse; font-size:12.5px;">
+    <table style="width:100%; max-width:720px; border-collapse:collapse; font-size:12.5px;">
       <thead>
         <tr style="border-bottom:1px solid var(--border); color:var(--muted); text-align:left;">
           <th style="padding:4px 8px;">Componente</th>
-          <th style="padding:4px 8px;">Detalle</th>
+          <th style="padding:4px 8px;">Detalle · editable</th>
           <th style="padding:4px 8px; text-align:right;">Costo</th>
           <th style="padding:4px 8px; text-align:right;">%</th>
         </tr>
@@ -1840,7 +1919,17 @@ function renderDesglose(sku) {
             </button>
             ${nombreItem(p.codigo_granel)}
           </td>
-          <td style="padding:4px 8px; color:var(--muted);">${fmt.num2(costoGranelKg)}/Kg × ${tamStr}</td>
+          <td style="padding:4px 8px; color:var(--muted);">
+            ${fmt.num2(costoGranelKg)}/Kg ×
+            <input id="tam-val-${sku}" type="number" min="0" step="any" value="${tamVal}"
+                   style="${inpStyle} width:72px; text-align:right;" title="Cantidad de granel que lleva esta presentación"
+                   onchange="actualizarTamanioPres('${sku}', this.value, document.getElementById('tam-unit-${sku}').value)">
+            <select id="tam-unit-${sku}" style="${inpStyle}"
+                    onchange="actualizarTamanioPres('${sku}', document.getElementById('tam-val-${sku}').value, this.value)">
+              <option value="g"  ${usaGramos ? 'selected' : ''}>g</option>
+              <option value="kg" ${!usaGramos ? 'selected' : ''}>Kg</option>
+            </select>
+          </td>
           <td style="padding:4px 8px; text-align:right;"><strong>${fmt.num2(aporteGranel)}</strong></td>
           <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteGranel)}</td>
         </tr>
@@ -1851,20 +1940,27 @@ function renderDesglose(sku) {
         </tr>
         <tr>
           <td style="padding:4px 8px;">Envase</td>
-          <td style="padding:4px 8px; color:var(--muted);">${nombreItem(p.codigo_envase)}</td>
+          <td style="padding:4px 8px;">
+            <input type="text" list="desglose-insumos" value="${escapeAttr(insumoLabel(p.codigo_envase))}"
+                   placeholder="Nombre o código del envase…" style="${inpStyle} width:100%; max-width:300px;"
+                   onchange="actualizarEnvasePres('${sku}', this.value)">
+          </td>
           <td style="padding:4px 8px; text-align:right;">${fmt.num2(aporteEnvase)}</td>
           <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteEnvase)}</td>
         </tr>
         <tr>
-          <td style="padding:4px 8px;">Etiqueta ${state.etiquetasSucio[sku] ? '<span style="color:var(--warn);" title="Cambio sin guardar">●</span>' : ''}</td>
-          <td style="padding:4px 8px; color:var(--muted);">
+          <td style="padding:4px 8px;">Etiqueta</td>
+          <td style="padding:4px 8px;">
+            <input type="text" list="desglose-insumos" value="${escapeAttr(insumoLabel(p.codigo_etiqueta))}"
+                   placeholder="sin etiqueta (dejar vacío)" style="${inpStyle} width:100%; max-width:300px;"
+                   onchange="actualizarEtiquetaPres('${sku}', this.value)">
             ${p.codigo_etiqueta
-              ? `${nombreItem(p.codigo_etiqueta)} (${fmt.num2(p.costo_etiqueta_hoja)}/hoja ÷
+              ? `<div style="color:var(--muted); margin-top:3px;">${fmt.num2(p.costo_etiqueta_hoja)}/hoja ÷
                  <input type="number" min="1" step="1" value="${p.etiquetas_por_hoja}"
-                        style="width:48px; padding:1px 4px; border:1px solid var(--border); border-radius:3px; font-size:12px; text-align:center; background:var(--surface); color:var(--text);"
+                        style="${inpStyle} width:48px; text-align:center;"
                         title="Cuántas etiquetas entran en una hoja A4"
-                        onchange="actualizarEtiquetasPorHoja('${sku}', this.value)"> por hoja)`
-              : 'sin etiqueta'}
+                        onchange="actualizarEtiquetasPorHoja('${sku}', this.value)"> por hoja</div>`
+              : ''}
           </td>
           <td style="padding:4px 8px; text-align:right;" id="aporte-etiq-${sku}">${fmt.num2(aporteEtiq)}</td>
           <td style="padding:4px 8px; text-align:right; color:var(--muted);">${pct(aporteEtiq)}</td>
@@ -1878,6 +1974,9 @@ function renderDesglose(sku) {
         </tr>
       </tfoot>
     </table>
+    <div class="small text-muted" style="margin-top:6px;">
+      Los cambios de tamaño, envase y etiqueta se guardan con el botón <strong>Guardar cambios</strong> de arriba.
+    </div>
   `;
 }
 
@@ -1941,6 +2040,12 @@ function renderDesgloseGranel(sku) {
   return html;
 }
 
+function marcarPresSucia(sku) {
+  state.presSucia[sku] = true;
+  const btn = document.getElementById('btn-guardar-precios');
+  if (btn) btn.disabled = false;
+}
+
 function actualizarEtiquetasPorHoja(sku, valor) {
   const n = parseInt(valor, 10);
   if (isNaN(n) || n < 1) { toast('Las etiquetas por hoja deben ser un número ≥ 1.', 'error'); return; }
@@ -1948,11 +2053,57 @@ function actualizarEtiquetasPorHoja(sku, valor) {
   if (!p) return;
   p.etiquetas_por_hoja = n;
   p.costo_etiqueta = (p.costo_etiqueta_hoja || 0) / n;
-  state.etiquetasSucio[sku] = true;
+  marcarPresSucia(sku);
   recalcularCostosPresentaciones();
-  document.getElementById('btn-guardar-precios').disabled = false;
   renderPrecios();
-  toggleDesglose(sku);
+}
+
+// Editar la cantidad de granel (tamaño) de una presentación, en g o Kg.
+function actualizarTamanioPres(sku, valor, unidad) {
+  let n = parseFloat(valor);
+  if (isNaN(n) || n <= 0) { toast('El tamaño debe ser mayor a 0.', 'error'); return; }
+  const kg = (unidad === 'g') ? n / 1000 : n;
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return;
+  p.tamanio_kg = kg;
+  marcarPresSucia(sku);
+  recalcularCostosPresentaciones();
+  renderPrecios();
+}
+
+// Cambiar el envase de una presentación.
+async function actualizarEnvasePres(sku, texto) {
+  const cod = codigoInsumo(texto);
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return;
+  if (!cod) { toast('Envase no reconocido. Elegí uno de la lista.', 'error'); renderPrecios(); return; }
+  p.codigo_envase = cod;
+  p.costo_envase = await costoInsumo(cod);
+  marcarPresSucia(sku);
+  recalcularCostosPresentaciones();
+  renderPrecios();
+}
+
+// Cambiar (o quitar) la etiqueta de una presentación.
+async function actualizarEtiquetaPres(sku, texto) {
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) return;
+  const t = (texto || '').trim();
+  if (!t) {
+    p.codigo_etiqueta = null;
+    p.costo_etiqueta_hoja = 0;
+    p.costo_etiqueta = 0;
+  } else {
+    const cod = codigoInsumo(t);
+    if (!cod) { toast('Etiqueta no reconocida (dejala vacía o elegí de la lista).', 'error'); renderPrecios(); return; }
+    p.codigo_etiqueta = cod;
+    const bruto = await costoInsumo(cod);
+    p.costo_etiqueta_hoja = bruto;
+    p.costo_etiqueta = bruto / (p.etiquetas_por_hoja || 1);
+  }
+  marcarPresSucia(sku);
+  recalcularCostosPresentaciones();
+  renderPrecios();
 }
 
 function actualizarObjetivo(sku, lista, valor) {
@@ -2282,7 +2433,8 @@ async function guardarPrecios() {
       }
     }
 
-    if (rows.length === 0 && Object.keys(state.etiquetasSucio).length === 0) {
+    const skusPres = Object.keys(state.presSucia);
+    if (rows.length === 0 && skusPres.length === 0) {
       toast('Nada que guardar', 'warn'); return;
     }
     if (rows.length > 0) {
@@ -2290,18 +2442,23 @@ async function guardarPrecios() {
       if (error) throw error;
     }
 
-    const skusEtiq = Object.keys(state.etiquetasSucio);
-    for (const sku of skusEtiq) {
+    // Cambios en la presentación (tamaño / envase / etiqueta / etiquetas por hoja)
+    for (const sku of skusPres) {
       const pres = state.presentaciones.find(x => x.codigo_sku === sku);
       if (!pres) continue;
-      const { error: eEtiq } = await sb.from('presentaciones').update({ etiquetas_por_hoja: pres.etiquetas_por_hoja }).eq('codigo_sku', sku);
-      if (eEtiq) throw eEtiq;
+      const { error: ePres } = await sb.from('presentaciones').update({
+        tamanio_kg: pres.tamanio_kg,
+        codigo_envase: pres.codigo_envase || null,
+        codigo_etiqueta: pres.codigo_etiqueta || null,
+        etiquetas_por_hoja: pres.etiquetas_por_hoja || 1,
+      }).eq('codigo_sku', sku);
+      if (ePres) throw ePres;
     }
-    state.etiquetasSucio = {};
+    state.presSucia = {};
     state.preciosSucio = {};
     document.getElementById('btn-guardar-precios').disabled = true;
-    const msg = skusEtiq.length > 0
-      ? `Guardado: ${rows.length} precio(s) y ${skusEtiq.length} etiqueta(s)`
+    const msg = skusPres.length > 0
+      ? `Guardado: ${rows.length} precio(s) y ${skusPres.length} presentación(es)`
       : `Precios guardados (${rows.length} filas)`;
     toast(msg, 'success');
   } catch (err) {
@@ -2420,15 +2577,26 @@ function cerrarModalPresentacion() {
   document.getElementById('modal-presentacion').classList.remove('open');
 }
 
-function abrirNuevaPresentacion() {
+function abrirNuevaPresentacion(opts = {}) {
   if (!state.codigoGranel || !state.granel) { toast('Primero abrí una fórmula.', 'warn'); return; }
   if (!state.datosSecundariosListos || state.catalogoComponentes.length === 0) {
     toast('Los datos todavía están cargando. Esperá un segundo y volvé a intentar.', 'warn');
     return;
   }
+  if (hayCambiosSinGuardar()) {
+    if (!confirm('Tenés cambios sin guardar en esta fórmula. Al crear la presentación se recargará y se perderán.\n\n¿Continuar de todas formas?')) return;
+  }
+  const dup = opts.dup || null;
 
-  document.getElementById('mp2-granel').textContent = `${state.granel.nombre} (${state.codigoGranel})`;
+  document.getElementById('mp2-titulo').textContent = dup ? 'Duplicar presentación' : 'Agregar presentación';
   document.getElementById('mp2-granel-nombre').textContent = state.granel.nombre;
+
+  // Datalist de todos los productos (graneles) para elegir destino
+  document.getElementById('mp2-graneles').innerHTML = state.todosGraneles
+    .map(g => `<option value="${escapeAttr(g.nombre)} (${g.codigo})"></option>`)
+    .join('');
+  document.getElementById('mp2-granel').value = `${state.granel.nombre} (${state.codigoGranel})`;
+  document.getElementById('mp2-granel-help').textContent = 'Por defecto, este mismo producto. Cambialo para crear la presentación en otro.';
 
   // Código sugerido (async)
   const help = document.getElementById('mp2-cod-help');
@@ -2439,27 +2607,71 @@ function abrirNuevaPresentacion() {
     help.textContent = c ? `Sugerido: ${c} (podés cambiarlo).` : 'Sin código libre en 10000-19999.';
   });
 
-  // Reset de campos
-  ['mp2-nombre', 'mp2-envase', 'mp2-etiqueta', 'mp2-tamanio'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('mp2-etiq-hoja').value = 1;
-  document.getElementById('mp2-estado').value = 'vigente';
-  document.getElementById('mp2-factor').value = 1;
-  document.getElementById('mp2-operacion').value = 'multiplicar';
-  document.getElementById('mp2-redondeo').value = '100';
-  document.getElementById('mp2-error').textContent = '';
-  document.getElementById('mp2-modo-deriv').checked = true;
-  onModoPrecio();
-
   // Datalist de insumos (envases + etiquetas)
-  const dl = document.getElementById('mp2-insumos');
-  dl.innerHTML = state.catalogoComponentes
+  document.getElementById('mp2-insumos').innerHTML = state.catalogoComponentes
     .filter(i => i.tipo === 'IN')
     .map(i => `<option value="${escapeAttr(i.nombre)} (${i.codigo})"></option>`)
     .join('');
 
+  // Campos: reset o prellenado desde la presentación fuente
+  document.getElementById('mp2-nombre').value    = dup ? (dup.nombre || '') : '';
+  document.getElementById('mp2-envase').value     = dup && dup.codigo_envase ? insumoLabel(dup.codigo_envase) : '';
+  document.getElementById('mp2-etiqueta').value   = dup && dup.codigo_etiqueta ? insumoLabel(dup.codigo_etiqueta) : '';
+  document.getElementById('mp2-tamanio').value    = dup && dup.tamanio_kg ? dup.tamanio_kg : '';
+  document.getElementById('mp2-etiq-hoja').value  = dup && dup.etiquetas_por_hoja ? dup.etiquetas_por_hoja : 1;
+  document.getElementById('mp2-estado').value     = 'vigente';
+  document.getElementById('mp2-error').textContent = '';
+
+  // Sistema de precios (prellenado desde la relación de la fuente al duplicar)
+  let modo = 'deriv', factor = 1, operacion = 'multiplicar', redondeo = '100';
+  const relFuente = dup ? state.relacionesPorSku[dup.codigo_sku] : null;
+  if (relFuente && relFuente.fuente_tipo === 'ancla') {
+    modo = 'ancla';
+  } else if (relFuente && relFuente.fuente_tipo === 'sku') {
+    modo = 'deriv';
+    factor = parseFloat(relFuente.factor) || 1;
+    operacion = relFuente.operacion || 'multiplicar';
+    redondeo = String(relFuente.redondeo_arriba_a ?? 100);
+  } else if (dup) {
+    modo = 'manual';
+  }
+  document.getElementById('mp2-factor').value = factor;
+  document.getElementById('mp2-operacion').value = operacion;
+  document.getElementById('mp2-redondeo').value = ['100','50','1000','0'].includes(redondeo) ? redondeo : '100';
+  const radio = document.getElementById('mp2-modo-' + modo);
+  if (radio) radio.checked = true;
+  onModoPrecio();
+
   poblarOrigenPrecio();
+  // Al duplicar un derivado, dejar seleccionado el mismo precio de referencia si sigue disponible
+  if (relFuente && relFuente.fuente_tipo === 'sku' && relFuente.sku_origen) {
+    const sel = document.getElementById('mp2-origen');
+    if (sel && [...sel.options].some(o => o.value === relFuente.sku_origen)) {
+      sel.value = relFuente.sku_origen;
+      calcPreviewDerivado();
+    }
+  }
+
   document.getElementById('modal-presentacion').classList.add('open');
   setTimeout(() => document.getElementById('mp2-nombre').focus(), 60);
+}
+
+// Resuelve el código del producto (granel) destino desde el input del modal.
+function codigoGranelDestino() {
+  const txt = (document.getElementById('mp2-granel').value || '').trim();
+  if (!txt) return '';
+  const m = [...txt.matchAll(/\(([^)]+)\)/g)];
+  const cod = m.length ? m[m.length - 1][1].trim() : txt;
+  if (state.granelPorCodigo[cod]) return cod;
+  const hit = state.todosGraneles.find(g => g.nombre.toLowerCase() === txt.toLowerCase());
+  return hit ? hit.codigo : '';
+}
+
+// Abre el alta pre-cargada con los datos de una presentación existente.
+function duplicarPresentacion(sku) {
+  const p = state.presentaciones.find(x => x.codigo_sku === sku);
+  if (!p) { toast('No encontré esa presentación.', 'error'); return; }
+  abrirNuevaPresentacion({ dup: p });
 }
 
 async function guardarNuevaPresentacion() {
@@ -2476,10 +2688,11 @@ async function guardarNuevaPresentacion() {
   const etiqHoja = parseInt(document.getElementById('mp2-etiq-hoja').value, 10) || 1;
   const estado = document.getElementById('mp2-estado').value;
   const modo = document.querySelector('input[name=mp2-precio-modo]:checked').value;
-  const granel = state.codigoGranel;
+  const granel = codigoGranelDestino();
 
   if (!/^\d{5}$/.test(codigo)) { err.textContent = 'El código debe tener 5 dígitos.'; return; }
   if (state.todosItems[codigo] || state.itemPorCodigo[codigo]) { err.textContent = 'Ese código ya está en uso.'; return; }
+  if (!granel) { err.textContent = 'Elegí un producto (granel) destino de la lista.'; return; }
   if (!nombre) { err.textContent = 'Falta el nombre comercial.'; return; }
   if (!envase) { err.textContent = 'Elegí un envase de la lista.'; return; }
   if (etiqTxt && !etiq) { err.textContent = 'Etiqueta no reconocida (dejala vacía o elegí de la lista).'; return; }
@@ -2500,8 +2713,11 @@ async function guardarNuevaPresentacion() {
   btn.disabled = true;
   try {
     // 1) Ítem (SKU comercial)
+    const lineaId = state.granelPorCodigo[granel]?.linea_id
+                    ?? (granel === state.codigoGranel ? state.granel.linea_id : null)
+                    ?? null;
     const { error: eI } = await sb.from('items').insert({
-      codigo, nombre, tipo: 'SKU', estado, linea_id: state.granel.linea_id || null,
+      codigo, nombre, tipo: 'SKU', estado, linea_id: lineaId,
     });
     if (eI) throw new Error('Ítem: ' + eI.message);
 
@@ -2554,8 +2770,18 @@ async function guardarNuevaPresentacion() {
     state.todosItems[codigo] = nombre;
     cerrarModalPresentacion();
     await cargarCachePreciosL1();
-    await cargarPresentacionesYPrecios();
-    toast('Presentación ' + codigo + ' creada', 'success');
+
+    if (granel === state.codigoGranel) {
+      await cargarPresentacionesYPrecios();
+      toast('Presentación ' + codigo + ' creada', 'success');
+    } else {
+      const gName = state.granelPorCodigo[granel]?.nombre || granel;
+      if (confirm(`Presentación ${codigo} creada en «${gName}» (${granel}).\n\n¿Abrir ese producto ahora para verla?`)) {
+        window.location.search = '?codigo=' + granel;
+        return;
+      }
+      toast('Presentación ' + codigo + ' creada en ' + gName, 'success');
+    }
   } catch (e) {
     err.textContent = e.message;
   } finally {
@@ -2689,7 +2915,7 @@ async function guardarInci() {
 })();
 
 window.addEventListener('beforeunload', (e) => {
-  if (state.composicionSucia || Object.keys(state.preciosSucio).length > 0 || state.inciSucio) {
+  if (hayCambiosSinGuardar()) {
     e.preventDefault();
     e.returnValue = '';
   }
