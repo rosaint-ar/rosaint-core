@@ -924,71 +924,78 @@ async function cargarPromociones() {
   }
 }
 
-// Control: compara el descuento real de cada publicación en promo contra la regla
-// por tamaño (ml_reglas_descuento) y marca las que se salen. Combos = regla aparte.
+// % exacto sin redondear (2 decimales, formato es-AR, sin ceros de más).
+const pctTxt = n => (n == null) ? '—' : (+Number(n).toFixed(2)).toLocaleString('es-AR') + '%';
+
+// Control: muestra el panorama de TODAS las publicaciones en promo con su descuento
+// real (general y Meli+, exacto) y marca las que SUPERAN el tope Meli+ costeado por
+// tamaño. Distingue DEAL (vos elegís) de SMART/oferta compartida (ML gestiona).
+// Combos: regla propia a definir, no se evalúan.
 function renderControlDescuentos() {
   const cont = $('#promo-control');
   if (!cont) return;
 
   const enPromo = CTRL_PUBS.filter(p => p.activa && p.precio_con_descuento != null && Number(p.precio) > 0);
-  const viol = [];
-  let ok = 0, combos = 0, sinRegla = 0;
 
+  // Tipos de promo activa por item.
+  const tiposPorItem = {};
+  for (const pi of PROMO_ITEMS) {
+    const promo = PROMOS.find(pr => pr.id === pi.promo_id && pr.estado === 'started');
+    if (!promo) continue;
+    (tiposPorItem[pi.item_id] = tiposPorItem[pi.item_id] || new Set()).add(promo.tipo);
+  }
+
+  const rows = [];
+  let excede = 0, combos = 0, haySmart = false;
   for (const p of enPromo) {
     const tam = tamanoDe(p.titulo);
-    if (tam === 'combo') { combos++; continue; }
-    const regla = CTRL_REGLAS[tam];
-    if (!regla) { sinRegla++; continue; }
-    const gen = Math.round(100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio));
-    const meli = p.precio_meli != null ? Math.round(100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio)) : null;
-    const eGen = Number(regla.desc_general_pct), eMeli = Number(regla.desc_meli_pct);
-    const genOff = gen !== eGen;
-    const meliOff = meli != null && meli !== eMeli;
-    if (genOff || meliOff) viol.push({ titulo: p.titulo, etq: regla.etiqueta, gen, meli, eGen, eMeli, genOff, meliOff });
-    else ok++;
+    const esCombo = tam === 'combo';
+    if (esCombo) combos++;
+    const regla = (tam && !esCombo) ? CTRL_REGLAS[tam] : null;
+    const tope = regla ? Number(regla.desc_meli_pct) : null;
+    const gen = 100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio);
+    const meli = p.precio_meli != null ? 100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio) : null;
+    const genExc = tope != null && gen > tope + 0.001;
+    const meliExc = tope != null && meli != null && meli > tope + 0.001;
+    if (genExc || meliExc) excede++;
+    const tipos = tiposPorItem[p.item_id] ? Array.from(tiposPorItem[p.item_id]) : [];
+    if (tipos.includes('SMART')) haySmart = true;
+    rows.push({ titulo: p.titulo, etq: regla ? regla.etiqueta : (esCombo ? 'combo' : '—'), tope, gen, meli, genExc, meliExc, tipos, esCombo });
   }
+  // Los que superan el tope, primero.
+  rows.sort((a, b) => (((b.genExc || b.meliExc) ? 1 : 0) - ((a.genExc || a.meliExc) ? 1 : 0)));
 
+  const tipoBadges = tipos => tipos.map(t => t === 'SMART'
+    ? '<span class="badge cuotas" title="Oferta compartida: ML gestiona y co-financia el descuento; no fijás general/Meli+ por separado">SMART</span>'
+    : '<span class="badge cat" title="Oferta donde vos elegís el descuento">DEAL</span>').join(' ') || '<span class="pct-ok">—</span>';
+
+  const filas = rows.map(r => `
+    <tr>
+      <td>${esc(cleanTitle(r.titulo))}</td>
+      <td>${esc(r.etq)}</td>
+      <td class="num ${r.genExc ? 'pct-off' : ''}">${pctTxt(r.gen)}</td>
+      <td class="num ${r.meliExc ? 'pct-off' : ''}">${pctTxt(r.meli)}</td>
+      <td class="num pct-ok">${r.esCombo ? 'a definir' : pctTxt(r.tope)}</td>
+      <td>${tipoBadges(r.tipos)}</td>
+    </tr>`).join('');
+
+  const clase = excede ? 'bad' : 'good';
+  const titulo = excede
+    ? `⚠ ${excede} publicación${excede !== 1 ? 'es' : ''} supera${excede !== 1 ? 'n' : ''} el tope de Meli+`
+    : '✓ Ningún descuento supera el tope de Meli+';
   const notas = [];
-  if (combos) notas.push(`${combos} combo${combos !== 1 ? 's' : ''} en promo (regla aparte, a definir).`);
-  if (sinRegla) notas.push(`${sinRegla} sin tamaño reconocido.`);
-  const notaHtml = notas.length ? `<div class="control-note">${esc(notas.join(' '))}</div>` : '';
-
-  if (!viol.length) {
-    cont.innerHTML = `
-      <div class="control-card good">
-        <h4>✓ Descuentos en regla</h4>
-        <div style="font-size:12.5px; color:var(--muted);">Las ${ok} publicaciones en promoción respetan la regla de descuento por tamaño.</div>
-        ${notaHtml}
-      </div>`;
-    return;
-  }
-
-  const filas = viol.map(v => {
-    const genCell = v.genOff
-      ? `<span class="pct-off">${v.gen}%</span> <span class="pct-ok">(regla ${v.eGen}%)</span>`
-      : `<span class="pct-ok">${v.gen}% ✓</span>`;
-    const meliCell = v.meli == null
-      ? '<span class="pct-ok">—</span>'
-      : (v.meliOff
-        ? `<span class="pct-off">${v.meli}%</span> <span class="pct-ok">(regla ${v.eMeli}%)</span>`
-        : `<span class="pct-ok">${v.meli}% ✓</span>`);
-    return `<tr>
-      <td>${esc(cleanTitle(v.titulo))}</td>
-      <td>${esc(v.etq)}</td>
-      <td>${genCell}</td>
-      <td>${meliCell}</td>
-    </tr>`;
-  }).join('');
+  if (haySmart) notas.push('Las <b>SMART</b> son ofertas compartidas: ML gestiona el descuento (y co-financia parte); no podés fijar general/Meli+ por separado.');
+  if (combos) notas.push(`${combos} combo${combos !== 1 ? 's' : ''}: regla propia a definir (no evaluados).`);
 
   cont.innerHTML = `
-    <div class="control-card bad">
-      <h4>⚠ ${viol.length} publicación${viol.length !== 1 ? 'es' : ''} fuera de la regla de descuento</h4>
-      <div style="font-size:12.5px; color:var(--muted);">El descuento aplicado no coincide con el que definiste para ese tamaño. Revisá y reacomodá en ML.</div>
+    <div class="control-card ${clase}">
+      <h4>${titulo}</h4>
+      <div style="font-size:12.5px; color:var(--muted);">Regla: el descuento nunca debe superar el tope Meli+ costeado por tamaño. Porcentajes exactos.</div>
       <table class="control-tabla">
-        <thead><tr><th>Producto</th><th>Tamaño</th><th>General</th><th>Meli+</th></tr></thead>
+        <thead><tr><th>Producto</th><th>Tamaño</th><th class="num">General</th><th class="num">Meli+</th><th class="num">Tope</th><th>Promo</th></tr></thead>
         <tbody>${filas}</tbody>
       </table>
-      ${notaHtml}
+      ${notas.length ? `<div class="control-note">${notas.join(' ')}</div>` : ''}
     </div>`;
 }
 
