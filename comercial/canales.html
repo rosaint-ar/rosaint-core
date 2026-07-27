@@ -226,6 +226,7 @@
     .badge.trad { background: var(--surface-2); color: var(--muted); }
     .badge.cuotas { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
     .badge.inactiva { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .badge.finalizada { background: var(--surface-2); color: var(--muted); }
     .badge.sku { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font-family: var(--font-mono); font-size: 10.5px; }
     .badge.sinsku { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
     .promo-tag { display: inline-block; font-size: 10px; color: var(--warn); margin-left: 4px; }
@@ -437,6 +438,15 @@ $$('.canal-tab').forEach(t => t.addEventListener('click', () => {
     $('#view-' + v).style.display = (v === which ? '' : 'none');
   });
 }));
+
+// Deep-link: canales.html#ml abre directo la pestaña de Mercado Libre (#tn / #directa igual).
+(function initCanalDesdeHash() {
+  const h = (location.hash || '').replace('#', '');
+  if (['directa', 'tn', 'ml'].includes(h)) {
+    const tab = document.querySelector(`.canal-tab[data-canal="${h}"]`);
+    if (tab) tab.click();
+  }
+})();
 
 async function cargarComun() {
   const [canales, medios, plazos, objs, lineas] = await Promise.all([
@@ -769,6 +779,8 @@ function renderGrillaTN() {
 // ═══════════════════════════════════════════════════════════════════════════
 let PUBS = [], RENT_MIN = 15;
 let ML_PARAMS = [], ML_CARGO = [], ML_ENVIO = [];
+// Finalizada = cerrada en ML (status 'closed'), distinta de pausada.
+const esFinalizada = p => (p.estado || '').toLowerCase() === 'closed';
 
 async function cargarML() {
   $('#view-ml').innerHTML = `
@@ -831,6 +843,7 @@ async function cargarPublicaciones() {
         <option value="">Todas</option>
         <option value="activa">Solo activas</option>
         <option value="pausada">Solo pausadas</option>
+        <option value="finalizada">Solo finalizadas</option>
       </select>
     </div>
 
@@ -881,7 +894,8 @@ function renderPubs() {
     if (fC === 'con' && !p.con_cuotas) return false;
     if (fC === 'sin' && p.con_cuotas) return false;
     if (fA === 'activa' && !p.activa) return false;
-    if (fA === 'pausada' && p.activa) return false;
+    if (fA === 'pausada' && (p.activa || esFinalizada(p))) return false;
+    if (fA === 'finalizada' && !esFinalizada(p)) return false;
     return true;
   });
 
@@ -890,14 +904,19 @@ function renderPubs() {
 
   if (!rows.length) { $('#pub-content').innerHTML = '<div class="empty-box">Sin publicaciones con esos filtros.</div>'; return; }
 
-  // Activas arriba; pausadas en su propia sección abajo — sin mezclar.
+  // Activas arriba; pausadas y finalizadas en sus propias secciones abajo — sin mezclar.
   const activas = rows.filter(p => p.activa);
-  const inactivas = rows.filter(p => !p.activa);
+  const pausadas = rows.filter(p => !p.activa && !esFinalizada(p));
+  const finalizadas = rows.filter(p => !p.activa && esFinalizada(p));
 
   let html = agruparPubs(activas).map(g => renderGrupoML(g)).join('');
-  if (inactivas.length) {
-    html += `<div class="divisor-inactivas">Pausadas · ${inactivas.length}</div>`;
-    html += agruparPubs(inactivas).map(g => renderGrupoML(g)).join('');
+  if (pausadas.length) {
+    html += `<div class="divisor-inactivas">Pausadas · ${pausadas.length}</div>`;
+    html += agruparPubs(pausadas).map(g => renderGrupoML(g)).join('');
+  }
+  if (finalizadas.length) {
+    html += `<div class="divisor-inactivas">Finalizadas · ${finalizadas.length}</div>`;
+    html += agruparPubs(finalizadas).map(g => renderGrupoML(g)).join('');
   }
   $('#pub-content').innerHTML = html;
 }
@@ -1141,7 +1160,7 @@ function renderFilaPub(p, esCombo) {
   return `
     <tr${filaCls}>
       <td class="codigo" title="${esc(p.item_id)}"><a href="${urlML(p.item_id)}" target="_blank" style="color:var(--accent); text-decoration:none;">${esc(p.item_id.replace('MLA',''))}</a></td>
-      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}${!p.activa ? ' <span class="badge inactiva">pausada</span>' : ''}${(!p.codigo_sku && !p.codigo_combo) ? ' <span class="badge sinsku" title="Sin SKU mapeado — no se calcula costo ni rentabilidad">sin SKU</span>' : ''}</td>
+      <td title="${esc(p.titulo || '')}" style="overflow:hidden; text-overflow:ellipsis;">${esc(cleanTitle(p.titulo || '—') || p.titulo || '—')}${p.activa ? '' : (esFinalizada(p) ? ' <span class="badge finalizada">finalizada</span>' : ' <span class="badge inactiva">pausada</span>')}${(!p.codigo_sku && !p.codigo_combo) ? ' <span class="badge sinsku" title="Sin SKU mapeado — no se calcula costo ni rentabilidad">sin SKU</span>' : ''}</td>
       <td>${tipoBadge}</td>
       <td>${cuotasBadge}</td>
       <td class="num">${precioCell}</td>
