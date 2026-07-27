@@ -241,11 +241,13 @@ function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.
 // Nube), lo armamos con el código + transportista.
 function trackingUrl(o){
   if (o.tracking_url) return o.tracking_url;
-  if (!o.tracking_code) return '';
+  const c = o.tracking_code; if (!c) return '';
   const t = (o.transportista || '').toLowerCase();
-  if (/andreani/.test(t)) return 'https://www.andreani.com/envio/' + o.tracking_code;
-  if (/correo/.test(t))   return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + o.tracking_code;
-  return '';
+  if (/andreani/.test(t)) return 'https://www.andreani.com/envio/' + c;
+  if (/correo/.test(t))   return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + c;
+  // sin transportista claro: inferir por el formato del código
+  if (/^\d{10,}$/.test(String(c))) return 'https://www.andreani.com/envio/' + c;     // solo dígitos = Andreani
+  return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + c;          // alfanumérico = Correo Argentino
 }
 function aplicarPlantilla(tpl,o){
   return tpl
@@ -420,7 +422,7 @@ function render(){
       <div class="seg-row3">
         ${stockBar}
         <div class="seg-acts">
-          ${trackingUrl(o)?`<a class="mini track" href="${esc(trackingUrl(o))}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
+          ${trackingUrl(o)?`<a class="mini track" href="${esc(trackingUrl(o))}" target="_blank" rel="noopener" title="Seguimiento: ${esc(o.tracking_code||'')}">🔗 Tracking</a>`:(o.tracking_code?`<span class="mini" style="cursor:default" title="Código sin transportista reconocido">📮 ${esc(o.tracking_code)}</span>`:'')}
           ${esML ? '<span style="font-size:12px;color:var(--muted)">Gestionado por Mercado Libre</span>'
                  : `<a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
                     <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>`}
