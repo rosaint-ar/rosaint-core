@@ -237,6 +237,16 @@ function fmtFecha(iso){ if(!iso) return ''; const d=new Date(String(iso).replace
 function fmtMoney(n){ const x=Number(n); if(isNaN(x)) return ''; return '$'+x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear(); }
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
+// Link de seguimiento: si Tienda Nube no lo trae (envíos creados a mano en Envío
+// Nube), lo armamos con el código + transportista.
+function trackingUrl(o){
+  if (o.tracking_url) return o.tracking_url;
+  if (!o.tracking_code) return '';
+  const t = (o.transportista || '').toLowerCase();
+  if (/andreani/.test(t)) return 'https://www.andreani.com/envio/' + o.tracking_code;
+  if (/correo/.test(t))   return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + o.tracking_code;
+  return '';
+}
 function aplicarPlantilla(tpl,o){
   return tpl
     .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
@@ -246,7 +256,7 @@ function aplicarPlantilla(tpl,o){
     .replace(/\{fecha_despacho\}/g, hoyDMY())
     .replace(/\{so\}/g, o.odoo_so||'')
     .replace(/\{tracking\}/g, o.tracking_code||'—')
-    .replace(/\{link\}/g, o.tracking_url||'')
+    .replace(/\{link\}/g, trackingUrl(o))
     .replace(/\{productos\}/g, listaProductos(o.productos))
     .replace(/\{ciudad\}/g, o.ciudad||'')
     .replace(/\{provincia\}/g, o.provincia||'');
@@ -410,7 +420,7 @@ function render(){
       <div class="seg-row3">
         ${stockBar}
         <div class="seg-acts">
-          ${o.tracking_url?`<a class="mini track" href="${esc(o.tracking_url)}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
+          ${trackingUrl(o)?`<a class="mini track" href="${esc(trackingUrl(o))}" target="_blank" rel="noopener">🔗 Tracking</a>`:''}
           ${esML ? '<span style="font-size:12px;color:var(--muted)">Gestionado por Mercado Libre</span>'
                  : `<a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
                     <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>`}
