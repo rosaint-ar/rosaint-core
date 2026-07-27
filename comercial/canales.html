@@ -279,6 +279,21 @@
     .promo-tabla tr:last-child td { border-bottom: none; }
     .promo-tabla td.num, .promo-tabla th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
+    /* ---- Control de descuentos ---- */
+    .control-card { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+    .control-card.bad { background: color-mix(in srgb, var(--hot) 8%, transparent); border-color: color-mix(in srgb, var(--hot) 32%, transparent); }
+    .control-card.good { background: color-mix(in srgb, var(--ok) 8%, transparent); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+    .control-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .control-card.bad h4 { color: var(--hot); }
+    .control-card.good h4 { color: var(--ok); }
+    .control-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+    .control-tabla th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 6px 10px; font-weight: 600; }
+    .control-tabla td { padding: 6px 10px; border-top: 1px solid var(--border); }
+    .control-tabla td.num, .control-tabla th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pct-off { color: var(--hot); font-weight: 700; }
+    .pct-ok { color: var(--muted); }
+    .control-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
       text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
@@ -858,8 +873,18 @@ async function cargarML() {
 // ─────── SUB-TAB PROMOCIONES ───────
 // Campañas de promoción de ML (DEAL / SMART) con fecha de fin. Semáforo por días
 // restantes. Datos en ml_promos / v_promo_items (edge function ml-promos-sync).
-let PROMOS = [], PROMO_ITEMS = [];
+let PROMOS = [], PROMO_ITEMS = [], CTRL_REGLAS = {}, CTRL_PUBS = [];
 const fFecha = f => f ? new Date(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—';
+// Tamaño del producto según el título (para saber qué regla de descuento aplica).
+function tamanoDe(titulo) {
+  const t = (titulo || '').toLowerCase();
+  if (/combo/.test(t)) return 'combo';
+  if (/10\s?kg/.test(t)) return '10kg';
+  if (/4\s?kg/.test(t)) return '4kg';
+  if (/1\s?kg/.test(t)) return '1kg';
+  if (/500\s?g/.test(t)) return '500g';
+  return null;
+}
 const diasHasta = f => f == null ? null : Math.ceil((new Date(f).getTime() - Date.now()) / 86400000);
 function claseFin(dias) {
   if (dias == null) return 'muted';
@@ -875,22 +900,96 @@ async function cargarPromociones() {
       <span style="flex:1;"></span>
       <button class="btn primary" id="btnSyncPromos">Sincronizar promociones</button>
     </div>
+    <div id="promo-control"></div>
     <div id="promo-alert"></div>
     <div id="promo-content"><div class="empty-box">Cargando…</div></div>
   `;
   try {
-    const [pr, it] = await Promise.all([
+    const [pr, it, rg, pubs] = await Promise.all([
       sb.from('ml_promos').select('*'),
       sb.from('v_promo_items').select('*'),
+      sb.from('ml_reglas_descuento').select('*'),
+      sb.from('v_rentabilidad_ml').select('item_id,titulo,activa,precio,precio_con_descuento,precio_meli'),
     ]);
     if (pr.error) throw pr.error;
     PROMOS = pr.data || [];
     PROMO_ITEMS = it.data || [];
+    CTRL_REGLAS = {}; (rg.data || []).forEach(r => { CTRL_REGLAS[r.tamano] = r; });
+    CTRL_PUBS = pubs.data || [];
+    renderControlDescuentos();
     renderPromos();
     $('#btnSyncPromos').addEventListener('click', sincronizarPromos);
   } catch (err) {
     $('#promo-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
   }
+}
+
+// Control: compara el descuento real de cada publicación en promo contra la regla
+// por tamaño (ml_reglas_descuento) y marca las que se salen. Combos = regla aparte.
+function renderControlDescuentos() {
+  const cont = $('#promo-control');
+  if (!cont) return;
+
+  const enPromo = CTRL_PUBS.filter(p => p.activa && p.precio_con_descuento != null && Number(p.precio) > 0);
+  const viol = [];
+  let ok = 0, combos = 0, sinRegla = 0;
+
+  for (const p of enPromo) {
+    const tam = tamanoDe(p.titulo);
+    if (tam === 'combo') { combos++; continue; }
+    const regla = CTRL_REGLAS[tam];
+    if (!regla) { sinRegla++; continue; }
+    const gen = Math.round(100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio));
+    const meli = p.precio_meli != null ? Math.round(100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio)) : null;
+    const eGen = Number(regla.desc_general_pct), eMeli = Number(regla.desc_meli_pct);
+    const genOff = gen !== eGen;
+    const meliOff = meli != null && meli !== eMeli;
+    if (genOff || meliOff) viol.push({ titulo: p.titulo, etq: regla.etiqueta, gen, meli, eGen, eMeli, genOff, meliOff });
+    else ok++;
+  }
+
+  const notas = [];
+  if (combos) notas.push(`${combos} combo${combos !== 1 ? 's' : ''} en promo (regla aparte, a definir).`);
+  if (sinRegla) notas.push(`${sinRegla} sin tamaño reconocido.`);
+  const notaHtml = notas.length ? `<div class="control-note">${esc(notas.join(' '))}</div>` : '';
+
+  if (!viol.length) {
+    cont.innerHTML = `
+      <div class="control-card good">
+        <h4>✓ Descuentos en regla</h4>
+        <div style="font-size:12.5px; color:var(--muted);">Las ${ok} publicaciones en promoción respetan la regla de descuento por tamaño.</div>
+        ${notaHtml}
+      </div>`;
+    return;
+  }
+
+  const filas = viol.map(v => {
+    const genCell = v.genOff
+      ? `<span class="pct-off">${v.gen}%</span> <span class="pct-ok">(regla ${v.eGen}%)</span>`
+      : `<span class="pct-ok">${v.gen}% ✓</span>`;
+    const meliCell = v.meli == null
+      ? '<span class="pct-ok">—</span>'
+      : (v.meliOff
+        ? `<span class="pct-off">${v.meli}%</span> <span class="pct-ok">(regla ${v.eMeli}%)</span>`
+        : `<span class="pct-ok">${v.meli}% ✓</span>`);
+    return `<tr>
+      <td>${esc(cleanTitle(v.titulo))}</td>
+      <td>${esc(v.etq)}</td>
+      <td>${genCell}</td>
+      <td>${meliCell}</td>
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = `
+    <div class="control-card bad">
+      <h4>⚠ ${viol.length} publicación${viol.length !== 1 ? 'es' : ''} fuera de la regla de descuento</h4>
+      <div style="font-size:12.5px; color:var(--muted);">El descuento aplicado no coincide con el que definiste para ese tamaño. Revisá y reacomodá en ML.</div>
+      <table class="control-tabla">
+        <thead><tr><th>Producto</th><th>Tamaño</th><th>General</th><th>Meli+</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+      ${notaHtml}
+    </div>`;
 }
 
 function renderPromos() {
