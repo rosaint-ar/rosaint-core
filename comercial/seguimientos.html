@@ -239,21 +239,27 @@ function hoyDMY(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); ret
 function listaProductos(prods){ return (prods||[]).map(p => p.cantidad>1 ? `${p.cantidad}x ${p.nombre}` : p.nombre).join(', '); }
 // Link de seguimiento: si Tienda Nube no lo trae (envíos creados a mano en Envío
 // Nube), lo armamos con el código + transportista.
+// Transportista: si no viene claro, lo infiere del formato del código de tracking.
+function carrierName(o){
+  const t = o.transportista || '';
+  if (/andreani/i.test(t)) return 'Andreani';
+  if (/correo\s*argentino/i.test(t)) return 'Correo Argentino';
+  const c = o.tracking_code;                 // sin transportista claro: inferir del código
+  if (c) return /^\d{10,}$/.test(String(c)) ? 'Andreani' : 'Correo Argentino';
+  return t;                                  // genérico ("Correo") si no hay dato
+}
 function trackingUrl(o){
   if (o.tracking_url) return o.tracking_url;
   const c = o.tracking_code; if (!c) return '';
-  const t = (o.transportista || '').toLowerCase();
-  if (/andreani/.test(t)) return 'https://www.andreani.com/envio/' + c;
-  if (/correo/.test(t))   return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + c;
-  // sin transportista claro: inferir por el formato del código
-  if (/^\d{10,}$/.test(String(c))) return 'https://www.andreani.com/envio/' + c;     // solo dígitos = Andreani
-  return 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + c;          // alfanumérico = Correo Argentino
+  return carrierName(o) === 'Andreani'
+    ? 'https://www.andreani.com/envio/' + c
+    : 'https://www.correoargentino.com.ar/formularios/e-commerce?id=' + c;
 }
 function aplicarPlantilla(tpl,o){
   return tpl
     .replace(/\{nombre\}/g, o.primer_nombre||o.cliente||'')
     .replace(/\{titular\}/g, o.titular||o.cliente||'')
-    .replace(/\{servicio\}/g, o.transportista||'')
+    .replace(/\{servicio\}/g, carrierName(o)||o.transportista||'')
     .replace(/\{modalidad\}/g, o.modalidad||'')
     .replace(/\{fecha_despacho\}/g, hoyDMY())
     .replace(/\{so\}/g, o.odoo_so||'')
@@ -330,7 +336,11 @@ async function cargar(){
     ETIQUETAS = rSeg.etiquetas || [];
     ESTADO = {};
     for (const e of (estRes.data || [])) ESTADO[String(e.tn_id)] = e;
-    for (const o of DATA) { SO[o.estado_key] = o.odoo_so || null; PDF[o.estado_key] = o.pedido_pdf_url || null; }
+    for (const o of DATA) {
+      SO[o.estado_key] = o.odoo_so || null; PDF[o.estado_key] = o.pedido_pdf_url || null;
+      const e = ESTADO[o.estado_key];
+      if (!o.tracking_code && e && e.tracking_manual) o.tracking_code = e.tracking_manual;  // tracking cargado a mano
+    }
     document.getElementById('aviso').innerHTML = 'Todas las ventas confirmadas de Odoo, categorizadas por tipo de entrega. El tracking de correo se cruza con Tienda Nube.';
     updateCounts();
     render();
@@ -385,9 +395,9 @@ function render(){
     // Badge de categoría: para correo, distingue Correo Argentino (azul) vs Andreani (rojo)
     let catBadge;
     if (cat === 'correo') {
-      const t = (o.transportista || '').toLowerCase();
-      if (/andreani/.test(t)) catBadge = '<span class="b-tag b-cat andreani">Andreani</span>';
-      else if (/correo/.test(t)) catBadge = '<span class="b-tag b-cat correo-arg">Correo Argentino</span>';
+      const carr = carrierName(o);
+      if (carr === 'Andreani') catBadge = '<span class="b-tag b-cat andreani">Andreani</span>';
+      else if (carr === 'Correo Argentino') catBadge = '<span class="b-tag b-cat correo-arg">Correo Argentino</span>';
       else catBadge = '<span class="b-tag b-cat correo">Correo</span>';
     } else {
       catBadge = `<span class="b-tag b-cat ${cat}">${CATLBL[cat]||cat}</span>`;
@@ -422,7 +432,7 @@ function render(){
       <div class="seg-row3">
         ${stockBar}
         <div class="seg-acts">
-          ${trackingUrl(o)?`<a class="mini track" href="${esc(trackingUrl(o))}" target="_blank" rel="noopener" title="Seguimiento: ${esc(o.tracking_code||'')}">🔗 Tracking</a>`:(o.tracking_code?`<span class="mini" style="cursor:default" title="Código sin transportista reconocido">📮 ${esc(o.tracking_code)}</span>`:'')}
+          ${trackingUrl(o)?`<a class="mini track" href="${esc(trackingUrl(o))}" target="_blank" rel="noopener" title="Seguimiento: ${esc(o.tracking_code||'')}">🔗 Tracking</a>`:(!esML&&cat==='correo'?`<button class="mini" onclick="cargarTracking('${k}',${o.odoo_id})" title="Pegá el N° de seguimiento del envío manual de Envío Nube">➕ N° seguimiento</button>`:'')}
           ${esML ? '<span style="font-size:12px;color:var(--muted)">Gestionado por Mercado Libre</span>'
                  : `<a class="mini wa${waHref?'':' off'}" ${waHref?`href="${esc(waHref)}" target="_blank" rel="noopener"`:''} onclick="waClick('${k}',this)">💬 WhatsApp</a>
                     <button class="mini" onclick="toggleMore('${k}')">✎ Mensaje</button>`}
@@ -477,6 +487,22 @@ async function tog(k, field, btn){
     if (btn) { btn.classList.toggle('on', cur); if (field === 'avisado') { const c = btn.closest('.seg-card'); if (c) c.classList.toggle('avisado', cur); } }
     alert('No se pudo guardar el estado: ' + (e.message || e));
   }
+}
+
+// Cargar a mano el N° de seguimiento (envíos manuales de Envío Nube que no llegan por API)
+async function cargarTracking(k, odooId){
+  const code = (prompt('Pegá el N° de seguimiento del envío (Correo Argentino / Andreani):') || '').trim();
+  if (!code) return;
+  const o = DATA.find(x => x.estado_key === k); if (o) o.tracking_code = code;
+  ESTADO[k] = Object.assign({}, ESTADO[k], { tracking_manual: code });
+  try {
+    const { error } = await sb.from('seg_estado').upsert(
+      { tn_id: Number(k), so_number: SO[k] || null, tracking_manual: code, updated_at: new Date().toISOString() },
+      { onConflict: 'tn_id' }
+    );
+    if (error) throw error;
+  } catch (e) { alert('No se pudo guardar el tracking: ' + (e.message || e)); }
+  render();
 }
 
 // ---- Etiqueta de prioridad (sincroniza con Odoo) ----
