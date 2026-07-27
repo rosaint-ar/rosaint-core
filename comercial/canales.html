@@ -245,6 +245,40 @@
     .divisor-inactivas.divisor-toggle:hover { color: var(--text); }
     .divisor-inactivas .toggle-link { color: var(--accent); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
+    /* ---- Sub-tab Promociones ---- */
+    .alerta-promo {
+      background: color-mix(in srgb, var(--hot) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--hot) 32%, transparent);
+      border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; font-size: 13px;
+    }
+    .alerta-promo b { color: var(--hot); }
+    .alerta-promo div { color: var(--muted); margin-top: 4px; }
+    .promo-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 10px; overflow: hidden;
+    }
+    .promo-card > summary {
+      list-style: none; cursor: pointer; user-select: none;
+      padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .promo-card > summary::-webkit-details-marker { display: none; }
+    .promo-card > summary:hover { background: var(--surface-2); }
+    .promo-nombre { font-weight: 600; font-size: 14px; flex: 1; min-width: 180px; }
+    .promo-fin { font-size: 12.5px; font-weight: 600; padding: 2px 10px; border-radius: 20px; white-space: nowrap; }
+    .promo-fin.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .promo-fin.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    .promo-fin.hot { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .promo-fin.muted { background: var(--surface-2); color: var(--muted); }
+    .promo-cnt { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .promo-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; border-top: 1px solid var(--border); }
+    .promo-tabla th {
+      text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); padding: 8px 14px; background: var(--surface-2); font-weight: 600;
+    }
+    .promo-tabla td { padding: 7px 14px; border-bottom: 1px solid var(--border); }
+    .promo-tabla tr:last-child td { border-bottom: none; }
+    .promo-tabla td.num, .promo-tabla th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
       text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
@@ -799,11 +833,13 @@ async function cargarML() {
 
     <div class="subtabs">
       <button class="subtab active" data-sub="pubs">Publicaciones</button>
+      <button class="subtab" data-sub="promos">Promociones</button>
       <button class="subtab" data-sub="ads">Publicidad</button>
       <button class="subtab" data-sub="cfg">Configuración</button>
     </div>
 
     <div id="sub-pubs"></div>
+    <div id="sub-promos" style="display:none;"></div>
     <div id="sub-ads" style="display:none;"></div>
     <div id="sub-cfg" style="display:none;"></div>
   `;
@@ -811,12 +847,139 @@ async function cargarML() {
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','ads','cfg'].forEach(v => {
+    ['pubs','promos','ads','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
   }));
 
-  await Promise.all([cargarPublicaciones(), cargarPublicidad(), cargarConfigML()]);
+  await Promise.all([cargarPublicaciones(), cargarPromociones(), cargarPublicidad(), cargarConfigML()]);
+}
+
+// ─────── SUB-TAB PROMOCIONES ───────
+// Campañas de promoción de ML (DEAL / SMART) con fecha de fin. Semáforo por días
+// restantes. Datos en ml_promos / v_promo_items (edge function ml-promos-sync).
+let PROMOS = [], PROMO_ITEMS = [];
+const fFecha = f => f ? new Date(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—';
+const diasHasta = f => f == null ? null : Math.ceil((new Date(f).getTime() - Date.now()) / 86400000);
+function claseFin(dias) {
+  if (dias == null) return 'muted';
+  if (dias <= 3) return 'hot';
+  if (dias <= 7) return 'warn';
+  return 'ok';
+}
+
+async function cargarPromociones() {
+  $('#sub-promos').innerHTML = `
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+      <span class="sync-info" id="promo-sync-info">—</span>
+      <span style="flex:1;"></span>
+      <button class="btn primary" id="btnSyncPromos">Sincronizar promociones</button>
+    </div>
+    <div id="promo-alert"></div>
+    <div id="promo-content"><div class="empty-box">Cargando…</div></div>
+  `;
+  try {
+    const [pr, it] = await Promise.all([
+      sb.from('ml_promos').select('*'),
+      sb.from('v_promo_items').select('*'),
+    ]);
+    if (pr.error) throw pr.error;
+    PROMOS = pr.data || [];
+    PROMO_ITEMS = it.data || [];
+    renderPromos();
+    $('#btnSyncPromos').addEventListener('click', sincronizarPromos);
+  } catch (err) {
+    $('#promo-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderPromos() {
+  const fechas = PROMOS.map(p => p.sincronizado_en).filter(Boolean).sort();
+  $('#promo-sync-info').textContent = fechas.length
+    ? `${PROMOS.length} promociones · sincronizado ${fFecha(fechas[fechas.length-1])} ${new Date(fechas[fechas.length-1]).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}`
+    : `${PROMOS.length} promociones`;
+
+  if (!PROMOS.length) {
+    $('#promo-alert').innerHTML = '';
+    $('#promo-content').innerHTML = '<div class="empty-box">No hay promociones cargadas. Tocá "Sincronizar promociones".</div>';
+    return;
+  }
+
+  const activas = PROMOS.filter(p => p.estado === 'started')
+    .sort((a,b) => new Date(a.finish_date||0) - new Date(b.finish_date||0));
+  const proximas = PROMOS.filter(p => p.estado !== 'started')
+    .sort((a,b) => new Date(a.start_date||0) - new Date(b.start_date||0));
+
+  const porTerminar = activas.filter(p => { const d = diasHasta(p.finish_date); return d != null && d <= 3; });
+  $('#promo-alert').innerHTML = porTerminar.length ? `
+    <div class="alerta-promo">
+      <b>⚠ ${porTerminar.length} promoción${porTerminar.length>1?'es':''} termina${porTerminar.length>1?'n':''} en ≤3 días</b>
+      <div>${porTerminar.map(p => esc(p.nombre || p.id)).join(' · ')} — revisá si querés renovarlas o reacomodar precios antes de que caigan.</div>
+    </div>` : '';
+
+  let html = `<div class="divisor-inactivas" style="margin-top:2px;">Activas · ${activas.length}</div>`;
+  html += activas.length ? activas.map(renderPromoCard).join('') : '<div class="empty-box">Ninguna activa.</div>';
+  if (proximas.length) {
+    html += `<div class="divisor-inactivas">Próximas · ${proximas.length}</div>`;
+    html += proximas.map(renderPromoCard).join('');
+  }
+  $('#promo-content').innerHTML = html;
+}
+
+function renderPromoCard(p) {
+  const items = PROMO_ITEMS.filter(x => x.promo_id === p.id);
+  const esProxima = p.estado !== 'started';
+  const dias = diasHasta(esProxima ? p.start_date : p.finish_date);
+  let finTxt;
+  if (esProxima) {
+    finTxt = `Arranca ${fFecha(p.start_date)}${dias!=null ? ` · en ${dias} día${dias!==1?'s':''}` : ''}`;
+  } else {
+    const cuando = dias == null ? '' : (dias <= 0 ? ' · termina hoy' : ` · en ${dias} día${dias!==1?'s':''}`);
+    finTxt = `Termina ${fFecha(p.finish_date)}${cuando}`;
+  }
+  const finCls = esProxima ? 'muted' : claseFin(dias);
+  const tipoBadge = p.tipo === 'SMART'
+    ? '<span class="badge cuotas" title="Promoción inteligente gestionada por ML (ML pone parte del descuento)">SMART</span>'
+    : '<span class="badge cat" title="Oferta/campaña donde elegís entrar por producto">DEAL</span>';
+
+  const filas = items
+    .slice().sort((a,b) => Number(a.price||0) - Number(b.price||0))
+    .map(it => `
+      <tr>
+        <td>${esc(cleanTitle(it.titulo || it.item_id))}${!it.activa ? ' <span class="badge inactiva">pausada</span>' : ''}</td>
+        <td class="num" style="color:var(--muted); text-decoration:line-through;">${it.original_price!=null?fmtARS(Number(it.original_price)):'—'}</td>
+        <td class="num" style="color:var(--accent); font-weight:600;">${it.price!=null?fmtARS(Number(it.price)):'—'}</td>
+      </tr>`).join('');
+
+  return `
+    <details class="promo-card">
+      <summary>
+        <span class="promo-nombre">${esc(p.nombre || p.id)} ${tipoBadge}</span>
+        <span class="promo-fin ${finCls}">${finTxt}</span>
+        <span class="promo-cnt">${items.length} prod.</span>
+      </summary>
+      <div class="promo-body">
+        ${items.length
+          ? `<table class="promo-tabla"><thead><tr><th>Producto</th><th class="num">Lista</th><th class="num">En promo</th></tr></thead><tbody>${filas}</tbody></table>`
+          : '<div style="padding:10px 14px; color:var(--muted); font-size:12.5px;">Sin productos listados.</div>'}
+      </div>
+    </details>`;
+}
+
+async function sincronizarPromos() {
+  const btn = $('#btnSyncPromos'); const prev = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Sincronizando…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-promos-sync', { body: {} });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    toast(`✓ ${data.promos} promociones · ${data.items} productos`, 'ok');
+    await cargarPromociones();
+  } catch (err) {
+    toast('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
 }
 
 // ─────── 3.1) SUB-TAB PUBLICACIONES ───────
