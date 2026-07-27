@@ -241,6 +241,9 @@
       content: ''; flex: 1; height: 1px; background: var(--border);
     }
     .divisor-inactivas ~ .grupo { opacity: .72; }
+    .divisor-inactivas.divisor-toggle { cursor: pointer; user-select: none; }
+    .divisor-inactivas.divisor-toggle:hover { color: var(--text); }
+    .divisor-inactivas .toggle-link { color: var(--accent); font-weight: 600; letter-spacing: 0; text-transform: none; }
 
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
@@ -781,6 +784,8 @@ let PUBS = [], RENT_MIN = 15;
 let ML_PARAMS = [], ML_CARGO = [], ML_ENVIO = [];
 // Finalizada = cerrada en ML (status 'closed'), distinta de pausada.
 const esFinalizada = p => (p.estado || '').toLowerCase() === 'closed';
+// Las finalizadas se ocultan por defecto (son ruido); toggle para mostrarlas.
+let mostrarFinalizadas = false;
 
 async function cargarML() {
   $('#view-ml').innerHTML = `
@@ -915,10 +920,19 @@ function renderPubs() {
     html += agruparPubs(pausadas).map(g => renderGrupoML(g)).join('');
   }
   if (finalizadas.length) {
-    html += `<div class="divisor-inactivas">Finalizadas · ${finalizadas.length}</div>`;
-    html += agruparPubs(finalizadas).map(g => renderGrupoML(g)).join('');
+    if (fA === 'finalizada') {
+      // Filtro explícito "Solo finalizadas": se muestran siempre, sin toggle.
+      html += `<div class="divisor-inactivas">Finalizadas · ${finalizadas.length}</div>`;
+      html += agruparPubs(finalizadas).map(g => renderGrupoML(g)).join('');
+    } else {
+      html += `<div class="divisor-inactivas divisor-toggle" id="toggle-finalizadas">Finalizadas · ${finalizadas.length} `
+        + `<span class="toggle-link">${mostrarFinalizadas ? '(ocultar)' : '(mostrar)'}</span></div>`;
+      if (mostrarFinalizadas) html += agruparPubs(finalizadas).map(g => renderGrupoML(g)).join('');
+    }
   }
   $('#pub-content').innerHTML = html;
+  const tf = document.getElementById('toggle-finalizadas');
+  if (tf) tf.addEventListener('click', () => { mostrarFinalizadas = !mostrarFinalizadas; renderPubs(); });
 }
 
 // Agrupa publicaciones por product_number (variantes juntas), ordenadas por SKU.
