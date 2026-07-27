@@ -51,8 +51,11 @@
     .tpl-x:hover { color: var(--text); }
 
     .seg-list { display: flex; flex-direction: column; gap: 8px; }
-    .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s; }
-    .seg-card.avisado { opacity: .55; }
+    .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s, filter .15s; }
+    /* pedidos ya resueltos: apagados y sin color, para que resalte lo pendiente */
+    .seg-card.hecho { opacity: .5; filter: grayscale(1); }
+    .seg-card.hecho:hover { opacity: .85; filter: grayscale(0); }
+    .seg-card.avisado { opacity: .45; }
 
     .seg-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .seg-so { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); padding: 1px 7px; border-radius: 5px; }
@@ -278,8 +281,12 @@ function cerrarConfig(){ document.getElementById('tplModal').classList.remove('o
 
 // "Pendiente" = todavía no despachado/entregado (sigue en el flujo)
 function pendiente(o){ return !efDesp(o); }
-// "Para avisar" = ya despachado/entregado pero sin avisar al cliente (ML se gestiona aparte)
-function paraAvisar(o){ return o.categoria !== 'ml' && efDesp(o) && !isAvisado(o); }
+// Reciente = de los últimos 12 días (para no dejar "para avisar" pedidos viejos ya entregados)
+function reciente(o){ const d = new Date(String(o.fecha||'').replace(' ','T')); return !isNaN(d) && (Date.now() - d.getTime()) < 12*24*3600*1000; }
+// "Para avisar" = despachado/entregado hace poco, sin avisar (ML se gestiona aparte)
+function paraAvisar(o){ return o.categoria !== 'ml' && efDesp(o) && !isAvisado(o) && reciente(o); }
+// "Hecho" = ya resuelto (entregado/avisado viejo, o ML despachado) -> se apaga en la vista
+function hecho(o){ return !pendiente(o) && !paraAvisar(o); }
 
 function updateCounts(){
   const pend = cat => DATA.filter(o => o.categoria === cat && pendiente(o)).length;
@@ -389,7 +396,7 @@ function render(){
     }
     const prioSel = `<div class="prio"><span class="prio-lbl">¿Para cuándo?</span><select class="etiq-sel" title="Prioridad — sincroniza con Odoo" onchange="setEtiquetaSel('${k}',${o.odoo_id},this.value)"><option value="">— sin fecha —</option>${ETIQUETAS.map(t=>`<option value="${t.id}"${o.etiqueta===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}</select></div>`;
 
-    html += `<div class="seg-card${st.avisado?' avisado':''}" data-id="${k}">
+    html += `<div class="seg-card${hecho(o)?' hecho':''}${st.avisado?' avisado':''}" data-id="${k}">
       <div class="seg-top">
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
