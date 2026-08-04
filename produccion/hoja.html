@@ -151,12 +151,24 @@
       text-align: center; font-family: 'SF Mono', Consolas, monospace;
       font-size: 17px; font-weight: 700; letter-spacing: 0.06em;
     }
-    table.hoja td.acciones { text-align: right; width: 100px; }
-    table.hoja .del-btn {
+    table.hoja td.acciones { text-align: right; width: 150px; white-space: nowrap; }
+    table.hoja .del-btn, table.hoja .edit-btn {
       background: transparent; border: 1px solid var(--gris-30); color: var(--gris-70);
       border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer;
     }
+    table.hoja .edit-btn { margin-right: 6px; }
+    table.hoja .edit-btn:hover { border-color: var(--azul); color: var(--azul); }
     table.hoja .del-btn:hover { border-color: var(--rojo); color: var(--rojo); }
+
+    /* Columna de control (checkbox al volcar a Odoo) */
+    table.hoja th.col-check, table.hoja td.check { width: 54px; text-align: center; }
+    table.hoja td.check input {
+      width: 24px; height: 24px; cursor: pointer; accent-color: var(--verde);
+      vertical-align: middle;
+    }
+    table.hoja tr.controlada { background: rgba(46,160,67,0.08) !important; }
+    table.hoja tr.controlada td:not(.check) { color: var(--gris-50); }
+    table.hoja tr.controlada td.producto .prod-nombre { text-decoration: line-through; }
 
     .empty {
       text-align: center; padding: 60px 20px; color: var(--gris-50);
@@ -304,7 +316,8 @@
       @page { size: A4 portrait; margin: 14mm 12mm; }
       html, body { overflow: visible !important; height: auto !important; background: white !important; }
       .topbar, .pendientes, .toolbar-btns, .modal-bg, .toast,
-      table.hoja th:last-child, table.hoja td.acciones { display: none !important; }
+      table.hoja th:last-child, table.hoja td.acciones,
+      table.hoja th.col-check, table.hoja td.check { display: none !important; }
       .contenido { overflow: visible !important; padding: 0 !important; flex: unset !important; }
       .tabla-wrap { border: none !important; overflow: visible !important; max-height: none !important; }
       .print-header {
@@ -404,17 +417,18 @@
     <table class="hoja">
       <thead>
         <tr>
+          <th class="col-check" title="Controlado / volcado a Odoo">✓</th>
           <th style="width: 80px;">Hora</th>
           <th style="width: 130px;">Tipo</th>
           <th>Producto</th>
           <th style="width: 130px;">Presentación</th>
           <th style="width: 120px; text-align: right;">Un. / Kg</th>
           <th style="width: 90px; text-align: center;">Firma</th>
-          <th class="acciones" style="width: 90px;"></th>
+          <th class="acciones" style="width: 150px;"></th>
         </tr>
       </thead>
       <tbody id="tbody-hoja">
-        <tr><td colspan="7"><div class="empty">Cargando…</div></td></tr>
+        <tr><td colspan="8"><div class="empty">Cargando…</div></td></tr>
       </tbody>
     </table>
   </div>
@@ -527,6 +541,7 @@ const STATE = {
   productos: [],
   productoSel: null,
   tipoSel: 'fabricacion',
+  editId: null,
   pendFab: [],
   pendFrac: []
 };
@@ -656,21 +671,23 @@ function renderTabla() {
   document.getElementById('titulo-sub').textContent = fmtFechaLarga(STATE.fecha);
 
   if (STATE.actividades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty">Todavía no se registraron actividades este día.<br><br>Tocá <strong>+ Agregar producto</strong> para arrancar.</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty">Todavía no se registraron actividades este día.<br><br>Tocá <strong>+ Agregar producto</strong> para arrancar.</div></td></tr>';
     return;
   }
 
   let html = '';
   for (const a of STATE.actividades) {
     const tipo = a.tipo || 'fraccionamiento';
-    html += '<tr>';
+    const ctrl = a.controlado === true;
+    html += '<tr class="' + (ctrl ? 'controlada' : '') + '">';
+    html += '<td class="check"><input type="checkbox" data-id="' + a.id + '"' + (ctrl ? ' checked' : '') + ' title="Marcar como controlado"></td>';
     html += '<td>' + escapeHTML(fmtHora(a.hora)) + '</td>';
     html += '<td><span class="tipo-badge ' + tipo + '">' + escapeHTML(TIPO_LABEL[tipo] || tipo) + '</span></td>';
-    html += '<td>' + escapeHTML(a.producto_nombre) + '<div style="font-size:11px;color:var(--gris-70);font-family:monospace;">' + escapeHTML(a.producto_sku) + '</div></td>';
+    html += '<td class="producto"><span class="prod-nombre">' + escapeHTML(a.producto_nombre) + '</span><div style="font-size:11px;color:var(--gris-70);font-family:monospace;">' + escapeHTML(a.producto_sku) + '</div></td>';
     html += '<td>' + escapeHTML(a.presentacion || '—') + '</td>';
     html += '<td class="qty">' + fmt(a.cantidad) + ' ' + escapeHTML(a.unidad) + '</td>';
     html += '<td class="iniciales">' + escapeHTML(a.iniciales) + '</td>';
-    html += '<td class="acciones"><button class="del-btn" data-id="' + a.id + '">Borrar</button></td>';
+    html += '<td class="acciones"><button class="edit-btn" data-id="' + a.id + '">Editar</button><button class="del-btn" data-id="' + a.id + '">Borrar</button></td>';
     html += '</tr>';
   }
   tbody.innerHTML = html;
@@ -678,6 +695,21 @@ function renderTabla() {
   tbody.querySelectorAll('.del-btn').forEach(btn => {
     btn.addEventListener('click', () => borrarLinea(Number(btn.dataset.id)));
   });
+  tbody.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => abrirModalEdit(Number(btn.dataset.id)));
+  });
+  tbody.querySelectorAll('.check input').forEach(chk => {
+    chk.addEventListener('change', () => toggleControlado(Number(chk.dataset.id), chk.checked));
+  });
+}
+
+async function toggleControlado(id, val) {
+  const { error } = await sb.from('prod_hoja_diaria').update({ controlado: val }).eq('id', id);
+  if (error) { toast('Error: ' + error.message, 'err'); await cargarActividades(); return; }
+  const a = STATE.actividades.find(x => x.id === id);
+  if (a) a.controlado = val;
+  // Repintar solo la fila afectada (sin recargar, para no perder el scroll)
+  renderTabla();
 }
 
 async function borrarLinea(id) {
@@ -727,8 +759,12 @@ function autodetectarTipo(sku) {
 }
 
 function abrirModalAdd() {
+  STATE.editId = null;
   STATE.productoSel = null;
+  document.querySelector('#modal-add .modal__title').textContent = 'Registrar producción';
+  document.getElementById('btn-save').textContent = 'Registrar';
   document.getElementById('in-producto').value = '';
+  document.getElementById('in-producto').disabled = false;
   document.getElementById('in-cantidad').value = '';
   document.getElementById('in-unidad').value = 'kg';
   document.getElementById('in-iniciales').value = '';
@@ -739,8 +775,36 @@ function abrirModalAdd() {
   setTimeout(() => document.getElementById('in-producto').focus(), 100);
 }
 
+function abrirModalEdit(id) {
+  const a = STATE.actividades.find(x => x.id === id);
+  if (!a) return;
+  STATE.editId = id;
+  document.querySelector('#modal-add .modal__title').textContent = 'Editar producción';
+  document.getElementById('btn-save').textContent = 'Guardar cambios';
+  document.getElementById('search-results').classList.remove('open');
+
+  // Fijar tipo primero (ajusta unidad por defecto), después sobrescribir campos
+  setTipo(a.tipo || 'fraccionamiento');
+
+  const p = STATE.productos.find(x => x.sku === a.producto_sku)
+    || { sku: a.producto_sku, nombre_producto: a.producto_nombre, tipo_producto: 'otro' };
+  STATE.productoSel = p;
+  const input = document.getElementById('in-producto');
+  input.value = p.nombre_producto + ' (' + p.sku + ')';
+  // Permitir cambiar el producto: se deja editable como en alta
+  input.disabled = false;
+  document.getElementById('in-cantidad').value = a.cantidad;
+  document.getElementById('in-unidad').value = a.unidad || 'un';
+  document.getElementById('in-iniciales').value = a.iniciales || '';
+
+  actualizarBotonSave();
+  document.getElementById('modal-add').classList.add('open');
+  setTimeout(() => document.getElementById('in-cantidad').focus(), 100);
+}
+
 function cerrarModalAdd() {
   document.getElementById('modal-add').classList.remove('open');
+  STATE.editId = null;
 }
 
 function extraerPresentacion(nombre) {
@@ -826,9 +890,30 @@ async function guardarActividad() {
   const iniciales = document.getElementById('in-iniciales').value.trim().toUpperCase();
   if (cantidad <= 0 || !iniciales) return;
 
+  const presentacion = extraerPresentacion(STATE.productoSel.nombre_producto);
+
+  if (STATE.editId) {
+    // Modo edición: actualizar la línea (se conserva la hora original)
+    const { error } = await sb.from('prod_hoja_diaria').update({
+      tipo: STATE.tipoSel,
+      producto_sku: STATE.productoSel.sku,
+      producto_nombre: STATE.productoSel.nombre_producto,
+      presentacion,
+      cantidad,
+      unidad,
+      iniciales
+    }).eq('id', STATE.editId);
+
+    if (error) { toast('Error: ' + error.message, 'err'); return; }
+    toast('✓ Cambios guardados');
+    cerrarModalAdd();
+    await cargarActividades();
+    renderPendientes();
+    return;
+  }
+
   const ahora = new Date();
   const hora = ahora.toTimeString().slice(0, 8);
-  const presentacion = extraerPresentacion(STATE.productoSel.nombre_producto);
 
   const { error } = await sb.from('prod_hoja_diaria').insert({
     fecha: STATE.fecha,
