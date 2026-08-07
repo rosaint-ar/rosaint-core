@@ -82,6 +82,18 @@
 
     .badge-pro { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 
+    /* Selector de canal (segmentado) */
+    .seg-canal { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+    .seg-opt { font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 6px 13px; border-radius: 999px; border: none; background: transparent; cursor: pointer; transition: background .12s, color .12s; }
+    .seg-opt:hover { color: var(--text); }
+    .seg-opt.active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
+
+    /* Chips de desglose por canal */
+    .chan-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chan-chip { font-size: 11.5px; font-weight: 600; color: var(--text); background: var(--surface-2); border-radius: 999px; padding: 3px 9px; font-variant-numeric: tabular-nums; }
+    .chan-note { font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent); border-radius: var(--radius-sm); padding: 8px 11px; line-height: 1.4; }
+    .chan-note a { color: var(--accent); font-weight: 600; }
+
     /* Modal de plantilla */
     .tpl-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
     .tpl-modal.open { display: flex; }
@@ -104,13 +116,13 @@
   <p class="op-intro">
     Cruza <b>todas tus ventas</b> (Tienda Nube, Mercado Libre y venta directa, unificadas en Odoo) para encontrar
     <b>qué productos se compran juntos</b>, a qué clientes ofrecerles el que les falta, y cuáles conviene destacar.
-    Todo con números reales; no hay estimaciones.
+    Cada oportunidad muestra <b>por qué canal compran</b>, así sabés cómo ofrecerla: por WhatsApp, en la web o en Mercado Libre.
   </p>
 
   <div class="kpis" id="kpis">
     <div class="kpi"><div class="v" id="k-combos">—</div><div class="k">Combos detectados</div></div>
     <div class="kpi"><div class="v" id="k-cross">—</div><div class="k">Oportunidades de cross-sell</div></div>
-    <div class="kpi"><div class="v" id="k-alcance">—</div><div class="k">Clientes alcanzables</div></div>
+    <div class="kpi"><div class="v" id="k-alcance">—</div><div class="k">Clientes con WhatsApp</div></div>
     <div class="kpi"><div class="v" id="k-clientes">—</div><div class="k">Clientes analizados</div></div>
   </div>
 
@@ -127,17 +139,18 @@
     </div>
   </div>
 
+  <div class="seg-canal" id="fcanal" style="margin-bottom:14px">
+    <button class="seg-opt active" data-c="todos" onclick="setCanal('todos',this)">Todos</button>
+    <button class="seg-opt" data-c="pro" onclick="setCanal('pro',this)">🟢 Profesionales</button>
+    <button class="seg-opt" data-c="tn"  onclick="setCanal('tn',this)">🔵 Tienda Nube</button>
+    <button class="seg-opt" data-c="ml"  onclick="setCanal('ml',this)">🟡 Mercado Libre</button>
+  </div>
+
   <div class="op-controls">
     <div class="op-search">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       <input id="q" type="search" placeholder="Filtrar por producto…" oninput="render()" autocomplete="off">
     </div>
-    <label class="mini">Clientes
-      <select class="op-sel" id="fpub" onchange="render()">
-        <option value="todos">Todos</option>
-        <option value="pro">Solo profesionales</option>
-      </select>
-    </label>
     <label class="mini">Fuerza mínima
       <select class="op-sel" id="fmin" onchange="render()">
         <option value="3">Normal (3+ clientes)</option>
@@ -184,9 +197,28 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 let VIEW = 'combos';
+let CANAL = 'todos'; // canal seleccionado en el segmentado
 let RAW_CP = [];     // filas cliente_producto (no servicios)
 let META = {};       // partner_id -> métricas del cliente
 let MODEL = null;    // resultado del motor (se recalcula al cambiar filtros)
+
+// ---- Canal por cliente (señal real, sin estimar de más) ----
+//  · Profesionales  → es_profesional=true (compran por la lista profesional; acá caen los kits x4)
+//  · Mercado Libre  → sin teléfono (los compradores de ML no dejan teléfono, no se los puede contactar)
+//  · Tienda Nube    → el resto (consumidor final con teléfono / venta directa)
+const CANALES = {
+  pro: { ic: '🟢', lbl: 'Profesionales',        corto: 'Prof.' },
+  tn:  { ic: '🔵', lbl: 'Tienda Nube / directo', corto: 'TN' },
+  ml:  { ic: '🟡', lbl: 'Mercado Libre',         corto: 'ML' },
+};
+function canalCliente(pid){
+  const m = META[pid] || {};
+  if (m.es_profesional) return 'pro';
+  return m.telefono_wa ? 'tn' : 'ml';
+}
+function desglose(pids){ const d = { pro:0, tn:0, ml:0 }; pids.forEach(p => { d[canalCliente(p)]++; }); return d; }
+function chipsCanal(d){ return '<div class="chan-chips">' + ['pro','tn','ml'].filter(k => d[k] > 0).map(k => `<span class="chan-chip">${CANALES[k].ic} ${fmtNum(d[k])}</span>`).join('') + '</div>'; }
+function setCanal(c, btn){ CANAL = c; document.querySelectorAll('#fcanal .seg-opt').forEach(b => b.classList.toggle('active', b === btn)); render(); }
 
 const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
 const fmtNum   = n => Math.round(n||0).toLocaleString('es-AR');
@@ -198,7 +230,7 @@ const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,''
 
 // ---- Plantilla de WhatsApp (editable, en localStorage) ----
 const TPL_KEY = 'rosaint-op-tpl-wa';
-const TPL_DEF = 'Hola {nombre}! 👋 Vimos que solés llevar {compra}. Muchas clientas que lo usan también suman {ofrecer} y les encanta. ¿Querés que te pase precio y se lo agregamos al próximo pedido?';
+const TPL_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Te escribo porque vi que usás {compra} y quería comentarte que se combina muy bien con {ofrecer}. Si te interesa, te paso el precio y lo sumamos a tu próximo pedido. ¡Cualquier cosa quedo a tu disposición!';
 function getTpl(){ return localStorage.getItem(TPL_KEY) || TPL_DEF; }
 function abrirTpl(){ document.getElementById('tplText').value = getTpl(); document.getElementById('tplModal').classList.add('open'); }
 function cerrarTpl(){ document.getElementById('tplModal').classList.remove('open'); }
@@ -241,15 +273,10 @@ async function cargar(force){
 //  Motor: construye el modelo de afinidad según los filtros actuales
 // ═══════════════════════════════════════════════════════════════════════════
 function construir(){
-  const soloPro = document.getElementById('fpub').value === 'pro';
-  const minCo   = parseInt(document.getElementById('fmin').value, 10) || 3;
+  const minCo = parseInt(document.getElementById('fmin').value, 10) || 3;
 
-  // 1) Filtrar compras a los clientes que correspondan
-  const filas = RAW_CP.filter(x => {
-    const meta = META[x.partner_id];
-    if (soloPro && !(meta && meta.es_profesional)) return false;
-    return true;
-  });
+  // 1) Filtrar compras al canal elegido (según el tipo de cliente)
+  const filas = RAW_CP.filter(x => CANAL === 'todos' || canalCliente(x.partner_id) === CANAL);
 
   // 2) Índices
   const prodStats = new Map();        // nombre -> {clientes:Set, veces, monto}
@@ -269,7 +296,9 @@ function construir(){
   }
 
   const N = cliProd.size;             // clientes con al menos una compra
-  // Precio típico por unidad de cada producto (para estimar valor del cross-sell)
+  let conTel = 0;                     // cuántos de ellos tienen WhatsApp (contactables)
+  for (const pid of cliProd.keys()){ const m = META[pid]; if (m && m.telefono_wa) conTel++; }
+  // Precio típico por unidad de cada producto (real: monto / veces)
   const ticketProd = new Map();
   for (const [nom, ps] of prodStats){ ticketProd.set(nom, ps.veces ? ps.monto / ps.veces : 0); }
 
@@ -332,14 +361,14 @@ function construir(){
       if (cp.has(ancla) && !cp.has(ofrecer)){
         const meta = META[pid] || {};
         res.push({ pid, nombre: meta.nombre || ('Cliente ' + pid), tel: meta.telefono_wa,
-          gastado: meta.total_gastado || 0, montoAncla: cp.get(ancla) || 0 });
+          canal: canalCliente(pid), gastado: meta.total_gastado || 0, montoAncla: cp.get(ancla) || 0 });
       }
     }
     res.sort((a, b) => b.gastado - a.gastado);
     return res;
   };
 
-  return { N, combos, cross, empujar, clientesDe };
+  return { N, conTel, combos, cross, empujar, clientesDe, prodStats };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -361,9 +390,7 @@ function render(){
   document.getElementById('k-combos').textContent   = fmtNum(MODEL.combos.length);
   document.getElementById('k-cross').textContent    = fmtNum(MODEL.cross.length);
   document.getElementById('k-clientes').textContent = fmtNum(MODEL.N);
-  const alcance = new Set();
-  MODEL.cross.forEach(c => { const ls = MODEL.clientesDe(c.ancla, c.ofrecer); ls.forEach(x => alcance.add(x.pid)); });
-  document.getElementById('k-alcance').textContent  = fmtNum(alcance.size);
+  document.getElementById('k-alcance').textContent  = fmtNum(MODEL.conTel);
   document.getElementById('c-combos').textContent   = fmtNum(MODEL.combos.length);
   document.getElementById('c-cross').textContent    = fmtNum(MODEL.cross.length);
   document.getElementById('c-empujar').textContent  = fmtNum(MODEL.empujar.length);
@@ -379,6 +406,9 @@ function renderCombos(list){
   return '<div class="op-grid">' + list.slice(0, 60).map((c, i) => {
     const pctA = Math.round(c.confAB * 100), pctB = Math.round(c.confBA * 100);
     const domin = pctA >= pctB ? { de: c.A, a: c.B, pct: pctA } : { de: c.B, a: c.A, pct: pctB };
+    // Clientes que llevan AMBOS (intersección) para el desglose por canal
+    const setB = MODEL.prodStats.get(c.B).clientes;
+    const inter = [...MODEL.prodStats.get(c.A).clientes].filter(p => setB.has(p));
     return `<div class="op-card">
       <div class="op-rank">Combo #${i + 1}</div>
       <div class="op-pair">
@@ -390,6 +420,7 @@ function renderCombos(list){
         <div class="op-met"><div class="v">${fmtNum(c.co)}</div><div class="k">Clientes los llevan juntos</div></div>
         <div class="op-met"><div class="v good">${c.lift.toFixed(1)}×</div><div class="k">Más que por azar</div></div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="mini">Compran por:</span>${chipsCanal(desglose(inter))}</div>
       <div class="op-why">De cada 100 que compran <b>${esc(domin.de)}</b>, <b>${domin.pct}</b> también llevan <b>${esc(domin.a)}</b>. Buen candidato a <b>pack</b> o a mostrarlos juntos en la ficha.</div>
       <div class="op-actions">
         <a class="btn primary" href="../catalogo/combos.html">Armar combo</a>
@@ -405,33 +436,47 @@ function renderCross(list){
     const pct = Math.round(c.conf * 100);
     const id = 'cl' + i;
     const clientes = MODEL.clientesDe(c.ancla, c.ofrecer);
-    const rows = clientes.slice(0, 200).map(cl => {
-      // telefono_wa ya viene listo (549…); NO re-procesar (si no, se duplica el 9)
+    const conTel = clientes.filter(cl => cl.tel);
+    const sinTel = clientes.length - conTel.length;
+    const dChan = desglose(clientes.map(cl => cl.pid));
+    const rows = conTel.slice(0, 200).map(cl => {
+      // telefono_wa ya viene listo (549…); se usa tal cual, con enlace api.whatsapp.com
       const n = (cl.tel || '').replace(/\D/g, '');
       const msg = getTpl().replace(/{nombre}/g, (cl.nombre || '').split(' ')[0]).replace(/{ofrecer}/g, c.ofrecer).replace(/{compra}/g, c.ancla);
-      const wa = n ? `<a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a>` : `<span class="wa-btn off">sin tel.</span>`;
-      return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Compró ${fmtMoney(cl.montoAncla)} de ${esc(c.ancla)}</div></div>${wa}</div>`;
+      return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">${CANALES[cl.canal].ic} Compró ${fmtMoney(cl.montoAncla)} de ${esc(c.ancla)}</div></div><a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a></div>`;
     }).join('');
+    const noteML = sinTel > 0
+      ? `<div class="chan-note">🟡 ${sinTel === 1 ? 'Hay <b>1</b> cliente que compró' : 'Hay <b>' + fmtNum(sinTel) + '</b> clientes que compraron'} por Mercado Libre (sin teléfono). No se los puede contactar por WhatsApp; ofrecéles ${esc(c.ofrecer)} <a href="canales.html#ml">desde la publicación</a> (combo o promo en ML).</div>`
+      : '';
+    const cuerpo = conTel.length
+      ? `<div class="cli-toggle" onclick="document.getElementById('${id}').classList.toggle('open');this.textContent=document.getElementById('${id}').classList.contains('open')?'Ocultar clientes ▲':'Ver ${fmtNum(conTel.length)} clientes y mandar WhatsApp ▼'">Ver ${fmtNum(conTel.length)} clientes y mandar WhatsApp ▼</div><div class="cli-list" id="${id}">${rows}</div>${noteML}`
+      : (noteML || `<div class="chan-note">Ninguno de estos clientes tiene teléfono cargado. Ofrecéles ${esc(c.ofrecer)} <a href="canales.html#ml">desde la publicación</a> o cargá su teléfono en <a href="crm.html">Clientes</a>.</div>`);
     return `<div class="op-card">
       <div class="op-rank">Oportunidad #${i + 1}</div>
       <div class="op-single">Ofrecé <b style="color:var(--accent)">${esc(c.ofrecer)}</b></div>
-      <div class="op-why">a los <b>${fmtNum(c.objetivo)}</b> clientes que ya compran <b>${esc(c.ancla)}</b> pero todavía no lo llevan. ${pct}% de los que compran ${esc(c.ancla)} suele sumarlo.</div>
+      <div class="op-why">a los <b>${fmtNum(c.objetivo)}</b> clientes que ya compran <b>${esc(c.ancla)}</b> y todavía no lo llevan. ${pct}% de los que compran ${esc(c.ancla)} suele sumarlo.</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="mini">Por canal:</span>${chipsCanal(dChan)}</div>
       <div class="op-mets">
-        <div class="op-met"><div class="v">${fmtNum(c.objetivo)}</div><div class="k">Clientes a contactar</div></div>
+        <div class="op-met"><div class="v">${fmtNum(conTel.length)}</div><div class="k">Con WhatsApp</div></div>
         <div class="op-met"><div class="v good">${c.lift.toFixed(1)}×</div><div class="k">Afinidad</div></div>
-        <div class="op-met"><div class="v">${fmtMoney(c.potencial)}</div><div class="k">Potencial estimado</div></div>
+        <div class="op-met"><div class="v">${fmtMoney(c.ticket)}</div><div class="k">Precio típico</div></div>
       </div>
-      <div class="cli-toggle" onclick="document.getElementById('${id}').classList.toggle('open');this.textContent=document.getElementById('${id}').classList.contains('open')?'Ocultar clientes ▲':'Ver clientes y mandar WhatsApp ▼'">Ver clientes y mandar WhatsApp ▼</div>
-      <div class="cli-list" id="${id}">${rows}</div>
+      ${cuerpo}
     </div>`;
   }).join('') + '</div>';
 }
 
 function renderEmpujar(list){
   if (!list.length) return '<div class="empty-view">No hay datos suficientes.</div>';
-  const max = list[0] ? list[0].monto : 1;
-  return '<div class="op-grid">' + list.slice(0, 40).map((p, i) => `
-    <div class="op-card">
+  return '<div class="op-grid">' + list.slice(0, 40).map((p, i) => {
+    const d = desglose([...MODEL.prodStats.get(p.nom).clientes]);
+    const dom = ['pro', 'tn', 'ml'].sort((a, b) => d[b] - d[a])[0];
+    const consejo = dom === 'pro'
+        ? 'Se mueve sobre todo entre <b>profesionales</b>: empujalo por la lista profesional y en el trato directo.'
+      : dom === 'ml'
+        ? 'Se vende sobre todo por <b>Mercado Libre</b>: cuidá la publicación y el precio, y evaluá publicidad.'
+        : 'Se vende sobre todo por <b>Tienda Nube</b>: destacalo en la home y usalo de ancla para un combo.';
+    return `<div class="op-card">
       <div class="op-rank">#${i + 1} en facturación</div>
       <div class="op-single">${esc(p.nom)}</div>
       <div class="op-mets">
@@ -439,8 +484,10 @@ function renderEmpujar(list){
         <div class="op-met"><div class="v">${fmtNum(p.clientes)}</div><div class="k">Clientes</div></div>
         <div class="op-met"><div class="v">${fmtNum(p.veces)}</div><div class="k">Veces vendido</div></div>
       </div>
-      <div class="op-why">Producto <b>ganador</b>: mucha gente lo elige. Buen candidato para <b>destacar en la home</b>, publicitar o poner de ancla en un combo.</div>
-    </div>`).join('') + '</div>';
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="mini">Compran por:</span>${chipsCanal(d)}</div>
+      <div class="op-why">Producto <b>ganador</b>. ${consejo}</div>
+    </div>`;
+  }).join('') + '</div>';
 }
 
 // Arranque
