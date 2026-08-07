@@ -175,8 +175,14 @@
   <div class="tpl-inner">
     <div class="tpl-head"><b>⚙ Mensaje de WhatsApp</b><button class="tpl-x" onclick="cerrarTpl()" aria-label="Cerrar">✕</button></div>
     <div class="tpl-body">
+      <label style="font-size:12.5px;color:var(--muted);display:block;margin-bottom:6px">¿Quién manda el mensaje?</label>
+      <div class="seg-canal" id="firmaSeg" style="margin-bottom:14px">
+        <button class="seg-opt" data-f="" onclick="pickFirma('',this)">Neutro (sin nombre)</button>
+        <button class="seg-opt" data-f="Lucía" onclick="pickFirma('Lucía',this)">Lucía</button>
+        <button class="seg-opt" data-f="Diego" onclick="pickFirma('Diego',this)">Diego</button>
+      </div>
       <textarea id="tplText"></textarea>
-      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{ofrecer}</code> <code>{compra}</code></div>
+      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{compra}</code> <code>{ofrecer}</code> <code>{firma}</code> (se completa con quién manda)</div>
       <div class="tpl-actions">
         <button class="btn primary" onclick="guardarTpl()">Guardar</button>
         <button class="btn secondary" onclick="restaurarTpl()">Restaurar</button>
@@ -228,14 +234,42 @@ const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,''
 // Nota: el teléfono viene en la columna telefono_wa YA listo (549…). Se usa tal cual
 // en el enlace https://api.whatsapp.com/send (nunca wa.me, para que los emojis no se rompan).
 
+// "Producto base": el nombre sin el tamaño/presentación. Sirve para NO ofrecer el mismo
+// producto en otra medida (ej: Crema Base Clásica 4 kg + Crema Base Clásica 10 kg).
+const sinAcentos = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+function baseProducto(nombre){
+  let s = ' ' + sinAcentos((nombre || '').toLowerCase()) + ' ';
+  s = s.replace(/\b\d+([.,]\d+)?\s?(kgs?|kilos?|grs?|gramos?|g|ml|cc|lts?|litros?|l|unid(?:ad(?:es)?)?|u|pack)\b/g, ' '); // cantidad con unidad
+  s = s.replace(/\bx\s?\d+([.,]\d+)?\b/g, ' ');   // x2, x 4
+  s = s.replace(/\b\d+([.,]\d+)?\b/g, ' ');       // números sueltos (250, 1.5)
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 // ---- Plantilla de WhatsApp (editable, en localStorage) ----
 const TPL_KEY = 'rosaint-op-tpl-wa';
-const TPL_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Te escribo porque vi que usás {compra} y quería comentarte que se combina muy bien con {ofrecer}. Si te interesa, te paso el precio y lo sumamos a tu próximo pedido. ¡Cualquier cosa quedo a tu disposición!';
+const FIRMA_KEY = 'rosaint-op-firma';
+const TPL_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Quería comentarte que varios clientes que llevan {compra} suelen sumar también {ofrecer} y les va muy bien. Si te interesa, te paso el precio y lo agregamos a tu próximo pedido. ¡Saludos{firma}!';
 function getTpl(){ return localStorage.getItem(TPL_KEY) || TPL_DEF; }
-function abrirTpl(){ document.getElementById('tplText').value = getTpl(); document.getElementById('tplModal').classList.add('open'); }
+function getFirma(){ return localStorage.getItem(FIRMA_KEY) || ''; } // '' = neutro (sin nombre)
+// Arma el mensaje final para un cliente (reemplaza variables, incluida la firma)
+function armarMsg(nombre, compra, ofrecer){
+  const firma = getFirma();
+  return getTpl()
+    .replace(/{nombre}/g, (nombre || '').split(' ')[0])
+    .replace(/{compra}/g, compra)
+    .replace(/{ofrecer}/g, ofrecer)
+    .replace(/{firma}/g, firma ? ', ' + firma : '');
+}
+function abrirTpl(){
+  document.getElementById('tplText').value = getTpl();
+  const f = getFirma();
+  document.querySelectorAll('#firmaSeg .seg-opt').forEach(b => b.classList.toggle('active', (b.dataset.f || '') === f));
+  document.getElementById('tplModal').classList.add('open');
+}
 function cerrarTpl(){ document.getElementById('tplModal').classList.remove('open'); }
 function guardarTpl(){ localStorage.setItem(TPL_KEY, document.getElementById('tplText').value); cerrarTpl(); }
 function restaurarTpl(){ document.getElementById('tplText').value = TPL_DEF; localStorage.setItem(TPL_KEY, TPL_DEF); }
+function pickFirma(v, btn){ localStorage.setItem(FIRMA_KEY, v); document.querySelectorAll('#firmaSeg .seg-opt').forEach(b => b.classList.toggle('active', b === btn)); }
 
 // ---- Acceso REST a Supabase con el JWT del usuario logueado ----
 async function apiGet(path){
@@ -320,6 +354,7 @@ function construir(){
   for (const [key, co] of pares){
     if (co < minCo) continue;
     const [A, B] = key.split('|||');
+    if (baseProducto(A) === baseProducto(B)) continue;  // mismo producto en otra medida → no es combo ni cross-sell
     const psA = prodStats.get(A), psB = prodStats.get(B);
     const nA = psA.clientes.size, nB = psB.clientes.size;
     if (nA < minCo || nB < minCo) continue;
@@ -442,7 +477,7 @@ function renderCross(list){
     const rows = conTel.slice(0, 200).map(cl => {
       // telefono_wa ya viene listo (549…); se usa tal cual, con enlace api.whatsapp.com
       const n = (cl.tel || '').replace(/\D/g, '');
-      const msg = getTpl().replace(/{nombre}/g, (cl.nombre || '').split(' ')[0]).replace(/{ofrecer}/g, c.ofrecer).replace(/{compra}/g, c.ancla);
+      const msg = armarMsg(cl.nombre, c.ancla, c.ofrecer);
       return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">${CANALES[cl.canal].ic} Compró ${fmtMoney(cl.montoAncla)} de ${esc(c.ancla)}</div></div><a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a></div>`;
     }).join('');
     const noteML = sinTel > 0
