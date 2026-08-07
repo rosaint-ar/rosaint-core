@@ -193,8 +193,8 @@ const fmtNum   = n => Math.round(n||0).toLocaleString('es-AR');
 const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Limpia el nombre de producto: saca el [código] delante y las comillas «»
 const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,'').trim();
-// Teléfono → número para wa (549…)
-function waNum(tel){ let d=(tel||'').replace(/\D/g,''); if(d.length<8) return ''; if(d.startsWith('54')) d=d.slice(2); d=d.replace(/^0/,''); if(d.length>10) d=d.replace(/^(\d{2,4})15(\d{6,8})$/,'$1$2'); return d.length>=10 ? '549'+d : ''; }
+// Nota: el teléfono viene en la columna telefono_wa YA listo (549…). Se usa tal cual
+// en el enlace https://api.whatsapp.com/send (nunca wa.me, para que los emojis no se rompan).
 
 // ---- Plantilla de WhatsApp (editable, en localStorage) ----
 const TPL_KEY = 'rosaint-op-tpl-wa';
@@ -406,7 +406,8 @@ function renderCross(list){
     const id = 'cl' + i;
     const clientes = MODEL.clientesDe(c.ancla, c.ofrecer);
     const rows = clientes.slice(0, 200).map(cl => {
-      const n = waNum(cl.tel);
+      // telefono_wa ya viene listo (549…); NO re-procesar (si no, se duplica el 9)
+      const n = (cl.tel || '').replace(/\D/g, '');
       const msg = getTpl().replace(/{nombre}/g, (cl.nombre || '').split(' ')[0]).replace(/{ofrecer}/g, c.ofrecer).replace(/{compra}/g, c.ancla);
       const wa = n ? `<a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a>` : `<span class="wa-btn off">sin tel.</span>`;
       return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Compró ${fmtMoney(cl.montoAncla)} de ${esc(c.ancla)}</div></div>${wa}</div>`;
