@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oportunidades · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ═══════════ Oportunidades ═══════════ */
+    .op-intro { font-size: 13px; color: var(--muted); max-width: 760px; margin: 0 0 18px; line-height: 1.5; }
+    .op-intro b { color: var(--text); }
+
+    /* KPIs de arriba */
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow-card); }
+    .kpi .v { font-size: 24px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    .kpi .k { font-size: 11px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+    @media (max-width: 720px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Barra de tabs */
+    .tabs-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .tabs { display: flex; gap: 0; flex-wrap: wrap; }
+    .tab { padding: 10px 16px; font-size: 13.5px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: color .12s, border-color .12s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab .cnt { font-size: 11px; color: var(--muted); background: var(--surface-2); padding: 1px 7px; border-radius: 10px; font-weight: 500; }
+    .tab.active .cnt { background: var(--accent-tint); color: var(--accent); }
+    .tabs-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
+    .mini { font-size: 11px; color: var(--muted); }
+
+    /* Controles */
+    .op-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+    .op-sel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12.5px; color: var(--text); }
+    .op-search { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 12px; }
+    .op-search input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; color: var(--text); }
+    .op-search svg { color: var(--muted); flex-shrink: 0; }
+
+    /* Cards de oportunidad */
+    .op-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+    .op-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; }
+    .op-rank { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; }
+
+    /* Par de productos (combo) */
+    .op-pair { display: flex; align-items: center; gap: 8px; }
+    .op-prod { flex: 1; font-size: 14.5px; font-weight: 600; color: var(--text); line-height: 1.25; }
+    .op-plus { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-tint); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+
+    /* Métricas de la card */
+    .op-mets { display: flex; gap: 18px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .op-met .v { font-size: 17px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .op-met .v.good { color: var(--ok); }
+    .op-met .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1px; }
+
+    .op-why { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+    .op-why b { color: var(--text); font-weight: 600; }
+
+    .op-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+
+    /* Producto único (empujar) */
+    .op-single { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.25; }
+
+    /* Cross-sell: lista de clientes */
+    .cli-toggle { font-size: 12.5px; font-weight: 600; color: var(--accent); cursor: pointer; user-select: none; }
+    .cli-list { display: none; flex-direction: column; gap: 6px; margin-top: 4px; max-height: 320px; overflow-y: auto; }
+    .cli-list.open { display: flex; }
+    .cli-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); }
+    .cli-name { font-size: 12.5px; color: var(--text); font-weight: 500; }
+    .cli-sub { font-size: 11px; color: var(--muted); }
+    .wa-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: var(--radius-sm); white-space: nowrap; transition: background .12s; }
+    .wa-btn:hover { background: var(--accent-press); }
+    .wa-btn.off { background: var(--surface-2); color: var(--muted); cursor: default; }
+
+    .empty-view { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 13.5px; }
+    .op-loading { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 13.5px; }
+
+    /* Nota de "próximamente" para tipos de oportunidad que faltan */
+    .op-note { background: color-mix(in srgb, var(--structure) 8%, transparent); border: 1px solid color-mix(in srgb, var(--structure) 24%, transparent); border-radius: var(--radius); padding: 14px 16px; font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-bottom: 18px; }
+    .op-note b { color: var(--text); }
+    .op-note a { color: var(--accent); font-weight: 600; }
+
+    .badge-pro { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+
+    /* Modal de plantilla */
+    .tpl-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+    .tpl-modal.open { display: flex; }
+    .tpl-inner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 480px; box-shadow: var(--shadow-menu); }
+    .tpl-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .tpl-x { font-size: 16px; color: var(--muted); cursor: pointer; background: none; border: none; }
+    .tpl-body { padding: 18px; }
+    .tpl-body textarea { width: 100%; min-height: 110px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 13px; font-family: var(--font-ui); color: var(--text); background: var(--bg); resize: vertical; }
+    .tpl-vars { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+    .tpl-vars code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-family: var(--font-mono); }
+    .tpl-actions { display: flex; gap: 8px; margin-top: 14px; }
+  </style>
+</head>
+<body data-page="oportunidades" data-title="Oportunidades" data-subtitle="Qué conviene ofrecer, según lo que ya vendés">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <p class="op-intro">
+    Cruza <b>todas tus ventas</b> (Tienda Nube, Mercado Libre y venta directa, unificadas en Odoo) para encontrar
+    <b>qué productos se compran juntos</b>, a qué clientes ofrecerles el que les falta, y cuáles conviene destacar.
+    Todo con números reales; no hay estimaciones.
+  </p>
+
+  <div class="kpis" id="kpis">
+    <div class="kpi"><div class="v" id="k-combos">—</div><div class="k">Combos detectados</div></div>
+    <div class="kpi"><div class="v" id="k-cross">—</div><div class="k">Oportunidades de cross-sell</div></div>
+    <div class="kpi"><div class="v" id="k-alcance">—</div><div class="k">Clientes alcanzables</div></div>
+    <div class="kpi"><div class="v" id="k-clientes">—</div><div class="k">Clientes analizados</div></div>
+  </div>
+
+  <div class="tabs-bar">
+    <div class="tabs">
+      <div class="tab active" data-view="combos"  onclick="setView('combos')">🧩 Combos <span class="cnt" id="c-combos">0</span></div>
+      <div class="tab"        data-view="cross"   onclick="setView('cross')">🎯 Cross-sell <span class="cnt" id="c-cross">0</span></div>
+      <div class="tab"        data-view="empujar" onclick="setView('empujar')">🚀 Para empujar <span class="cnt" id="c-empujar">0</span></div>
+    </div>
+    <div class="tabs-actions">
+      <span class="mini" id="syncInfo"></span>
+      <button class="btn secondary" onclick="cargar(true)" title="Refrescar">↻</button>
+      <button class="btn secondary" onclick="abrirTpl()" title="Plantilla de WhatsApp">⚙</button>
+    </div>
+  </div>
+
+  <div class="op-controls">
+    <div class="op-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input id="q" type="search" placeholder="Filtrar por producto…" oninput="render()" autocomplete="off">
+    </div>
+    <label class="mini">Clientes
+      <select class="op-sel" id="fpub" onchange="render()">
+        <option value="todos">Todos</option>
+        <option value="pro">Solo profesionales</option>
+      </select>
+    </label>
+    <label class="mini">Fuerza mínima
+      <select class="op-sel" id="fmin" onchange="render()">
+        <option value="3">Normal (3+ clientes)</option>
+        <option value="5">Alta (5+ clientes)</option>
+        <option value="2">Amplia (2+ clientes)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="op-note" id="note-liquidar" style="display:none">
+    <b>¿Y las liquidaciones / productos frenados?</b> Para detectar productos que se están enfriando o que tienen stock
+    parado hace falta la línea de tiempo de ventas por producto (todavía no está en esta versión). Mientras tanto, para
+    <b>reactivar clientes</b> que dejaron de comprar ya tenés el módulo <a href="crm.html">Clientes</a>, que los ordena por prioridad.
+  </div>
+
+  <div id="salida"><div class="op-loading">Analizando tus ventas…</div></div>
+
+</main>
+
+<!-- Modal plantilla WhatsApp -->
+<div class="tpl-modal" id="tplModal" onclick="if(event.target===this)cerrarTpl()">
+  <div class="tpl-inner">
+    <div class="tpl-head"><b>⚙ Mensaje de WhatsApp</b><button class="tpl-x" onclick="cerrarTpl()" aria-label="Cerrar">✕</button></div>
+    <div class="tpl-body">
+      <textarea id="tplText"></textarea>
+      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{ofrecer}</code> <code>{compra}</code></div>
+      <div class="tpl-actions">
+        <button class="btn primary" onclick="guardarTpl()">Guardar</button>
+        <button class="btn secondary" onclick="restaurarTpl()">Restaurar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  Oportunidades — motor de afinidad sobre ventas reales
+//  Fuentes (Supabase, ya sincronizadas desde Odoo por el CRM):
+//    · cliente_producto  → qué compra cada cliente (partner_id, product_name, veces, monto)
+//    · cliente_metricas  → segmento, recencia, teléfono, si es profesional
+// ═══════════════════════════════════════════════════════════════════════════
+
+let VIEW = 'combos';
+let RAW_CP = [];     // filas cliente_producto (no servicios)
+let META = {};       // partner_id -> métricas del cliente
+let MODEL = null;    // resultado del motor (se recalcula al cambiar filtros)
+
+const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
+const fmtNum   = n => Math.round(n||0).toLocaleString('es-AR');
+const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Limpia el nombre de producto: saca el [código] delante y las comillas «»
+const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,'').trim();
+// Teléfono → número para wa (549…)
+function waNum(tel){ let d=(tel||'').replace(/\D/g,''); if(d.length<8) return ''; if(d.startsWith('54')) d=d.slice(2); d=d.replace(/^0/,''); if(d.length>10) d=d.replace(/^(\d{2,4})15(\d{6,8})$/,'$1$2'); return d.length>=10 ? '549'+d : ''; }
+
+// ---- Plantilla de WhatsApp (editable, en localStorage) ----
+const TPL_KEY = 'rosaint-op-tpl-wa';
+const TPL_DEF = 'Hola {nombre}! 👋 Vimos que solés llevar {compra}. Muchas clientas que lo usan también suman {ofrecer} y les encanta. ¿Querés que te pase precio y se lo agregamos al próximo pedido?';
+function getTpl(){ return localStorage.getItem(TPL_KEY) || TPL_DEF; }
+function abrirTpl(){ document.getElementById('tplText').value = getTpl(); document.getElementById('tplModal').classList.add('open'); }
+function cerrarTpl(){ document.getElementById('tplModal').classList.remove('open'); }
+function guardarTpl(){ localStorage.setItem(TPL_KEY, document.getElementById('tplText').value); cerrarTpl(); }
+function restaurarTpl(){ document.getElementById('tplText').value = TPL_DEF; localStorage.setItem(TPL_KEY, TPL_DEF); }
+
+// ---- Acceso REST a Supabase con el JWT del usuario logueado ----
+async function apiGet(path){
+  const { data: sess } = await sb.auth.getSession();
+  const token = (sess && sess.session && sess.session.access_token) || window.SUPABASE_KEY;
+  const r = await fetch(window.SUPABASE_URL + '/rest/v1/' + path, {
+    headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token },
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Carga de datos
+// ═══════════════════════════════════════════════════════════════════════════
+async function cargar(force){
+  if (force) document.getElementById('salida').innerHTML = '<div class="op-loading">Analizando tus ventas…</div>';
+  try {
+    const [cp, m] = await Promise.all([
+      apiGet('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&limit=50000'),
+      apiGet('cliente_metricas?select=partner_id,nombre,telefono_wa,segmento,total_gastado,total_facturas,es_profesional&limit=8000'),
+    ]);
+    RAW_CP = (cp || []).filter(x => !x.es_servicio && x.product_name);
+    META = {};
+    (m || []).forEach(x => { META[x.partner_id] = x; });
+    document.getElementById('syncInfo').textContent = fmtNum(Object.keys(META).length) + ' clientes · ' + fmtNum(RAW_CP.length) + ' compras';
+    document.getElementById('note-liquidar').style.display = 'block';
+    render();
+  } catch (err) {
+    document.getElementById('salida').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + esc(err.message) + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Motor: construye el modelo de afinidad según los filtros actuales
+// ═══════════════════════════════════════════════════════════════════════════
+function construir(){
+  const soloPro = document.getElementById('fpub').value === 'pro';
+  const minCo   = parseInt(document.getElementById('fmin').value, 10) || 3;
+
+  // 1) Filtrar compras a los clientes que correspondan
+  const filas = RAW_CP.filter(x => {
+    const meta = META[x.partner_id];
+    if (soloPro && !(meta && meta.es_profesional)) return false;
+    return true;
+  });
+
+  // 2) Índices
+  const prodStats = new Map();        // nombre -> {clientes:Set, veces, monto}
+  const cliProd   = new Map();        // pid -> Map(nombre -> monto acumulado del cliente en ese prod)
+  for (const x of filas){
+    const nom = cleanProd(x.product_name);
+    if (!nom) continue;
+    const pid = x.partner_id;
+    let ps = prodStats.get(nom);
+    if (!ps){ ps = { clientes: new Set(), veces: 0, monto: 0 }; prodStats.set(nom, ps); }
+    ps.clientes.add(pid);
+    ps.veces += (x.veces_comprado || 0);
+    ps.monto += (x.monto_total || 0);
+    let cp = cliProd.get(pid);
+    if (!cp){ cp = new Map(); cliProd.set(pid, cp); }
+    cp.set(nom, (cp.get(nom) || 0) + (x.monto_total || 0));
+  }
+
+  const N = cliProd.size;             // clientes con al menos una compra
+  // Precio típico por unidad de cada producto (para estimar valor del cross-sell)
+  const ticketProd = new Map();
+  for (const [nom, ps] of prodStats){ ticketProd.set(nom, ps.veces ? ps.monto / ps.veces : 0); }
+
+  // 3) Co-ocurrencia por cliente (pares de productos comprados por el mismo cliente)
+  const pares = new Map();            // "A|||B" (A<B) -> nº de clientes que compraron ambos
+  for (const [pid, cp] of cliProd){
+    const items = [...cp.keys()].sort();
+    for (let i = 0; i < items.length; i++){
+      for (let j = i + 1; j < items.length; j++){
+        const key = items[i] + '|||' + items[j];
+        pares.set(key, (pares.get(key) || 0) + 1);
+      }
+    }
+  }
+
+  // 4) Reglas: cada par válido → una card de combo y hasta dos direcciones de cross-sell
+  const combos = [];
+  const cross = [];
+  for (const [key, co] of pares){
+    if (co < minCo) continue;
+    const [A, B] = key.split('|||');
+    const psA = prodStats.get(A), psB = prodStats.get(B);
+    const nA = psA.clientes.size, nB = psB.clientes.size;
+    if (nA < minCo || nB < minCo) continue;
+    // lift: cuánto más probable es comprar ambos vs por azar
+    const lift = (co * N) / (nA * nB);
+    if (lift <= 1.15) continue;       // afinidad real, no coincidencia
+    const confAB = co / nA;           // de los que compran A, cuántos compran B
+    const confBA = co / nB;
+    combos.push({ A, B, co, nA, nB, lift, confAB, confBA,
+      monto: (psA.monto + psB.monto) });
+
+    // Dirección de cross-sell: anclamos en el producto MÁS vendido y ofrecemos el otro
+    const dirs = [
+      { ancla: A, ofrecer: B, nAncla: nA, conf: confAB, ticket: ticketProd.get(B) || 0 },
+      { ancla: B, ofrecer: A, nAncla: nB, conf: confBA, ticket: ticketProd.get(A) || 0 },
+    ];
+    for (const d of dirs){
+      const objetivo = d.nAncla - co;   // compran el ancla pero NO el ofrecido
+      if (objetivo < 1) continue;
+      cross.push({ ...d, otro: d.ancla === A ? B : A, co, lift,
+        potencial: objetivo * d.ticket, objetivo });
+    }
+  }
+
+  // 5) Para empujar: productos ganadores por facturación y por alcance
+  const empujar = [...prodStats.entries()].map(([nom, ps]) => ({
+    nom, clientes: ps.clientes.size, veces: ps.veces, monto: ps.monto,
+    ticket: ticketProd.get(nom) || 0,
+  })).filter(p => p.clientes >= 2);
+
+  combos.sort((a, b) => (b.co * b.lift) - (a.co * a.lift));
+  cross.sort((a, b) => b.potencial - a.potencial);
+  empujar.sort((a, b) => b.monto - a.monto);
+
+  // Lista de clientes objetivo para cada regla de cross-sell (para el desplegable)
+  const clientesDe = (ancla, ofrecer) => {
+    const res = [];
+    for (const [pid, cp] of cliProd){
+      if (cp.has(ancla) && !cp.has(ofrecer)){
+        const meta = META[pid] || {};
+        res.push({ pid, nombre: meta.nombre || ('Cliente ' + pid), tel: meta.telefono_wa,
+          gastado: meta.total_gastado || 0, montoAncla: cp.get(ancla) || 0 });
+      }
+    }
+    res.sort((a, b) => b.gastado - a.gastado);
+    return res;
+  };
+
+  return { N, combos, cross, empujar, clientesDe };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Render
+// ═══════════════════════════════════════════════════════════════════════════
+function setView(v){
+  VIEW = v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+  render();
+}
+
+function render(){
+  if (!RAW_CP.length){ return; }
+  MODEL = construir();
+  const q = (document.getElementById('q').value || '').toLowerCase().trim();
+  const match = (...ss) => !q || ss.some(s => (s || '').toLowerCase().includes(q));
+
+  // KPIs y contadores
+  document.getElementById('k-combos').textContent   = fmtNum(MODEL.combos.length);
+  document.getElementById('k-cross').textContent    = fmtNum(MODEL.cross.length);
+  document.getElementById('k-clientes').textContent = fmtNum(MODEL.N);
+  const alcance = new Set();
+  MODEL.cross.forEach(c => { const ls = MODEL.clientesDe(c.ancla, c.ofrecer); ls.forEach(x => alcance.add(x.pid)); });
+  document.getElementById('k-alcance').textContent  = fmtNum(alcance.size);
+  document.getElementById('c-combos').textContent   = fmtNum(MODEL.combos.length);
+  document.getElementById('c-cross').textContent    = fmtNum(MODEL.cross.length);
+  document.getElementById('c-empujar').textContent  = fmtNum(MODEL.empujar.length);
+
+  const out = document.getElementById('salida');
+  if (VIEW === 'combos')  return void (out.innerHTML = renderCombos(MODEL.combos.filter(c => match(c.A, c.B))));
+  if (VIEW === 'cross')   return void (out.innerHTML = renderCross(MODEL.cross.filter(c => match(c.ancla, c.ofrecer))));
+  if (VIEW === 'empujar') return void (out.innerHTML = renderEmpujar(MODEL.empujar.filter(p => match(p.nom))));
+}
+
+function renderCombos(list){
+  if (!list.length) return '<div class="empty-view">Todavía no hay combos con suficiente fuerza. Probá bajar la “Fuerza mínima” arriba.</div>';
+  return '<div class="op-grid">' + list.slice(0, 60).map((c, i) => {
+    const pctA = Math.round(c.confAB * 100), pctB = Math.round(c.confBA * 100);
+    const domin = pctA >= pctB ? { de: c.A, a: c.B, pct: pctA } : { de: c.B, a: c.A, pct: pctB };
+    return `<div class="op-card">
+      <div class="op-rank">Combo #${i + 1}</div>
+      <div class="op-pair">
+        <div class="op-prod">${esc(c.A)}</div>
+        <div class="op-plus">+</div>
+        <div class="op-prod">${esc(c.B)}</div>
+      </div>
+      <div class="op-mets">
+        <div class="op-met"><div class="v">${fmtNum(c.co)}</div><div class="k">Clientes los llevan juntos</div></div>
+        <div class="op-met"><div class="v good">${c.lift.toFixed(1)}×</div><div class="k">Más que por azar</div></div>
+      </div>
+      <div class="op-why">De cada 100 que compran <b>${esc(domin.de)}</b>, <b>${domin.pct}</b> también llevan <b>${esc(domin.a)}</b>. Buen candidato a <b>pack</b> o a mostrarlos juntos en la ficha.</div>
+      <div class="op-actions">
+        <a class="btn primary" href="../catalogo/combos.html">Armar combo</a>
+        <button class="btn secondary" onclick="setView('cross')">Ver a quién ofrecérselo</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderCross(list){
+  if (!list.length) return '<div class="empty-view">No hay oportunidades de cross-sell con estos filtros.</div>';
+  return '<div class="op-grid">' + list.slice(0, 60).map((c, i) => {
+    const pct = Math.round(c.conf * 100);
+    const id = 'cl' + i;
+    const clientes = MODEL.clientesDe(c.ancla, c.ofrecer);
+    const rows = clientes.slice(0, 200).map(cl => {
+      const n = waNum(cl.tel);
+      const msg = getTpl().replace(/{nombre}/g, (cl.nombre || '').split(' ')[0]).replace(/{ofrecer}/g, c.ofrecer).replace(/{compra}/g, c.ancla);
+      const wa = n ? `<a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a>` : `<span class="wa-btn off">sin tel.</span>`;
+      return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Compró ${fmtMoney(cl.montoAncla)} de ${esc(c.ancla)}</div></div>${wa}</div>`;
+    }).join('');
+    return `<div class="op-card">
+      <div class="op-rank">Oportunidad #${i + 1}</div>
+      <div class="op-single">Ofrecé <b style="color:var(--accent)">${esc(c.ofrecer)}</b></div>
+      <div class="op-why">a los <b>${fmtNum(c.objetivo)}</b> clientes que ya compran <b>${esc(c.ancla)}</b> pero todavía no lo llevan. ${pct}% de los que compran ${esc(c.ancla)} suele sumarlo.</div>
+      <div class="op-mets">
+        <div class="op-met"><div class="v">${fmtNum(c.objetivo)}</div><div class="k">Clientes a contactar</div></div>
+        <div class="op-met"><div class="v good">${c.lift.toFixed(1)}×</div><div class="k">Afinidad</div></div>
+        <div class="op-met"><div class="v">${fmtMoney(c.potencial)}</div><div class="k">Potencial estimado</div></div>
+      </div>
+      <div class="cli-toggle" onclick="document.getElementById('${id}').classList.toggle('open');this.textContent=document.getElementById('${id}').classList.contains('open')?'Ocultar clientes ▲':'Ver clientes y mandar WhatsApp ▼'">Ver clientes y mandar WhatsApp ▼</div>
+      <div class="cli-list" id="${id}">${rows}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderEmpujar(list){
+  if (!list.length) return '<div class="empty-view">No hay datos suficientes.</div>';
+  const max = list[0] ? list[0].monto : 1;
+  return '<div class="op-grid">' + list.slice(0, 40).map((p, i) => `
+    <div class="op-card">
+      <div class="op-rank">#${i + 1} en facturación</div>
+      <div class="op-single">${esc(p.nom)}</div>
+      <div class="op-mets">
+        <div class="op-met"><div class="v">${fmtMoney(p.monto)}</div><div class="k">Facturado</div></div>
+        <div class="op-met"><div class="v">${fmtNum(p.clientes)}</div><div class="k">Clientes</div></div>
+        <div class="op-met"><div class="v">${fmtNum(p.veces)}</div><div class="k">Veces vendido</div></div>
+      </div>
+      <div class="op-why">Producto <b>ganador</b>: mucha gente lo elige. Buen candidato para <b>destacar en la home</b>, publicitar o poner de ancla en un combo.</div>
+    </div>`).join('') + '</div>';
+}
+
+// Arranque
+cargar();
+</script>
+</body>
+</html>

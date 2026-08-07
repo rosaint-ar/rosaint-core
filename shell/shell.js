@@ -26,6 +26,7 @@ const MENU = [
 
   { type: 'group', label: 'Ventas online' },
   { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',   status: 'ready' },
+  { type: 'item', id: 'oportunidades', label: 'Oportunidades', href: 'comercial/oportunidades.html', status: 'ready' },
 
   { type: 'group', label: 'Producción' },
   { type: 'item', id: 'produccion',    label: 'Producción',    href: 'produccion/index.html',    status: 'ready' },
@@ -109,6 +110,7 @@ const MODULE_ICONS = {
   crm:            '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.5M21 20a5.6 5.6 0 0 0-4-5.4"/></svg>',
   seguimientos:   '<svg viewBox="0 0 24 24"><path d="M1 3h13v11H1z"/><path d="M14 7h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></svg>',
   canales:        '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.8l7.4-3.6M8.3 13.2l7.4 3.6"/></svg>',
+  oportunidades:  '<svg viewBox="0 0 24 24"><path d="M9 21h6M10 21v-3M14 21v-3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2h6c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg>',
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
