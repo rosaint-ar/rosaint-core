@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contraste Percepciones · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month] { font: inherit; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); min-width: 160px; }
+    .field input[type=month]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+    .drop { border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: 9px 14px; background: var(--surface); cursor: pointer; font-size: 13px; color: var(--muted); transition: border-color .15s, color .15s, background .15s; white-space: nowrap; }
+    .drop:hover { border-color: var(--accent); color: var(--accent); }
+    .drop.ok { border-style: solid; border-color: var(--ok); color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+    input[type=file] { display: none; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .status-bar { font-size: 13px; color: var(--muted); margin: 12px 2px 16px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .status-bar .dot.load { background: var(--warn); } .status-bar .dot.on { background: var(--ok); } .status-bar .dot.off { background: var(--hot); }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .summary .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+    .summary .card .n { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+    .summary .card .l { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .summary .card.ok .n { color: var(--ok); } .summary .card.falta .n { color: var(--hot); } .summary .card.dif .n { color: var(--accent); }
+    .group { margin-bottom: 24px; }
+    .group h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+    .badge.r { color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
+    .badge.v { color: var(--accent); background: var(--accent-tint); }
+    .badge.g { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.dif-mal { color: var(--hot); font-weight: 600; }
+    tr.warn { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+    .empty { color: var(--muted); font-style: italic; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+    .cuadre { background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius); padding: 0; overflow: hidden; margin-top: 8px; }
+    .cuadre h2 { padding: 14px 18px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 600; }
+    .cuadre table { border: none; border-radius: 0; } .cuadre table td { padding: 11px 18px; }
+    .cuadre .dif-ok { color: var(--ok); font-weight: 600; } .cuadre .dif-mal { color: var(--hot); font-weight: 600; }
+    .veredicto { padding: 16px 18px; font-size: 15px; font-weight: 600; text-align: center; }
+    .veredicto.ok { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+    .veredicto.mal { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
+    .val-info { font-size: 12px; color: var(--muted); margin: 6px 2px 10px; }
+  </style>
+</head>
+<body data-page="percepcionesarca" data-title="Contraste de Percepciones" data-subtitle="Cruce Odoo ⇄ ARCA · archivo IMP_PER_RET de percepciones/retenciones">
+
+<div id="app-shell"></div>
+<main id="app-content">
+  <div class="card" style="margin-bottom:12px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Período contable</span>
+        <input type="month" id="periodo" value="2026-07">
+      </div>
+      <div class="field">
+        <span class="label">Archivo de ARCA (Percepciones/Retenciones)</span>
+        <label class="drop" id="dropLabel" for="fileArca">Seleccionar .csv / .xlsx…</label>
+        <input type="file" id="fileArca" accept=".csv,.xlsx,.xls">
+      </div>
+      <button class="btn primary" id="btnCruzar" disabled>Contrastar</button>
+    </div>
+    <div class="hint">Bajá de ARCA "Mis Retenciones/Percepciones" (IMP_PER_RET). Se cruza cada percepción por comprobante y régimen contra las que tenés cargadas en Odoo.</div>
+  </div>
+  <div class="status-bar" id="status"><span class="dot off"></span>Listo para contrastar.</div>
+  <div id="results"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Contraste de Percepciones · ARCA (IMP_PER_RET) ⇄ Odoo
+// Cruza por comprobante + régimen. Solo compara los regímenes presentes en el
+// archivo (ej. IVA 493/976); las percepciones de IIBB de Odoo no se tocan (van
+// en otro reporte de ARCA por jurisdicción).
+// ═══════════════════════════════════════════════════════════════════════════
+const $ = (id) => document.getElementById(id);
+let arcaRows = null;
+const FN_URL = window.SUPABASE_URL + '/functions/v1/odoo-percepciones';
+const REG_LABEL = { '493': 'IVA General (RG 2408)', '976': 'IVA Especial (RG 5319)', 'iibb': 'IIBB', 'ganancias': 'Ganancias', 'iva_otro': 'IVA (otro)', 'otros': 'Otros' };
+const money = (n) => '$' + (n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function setStatus(dot, msg, isErr) { $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`; $('status').className = 'status-bar' + (isErr?' err':''); }
+function numAR(v){ if(v==null) return 0; let s=String(v).replace(/[''"\s]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'); return parseFloat(s)||0; }
+function compClave(v){ const d=String(v||'').replace(/\D/g,''); if(d.length<9) return null; const nro=d.slice(-8); const pv=String(parseInt(d.slice(0,-8))||0).padStart(5,'0'); return pv+'-'+nro; }
+
+$('fileArca').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', raw: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+      const header = rows[0].map(h => (h||'').toString().trim());
+      const idx = (name) => header.findIndex(h => h.toLowerCase().includes(name.toLowerCase()));
+      const c = {
+        agente: idx('CUIT Agente'), impuesto: idx('Impuesto'), regimen: idx('Regimen'),
+        fecha: idx('Fecha Ret'), tipo: idx('Descripcion Operacion'), importe: idx('Importe'),
+        comp: idx('Numero Comprobante'), descComp: idx('Descripcion Comprobante'),
+      };
+      arcaRows = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i]; if (!r || r[c.comp] == null) continue;
+        const comp = compClave(r[c.comp]); if (!comp) continue;
+        const descComp = (r[c.descComp]||'').toString();
+        const esNC = /cr[eé]dito/i.test(descComp);
+        arcaRows.push({
+          comprobante: comp,
+          regimen: String(r[c.regimen]||'').replace(/\D/g,''),
+          impuesto: String(r[c.impuesto]||''),
+          tipo: (r[c.tipo]||'').toString(),
+          agente: (r[c.agente]||'').toString().replace(/\D/g,''),
+          importe: numAR(r[c.importe]) * (esNC?-1:1),
+        });
+      }
+      $('dropLabel').textContent = `✓ ${f.name} (${arcaRows.length})`;
+      $('dropLabel').classList.add('ok');
+      $('btnCruzar').disabled = false;
+      setStatus('on', `Archivo cargado: ${arcaRows.length} percepciones. Elegí período y contrastá.`);
+    } catch (err) { setStatus('off', 'Error leyendo archivo: ' + err.message, true); }
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+$('btnCruzar').addEventListener('click', async () => {
+  const periodo = $('periodo').value;
+  if (!periodo || !arcaRows) { setStatus('off','Falta período o archivo.',true); return; }
+  $('btnCruzar').disabled = true; setStatus('load','Consultando percepciones en Odoo…');
+  let odoo;
+  try {
+    const res = await fetch(FN_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+window.SUPABASE_KEY, 'apikey':window.SUPABASE_KEY }, body: JSON.stringify({ periodo }) });
+    const d = await res.json(); if (!d.ok) throw new Error(d.error||'Error'); odoo = d.facturas;
+  } catch(err){ setStatus('off','Error Odoo: '+err.message,true); $('btnCruzar').disabled=false; return; }
+
+  const odooMap = new Map(); odoo.forEach(o => odooMap.set(o.comprobante, o));
+  // Agrupar ARCA por comprobante+régimen
+  const arcaComp = new Map(); // comprobante -> { proveedor?, agente, por_regimen:{reg:sum} }
+  const regimenesEnArchivo = new Set();
+  arcaRows.forEach(a => {
+    regimenesEnArchivo.add(a.regimen);
+    let e = arcaComp.get(a.comprobante); if (!e) { e = { comprobante:a.comprobante, agente:a.agente, por:{} }; arcaComp.set(a.comprobante, e); }
+    e.por[a.regimen] = (e.por[a.regimen]||0) + a.importe;
+  });
+
+  const coinciden=[], faltan=[], difieren=[];
+  arcaComp.forEach(a => {
+    const o = odooMap.get(a.comprobante);
+    if (!o) { faltan.push(a); return; }
+    let hayDif = false;
+    for (const reg of Object.keys(a.por)) {
+      const af = a.por[reg], od = (o.por_regimen && o.por_regimen[reg]) || 0;
+      if (Math.abs(af - od) > 0.5) { difieren.push({ comprobante:a.comprobante, proveedor:o.proveedor, regimen:reg, af, od }); hayDif = true; }
+    }
+    if (!hayDif) coinciden.push(a);
+  });
+
+  window._estado = { periodo, arcaComp, odooMap, coinciden, faltan, difieren, regimenesEnArchivo:[...regimenesEnArchivo], odoo };
+  render();
+  setStatus('on', `Listo: ${coinciden.length} OK, ${faltan.length} faltan, ${difieren.length} difieren.`);
+  $('btnCruzar').disabled = false;
+});
+
+function render() {
+  const r = window._estado;
+  let h = `<div class="summary">
+    <div class="card ok"><div class="n">${r.coinciden.length}</div><div class="l">Comprobantes OK</div></div>
+    <div class="card falta"><div class="n">${r.faltan.length}</div><div class="l">Faltan en Odoo</div></div>
+    <div class="card dif"><div class="n">${r.difieren.length}</div><div class="l">Difieren en monto</div></div>
+  </div>`;
+
+  h += `<div class="group"><h2>En ARCA pero no en Odoo <span class="badge r">${r.faltan.length}</span></h2>`;
+  if (!r.faltan.length) h += `<div class="empty">Ninguna. Todas las percepciones de ARCA están en Odoo.</div>`;
+  else {
+    h += `<div class="val-info">El comprobante no está cargado en Odoo, o no tiene la percepción. Cargalo/corregilo en Odoo.</div>`;
+    h += `<table><thead><tr><th>Comprobante</th><th>Agente (CUIT)</th><th>Régimen</th><th class="num">Importe ARCA</th></tr></thead><tbody>`;
+    r.faltan.forEach(a => { Object.keys(a.por).forEach(reg => {
+      h += `<tr class="warn"><td class="mono">${a.comprobante}</td><td>${a.agente}</td><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(a.por[reg])}</td></tr>`;
+    });});
+    h += `</tbody></table>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="group"><h2>Difieren en monto <span class="badge v">${r.difieren.length}</span></h2>`;
+  if (!r.difieren.length) h += `<div class="empty">Ninguna. Los montos coinciden.</div>`;
+  else {
+    h += `<table><thead><tr><th>Comprobante</th><th>Proveedor</th><th>Régimen</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Dif.</th></tr></thead><tbody>`;
+    r.difieren.forEach(d => {
+      h += `<tr class="warn"><td class="mono">${d.comprobante}</td><td>${d.proveedor||''}</td><td>${REG_LABEL[d.regimen]||d.regimen}</td>
+        <td class="num">${money(d.af)}</td><td class="num">${money(d.od)}</td><td class="num dif-mal">${money(d.af-d.od)}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+  h += `</div>`;
+
+  // Cuadre por régimen (solo los que están en el archivo)
+  const sumArca = {}, sumOdoo = {};
+  r.regimenesEnArchivo.forEach(reg => { sumArca[reg] = 0; sumOdoo[reg] = 0; });
+  r.arcaComp.forEach(a => Object.keys(a.por).forEach(reg => { sumArca[reg] = (sumArca[reg]||0) + a.por[reg]; }));
+  // Odoo: sumar solo los comprobantes que están en ARCA (mismo universo) y solo los regímenes del archivo
+  r.arcaComp.forEach(a => { const o = r.odooMap.get(a.comprobante); if(!o) return; r.regimenesEnArchivo.forEach(reg => { sumOdoo[reg] = (sumOdoo[reg]||0) + ((o.por_regimen&&o.por_regimen[reg])||0); }); });
+
+  let totA=0, totO=0, allOk=true;
+  let filas = '';
+  r.regimenesEnArchivo.forEach(reg => {
+    const a = sumArca[reg]||0, o = sumOdoo[reg]||0, dif = a-o; totA+=a; totO+=o;
+    if (Math.abs(dif) >= 1) allOk = false;
+    filas += `<tr><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(a)}</td><td class="num">${money(o)}</td><td class="num ${Math.abs(dif)<1?'dif-ok':'dif-mal'}">${money(dif)}</td></tr>`;
+  });
+  const okFinal = allOk && r.faltan.length === 0;
+  h += `<div class="group"><div class="cuadre"><h2>Cuadre de percepciones · ${r.periodo}</h2>
+    <table><thead><tr><th>Régimen</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Diferencia</th></tr></thead><tbody>
+    ${filas}
+    <tr style="font-weight:700;"><td>Total</td><td class="num">${money(totA)}</td><td class="num">${money(totO)}</td><td class="num ${Math.abs(totA-totO)<1?'dif-ok':'dif-mal'}">${money(totA-totO)}</td></tr>
+    </tbody></table>`;
+  if (r.faltan.length) h += `<div class="veredicto mal">⚠ Faltan ${r.faltan.length} comprobante(s) en Odoo. Cargalos antes de dar por cerrado.</div>`;
+  else if (okFinal) h += `<div class="veredicto ok">✓ Las percepciones de Odoo coinciden con ARCA.</div>`;
+  else h += `<div class="veredicto mal">⚠ Hay diferencias de montos. Revisá las filas en rojo y corregí en Odoo.</div>`;
+  h += `<div class="val-info" style="padding:0 18px 14px;">Se comparan solo los regímenes presentes en el archivo. Las percepciones de IIBB por jurisdicción (que Odoo también tiene) no se contrastan acá: van en otro reporte de ARCA por provincia.</div>`;
+  h += `</div></div>`;
+
+  $('results').innerHTML = h;
+}
+</script>
+</body>
+</html>

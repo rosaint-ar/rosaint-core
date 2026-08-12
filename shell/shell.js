@@ -31,15 +31,16 @@ const MENU = [
   { type: 'group', label: 'Producción' },
   { type: 'item', id: 'produccion',    label: 'Producción',    href: 'produccion/index.html',    status: 'ready' },
 
-  { type: 'group', label: 'Backoffice' },
-  { type: 'item', id: 'conciliador',    label: 'Conciliador IVA', href: 'fiscal/conciliador.html', status: 'ready' },
-  { type: 'item', id: 'percepciones',   label: 'Percepciones',    href: 'fiscal/percepciones.html', status: 'ready' },
-  { type: 'item', id: 'calidad',        label: 'Calidad',         href: '#',                        status: 'soon' },
-  { type: 'item', id: 'administracion', label: 'Administración',  href: '#',                        status: 'soon' },
-
   { type: 'group', label: 'Contabilidad' },
-  { type: 'item', id: 'iibb',        label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',       status: 'ready' },
-  { type: 'item', id: 'librosiva',   label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html', status: 'ready' },
+  { type: 'item', id: 'conciliador',      label: 'Conciliador IVA',        href: 'contabilidad/conciliador.html',       status: 'ready' },
+  { type: 'item', id: 'percepcionesarca', label: 'Contraste Percepciones', href: 'contabilidad/percepciones-arca.html', status: 'ready' },
+  { type: 'item', id: 'librosiva',        label: 'Libros de IVA (ZIP)',    href: 'contabilidad/libros-iva.html',        status: 'ready' },
+  { type: 'item', id: 'percepciones', label: 'Percepciones',          href: 'contabilidad/percepciones.html', status: 'ready' },
+  { type: 'item', id: 'iibb',         label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',         status: 'ready' },
+
+  { type: 'group', label: 'Backoffice' },
+  { type: 'item', id: 'calidad',        label: 'Calidad',         href: '#', status: 'soon' },
+  { type: 'item', id: 'administracion', label: 'Administración',  href: '#', status: 'soon' },
 
   { type: 'group', label: 'Sistema' },
   { type: 'item', id: 'sistema',       label: 'Sistema',       href: 'sistema/index.html', status: 'ready' },
@@ -114,6 +115,7 @@ const MODULE_ICONS = {
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  percepcionesarca: '<svg viewBox="0 0 24 24"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>',
   iibb:           '<svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>',
   librosiva:      '<svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
   calidad:        '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>',
