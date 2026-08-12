@@ -305,7 +305,7 @@ $('btnConciliar').addEventListener('click', async () => {
     sobran.push(o);
   });
   const difs = [];
-  const descuadres = []; // mismo comprobante, total ok pero neto o IVA difieren
+  const descuadres = []; // mismo comprobante, total ok pero el IVA difiere (error real)
   arcaRows.forEach(a => {
     const o = odooIdx.get(claveArca(a));
     if (!o) return;
@@ -313,7 +313,10 @@ $('btnConciliar').addEventListener('click', async () => {
     else {
       const difNeto = a.neto - o.neto;
       const difIva  = a.iva - (o.iva||0);
-      if (Math.abs(difNeto) > 0.5 || Math.abs(difIva) > 0.5) descuadres.push({ arca:a, odoo:o, difNeto, difIva });
+      // Solo es error real si difiere el IVA. El neto puede diferir por clasificación
+      // (facturas B/C sin discriminar, combustible con impuestos internos separados,
+      // percepciones) sin que sea un error — el crédito fiscal se juega en el IVA.
+      if (Math.abs(difIva) > 0.5) descuadres.push({ arca:a, odoo:o, difNeto, difIva });
     }
   });
   const coinciden = arcaRows.length - faltan.length - casiMatch.length;
@@ -415,8 +418,8 @@ function render() {
   }
 
   if (r.descuadres && r.descuadres.length) {
-    h += `<div class="group"><h2>Descuadres internos: total OK pero neto o IVA difieren <span class="badge v">${r.descuadres.length}</span></h2>
-      <div class="val-info">Suman bien en total, pero el neto o IVA está clasificado distinto (ej. facturas B/C sin IVA discriminado, combustible). Corregilas en Odoo, o validalas (✓) si la diferencia es conocida y aceptada — las validadas no bloquean el cuadre.</div>
+    h += `<div class="group"><h2>Diferencias de IVA <span class="badge v">${r.descuadres.length}</span></h2>
+      <div class="val-info">El total coincide pero el <b>IVA</b> difiere de ARCA — esto sí es un error a revisar (crédito fiscal mal computado). Corregilo en Odoo, o validalo (✓) si es conocido y aceptado. La columna de <b>neto</b> es informativa: puede diferir sin ser error (ARCA no discrimina neto en facturas B/C y separa los impuestos internos del combustible).</div>
       <table><thead><tr>
         <th style="width:40px;">OK</th><th>Proveedor</th><th>Comprobante</th>
         <th class="num">Neto ARCA</th><th class="num">Neto Odoo</th><th class="num">Dif. Neto</th>
@@ -487,7 +490,9 @@ function renderCuadre() {
     total: sumArca.total  - sumOdoo.total,
   };
   const tol = 1.0;
-  const ok = Math.abs(dif.neto) < tol && Math.abs(dif.iva) < tol && Math.abs(dif.total) < tol;
+  // El cuadre valida IVA y Total (lo que define el crédito fiscal y el control con AFIP).
+  // El neto es informativo: difiere por clasificación (B/C, combustible) sin ser error.
+  const ok = Math.abs(dif.iva) < tol && Math.abs(dif.total) < tol;
   const faltanCount = r.faltan.length + r.casiMatch.length;
 
   const fila = (lbl, va, vo, vd) => `<tr>
@@ -496,12 +501,18 @@ function renderCuadre() {
     <td class="num">${money(vo)}</td>
     <td class="num ${Math.abs(vd)<tol?'dif-ok':'dif-mal'}">${money(vd)}</td>
   </tr>`;
+  const filaInfo = (lbl, va, vo, vd) => `<tr>
+    <td>${lbl} <span style="color:var(--muted);font-weight:400;font-size:12px;">(informativo)</span></td>
+    <td class="num">${money(va)}</td>
+    <td class="num">${money(vo)}</td>
+    <td class="num" style="color:var(--muted);">${money(vd)}</td>
+  </tr>`;
 
   let h = `<div class="group"><div class="cuadre"><h2>Cuadre final · libro de IVA ${r.periodo}</h2>
     <table><thead><tr>
       <th>Concepto</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Diferencia</th>
     </tr></thead><tbody>
-    ${fila('Neto gravado', sumArca.neto, sumOdoo.neto, dif.neto)}
+    ${filaInfo('Neto gravado', sumArca.neto, sumOdoo.neto, dif.neto)}
     ${fila('IVA', sumArca.iva, sumOdoo.iva, dif.iva)}
     ${fila('Otros tributos / percepciones', sumArca.otros, sumOdoo.otros, dif.otros)}
     ${fila('Total', sumArca.total, sumOdoo.total, dif.total)}
@@ -514,7 +525,7 @@ function renderCuadre() {
   } else {
     h += `<div class="veredicto mal">⚠ Hay diferencias entre Odoo y ARCA. Revisá las filas en rojo antes de generar el libro.</div>`;
   }
-  h += `<div class="val-info" style="padding:0 18px 14px;">Nota: ARCA no discrimina percepciones por jurisdicción, así que "Otros tributos" se compara solo por total. El detalle por provincia vive en Odoo.</div>`;
+  h += `<div class="val-info" style="padding:0 18px 14px;">El cuadre valida <b>IVA</b> y <b>Total</b> — lo que define el crédito fiscal y el control con AFIP. El <b>neto</b> es informativo: ARCA no discrimina neto en facturas B/C y separa los impuestos internos del combustible, por eso puede diferir sin ser un error. Las percepciones por jurisdicción viven en Odoo (ARCA solo da el total de "Otros tributos").</div>`;
   h += `</div></div>`;
   $('cuadreBox').innerHTML = h;
 }
