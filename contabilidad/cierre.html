@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cierre mensual · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month], .field input[type=text] { font: inherit; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+    .field input[type=month] { min-width: 160px; }
+    .field input[type=text] { min-width: 320px; }
+    .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+    textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: 100%; min-height: 150px; resize: vertical; }
+    textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+    .status-bar { font-size: 13px; color: var(--muted); margin: 12px 2px 16px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+    .status-bar.err { color: var(--hot); } .status-bar.ok { color: var(--ok); }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .status-bar .dot.load { background: var(--warn); } .status-bar .dot.on { background: var(--ok); } .status-bar .dot.off { background: var(--hot); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .adj-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+    .adj-list li { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; }
+    .adj-list li .ico { width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
+    .adj-list li .nm { flex: 1; font-family: var(--font-mono); font-size: 12px; }
+    .adj-list li .sz { color: var(--muted); font-size: 12px; }
+    .adj-list li.pend { color: var(--muted); opacity: .7; }
+    .adj-list li.done { border-color: var(--ok); }
+    .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  </style>
+</head>
+<body data-page="cierre" data-title="Cierre mensual" data-subtitle="Arma el paquete de IVA e IIBB y lo manda al contador">
+
+<div id="app-shell"></div>
+<main id="app-content">
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Período</span>
+        <input type="month" id="periodo">
+      </div>
+      <button class="btn primary" id="btnPreparar">Preparar adjuntos</button>
+    </div>
+    <div class="hint">Regenera los 2 libros de IVA (compras y ventas) y el análisis de IIBB por jurisdicción del período, directo de Odoo.</div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <span class="label" style="display:block;margin-bottom:10px;">Adjuntos del cierre</span>
+    <ul class="adj-list" id="adjuntos"></ul>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="field">
+        <span class="label">Para (contador)</span>
+        <input type="text" id="para" value="cplucianoruani@gmail.com">
+      </div>
+      <div class="field">
+        <span class="label">Asunto</span>
+        <input type="text" id="asunto" style="min-width:100%;">
+      </div>
+      <div class="field">
+        <span class="label">Mensaje</span>
+        <textarea id="cuerpo"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status"><span class="dot off"></span>Elegí el período y preparó los adjuntos.</div>
+  <button class="btn primary" id="btnEnviar" disabled>Enviar al contador ✉</button>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Cierre mensual · junta Libros de IVA (compras+ventas) + IIBB y lo manda al
+// contador por mail (vía Odoo, desde contacto@rosaint.com.ar).
+// ═══════════════════════════════════════════════════════════════════════════
+const $ = (id) => document.getElementById(id);
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const FN_LIBROS = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-libros-iva';
+const FN_IIBB   = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iibb-ventas';
+const FN_MAIL   = window.SUPABASE_URL + '/functions/v1/odoo-enviar-mail';
+const HEADERS = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY };
+let adjuntos = []; // {filename, base64, mimetype}
+
+(function init(){
+  const d = new Date(); d.setMonth(d.getMonth() - 1); // mes anterior por defecto
+  $('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  actualizarTextos();
+  $('periodo').addEventListener('change', actualizarTextos);
+})();
+
+function nombrePeriodo(mes){ const [y,m]=mes.split('-').map(Number); return MESES[m-1]+' '+y; }
+function setStatus(dot, msg, cls=''){ $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`; $('status').className='status-bar '+cls; }
+function actualizarTextos(){
+  const p = nombrePeriodo($('periodo').value);
+  $('asunto').value = `Cierre de IVA ${p} — VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)`;
+  $('cuerpo').value = `Estimado Luciano,\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n\nEl IVA y las percepciones fueron conciliados con AFIP (ARCA), sin diferencias.\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
+}
+
+async function blobToB64(blob){
+  const buf = await blob.arrayBuffer(); const bytes = new Uint8Array(buf);
+  let bin=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ bin += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
+  return btoa(bin);
+}
+function fmtSize(b64){ const bytes = Math.round(b64.length*3/4); return bytes>1048576 ? (bytes/1048576).toFixed(1)+' MB' : Math.round(bytes/1024)+' KB'; }
+const ICO = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/></svg>';
+
+function renderAdjuntos(pendientes){
+  let h = '';
+  const items = adjuntos.length ? adjuntos.map(a=>({nm:a.filename, sz:fmtSize(a.base64), done:true})) : (pendientes||[]).map(nm=>({nm, sz:'', done:false}));
+  if(!items.length){ $('adjuntos').innerHTML = '<li class="pend">Todavía no preparaste los adjuntos.</li>'; return; }
+  for(const it of items){ h += `<li class="${it.done?'done':'pend'}">${ICO}<span class="nm">${it.nm}</span><span class="sz">${it.sz||'pendiente'}</span></li>`; }
+  $('adjuntos').innerHTML = h;
+}
+renderAdjuntos();
+
+async function libroZip(mes, tipo){
+  const r = await fetch(FN_LIBROS, { method:'POST', headers:HEADERS, body: JSON.stringify({ mes, tipo }) });
+  const ct = r.headers.get('content-type')||'';
+  if(!ct.includes('zip')){ let m='Error generando libro'; try{const d=await r.json(); m=d.error||m;}catch(e){} throw new Error(m); }
+  const blob = await r.blob();
+  const fname = r.headers.get('x-odoo-filename') || `Libro IVA ${tipo==='sale'?'ventas':'compras'} ${mes}.zip`;
+  return { filename: fname, base64: await blobToB64(blob), mimetype: 'application/zip' };
+}
+async function iibbXlsx(mes){
+  const r = await fetch(FN_IIBB, { method:'POST', headers:HEADERS, body: JSON.stringify({ mes }) });
+  const d = await r.json(); if(!d.ok) throw new Error(d.error||'Error IIBB');
+  const netas = d.netas_de_devoluciones; const [y,m]=mes.split('-').map(Number); const nombreMes = MESES[m-1];
+  const aoa = [['','Total',''],['','Total imponible','Total en moneda'],['Total', netas.total_imponible, netas.total_con_iva],['     '+nombreMes+' '+y, netas.total_imponible, netas.total_con_iva]];
+  for(const p of netas.provincias){ aoa.push(['          '+p.provincia, p.imponible, p.total]); }
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:40},{wch:18},{wch:18}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Ventas por jurisdicción');
+  const b64 = XLSX.write(wb, { bookType:'xlsx', type:'base64' });
+  return { filename: `IIBB por jurisdicción - ${nombreMes} ${y}.xlsx`, base64: b64, mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+}
+
+$('btnPreparar').addEventListener('click', async () => {
+  const mes = $('periodo').value; if(!mes){ setStatus('off','Elegí un período.','err'); return; }
+  $('btnPreparar').disabled = true; $('btnEnviar').disabled = true; adjuntos = [];
+  renderAdjuntos(['Libro de IVA Compras', 'Libro de IVA Ventas', 'IIBB por jurisdicción']);
+  try {
+    setStatus('load','Generando Libro de IVA Compras…'); adjuntos.push(await libroZip(mes,'purchase')); renderAdjuntos();
+    setStatus('load','Generando Libro de IVA Ventas…');  adjuntos.push(await libroZip(mes,'sale'));     renderAdjuntos();
+    setStatus('load','Generando análisis de IIBB…');     adjuntos.push(await iibbXlsx(mes));             renderAdjuntos();
+    setStatus('on', `Adjuntos listos (${adjuntos.length}). Revisá el mensaje y enviá.`, 'ok');
+    $('btnEnviar').disabled = false;
+  } catch(err){ setStatus('off','Error: '+err.message,'err'); }
+  $('btnPreparar').disabled = false;
+});
+
+$('btnEnviar').addEventListener('click', async () => {
+  const to = $('para').value.trim();
+  if(!to){ setStatus('off','Falta el mail del contador.','err'); return; }
+  if(!adjuntos.length){ setStatus('off','Prepará los adjuntos primero.','err'); return; }
+  if(!confirm(`¿Enviar el cierre a ${to} con ${adjuntos.length} adjuntos?`)) return;
+  $('btnEnviar').disabled = true; setStatus('load','Enviando por Odoo…');
+  const bodyHtml = '<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;">' + $('cuerpo').value.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
+  try {
+    const r = await fetch(FN_MAIL, { method:'POST', headers:HEADERS, body: JSON.stringify({ to, subject: $('asunto').value, body_html: bodyHtml, attachments: adjuntos }) });
+    const d = await r.json();
+    if(d.ok){ setStatus('on', `✓ Enviado a ${to} desde contacto@rosaint.com.ar.`, 'ok'); }
+    else { setStatus('off', 'No se pudo enviar: ' + (d.motivo_falla || d.error || 'error'), 'err'); $('btnEnviar').disabled=false; }
+  } catch(err){ setStatus('off','Error: '+err.message,'err'); $('btnEnviar').disabled=false; }
+});
+</script>
+</body>
+</html>
