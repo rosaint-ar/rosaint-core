@@ -193,7 +193,7 @@
 //  Oportunidades — qué impulsar, qué grupos ofrecer, qué combos armar
 //  Fuentes (Supabase, sincronizadas desde Odoo):
 //    · cliente_producto / cliente_metricas  → ventas por cliente
-//    · odoo-rpc → combos reales (kits phantom: template [COMBO] categ 34 → variantes → mrp.bom)
+//    · items (COMBO/SKU) + pack_componentes + item_canales + v_costos_skus → combos (igual que Catálogo → Combos), variantes agrupadas
 //  Todo por FAMILIA (junta tamaños). Se excluyen PACK (apoyo domiciliario),
 //  COMBO (ya armados) y envío. Grupos/contactos = profesionales; canal = interno.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -268,19 +268,6 @@ async function apiGet(path){
   return r.json();
 }
 
-// Conector genérico a Odoo (mismo patrón que crm.html). Lee combos reales.
-async function orpc(model, method, args, kwargs){
-  const { data: sess } = await sb.auth.getSession();
-  const token = sess && sess.session && sess.session.access_token;
-  const r = await fetch(window.SUPABASE_URL + '/functions/v1/odoo-rpc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ model, method, args, kwargs: kwargs || {} }),
-  });
-  const j = await r.json();
-  if (!j.ok) throw new Error(j.error || 'Error Odoo');
-  return j.result;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 async function cargar(force){
@@ -293,8 +280,8 @@ async function cargar(force){
     RAW_CP = (cp || []).filter(x => !x.es_servicio && x.product_name);
     META = {};
     (m || []).forEach(x => { META[x.partner_id] = x; });
-    // Combos reales desde Odoo, con variantes y receta (no fatal)
-    try { CAT = await fetchCombosOdoo(); } catch (e) { CAT = null; console.warn('combos Odoo:', e.message); }
+    // Combos (mismas tablas que Catálogo → Combos), agrupados por variantes (no fatal)
+    try { CAT = await fetchCombosCat(); } catch (e) { CAT = null; console.warn('combos:', e.message); }
     document.getElementById('syncInfo').textContent = fmtNum(Object.keys(META).length) + ' clientes · ' + fmtNum(RAW_CP.length) + ' compras' + (CAT ? ' · ' + fmtNum(CAT.combos.length) + ' combos' : '');
     document.getElementById('note-extra').style.display = 'block';
     render();
@@ -303,54 +290,55 @@ async function cargar(force){
   }
 }
 
-// Lee los combos REALES de Odoo (kits phantom): template [COMBO] categ 34 →
-// variantes (product.product) → receta por variante (mrp.bom phantom + líneas).
-async function fetchCombosOdoo(){
-  const tmpls = await orpc('product.template', 'search_read',
-    [[['categ_id', '=', 34], ['active', '=', true], ['name', 'ilike', '[COMBO]']]],
-    { fields: ['id', 'name', 'list_price', 'description_sale'], limit: 0 });
-  if (!tmpls || !tmpls.length) return { combos: [] };
-  const tmplIds = tmpls.map(t => t.id);
-  const [vars, boms] = await Promise.all([
-    orpc('product.product', 'search_read',
-      [[['product_tmpl_id', 'in', tmplIds], ['active', '=', true]]],
-      { fields: ['id', 'default_code', 'display_name', 'lst_price', 'product_tmpl_id'], limit: 0 }),
-    orpc('mrp.bom', 'search_read',
-      [[['product_tmpl_id', 'in', tmplIds]]],
-      { fields: ['id', 'product_id', 'product_tmpl_id', 'type'], limit: 0 }),
+// Lee los combos igual que el módulo Catálogo → Combos (catalogo/combos.html):
+// items tipo COMBO (vigentes) + pack_componentes + item_canales + v_costos_skus.
+// Cada item COMBO (código 61xxx) es una VARIANTE; se agrupan por combo padre.
+const SIZE_RE = /\d+([.,]\d+)?\s?(kgs?|kilos?|grs?|gramos?|g|ml|cc|lts?|litros?|l)\b/gi;
+async function fetchCombosCat(){
+  const [itemsR, packsR, canalesR, costosR] = await Promise.all([
+    sb.from('items').select('codigo, nombre, tipo, estado').in('tipo', ['COMBO', 'SKU']),
+    sb.from('pack_componentes').select('codigo_pack, codigo_sku, cantidad'),
+    sb.from('item_canales').select('codigo_item, canal, activo'),
+    sb.from('v_costos_skus').select('codigo_sku, costo_unitario'),
   ]);
-  const bomIds = (boms || []).map(b => b.id);
-  const lines = bomIds.length
-    ? await orpc('mrp.bom.line', 'search_read', [[['bom_id', 'in', bomIds]]], { fields: ['bom_id', 'product_id', 'product_qty'], limit: 0 })
-    : [];
-  const linesByBom = new Map();
-  for (const l of (lines || [])){
-    const bid = Array.isArray(l.bom_id) ? l.bom_id[0] : l.bom_id;
-    let a = linesByBom.get(bid); if (!a){ a = []; linesByBom.set(bid, a); }
-    a.push({ nombre: Array.isArray(l.product_id) ? l.product_id[1] : '?', qty: l.product_qty || 1 });
+  if (itemsR.error) throw itemsR.error;
+  const items = itemsR.data || [];
+  const skuNombre = new Map(), costoSku = new Map();
+  items.forEach(it => { if (it.tipo === 'SKU') skuNombre.set(String(it.codigo), it.nombre); });
+  (costosR.data || []).forEach(c => costoSku.set(String(c.codigo_sku), c.costo_unitario != null ? Number(c.costo_unitario) : null));
+  const compsDe = new Map();      // codigo_pack -> [{codigo_sku, nombre, cantidad, fam}]
+  for (const pc of (packsR.data || [])){
+    const k = String(pc.codigo_pack); let a = compsDe.get(k); if (!a){ a = []; compsDe.set(k, a); }
+    const nom = skuNombre.get(String(pc.codigo_sku)) || String(pc.codigo_sku);
+    a.push({ codigo_sku: String(pc.codigo_sku), nombre: nom, cantidad: pc.cantidad, fam: baseProducto(cleanProd(nom)) });
   }
-  const bomForVar = (varId, tmplId) => {
-    let b = (boms || []).find(x => Array.isArray(x.product_id) && x.product_id[0] === varId);        // bom de la variante
-    if (!b) b = (boms || []).find(x => (!x.product_id) && Array.isArray(x.product_tmpl_id) && x.product_tmpl_id[0] === tmplId); // bom a nivel template
-    return b;
-  };
-  const combos = tmpls.map(t => {
-    const tvars = (vars || []).filter(v => Array.isArray(v.product_tmpl_id) && v.product_tmpl_id[0] === t.id);
-    const variantes = tvars.map(v => {
-      const b = bomForVar(v.id, t.id);
-      const comps = b ? (linesByBom.get(b.id) || []) : [];
-      let label = v.default_code || '';
-      const mAttr = (v.display_name || '').match(/\(([^)]+)\)\s*$/);   // parte entre paréntesis = atributos
-      if (mAttr) label = mAttr[1];
-      return { code: v.default_code, label, precio: v.lst_price, comps };
-    });
-    const fams = new Set();
-    variantes.forEach(vr => vr.comps.forEach(c => { const f = baseProducto(cleanProd(c.nombre)); if (f) fams.add(f); }));
-    return { id: t.id, nombre: (t.name || '').replace(/^\[COMBO\]\s*/i, '').trim(), precio: t.list_price, desc: descTexto(t.description_sale), variantes, fams };
-  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  const PLAT = { lista_profesional: 'Lista profesional', tienda_nube: 'Tienda Nube', mercado_libre: 'Mercado Libre' };
+  const canalDe = new Map();      // codigo_item -> [labels]
+  for (const c of (canalesR.data || [])){ if (!c.activo) continue; const k = String(c.codigo_item); let a = canalDe.get(k); if (!a){ a = []; canalDe.set(k, a); } a.push(PLAT[c.canal] || c.canal); }
+
+  const comboItems = items.filter(it => it.tipo === 'COMBO' && it.estado === 'vigente');
+  const grupos = new Map();       // parentFam -> combo
+  for (const it of comboItems){
+    const limpio = cleanProd(it.nombre).replace(/^\[?\s*combo\s*\]?\s*/i, '').trim();
+    const parent = baseProducto(limpio) || limpio.toLowerCase();
+    const comps = compsDe.get(String(it.codigo)) || [];
+    let costo = 0, faltaCosto = false;
+    for (const c of comps){ const cu = costoSku.get(c.codigo_sku); if (cu == null) faltaCosto = true; else costo += cu * (c.cantidad || 1); }
+    const sizes = limpio.match(SIZE_RE) || [];
+    const label = sizes.length ? sizes.join(' + ') : String(it.codigo);
+    const variante = { code: it.codigo, label, comps, canales: canalDe.get(String(it.codigo)) || [], costo: faltaCosto ? null : costo };
+    let g = grupos.get(parent);
+    if (!g){
+      const disp = limpio.replace(SIZE_RE, '').replace(/\s*\+\s*/g, ' + ').replace(/\s{2,}/g, ' ').replace(/\s*\+\s*$/, '').trim();
+      g = { nombre: disp || limpio, variantes: [], fams: new Set() };
+      grupos.set(parent, g);
+    }
+    g.variantes.push(variante);
+    comps.forEach(c => { if (c.fam) g.fams.add(c.fam); });
+  }
+  const combos = [...grupos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   return { combos };
 }
-function descTexto(d){ if (!d || typeof d !== 'string') return ''; return d.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Motor
@@ -564,23 +552,25 @@ function renderCombos(q){
   const existHtml = existentes.length
     ? '<div class="op-grid">' + existentes.map((cb, i) => {
         const id = 'cb' + i;
-        const precios = cb.variantes.map(v => v.precio).filter(p => p > 0);
-        const pmin = precios.length ? Math.min(...precios) : 0, pmax = precios.length ? Math.max(...precios) : 0;
-        const precioTxt = pmax ? (pmin !== pmax ? fmtMoney(pmin) + ' – ' + fmtMoney(pmax) : fmtMoney(pmax)) : (cb.precio ? fmtMoney(cb.precio) : '—');
-        const ficha = cb.variantes.length ? cb.variantes.map(v => {
-          const comps = v.comps.length ? v.comps.map(c => `${c.qty > 1 ? c.qty + '× ' : ''}${esc(cleanProd(c.nombre))}`).join(' + ') : '<span class="mini">sin receta cargada</span>';
-          const sub = [v.code, v.precio ? fmtMoney(v.precio) : ''].filter(Boolean).join(' · ');
+        const costos = cb.variantes.map(v => v.costo).filter(c => c != null && c > 0);
+        const cmin = costos.length ? Math.min(...costos) : 0, cmax = costos.length ? Math.max(...costos) : 0;
+        const costoTxt = cmax ? (cmin !== cmax ? fmtMoney(cmin) + ' – ' + fmtMoney(cmax) : fmtMoney(cmax)) : '—';
+        const canales = [...new Set(cb.variantes.flatMap(v => v.canales))];
+        const platHtml = canales.length ? canales.map(k => `<span class="plat-chip">${esc(k)}</span>`).join('') : '';
+        const ficha = cb.variantes.map(v => {
+          const comps = v.comps.length ? v.comps.map(c => `${c.cantidad > 1 ? c.cantidad + '× ' : ''}${esc(cleanProd(c.nombre))}`).join(' + ') : '<span class="mini">sin receta cargada</span>';
+          const sub = [v.code, v.costo != null ? 'costo ' + fmtMoney(v.costo) : ''].filter(Boolean).join(' · ');
           return `<div class="cli-row" style="flex-direction:column;align-items:flex-start;gap:3px">
-            <div class="cli-name">${esc(v.label || v.code || 'Variante')}${sub ? ' <span class="cli-sub">· ' + esc(sub) + '</span>' : ''}</div>
+            <div class="cli-name">${esc(v.label || String(v.code))}${sub ? ' <span class="cli-sub">· ' + esc(sub) + '</span>' : ''}</div>
             <div class="cli-sub">${comps}</div>
           </div>`;
-        }).join('') : '<div class="mini">Sin variantes.</div>';
+        }).join('');
         return `<div class="op-card">
-          <div class="op-rank">Combo · Odoo #${esc(String(cb.id))}</div>
+          <div class="op-rank">Combo</div>
           <div class="op-single">${esc(cb.nombre)}</div>
-          ${cb.desc ? `<div class="op-why">${esc(cb.desc)}</div>` : ''}
+          ${platHtml ? `<div class="internal">${platHtml}</div>` : ''}
           <div class="op-mets">
-            <div class="op-met"><div class="v">${precioTxt}</div><div class="k">Precio</div></div>
+            <div class="op-met"><div class="v">${costoTxt}</div><div class="k">Costo</div></div>
             <div class="op-met"><div class="v">${fmtNum(cb.variantes.length)}</div><div class="k">${cb.variantes.length === 1 ? 'Variante' : 'Variantes'}</div></div>
           </div>
           <div class="cli-toggle" data-base="ficha del combo" onclick="toggle('${id}',this)">Ver ficha del combo ▼</div>
@@ -607,7 +597,7 @@ function renderCombos(q){
       }).join('') + '</div>'
     : '<div class="mini">Por ahora no hay grupos nuevos para sugerir como combo (o ya están todos armados).</div>';
 
-  return `<div class="sub-head">Combos armados en Odoo · ${fmtNum(existentes.length)}</div>${existHtml}
+  return `<div class="sub-head">Combos armados · ${fmtNum(existentes.length)} <a href="../catalogo/combos.html" style="font-weight:600;font-size:12px;color:var(--accent);margin-left:8px">Gestionar en Catálogo →</a></div>${existHtml}
     <div class="sub-head" style="margin-top:28px">Combos sugeridos para armar · ${fmtNum(sugeridos.length)}</div>
     <div class="sub-desc">Grupos que tus profesionales ya se llevan juntos y todavía no son un combo. Mismo criterio que los de arriba.</div>${sugHtml}`;
 }
