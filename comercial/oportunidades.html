@@ -25,7 +25,6 @@
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
     .tab .cnt { font-size: 11px; color: var(--muted); background: var(--surface-2); padding: 1px 7px; border-radius: 10px; font-weight: 500; }
     .tab.active .cnt { background: var(--accent-tint); color: var(--accent); }
-    .tab .sec { font-size: 10px; color: var(--muted); font-weight: 500; }
     .tabs-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
     .mini { font-size: 11px; color: var(--muted); }
 
@@ -49,11 +48,14 @@
     .op-why b { color: var(--text); font-weight: 600; }
     .op-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 
-    /* Grupos (canastas de productos) */
+    /* Grupos / combos (canastas) */
     .grp-fams { display: flex; flex-wrap: wrap; gap: 6px; }
     .grp-fam { font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; line-height: 1.2; }
     .grp-benefit { font-size: 12.5px; color: var(--text); background: color-mix(in srgb, var(--ok) 10%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 26%, transparent); border-radius: var(--radius-sm); padding: 9px 11px; line-height: 1.45; }
     .grp-benefit b { color: var(--ok); }
+    .plat-chip { font-size: 11px; font-weight: 600; color: var(--structure); background: color-mix(in srgb, var(--structure) 12%, transparent); border-radius: 999px; padding: 3px 9px; }
+    .sub-head { font-size: 13px; font-weight: 700; color: var(--text); margin: 6px 0 12px; letter-spacing: -0.01em; }
+    .sub-desc { font-size: 12px; color: var(--muted); margin: -6px 0 14px; }
 
     /* Info interna (cómo compran) */
     .internal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -79,7 +81,7 @@
     .op-note b { color: var(--text); }
     .op-note a { color: var(--accent); font-weight: 600; }
 
-    /* Selector segmentado (usado para la firma) */
+    /* Selector segmentado (firma) */
     .seg-canal { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px; flex-wrap: wrap; }
     .seg-opt { font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 6px 13px; border-radius: 999px; border: none; background: transparent; cursor: pointer; transition: background .12s, color .12s; }
     .seg-opt:hover { color: var(--text); }
@@ -88,44 +90,47 @@
     /* Modal de plantilla */
     .tpl-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
     .tpl-modal.open { display: flex; }
-    .tpl-inner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 480px; box-shadow: var(--shadow-menu); }
-    .tpl-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .tpl-inner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 500px; box-shadow: var(--shadow-menu); max-height: 90vh; overflow-y: auto; }
+    .tpl-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
     .tpl-x { font-size: 16px; color: var(--muted); cursor: pointer; background: none; border: none; }
     .tpl-body { padding: 18px; }
-    .tpl-body textarea { width: 100%; min-height: 120px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 13px; font-family: var(--font-ui); color: var(--text); background: var(--bg); resize: vertical; }
-    .tpl-vars { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+    .tpl-body label { font-size: 12.5px; color: var(--muted); display: block; margin: 14px 0 6px; font-weight: 600; }
+    .tpl-body label:first-child { margin-top: 0; }
+    .tpl-body textarea { width: 100%; min-height: 96px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 13px; font-family: var(--font-ui); color: var(--text); background: var(--bg); resize: vertical; }
+    .tpl-vars { font-size: 11px; color: var(--muted); margin-top: 6px; }
     .tpl-vars code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-family: var(--font-mono); }
-    .tpl-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .tpl-actions { display: flex; gap: 8px; margin-top: 18px; }
   </style>
 </head>
-<body data-page="oportunidades" data-title="Oportunidades" data-subtitle="Qué conviene impulsar y qué grupos armar">
+<body data-page="oportunidades" data-title="Oportunidades" data-subtitle="Qué impulsar, qué grupos ofrecer y qué combos armar">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
 
   <p class="op-intro">
-    Mira <b>lo que ya vendés</b> (todos los canales unificados en Odoo) para decirte <b>qué conviene impulsar</b> y
-    <b>qué grupos de productos se llevan juntos</b> para armar combos con beneficio. Los mensajes van siempre a
-    <b>tus profesionales</b>; el canal por el que compran es solo información interna.
+    Mira <b>lo que ya vendés</b> (todos los canales unificados en Odoo) para decidir <b>qué impulsar</b>,
+    <b>qué productos ofrecer juntos</b> a tus clientes, y <b>qué combos conviene armar</b>. Los mensajes van
+    siempre a <b>tus profesionales</b>; el canal por el que compran es solo información interna.
   </p>
 
   <div class="kpis" id="kpis">
     <div class="kpi"><div class="v" id="k-impulsar">—</div><div class="k">Productos para impulsar</div></div>
     <div class="kpi"><div class="v" id="k-grupos">—</div><div class="k">Grupos que se llevan juntos</div></div>
-    <div class="kpi"><div class="v" id="k-completar">—</div><div class="k">Para completar combo</div></div>
+    <div class="kpi"><div class="v" id="k-combos">—</div><div class="k">Combos armados</div></div>
     <div class="kpi"><div class="v" id="k-profwa">—</div><div class="k">Profesionales con WhatsApp</div></div>
   </div>
 
   <div class="tabs-bar">
     <div class="tabs">
       <div class="tab active" data-view="impulsar" onclick="setView('impulsar')">🚀 Para impulsar <span class="cnt" id="c-impulsar">0</span></div>
-      <div class="tab"        data-view="grupos"   onclick="setView('grupos')">🧺 Grupos que se llevan juntos <span class="cnt" id="c-grupos">0</span> <span class="sec">· secundario</span></div>
+      <div class="tab"        data-view="grupos"   onclick="setView('grupos')">🧺 Grupos que se llevan juntos <span class="cnt" id="c-grupos">0</span></div>
+      <div class="tab"        data-view="combos"   onclick="setView('combos')">🎁 Combos <span class="cnt" id="c-combos-tab">0</span></div>
     </div>
     <div class="tabs-actions">
       <span class="mini" id="syncInfo"></span>
       <button class="btn secondary" onclick="cargar(true)" title="Refrescar">↻</button>
-      <button class="btn secondary" onclick="abrirTpl()" title="Mensaje de WhatsApp">⚙</button>
+      <button class="btn secondary" onclick="abrirTpl()" title="Mensajes de WhatsApp">⚙</button>
     </div>
   </div>
 
@@ -144,27 +149,34 @@
   </div>
 
   <div class="op-note" id="note-extra" style="display:none">
-    <b>Próximamente:</b> productos frenados / con stock parado para liquidar (necesita la línea de tiempo de ventas por producto).
-    Para <b>reactivar profesionales</b> que dejaron de comprar, usá el módulo <a href="crm.html">Clientes</a>.
+    <b>Se dejan afuera</b> los packs de apoyo domiciliario, los combos ya armados y el envío (no son productos sueltos).
+    <b>Próximamente:</b> productos frenados para liquidar. Para reactivar profesionales que dejaron de comprar, usá <a href="crm.html">Clientes</a>.
   </div>
 
   <div id="salida"><div class="op-loading">Analizando tus ventas…</div></div>
 
 </main>
 
-<!-- Modal mensaje de WhatsApp -->
+<!-- Modal mensajes de WhatsApp -->
 <div class="tpl-modal" id="tplModal" onclick="if(event.target===this)cerrarTpl()">
   <div class="tpl-inner">
-    <div class="tpl-head"><b>⚙ Mensaje de WhatsApp</b><button class="tpl-x" onclick="cerrarTpl()" aria-label="Cerrar">✕</button></div>
+    <div class="tpl-head"><b>⚙ Mensajes de WhatsApp</b><button class="tpl-x" onclick="cerrarTpl()" aria-label="Cerrar">✕</button></div>
     <div class="tpl-body">
-      <label style="font-size:12.5px;color:var(--muted);display:block;margin-bottom:6px">¿Quién manda el mensaje?</label>
-      <div class="seg-canal" id="firmaSeg" style="margin-bottom:14px">
+      <label>¿Quién manda el mensaje?</label>
+      <div class="seg-canal" id="firmaSeg">
         <button class="seg-opt" data-f="" onclick="pickFirma('',this)">Neutro (sin nombre)</button>
         <button class="seg-opt" data-f="Lucía" onclick="pickFirma('Lucía',this)">Lucía</button>
         <button class="seg-opt" data-f="Diego" onclick="pickFirma('Diego',this)">Diego</button>
       </div>
-      <textarea id="tplText"></textarea>
-      <div class="tpl-vars">Variables: <code>{nombre}</code> <code>{compra}</code> <code>{ofrecer}</code> <code>{firma}</code> (se completa con quién manda)</div>
+
+      <label>Mensaje para impulsar (a quien ya compra el producto)</label>
+      <textarea id="tplImp"></textarea>
+      <div class="tpl-vars"><code>{nombre}</code> <code>{producto}</code> <code>{firma}</code></div>
+
+      <label>Mensaje para completar un grupo</label>
+      <textarea id="tplGrp"></textarea>
+      <div class="tpl-vars"><code>{nombre}</code> <code>{compra}</code> <code>{ofrecer}</code> <code>{firma}</code></div>
+
       <div class="tpl-actions">
         <button class="btn primary" onclick="guardarTpl()">Guardar</button>
         <button class="btn secondary" onclick="restaurarTpl()">Restaurar</button>
@@ -178,27 +190,28 @@
 <script src="../shell/shell.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-//  Oportunidades — qué impulsar y qué grupos de productos armar
-//  Fuentes (Supabase, sincronizadas desde Odoo por el CRM):
-//    · cliente_producto  → qué compra cada cliente (partner_id, product_name, veces, monto)
-//    · cliente_metricas  → nombre, teléfono, si es profesional
-//  Todo por FAMILIA de producto (se juntan los tamaños: 4kg y 10kg = un producto).
-//  Los grupos y los contactos son SIEMPRE de profesionales. El canal es info interna.
+//  Oportunidades — qué impulsar, qué grupos ofrecer, qué combos armar
+//  Fuentes (Supabase, sincronizadas desde Odoo):
+//    · cliente_producto / cliente_metricas  → ventas por cliente
+//    · items (SKU/COMBO/PACK) / pack_componentes / item_canales  → catálogo
+//  Todo por FAMILIA (junta tamaños). Se excluyen PACK (apoyo domiciliario),
+//  COMBO (ya armados) y envío. Grupos/contactos = profesionales; canal = interno.
 // ═══════════════════════════════════════════════════════════════════════════
 
 let VIEW = 'impulsar';
 let RAW_CP = [];     // filas cliente_producto (no servicios)
-let META = {};       // partner_id -> métricas del cliente
+let META = {};       // partner_id -> métricas
+let CAT = null;      // catálogo (items/combos/exclusiones) o null si no cargó
 let MODEL = null;
 
 const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
 const fmtNum   = n => Math.round(n||0).toLocaleString('es-AR');
 const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,'').trim();
-
-// "Familia" = el producto sin el tamaño/presentación, para juntar medidas del mismo
-// producto (Crema Base Clásica 4 kg == 10 kg) y armar grupos limpios.
 const sinAcentos = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+const norm = s => sinAcentos((s||'').toLowerCase()).replace(/\s+/g,' ').trim();
+
+// "Familia" = producto sin el tamaño/presentación (junta 4kg y 10kg del mismo).
 function baseProducto(nombre){
   let s = ' ' + sinAcentos((nombre || '').toLowerCase()) + ' ';
   s = s.replace(/\b\d+([.,]\d+)?\s?(kgs?|kilos?|grs?|gramos?|g|ml|cc|lts?|litros?|l|unid(?:ad(?:es)?)?|u|pack)\b/g, ' ');
@@ -207,41 +220,48 @@ function baseProducto(nombre){
   return s.replace(/\s+/g, ' ').trim();
 }
 
-// ---- Canal por cliente (SOLO info interna: por dónde compran) ----
-//  pro = profesional · tn = con teléfono (Tienda Nube / directo) · ml = sin teléfono (Mercado Libre)
+// ¿Es un producto suelto analizable? (no pack de apoyo domiciliario, ni combo, ni envío)
+function esProducto(nombre){
+  const nn = norm(cleanProd(nombre));
+  if (CAT && CAT.excluir.has(nn)) return false;         // match exacto con PACK/COMBO del catálogo
+  const n2 = sinAcentos((nombre||'').toLowerCase());
+  if (/(env[ií]o|flete|despacho|correo argentino|andreani)/.test(n2)) return false;
+  if (/apoyo\s*domicil/.test(n2)) return false;
+  if (/\bpack\b/.test(n2) || /\bcombo\b/.test(n2)) return false;
+  return true;
+}
+
+// ---- Canal por cliente (SOLO info interna) ----
 const CANALES = { pro:{ic:'🟢'}, tn:{ic:'🔵'}, ml:{ic:'🟡'} };
 function canalCliente(pid){ const m = META[pid] || {}; if (m.es_profesional) return 'pro'; return m.telefono_wa ? 'tn' : 'ml'; }
 function desglose(pids){ const d = { pro:0, tn:0, ml:0 }; pids.forEach(p => { d[canalCliente(p)]++; }); return d; }
 function chipsCanal(d){ return '<div class="chan-chips">' + ['pro','tn','ml'].filter(k => d[k] > 0).map(k => `<span class="chan-chip">${CANALES[k].ic} ${fmtNum(d[k])}</span>`).join('') + '</div>'; }
 
-// ---- Mensaje de WhatsApp + firma (editable, en localStorage) ----
-const TPL_KEY = 'rosaint-op-tpl-wa';
-const FIRMA_KEY = 'rosaint-op-firma';
-const TPL_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Quería comentarte que varias profesionales que llevan {compra} suelen sumar también {ofrecer}. Si querés, te armo un combo con un precio especial y lo agregamos a tu próximo pedido. ¡Saludos{firma}!';
-function getTpl(){ return localStorage.getItem(TPL_KEY) || TPL_DEF; }
+// ---- Mensajes de WhatsApp + firma (localStorage) ----
+const IMP_KEY = 'rosaint-op-tpl-imp', GRP_KEY = 'rosaint-op-tpl-grp', FIRMA_KEY = 'rosaint-op-firma';
+const IMP_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Te escribo por {producto}, que solés llevar. ¿Querés que te lo prepare para tu próximo pedido? Si necesitás reponer, te armo el precio. ¡Saludos{firma}!';
+const GRP_DEF = 'Hola {nombre}, ¿cómo andás? 😊 Quería comentarte que varias profesionales que llevan {compra} suelen sumar también {ofrecer}. Si querés, te armo un combo con un precio especial y lo agregamos a tu próximo pedido. ¡Saludos{firma}!';
+function getImp(){ return localStorage.getItem(IMP_KEY) || IMP_DEF; }
+function getGrp(){ return localStorage.getItem(GRP_KEY) || GRP_DEF; }
 function getFirma(){ return localStorage.getItem(FIRMA_KEY) || ''; }
-function armarMsg(nombre, compra, ofrecer){
-  const firma = getFirma();
-  return getTpl()
-    .replace(/{nombre}/g, (nombre || '').split(' ')[0])
-    .replace(/{compra}/g, compra)
-    .replace(/{ofrecer}/g, ofrecer)
-    .replace(/{firma}/g, firma ? ', ' + firma : '');
-}
+function firmaTxt(){ const f = getFirma(); return f ? ', ' + f : ''; }
+function msgImp(nombre, producto){ return getImp().replace(/{nombre}/g,(nombre||'').split(' ')[0]).replace(/{producto}/g,producto).replace(/{firma}/g,firmaTxt()); }
+function msgGrp(nombre, compra, ofrecer){ return getGrp().replace(/{nombre}/g,(nombre||'').split(' ')[0]).replace(/{compra}/g,compra).replace(/{ofrecer}/g,ofrecer).replace(/{firma}/g,firmaTxt()); }
 function abrirTpl(){
-  document.getElementById('tplText').value = getTpl();
+  document.getElementById('tplImp').value = getImp();
+  document.getElementById('tplGrp').value = getGrp();
   const f = getFirma();
   document.querySelectorAll('#firmaSeg .seg-opt').forEach(b => b.classList.toggle('active', (b.dataset.f || '') === f));
   document.getElementById('tplModal').classList.add('open');
 }
 function cerrarTpl(){ document.getElementById('tplModal').classList.remove('open'); }
-function guardarTpl(){ localStorage.setItem(TPL_KEY, document.getElementById('tplText').value); cerrarTpl(); }
-function restaurarTpl(){ document.getElementById('tplText').value = TPL_DEF; localStorage.setItem(TPL_KEY, TPL_DEF); }
+function guardarTpl(){ localStorage.setItem(IMP_KEY, document.getElementById('tplImp').value); localStorage.setItem(GRP_KEY, document.getElementById('tplGrp').value); cerrarTpl(); if (RAW_CP.length) render(); }
+function restaurarTpl(){ document.getElementById('tplImp').value = IMP_DEF; document.getElementById('tplGrp').value = GRP_DEF; localStorage.setItem(IMP_KEY, IMP_DEF); localStorage.setItem(GRP_KEY, GRP_DEF); }
 function pickFirma(v, btn){ localStorage.setItem(FIRMA_KEY, v); document.querySelectorAll('#firmaSeg .seg-opt').forEach(b => b.classList.toggle('active', b === btn)); }
 
 function toggle(id, el){ const box = document.getElementById(id); const open = box.classList.toggle('open'); el.textContent = (open ? 'Ocultar ' : 'Ver ') + el.dataset.base + (open ? ' ▲' : ' ▼'); }
+function waLink(tel, msg){ const n = (tel||'').replace(/\D/g,''); return `https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}`; }
 
-// ---- Acceso REST a Supabase con el JWT del usuario logueado ----
 async function apiGet(path){
   const { data: sess } = await sb.auth.getSession();
   const token = (sess && sess.session && sess.session.access_token) || window.SUPABASE_KEY;
@@ -261,12 +281,43 @@ async function cargar(force){
     RAW_CP = (cp || []).filter(x => !x.es_servicio && x.product_name);
     META = {};
     (m || []).forEach(x => { META[x.partner_id] = x; });
-    document.getElementById('syncInfo').textContent = fmtNum(Object.keys(META).length) + ' clientes · ' + fmtNum(RAW_CP.length) + ' compras';
+    // Catálogo (no fatal: si falla, seguimos sin excluir por catálogo)
+    try {
+      const [it, pc, ic] = await Promise.all([
+        apiGet('items?select=codigo,nombre,tipo,sku_externo,estado&estado=eq.vigente&limit=20000'),
+        apiGet('pack_componentes?select=codigo_pack,codigo_sku,cantidad&limit=20000'),
+        apiGet('item_canales?select=codigo_item,canal,activo&limit=20000'),
+      ]);
+      CAT = armarCatalogo(it || [], pc || [], ic || []);
+    } catch (e) { CAT = null; }
+    document.getElementById('syncInfo').textContent = fmtNum(Object.keys(META).length) + ' clientes · ' + fmtNum(RAW_CP.length) + ' compras' + (CAT ? ' · ' + fmtNum(CAT.combos.length) + ' combos' : '');
     document.getElementById('note-extra').style.display = 'block';
     render();
   } catch (err) {
     document.getElementById('salida').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + esc(err.message) + '</div>';
   }
+}
+
+// Arma el catálogo: nombres por código, combos con componentes/canales, set de exclusión
+function armarCatalogo(items, packComp, canales){
+  const porCod = new Map();       // codigo -> item
+  const excluir = new Set();      // norm(nombre) de PACK y COMBO
+  for (const it of items){
+    porCod.set(String(it.codigo), it);
+    if (it.tipo === 'PACK' || it.tipo === 'COMBO') excluir.add(norm(it.nombre));
+  }
+  const canalDe = new Map();      // codigo_item -> [canal activos]
+  for (const c of canales){ if (!c.activo) continue; let a = canalDe.get(String(c.codigo_item)); if (!a){ a = []; canalDe.set(String(c.codigo_item), a); } a.push(c.canal); }
+  const PLAT = { lista_profesional: 'Lista profesional', tienda_nube: 'Tienda Nube', mercado_libre: 'Mercado Libre' };
+  const combos = items.filter(it => it.tipo === 'COMBO').map(cb => {
+    const comps = packComp.filter(pc => String(pc.codigo_pack) === String(cb.codigo)).map(pc => {
+      const sku = porCod.get(String(pc.codigo_sku));
+      return { nombre: sku ? sku.nombre : pc.codigo_sku, cantidad: pc.cantidad, fam: baseProducto(cleanProd(sku ? sku.nombre : '')) };
+    });
+    const cs = (canalDe.get(String(cb.codigo)) || []).map(k => PLAT[k] || k);
+    return { codigo: cb.codigo, nombre: cb.nombre, comps, canales: cs, fams: new Set(comps.map(c => c.fam).filter(Boolean)) };
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  return { excluir, combos };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -275,12 +326,11 @@ async function cargar(force){
 function construir(){
   const minG = parseInt(document.getElementById('fmin').value, 10) || 3;
 
-  // Índices por familia sobre TODAS las ventas (para "Para impulsar")
-  const famStats = new Map();   // familia -> {profs:Set, clientes:Set, veces, monto, disp:Map(nombre->monto)}
+  const famStats = new Map();   // familia -> {profs:Set, clientes:Set, veces, monto, disp:Map}
   const cliFam   = new Map();   // pid -> Set(familia)
   for (const x of RAW_CP){
     const nom = cleanProd(x.product_name);
-    if (!nom) continue;
+    if (!nom || !esProducto(x.product_name)) continue;
     const fam = baseProducto(nom) || nom.toLowerCase();
     const pid = x.partner_id;
     const esPro = !!(META[pid] && META[pid].es_profesional);
@@ -295,30 +345,26 @@ function construir(){
     if (!cf){ cf = new Set(); cliFam.set(pid, cf); }
     cf.add(fam);
   }
-  // Nombre "lindo" de cada familia = el nombre real con más facturación
   const famDisp = new Map();
   for (const [fam, fs] of famStats){ let best = '', bw = -1; for (const [nom, w] of fs.disp){ if (w > bw){ bw = w; best = nom; } } famDisp.set(fam, best || fam); }
 
-  // Para impulsar: familias ganadoras por facturación
   const impulsar = [...famStats.entries()]
     .map(([fam, fs]) => ({ fam, nom: famDisp.get(fam), clientes: fs.clientes.size, profs: fs.profs.size, veces: fs.veces, monto: fs.monto }))
     .filter(p => p.clientes >= 2)
     .sort((a, b) => b.monto - a.monto);
 
-  // ── Grupos: solo entre PROFESIONALES ──
-  const profSets = new Map();   // pid -> Set(familia)  (solo profesionales)
+  // ── Grupos entre profesionales ──
+  const profSets = new Map();
   for (const [pid, cf] of cliFam){ if (META[pid] && META[pid].es_profesional) profSets.set(pid, cf); }
   const Npro = profSets.size;
   let conProWa = 0;
   for (const pid of profSets.keys()){ if (META[pid] && META[pid].telefono_wa) conProWa++; }
 
-  const profReach = new Map();  // familia -> Set(pid profesional)
+  const profReach = new Map();
   for (const [pid, cf] of profSets){ for (const f of cf){ let s = profReach.get(f); if (!s){ s = new Set(); profReach.set(f, s); } s.add(pid); } }
   const fams = [...profReach.entries()].filter(([f, s]) => s.size >= minG).map(([f]) => f);
-
   const inter = (a, b) => { const sa = profReach.get(a), sb = profReach.get(b); const [s, l] = sa.size < sb.size ? [sa, sb] : [sb, sa]; let n = 0; for (const p of s) if (l.has(p)) n++; return n; };
 
-  // Semillas: pares de familias con afinidad real
   const seeds = [];
   for (let i = 0; i < fams.length; i++) for (let j = i + 1; j < fams.length; j++){
     const a = fams[i], b = fams[j];
@@ -330,11 +376,10 @@ function construir(){
   }
   seeds.sort((x, y) => (y.c * y.lift) - (x.c * x.lift));
 
-  // Crecemos cada semilla a un grupo (hasta 4 productos), sin reutilizar familias → grupos distintos
   const usados = new Set();
   const grupos = [];
   for (const seed of seeds){
-    if (grupos.length >= 5) break;
+    if (grupos.length >= 8) break;
     if (usados.has(seed.a) || usados.has(seed.b)) continue;
     const group = [seed.a, seed.b];
     let miembros = [...profReach.get(seed.a)].filter(p => profReach.get(seed.b).has(p));
@@ -354,10 +399,13 @@ function construir(){
     }
   }
 
+  // ¿El grupo ya es un combo armado? (todas sus familias dentro de un combo existente)
+  const yaEsCombo = (gfams) => CAT ? CAT.combos.some(cb => gfams.every(f => cb.fams.has(f))) : false;
+  grupos.forEach(g => { g.yaCombo = yaEsCombo(g.fams); });
+
   return { impulsar, grupos, famStats, famDisp, profSets, Npro, conProWa };
 }
 
-// Profesionales (con teléfono) que llevan casi todo el grupo y les falta exactamente 1
 function faltantesDeGrupo(g){
   const res = [];
   for (const [pid, cf] of MODEL.profSets){
@@ -368,6 +416,19 @@ function faltantesDeGrupo(g){
       const falta = g.fams.find(f => !cf.has(f));
       res.push({ pid, nombre: meta.nombre || ('Cliente ' + pid), tel: meta.telefono_wa, falta, tiene, gastado: meta.total_gastado || 0 });
     }
+  }
+  res.sort((a, b) => b.gastado - a.gastado);
+  return res;
+}
+
+// Profesionales (con teléfono) que compran un producto → para impulsar
+function compradoresDe(fam){
+  const fs = MODEL.famStats.get(fam); if (!fs) return [];
+  const res = [];
+  for (const pid of fs.clientes){
+    const meta = META[pid] || {};
+    if (!meta.es_profesional || !meta.telefono_wa) continue;
+    res.push({ pid, nombre: meta.nombre || ('Cliente ' + pid), tel: meta.telefono_wa, gastado: meta.total_gastado || 0 });
   }
   res.sort((a, b) => b.gastado - a.gastado);
   return res;
@@ -388,19 +449,19 @@ function render(){
   const q = (document.getElementById('q').value || '').toLowerCase().trim();
   const match = (...ss) => !q || ss.some(s => (s || '').toLowerCase().includes(q));
 
-  let completar = 0;
-  MODEL.grupos.forEach(g => { completar += faltantesDeGrupo(g).length; });
-
+  const combosN = CAT ? CAT.combos.length : 0;
   document.getElementById('k-impulsar').textContent  = fmtNum(MODEL.impulsar.length);
   document.getElementById('k-grupos').textContent    = fmtNum(MODEL.grupos.length);
-  document.getElementById('k-completar').textContent = fmtNum(completar);
+  document.getElementById('k-combos').textContent    = fmtNum(combosN);
   document.getElementById('k-profwa').textContent    = fmtNum(MODEL.conProWa);
   document.getElementById('c-impulsar').textContent  = fmtNum(MODEL.impulsar.length);
   document.getElementById('c-grupos').textContent    = fmtNum(MODEL.grupos.length);
+  document.getElementById('c-combos-tab').textContent = fmtNum(combosN);
 
   const out = document.getElementById('salida');
   if (VIEW === 'impulsar') return void (out.innerHTML = renderImpulsar(MODEL.impulsar.filter(p => match(p.nom))));
   if (VIEW === 'grupos')   return void (out.innerHTML = renderGrupos(MODEL.grupos.filter(g => match(...g.fams.map(f => MODEL.famDisp.get(f))))));
+  if (VIEW === 'combos')   return void (out.innerHTML = renderCombos(q));
 }
 
 function renderImpulsar(list){
@@ -409,11 +470,15 @@ function renderImpulsar(list){
     const fs = MODEL.famStats.get(p.fam);
     const d = desglose([...fs.clientes]);
     const dom = ['pro', 'tn', 'ml'].slice().sort((a, b) => d[b] - d[a])[0];
-    const hint = dom === 'pro'
-        ? 'Se mueve sobre todo con <b>profesionales</b>: destacalo en la lista profesional y en el trato directo.'
-      : dom === 'ml'
-        ? 'Se mueve sobre todo por <b>Mercado Libre</b>: cuidá la publicación y el precio, y evaluá publicidad.'
-        : 'Se mueve sobre todo por <b>Tienda Nube</b>: destacalo en la home y usalo de ancla para un combo.';
+    const hint = dom === 'pro' ? 'Se mueve sobre todo con <b>profesionales</b>: destacalo en la lista profesional y en el trato directo.'
+              : dom === 'ml' ? 'Se mueve sobre todo por <b>Mercado Libre</b>: cuidá la publicación y el precio, y evaluá publicidad.'
+              : 'Se mueve sobre todo por <b>Tienda Nube</b>: destacalo en la home y usalo de ancla para un combo.';
+    const comp = compradoresDe(p.fam);
+    const id = 'imp' + i;
+    const rows = comp.slice(0, 200).map(cl => `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Cliente que lo compra</div></div><a class="wa-btn" target="_blank" href="${waLink(cl.tel, msgImp(cl.nombre, p.nom))}">WhatsApp</a></div>`).join('');
+    const lista = comp.length
+      ? `<div class="cli-toggle" data-base="${fmtNum(comp.length)} profesionales que lo compran" onclick="toggle('${id}',this)">Ver ${fmtNum(comp.length)} profesionales que lo compran ▼</div><div class="cli-list" id="${id}">${rows}</div>`
+      : `<div class="mini">Sin profesionales con teléfono que lo compren.</div>`;
     return `<div class="op-card">
       <div class="op-rank">#${i + 1} en facturación</div>
       <div class="op-single">${esc(p.nom)}</div>
@@ -424,39 +489,79 @@ function renderImpulsar(list){
       </div>
       <div class="internal"><span class="lbl">Cómo compran (interno)</span>${chipsCanal(d)}</div>
       <div class="op-why">Producto <b>ganador</b>. ${hint}</div>
+      ${lista}
     </div>`;
   }).join('') + '</div>';
 }
 
 function renderGrupos(list){
   if (!list.length) return '<div class="empty-view">Todavía no hay grupos con suficiente fuerza. Probá bajar la “Fuerza mínima” arriba.</div>';
-  return '<div class="op-grid">' + list.map((g, i) => {
+  return '<div class="sub-desc">Productos que tus profesionales suelen llevar juntos. Ofreceles el que les falta para completar (con un beneficio).</div><div class="op-grid">' + list.map((g, i) => {
     const id = 'g' + i;
     const famChips = g.fams.map(f => `<span class="grp-fam">${esc(MODEL.famDisp.get(f))}</span>`).join('');
     const faltantes = faltantesDeGrupo(g);
     const rows = faltantes.slice(0, 200).map(cl => {
-      const n = (cl.tel || '').replace(/\D/g, '');
       const faltaNom = MODEL.famDisp.get(cl.falta);
       const tieneNoms = cl.tiene.map(f => MODEL.famDisp.get(f));
-      const msg = armarMsg(cl.nombre, tieneNoms.slice(0, 2).join(' y '), faltaNom);
-      return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Le falta <b>${esc(faltaNom)}</b> para completar</div></div><a class="wa-btn" target="_blank" href="https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}">WhatsApp</a></div>`;
+      return `<div class="cli-row"><div><div class="cli-name">${esc(cl.nombre)}</div><div class="cli-sub">Le falta <b>${esc(faltaNom)}</b></div></div><a class="wa-btn" target="_blank" href="${waLink(cl.tel, msgGrp(cl.nombre, tieneNoms.slice(0,2).join(' y '), faltaNom))}">WhatsApp</a></div>`;
     }).join('');
     const outreach = faltantes.length
       ? `<div class="cli-toggle" data-base="${fmtNum(faltantes.length)} profesionales para completar" onclick="toggle('${id}',this)">Ver ${fmtNum(faltantes.length)} profesionales para completar ▼</div><div class="cli-list" id="${id}">${rows}</div>`
       : `<div class="mini">Casi no hay profesionales a los que les falte solo uno de este grupo.</div>`;
+    const yaChip = g.yaCombo ? ' <span class="plat-chip">ya es combo</span>' : '';
     return `<div class="op-card">
-      <div class="op-rank">Grupo #${i + 1}</div>
+      <div class="op-rank">Grupo #${i + 1}${yaChip}</div>
       <div class="grp-fams">${famChips}</div>
       <div class="op-mets">
         <div class="op-met"><div class="v">${fmtNum(g.soporte)}</div><div class="k">Profesionales lo llevan completo</div></div>
         <div class="op-met"><div class="v">${fmtNum(g.fams.length)}</div><div class="k">Productos</div></div>
         <div class="op-met"><div class="v good">${fmtNum(faltantes.length)}</div><div class="k">Para completar</div></div>
       </div>
-      <div class="grp-benefit">💡 Armalo como <b>combo con beneficio</b> (precio especial, envío bonificado o un regalo). Ya se llevan juntos: un incentivo para completarlo suele cerrar la venta.</div>
-      <div class="op-actions"><a class="btn primary" href="../catalogo/combos.html">Armar combo</a></div>
       ${outreach}
     </div>`;
   }).join('') + '</div>';
+}
+
+function renderCombos(q){
+  if (!CAT) return '<div class="empty-view">No se pudo leer el catálogo de combos.</div>';
+  const match = s => !q || (s || '').toLowerCase().includes(q);
+
+  // Existentes
+  const existentes = CAT.combos.filter(cb => match(cb.nombre) || cb.comps.some(c => match(c.nombre)));
+  const existHtml = existentes.length
+    ? '<div class="op-grid">' + existentes.map(cb => {
+        const comps = cb.comps.length ? cb.comps.map(c => `<span class="grp-fam">${c.cantidad > 1 ? c.cantidad + '× ' : ''}${esc(c.nombre)}</span>`).join('') : '<span class="mini">sin componentes</span>';
+        const plats = cb.canales.length ? cb.canales.map(k => `<span class="plat-chip">${esc(k)}</span>`).join('') : '<span class="mini">sin canales activos</span>';
+        return `<div class="op-card">
+          <div class="op-rank">Combo · ${esc(String(cb.codigo))}</div>
+          <div class="op-single">${esc(cb.nombre)}</div>
+          <div class="grp-fams">${comps}</div>
+          <div class="internal">${plats}</div>
+        </div>`;
+      }).join('') + '</div>'
+    : '<div class="mini" style="margin-bottom:8px">Sin combos que coincidan.</div>';
+
+  // Sugeridos = grupos con afinidad que todavía NO son combo (2+ productos)
+  const sugeridos = MODEL.grupos.filter(g => !g.yaCombo && g.fams.length >= 2 && g.fams.map(f => MODEL.famDisp.get(f)).some(match));
+  const sugHtml = sugeridos.length
+    ? '<div class="op-grid">' + sugeridos.map((g, i) => {
+        const famChips = g.fams.map(f => `<span class="grp-fam">${esc(MODEL.famDisp.get(f))}</span>`).join('');
+        return `<div class="op-card">
+          <div class="op-rank">Sugerido #${i + 1}</div>
+          <div class="grp-fams">${famChips}</div>
+          <div class="op-mets">
+            <div class="op-met"><div class="v">${fmtNum(g.soporte)}</div><div class="k">Profesionales lo llevan junto</div></div>
+            <div class="op-met"><div class="v">${fmtNum(g.fams.length)}</div><div class="k">Productos</div></div>
+          </div>
+          <div class="grp-benefit">💡 Se llevan juntos seguido y todavía no es combo. Buen candidato para armarlo con un <b>beneficio</b> (precio especial).</div>
+          <div class="op-actions"><a class="btn primary" href="../catalogo/combos.html">Armar combo</a></div>
+        </div>`;
+      }).join('') + '</div>'
+    : '<div class="mini">Por ahora no hay grupos nuevos para sugerir como combo (o ya están todos armados).</div>';
+
+  return `<div class="sub-head">Combos armados (Tienda online y Odoo) · ${fmtNum(existentes.length)}</div>${existHtml}
+    <div class="sub-head" style="margin-top:28px">Combos sugeridos para armar · ${fmtNum(sugeridos.length)}</div>
+    <div class="sub-desc">Grupos que tus profesionales ya se llevan juntos y todavía no son un combo. Mismo criterio que los de arriba.</div>${sugHtml}`;
 }
 
 // Arranque
