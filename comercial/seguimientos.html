@@ -49,6 +49,16 @@
     .tpl-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); font-size: 15px; }
     .tpl-x { font-size: 18px; color: var(--muted); cursor: pointer; background: none; border: none; }
     .tpl-x:hover { color: var(--text); }
+    /* tabla de producción (qué falta) */
+    .stock-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .stock-tbl th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    .stock-tbl th.num, .stock-tbl td.num { text-align: center; }
+    .stock-tbl td { padding: 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    .stock-tbl tr.falta { background: color-mix(in srgb, var(--hot) 8%, transparent); }
+    .stock-tbl tr.falta td { color: var(--hot); font-weight: 600; }
+    .stock-tbl tr.listo td.falta-c { color: var(--ok); }
+    .stock-tbl .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+    .stock-legend { font-size: 12px; color: var(--muted); margin-top: 12px; }
 
     .seg-list { display: flex; flex-direction: column; gap: 8px; }
     .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s, filter .15s; }
@@ -169,6 +179,13 @@
         </div>
         <div class="tpl-actions"><button class="btn primary" onclick="guardarPlantillas()">Guardar</button><button class="btn secondary" onclick="restaurarPlantillas()">Restaurar por defecto</button></div>
       </div>
+    </div>
+  </div>
+
+  <div class="tpl-modal" id="stockModal" onclick="if(event.target===this)cerrarStock()">
+    <div class="tpl-modal-inner">
+      <div class="tpl-modal-head"><b id="stockModalTitle">Producción del pedido</b><button class="tpl-x" onclick="cerrarStock()" aria-label="Cerrar">✕</button></div>
+      <div class="tpl-body" id="stockModalBody"></div>
     </div>
   </div>
 
@@ -297,6 +314,31 @@ function onSearch(v){ Q = (v || '').trim(); render(); }
 function abrirConfig(){ document.getElementById('tplModal').classList.add('open'); }
 function cerrarConfig(){ document.getElementById('tplModal').classList.remove('open'); }
 
+// Detalle de producción de un pedido: qué se pidió, qué hay en stock y qué falta fabricar.
+function verStock(k){
+  const o = DATA.find(x => x.estado_key === k); if (!o) return;
+  const items = o.productos_stock || [];
+  document.getElementById('stockModalTitle').textContent = (o.odoo_so ? o.odoo_so + ' · ' : '') + o.cliente + (o.stock_pct != null ? '  ·  ' + o.stock_pct + '% en stock' : '');
+  const rows = items.map(p => {
+    const falta = p.falta > 0;
+    return `<tr class="${falta ? 'falta' : 'listo'}">
+      <td>${esc(p.nombre)}${p.sku ? ` <span class="sku">${esc(p.sku)}</span>` : ''}</td>
+      <td class="num">${p.pedido}</td>
+      <td class="num">${p.entregado || 0}</td>
+      <td class="num">${p.stock}</td>
+      <td class="num falta-c">${falta ? '⚠ ' + p.falta : '✓'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('stockModalBody').innerHTML =
+    `<div style="overflow-x:auto"><table class="stock-tbl">
+       <thead><tr><th>Producto</th><th class="num">Pedido</th><th class="num">Entregado</th><th class="num">En stock</th><th class="num">Falta</th></tr></thead>
+       <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin productos.</td></tr>'}</tbody>
+     </table></div>
+     <div class="stock-legend">Las filas en <b style="color:var(--hot)">rojo</b> son las que hay que <b>fabricar</b> para completar el pedido.</div>`;
+  document.getElementById('stockModal').classList.add('open');
+}
+function cerrarStock(){ document.getElementById('stockModal').classList.remove('open'); }
+
 // "Pendiente" = todavía no despachado/entregado (sigue en el flujo)
 function pendiente(o){ return !efDesp(o); }
 // Reciente = de los últimos 12 días (para no dejar "para avisar" pedidos viejos ya entregados)
@@ -414,7 +456,10 @@ function render(){
     if (o.stock_pct != null) {
       const pct = o.stock_pct;
       const col = pct >= 100 ? 'var(--ok)' : pct > 0 ? 'var(--warn)' : 'var(--hot)';
-      stockBar = `<div class="stockbar" title="${pct}% de las unidades del pedido ya están en stock"><div class="stockbar-fill" style="width:${pct}%;background:${col}"></div><span class="stockbar-lbl">${pct}% en stock</span></div>`;
+      const faltan = (o.productos_stock || []).filter(p => p.falta > 0);
+      const tip = pct >= 100 ? '✓ Todo el pedido está en stock' : ('Faltan fabricar: ' + faltan.map(p => `${p.falta}× ${p.nombre}`).join(', '));
+      const click = pct < 100 ? ` onclick="verStock('${k}')" style="cursor:pointer"` : '';
+      stockBar = `<div class="stockbar" title="${esc(tip)}"${click}><div class="stockbar-fill" style="width:${pct}%;background:${col}"></div><span class="stockbar-lbl">${pct}% en stock${pct < 100 ? ' · ver' : ''}</span></div>`;
     }
     const prioSel = `<div class="prio"><span class="prio-lbl">¿Para cuándo?</span><select class="etiq-sel" title="Prioridad — sincroniza con Odoo" onchange="setEtiquetaSel('${k}',${o.odoo_id},this.value)"><option value="">— sin fecha —</option>${ETIQUETAS.map(t=>`<option value="${t.id}"${o.etiqueta===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}</select></div>`;
 
