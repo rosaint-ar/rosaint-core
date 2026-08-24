@@ -409,14 +409,15 @@ async function iniciar(sesion){
         anota("▸ "+esc(x.detalle||""),cl);
       });
       const seg=((performance.now()-t0)/1000).toFixed(1);
-      anota(`✓ Respuesta en ${seg}s · ${(j.uso&&j.uso.output_tokens||0).toLocaleString("es-AR")} tokens generados`,"lg-ok");
+      const delCache=j.uso&&j.uso.cache_read||0;
+      anota(`✓ Respuesta en ${seg}s · ${(j.uso&&j.uso.output_tokens||0).toLocaleString("es-AR")} tokens generados${delCache?` · ${delCache.toLocaleString("es-AR")} del caché (10% del precio)`:""}`,"lg-ok");
 
       msgs.push({role:"assistant",content:j.respuesta});
       guardarChat();
       consultas++; totIn+=j.uso&&j.uso.input_tokens||0; totOut+=j.uso&&j.uso.output_tokens||0;
       $("v-ses").textContent=consultas+(consultas===1?" consulta":" consultas");
       $("s-ses").textContent=(totIn+totOut).toLocaleString("es-AR")+" tokens";
-      const uso=`<span class="uso">${seg}s · ${(j.uso&&j.uso.input_tokens||0).toLocaleString("es-AR")}+${(j.uso&&j.uso.output_tokens||0).toLocaleString("es-AR")} tokens</span>`;
+      const uso=`<span class="uso">${seg}s · ${(j.uso&&j.uso.input_tokens||0).toLocaleString("es-AR")}+${(j.uso&&j.uso.output_tokens||0).toLocaleString("es-AR")} tokens${delCache?` · ♻ ${delCache.toLocaleString("es-AR")} del caché`:""}</span>`;
       burbuja("a",md(j.respuesta)+uso);
     }catch(e){
       p.remove();
