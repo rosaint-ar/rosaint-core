@@ -136,6 +136,7 @@
       <a class="volver" href="../index.html">← CORE</a>
       <span class="brand">ASISTENTE <span>ROSAINT</span></span>
       <span class="tag">HUD · V1</span>
+      <a class="volver" href="#" id="btnNueva" title="Borrar la conversación y empezar de cero">⟲ NUEVA</a>
       <span class="reloj" id="reloj">--:--<small>.--</small></span>
     </div>
 
@@ -184,6 +185,11 @@ async function iniciar(sesion){
   const chat=$("chat"), txt=$("txt"), btn=$("btn"), log=$("log");
   const msgs=[]; let ocupado=false;
   let totIn=0, totOut=0, consultas=0;
+
+  /* ── la conversación sobrevive al F5 (se guarda en este navegador) ── */
+  const STORE="rosaint-asistente-chat";
+  function guardarChat(){ try{ localStorage.setItem(STORE, JSON.stringify(msgs.slice(-40))); }catch(e){} }
+  $("btnNueva").onclick=(e)=>{ e.preventDefault(); localStorage.removeItem(STORE); location.reload(); };
 
   async function tokenVivo(){
     const { data } = await sb.auth.getSession();
@@ -350,7 +356,16 @@ async function iniciar(sesion){
     return d;
   }
 
-  /* ── bienvenida ── */
+  /* ── restaurar conversación previa, o mostrar la bienvenida ── */
+  try{
+    const prev=JSON.parse(localStorage.getItem(STORE)||"[]");
+    for(const m of prev){ if(m&&(m.role==="user"||m.role==="assistant")&&typeof m.content==="string") msgs.push(m); }
+  }catch(e){}
+  if(msgs.length){
+    $("orbzone").classList.add("mini"); $("big").classList.add("chico");
+    for(const m of msgs) burbuja(m.role==="user"?"u":"a", m.role==="user"?esc(m.content):md(m.content));
+    anota(`▸ Conversación restaurada (${msgs.length} mensajes)`,"lg-ok");
+  }else{
   const hola=document.createElement("div");
   hola.className="hola";
   hola.innerHTML=`<p>Preguntame por ventas, precios, stock, clientes o deuda — busco primero en <b style="color:var(--hud-odoo)">Odoo</b>. Lo de Mercado Libre y los segmentos de clientes salen del <b style="color:var(--hud-core)">Core</b>, y para lo externo salgo a la <b style="color:var(--hud-gold)">web</b> y cito la fuente.</p>
@@ -362,6 +377,7 @@ async function iniciar(sesion){
     </div>`;
   chat.appendChild(hola);
   hola.querySelectorAll("button").forEach(b=>b.onclick=()=>{ txt.value=b.textContent; enviar(); });
+  }
 
   /* ── enviar ── */
   async function enviar(){
@@ -372,6 +388,7 @@ async function iniciar(sesion){
     $("orbzone").classList.add("mini"); $("big").classList.add("chico");
 
     msgs.push({role:"user",content:q});
+    guardarChat();
     burbuja("u",esc(q));
     anota("◂ Pregunta recibida","lg-user");
     pensandoOrb=true;
@@ -395,6 +412,7 @@ async function iniciar(sesion){
       anota(`✓ Respuesta en ${seg}s · ${(j.uso&&j.uso.output_tokens||0).toLocaleString("es-AR")} tokens generados`,"lg-ok");
 
       msgs.push({role:"assistant",content:j.respuesta});
+      guardarChat();
       consultas++; totIn+=j.uso&&j.uso.input_tokens||0; totOut+=j.uso&&j.uso.output_tokens||0;
       $("v-ses").textContent=consultas+(consultas===1?" consulta":" consultas");
       $("s-ses").textContent=(totIn+totOut).toLocaleString("es-AR")+" tokens";
@@ -405,6 +423,7 @@ async function iniciar(sesion){
       anota("⚠ "+esc(String(e.message||e).slice(0,90)),"lg-err");
       burbuja("sys","⚠ "+esc(String(e.message||e)));
       msgs.pop();
+      guardarChat();
     }
     pensandoOrb=false;
     ocupado=false; btn.disabled=false; txt.focus();
