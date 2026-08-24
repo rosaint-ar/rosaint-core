@@ -11,6 +11,7 @@
 // `status: 'soon'` deja el item visible pero deshabilitado (con etiqueta "pronto").
 const MENU = [
   { type: 'item', id: 'dashboard', label: 'Dashboard', href: 'index.html', status: 'ready' },
+  { type: 'item', id: 'asistente', label: 'Asistente',  href: 'asistente/agente.html', status: 'ready' },
 
   { type: 'group', label: 'Atención al cliente' },
   { type: 'item', id: 'crm',          label: 'Clientes',     href: 'comercial/crm.html',          status: 'ready' },
@@ -105,6 +106,7 @@ const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // La CSS (.nav-item .nav-icon svg) fija fill/stroke/grosor; acá solo el trazado.
 const MODULE_ICONS = {
   dashboard:      '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  asistente:      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><ellipse cx="12" cy="12" rx="9" ry="4"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(75 12 12)"/></svg>',
   laboratorio:    '<svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>',
   catalogo:       '<svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
   precios:        '<svg viewBox="0 0 24 24"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7-7V4a1 1 0 0 1 1-1h6.6l9.4 9.4a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.4"/></svg>',

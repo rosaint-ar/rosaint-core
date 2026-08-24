@@ -29,6 +29,9 @@ build/
 *.docx~
 *.gdoc
 
+# Fuentes de edge functions (viven en Supabase; acá solo copia de trabajo)
+_functions/
+
 # Backups
 *.bak
 *.old
