@@ -287,7 +287,9 @@
 // Cotizador — dos modos de uso:
 //   · Cotización: pedido con cantidades, descuentos, envío y total.
 //   · Precios: lista simple "Nombre • $precio" para pasar consultas.
-// Packs x4 aparecen solo en Profesional (L2), con precio = precio SKU × 4.
+// Packs x4 aparecen solo en Profesional (L2), con su precio propio cargado en
+// la lista (v_lista_publica) — el mismo que muestra la lista publicada y que
+// está en la Lista 2 de Odoo. Un pack sin precio propio no se cotiza.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Estado ───
@@ -307,7 +309,7 @@ const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 // ─── Carga inicial ───
 async function init() {
   try {
-    const [precios, escalones, packsRes, packCompsRes, canalesCot] = await Promise.all([
+    const [precios, escalones, packsRes, packCompsRes, canalesCot, packPreciosRes] = await Promise.all([
       sb.from('v_precios_listas_completos')
         .select('codigo_sku,nombre_sku,linea,l1_publicado,l2_publicado'),
       sb.from('escalones_descuento')
@@ -323,6 +325,9 @@ async function init() {
       sb.from('item_canales')
         .select('codigo_item, activo')
         .eq('canal', 'cotizador'),
+      sb.from('v_lista_publica')
+        .select('codigo, prof_base')
+        .eq('tipo', 'PACK'),
     ]);
 
     if (precios.error) throw precios.error;
@@ -357,21 +362,28 @@ async function init() {
     });
 
     // ── Packs (solo aparecen en L2; L1 queda null) ──
-    // Precio L2 del pack = precio L2 del SKU base × cantidad (típicamente 4).
-    // Si en algún momento el pack tiene descuento propio, agarrarlo de una tabla dedicada.
+    // Precio L2 del pack = precio propio cargado en la lista profesional
+    // (v_lista_publica.prof_base, con el descuento por pack ya aplicado).
+    // Un pack sin precio propio NO se muestra, igual que en la lista publicada.
+    const precioPorPack = {};
+    (packPreciosRes.data || []).forEach(r => {
+      if (r.prof_base != null) precioPorPack[r.codigo] = Number(r.prof_base);
+    });
+
     const catalogoPacks = (packsRes.data || [])
       .map(p => {
         const comp = compsPorPack[p.codigo];
         if (!comp) return null;
         if (ocultosCotizador.has(comp.codigo_sku)) return null;
+        const precioPack = precioPorPack[p.codigo];
+        if (precioPack == null) return null;
         const sku = skusPorCodigo[comp.codigo_sku];
-        if (!sku || sku.l2 == null) return null;
         return {
           codigo: p.codigo,
           nombre: p.nombre,
-          linea: sku.linea,
+          linea: sku ? sku.linea : '',
           l1: null,
-          l2: sku.l2 * comp.cantidad,
+          l2: precioPack,
           esPack: true,
         };
       })
