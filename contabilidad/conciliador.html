@@ -54,9 +54,15 @@
 
     /* ---- Summary de KPIs (4 columnas) ---- */
     .summary {
-      display: grid; grid-template-columns: repeat(4, 1fr);
+      display: grid; grid-template-columns: repeat(5, 1fr);
       gap: 12px; margin-bottom: 20px;
     }
+    @media (max-width: 900px) {
+      .summary { grid-template-columns: repeat(2, 1fr); }
+    }
+    .summary .card.count { border-left: 3px solid var(--accent); }
+    .summary .card.count .n { font-size: 20px; }
+    .summary .card.count .sub { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
     .summary .card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px 16px;
@@ -196,7 +202,43 @@
 
 const $ = (id) => document.getElementById(id);
 let arcaRows = null;
+let arcaDescartadas = null;
+let arcaMeta = null;
 let estado = null;
+
+// Normaliza un header a una clave estable: minúsculas, sin acentos, sin puntuación,
+// espacios colapsados. Así "Nro. Doc. Emisor", "NRO DOC EMISOR", "Nro Doc. Emisor"
+// caen todas en la misma clave.
+function normHeader(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// Cada campo tiene varias formas conocidas de aparecer en el Excel de ARCA.
+// Buscamos por normHeader así toleramos puntuación/acentos/mayúsculas.
+const HEADERS_ARCA = {
+  fecha:     ['fecha', 'fecha de emision', 'fecha emision', 'fecha comprobante'],
+  tipo:      ['tipo', 'tipo de comprobante', 'tipo comprobante'],
+  pv:        ['punto de venta', 'pto vta', 'pto venta', 'punto venta'],
+  num:       ['numero desde', 'nro desde', 'numero', 'nro comprobante', 'numero comprobante'],
+  cuit:      ['nro doc emisor', 'numero doc emisor', 'cuit emisor', 'cuit', 'nro documento emisor'],
+  denom:     ['denominacion emisor', 'denominacion del emisor', 'razon social emisor', 'emisor', 'proveedor'],
+  neto:      ['neto gravado total', 'neto gravado', 'importe neto gravado', 'imp neto gravado'],
+  nogravado: ['neto no gravado', 'importe no gravado', 'imp no gravado', 'concepto no gravado'],
+  exento:    ['importe exento', 'imp exento', 'op exentas'],
+  otros:     ['otros tributos', 'importe otros tributos', 'imp otros tributos'],
+  iva:       ['total iva', 'iva', 'importe iva', 'imp total iva', 'iva total'],
+  total:     ['imp total', 'importe total', 'total', 'imp total operacion'],
+  moneda:    ['moneda', 'codigo moneda'],
+  tc:        ['tipo cambio', 'tipo de cambio', 'cotizacion moneda', 'cotizacion'],
+};
+
+// Códigos AFIP de Notas de Crédito: A (3), B (8), C (13), E (23),
+// M (53), Ticket (110/112), MiPyme FCE (203, 208, 213, 233 crédito).
+const CODIGOS_NC = new Set(['3', '8', '13', '23', '53', '110', '112', '203', '208', '213', '233']);
 
 $('fileArca').addEventListener('change', (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -205,50 +247,142 @@ $('fileArca').addEventListener('change', (e) => {
     try {
       const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 1, defval: null });
-      const header = rows[0];
-      const idx = (name) => header.findIndex(h => (h||'').toString().trim() === name);
-      const c = {
-        fecha: idx('Fecha'), tipo: idx('Tipo'), pv: idx('Punto de Venta'), num: idx('Número Desde'),
-        cuit: idx('Nro. Doc. Emisor'), denom: idx('Denominación Emisor'),
-        neto: idx('Neto Gravado Total'), nogravado: idx('Neto No Gravado'),
-        otros: idx('Otros Tributos'), iva: idx('Total IVA'), total: idx('Imp. Total'),
-        moneda: idx('Moneda'), tc: idx('Tipo Cambio'),
+      // Leer TODO como matriz de matrices. Recorrer las primeras 10 filas y elegir
+      // la que tenga más headers reconocidos como fila de encabezado. ARCA a veces
+      // pone 1 fila de metadata arriba, a veces ninguna.
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+      let headerIdx = -1, headerNorm = [], headerHits = 0;
+      const clavesConocidas = new Set(Object.values(HEADERS_ARCA).flat());
+      for (let i = 0; i < Math.min(10, raw.length); i++) {
+        const nn = (raw[i] || []).map(normHeader);
+        const hits = nn.filter(h => clavesConocidas.has(h)).length;
+        if (hits > headerHits) { headerIdx = i; headerNorm = nn; headerHits = hits; }
+      }
+      if (headerIdx < 0 || headerHits < 3) {
+        throw new Error('No pude reconocer los encabezados del Excel. Asegurate de exportarlo desde "Mis Comprobantes → Recibidos → Exportar".');
+      }
+
+      // Mapear cada campo a su índice de columna, o -1 si no se encontró.
+      const findCol = (variantes) => {
+        for (const v of variantes) {
+          const i = headerNorm.indexOf(v);
+          if (i >= 0) return i;
+        }
+        return -1;
       };
+      const c = {};
+      const faltantes = [];
+      for (const [campo, variantes] of Object.entries(HEADERS_ARCA)) {
+        c[campo] = findCol(variantes);
+        if (c[campo] < 0) faltantes.push(campo);
+      }
+      // Estos son imprescindibles. Si falta alguno, el match es imposible.
+      const CRITICOS = ['fecha', 'tipo', 'pv', 'num', 'cuit', 'total'];
+      const criticosFaltantes = CRITICOS.filter(k => c[k] < 0);
+      if (criticosFaltantes.length) {
+        throw new Error('Faltan columnas críticas en el Excel: ' + criticosFaltantes.join(', ') +
+          '. Encabezados encontrados: ' + headerNorm.filter(Boolean).join(' | '));
+      }
+
       arcaRows = [];
-      for (let i = 1; i < rows.length; i++) {
-        const r = rows[i]; if (!r || r[c.fecha] == null) continue;
-        const tipo = (r[c.tipo]||'').toString();
-        const esNC = /cr[eé]dito/i.test(tipo) || /^(3|8|13|53|110)\s*[-–]/.test(tipo);
+      arcaDescartadas = [];
+      let totalFilas = 0;
+      for (let i = headerIdx + 1; i < raw.length; i++) {
+        const r = raw[i];
+        if (!r || r.every(v => v == null || String(v).trim() === '')) continue; // fila totalmente vacía
+        totalFilas++;
+        // Reglas de descarte que DECLARAN motivo (nada silencioso).
+        const motivo = [];
+        if (r[c.fecha] == null || String(r[c.fecha]).trim() === '') motivo.push('sin fecha');
+        const cuit = (r[c.cuit] || '').toString().replace(/\D/g, '');
+        if (!cuit) motivo.push('sin CUIT');
+        const totalRaw = +r[c.total];
+        if (isNaN(totalRaw)) motivo.push('total no numérico');
+        if (motivo.length) {
+          arcaDescartadas.push({ fila: i + 1, motivo: motivo.join(', '), datos: r.slice(0, 10) });
+          continue;
+        }
+        const tipoStr = (r[c.tipo] || '').toString().trim();
+        // Detectar NC por texto o por código AFIP al inicio ("3 - Nota de Crédito A", "203 - NC MiPyme A")
+        const codMatch = tipoStr.match(/^(\d{1,3})\b/);
+        const cod = codMatch ? codMatch[1] : null;
+        const esNC = /cr[eé]dito/i.test(tipoStr) || (cod && CODIGOS_NC.has(cod));
         const signo = esNC ? -1 : 1;
-        // Moneda extranjera: ARCA da montos en USD + tipo de cambio. Convertir a pesos.
-        const moneda = c.moneda>=0 ? (r[c.moneda]||'').toString().trim() : '$';
-        const tc = (c.tc>=0 && +r[c.tc]>0) ? +r[c.tc] : 1;
-        const conv = (moneda && moneda!=='$' && moneda.toUpperCase()!=='PES') ? tc : 1;
-        // neto = gravado + no gravado (Odoo los une, ARCA los separa)
-        const netoTotal = (+r[c.neto]||0) + (c.nogravado>=0 ? (+r[c.nogravado]||0) : 0);
+        // Moneda extranjera: ARCA da montos en la moneda original + tipo de cambio.
+        const monedaCode = c.moneda >= 0 ? (r[c.moneda] || '').toString().trim() : 'PES';
+        const tc = (c.tc >= 0 && +r[c.tc] > 0) ? +r[c.tc] : 1;
+        const esExtranjera = monedaCode && !/^(pes|ars|\$)$/i.test(monedaCode);
+        const conv = esExtranjera ? tc : 1;
+        // neto = gravado + no gravado + exento (Odoo los junta en base imponible;
+        // ARCA los separa). El total sí incluye todo.
+        const netoTotal =
+          (+r[c.neto] || 0) +
+          (c.nogravado >= 0 ? (+r[c.nogravado] || 0) : 0) +
+          (c.exento    >= 0 ? (+r[c.exento]    || 0) : 0);
         arcaRows.push({
-          fecha: r[c.fecha], tipo, esNC,
-          pv: parseInt(r[c.pv])||0, num: parseInt(r[c.num])||0,
-          cuit: (r[c.cuit]||'').toString().replace(/\D/g,''),
-          denom: (r[c.denom]||'').toString(),
-          moneda, tc: conv,
-          neto: netoTotal*conv*signo,
-          otros: (+r[c.otros]||0)*conv*signo,
-          iva: (+r[c.iva]||0)*conv*signo,
-          total: (+r[c.total]||0)*conv*signo,
+          fecha: r[c.fecha], tipo: tipoStr, esNC, cod,
+          pv: parseInt(r[c.pv]) || 0, num: parseInt(r[c.num]) || 0,
+          cuit,
+          denom: (r[c.denom] || '').toString(),
+          moneda: monedaCode || '$', tc: conv,
+          neto:  netoTotal * conv * signo,
+          otros: (+r[c.otros] || 0) * conv * signo,
+          iva:   (+r[c.iva]   || 0) * conv * signo,
+          total: (+r[c.total] || 0) * conv * signo,
         });
       }
-      $('dropLabel').textContent = `✓ ${f.name} (${arcaRows.length})`;
+      arcaMeta = {
+        archivo: f.name,
+        filasProcesadas: totalFilas,
+        aceptadas: arcaRows.length,
+        descartadas: arcaDescartadas.length,
+        headerIdx: headerIdx + 1,
+        headerHits,
+        opcionalesFaltantes: faltantes.filter(k => !CRITICOS.includes(k)),
+      };
+      const facs = arcaRows.filter(x => !x.esNC).length;
+      const ncs  = arcaRows.filter(x =>  x.esNC).length;
+      $('dropLabel').textContent = `✓ ${f.name} — ${arcaRows.length} (${facs} FC + ${ncs} NC)`;
       $('dropLabel').classList.add('ok');
       $('btnConciliar').disabled = false;
-      setStatus('on', `Excel cargado: ${arcaRows.length} comprobantes. Elegí período y conciliá.`);
+      const msgDesc = arcaDescartadas.length
+        ? ` · ${arcaDescartadas.length} descartada(s) (ver detalle abajo)`
+        : '';
+      setStatus('on', `Excel cargado: ${arcaRows.length} comprobantes (${facs} FC + ${ncs} NC)${msgDesc}. Elegí período y conciliá.`);
+      renderPreExcel();
     } catch (err) {
       setStatus('off', 'Error leyendo Excel: ' + err.message, true);
     }
   };
   reader.readAsArrayBuffer(f);
 });
+
+function renderPreExcel() {
+  if (!arcaMeta) return;
+  let h = '';
+  if (arcaMeta.opcionalesFaltantes.length) {
+    h += `<div class="empty" style="border-color:var(--warn); color:var(--warn);">
+      ⚠ Columnas opcionales no encontradas: <b>${arcaMeta.opcionalesFaltantes.join(', ')}</b>. El cruce funciona igual, pero verifica los montos.
+    </div>`;
+  }
+  if (arcaDescartadas && arcaDescartadas.length) {
+    h += `<details style="margin-top:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px;">
+      <summary style="cursor:pointer; font-weight:600; font-size:13px; color:var(--hot);">
+        ⚠ ${arcaDescartadas.length} fila(s) del Excel descartadas — click para revisar
+      </summary>
+      <table style="margin-top:10px; font-size:12px;"><thead><tr>
+        <th>Fila (Excel)</th><th>Motivo</th><th>Datos (primeras columnas)</th>
+      </tr></thead><tbody>
+      ${arcaDescartadas.map(d => `<tr>
+        <td class="mono">${d.fila}</td>
+        <td class="perc">${d.motivo}</td>
+        <td style="font-size:11px;color:var(--muted);">${d.datos.map(x => x == null ? '—' : String(x).slice(0, 30)).join(' · ')}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </details>`;
+  }
+  $('results').innerHTML = h;
+}
 
 function setStatus(dot, msg, isErr) {
   $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`;
@@ -333,7 +467,23 @@ $('btnConciliar').addEventListener('click', async () => {
 
 function render() {
   const r = estado;
+  const arcaFC = r.arca.filter(x => !x.esNC).length;
+  const arcaNC = r.arca.filter(x =>  x.esNC).length;
+  const odooFC = r.odoo.filter(x => !x.es_nc).length;
+  const odooNC = r.odoo.filter(x =>  x.es_nc).length;
+  const difCant = r.arca.length - r.odoo.length;
+  const countClass = difCant === 0 ? 'ok' : (Math.abs(difCant) <= 2 ? 'sobra' : 'falta');
+  const countIcon = difCant === 0 ? '✓' : (difCant > 0 ? '−' : '+');
+  const countMsg = difCant === 0
+    ? 'Mismo total'
+    : difCant > 0 ? `${difCant} más en ARCA` : `${-difCant} más en Odoo`;
+
   let h = `<div class="summary">
+    <div class="card count ${countClass}">
+      <div class="n">${r.arca.length} <span style="color:var(--muted); font-weight:400;">vs</span> ${r.odoo.length}</div>
+      <div class="l">Cantidad ARCA vs Odoo · ${countIcon} ${countMsg}</div>
+      <div class="sub">ARCA: ${arcaFC} FC + ${arcaNC} NC · Odoo: ${odooFC} FC + ${odooNC} NC</div>
+    </div>
     <div class="card ok"><div class="n">${r.coinciden}</div><div class="l">Coinciden OK</div></div>
     <div class="card falta"><div class="n">${r.faltan.length}</div><div class="l">Faltan en Odoo</div></div>
     <div class="card sobra"><div class="n">${r.sobran.length+r.casiMatch.length}</div><div class="l">De más / a revisar</div></div>
@@ -508,10 +658,21 @@ function renderCuadre() {
     <td class="num" style="color:var(--muted);">${money(vd)}</td>
   </tr>`;
 
+  // Fila de cantidades: contrasta el conteo de comprobantes lado ARCA vs lado Odoo.
+  const cantOdooContables = odooContables.length;
+  const difCant = r.arca.length - cantOdooContables;
+  const filaCant = `<tr>
+    <td>Cantidad de comprobantes</td>
+    <td class="num">${r.arca.length}</td>
+    <td class="num">${cantOdooContables}</td>
+    <td class="num ${difCant === 0 ? 'dif-ok' : 'dif-mal'}">${difCant === 0 ? '✓ 0' : (difCant > 0 ? '+' + difCant : difCant)}</td>
+  </tr>`;
+
   let h = `<div class="group"><div class="cuadre"><h2>Cuadre final · libro de IVA ${r.periodo}</h2>
     <table><thead><tr>
       <th>Concepto</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Diferencia</th>
     </tr></thead><tbody>
+    ${filaCant}
     ${filaInfo('Neto gravado', sumArca.neto, sumOdoo.neto, dif.neto)}
     ${fila('IVA', sumArca.iva, sumOdoo.iva, dif.iva)}
     ${fila('Otros tributos / percepciones', sumArca.otros, sumOdoo.otros, dif.otros)}
