@@ -1416,10 +1416,58 @@ async function cargarFichas() {
 }
 
 function nuevoContacto() { abrirDrawer({ id: null, company_type: 'person', category_id: [] }, null, true); }
-function abrirFicha(pid) {
-  const c = FICHA[pid];
-  if (!c) { toastF('Estoy cargando las fichas desde Odoo, probá en unos segundos.'); return; }
-  abrirDrawer(c, DATA.find(x => x.partner_id === pid), false);
+
+async function cargarCatalogosSiHacenFalta() {
+  if (CATFISCAL.length && CATIDT.length && CATPROV.length) return;
+  const [fiscal, idt, prov] = await Promise.all([
+    orpc('l10n_ar.afip.responsibility.type', 'search_read', [[]], { fields: ['id','name'] }),
+    orpc('l10n_latam.identification.type', 'search_read', [[['active','=',true]]], { fields: ['id','name'] }),
+    orpc('res.country.state', 'search_read', [[['country_id.code','=','AR']]], { fields: ['id','name'], limit: 0 }),
+  ]);
+  CATFISCAL = fiscal; CATIDT = idt; CATPROV = prov;
+}
+
+// Muestra un placeholder de "cargando" en el drawer mientras se trae la ficha.
+function mostrarDrawerCargando(nombre) {
+  document.getElementById('fdrawer').innerHTML = `
+    <div class="dhead"><button class="x" onclick="cerrarDrawer()" aria-label="Cerrar">✕</button>
+      <h3>${esc(nombre || 'Cargando…')}</h3>
+      <div class="cpct" style="opacity:.7;">Buscando la ficha en Odoo…</div>
+    </div>
+    <div class="dbody" style="display:flex;align-items:center;justify-content:center;min-height:200px;">
+      <div style="text-align:center;">
+        <div style="width:32px;height:32px;border:3px solid var(--surface-2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 12px;"></div>
+        <div style="color:var(--muted);font-size:13px;">Trayendo datos del contacto</div>
+      </div>
+    </div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+  document.getElementById('fdrawer').classList.add('on');
+  document.getElementById('fscrim').classList.add('on');
+}
+
+async function abrirFicha(pid) {
+  const d = DATA.find(x => x.partner_id === pid);
+  // Si ya está cacheada, abrimos instantáneo — camino feliz.
+  if (FICHA[pid]) { abrirDrawer(FICHA[pid], d, false); return; }
+  // Sin cachear (bulk aún no terminó o el partner no vino en él): pedir SOLO ese
+  // contacto a Odoo. Es <300ms vs esperar a que termine cargarFichas() completo.
+  mostrarDrawerCargando(d && d.name);
+  try {
+    const [parts] = await Promise.all([
+      orpc('res.partner', 'read', [[pid], PF], {}),
+      cargarCatalogosSiHacenFalta(),
+    ]);
+    const c = (parts || [])[0];
+    if (!c) { toastF('No encontré este contacto en Odoo.'); cerrarDrawer(); return; }
+    FICHA[pid] = c;
+    abrirDrawer(c, d, false);
+    // Refresca el % de completitud en la tarjeta de la lista (ahora que ya está en FICHA).
+    renderLista();
+  } catch (e) {
+    console.warn('Error trayendo ficha individual:', e.message);
+    toastF('⚠ No pude traer la ficha de Odoo: ' + e.message);
+    cerrarDrawer();
+  }
 }
 function cerrarDrawer() { document.getElementById('fdrawer').classList.remove('on'); document.getElementById('fscrim').classList.remove('on'); FEDIT = null; }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarDrawer(); });
