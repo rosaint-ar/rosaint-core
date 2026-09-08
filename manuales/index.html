@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manuales · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="manuales.css">
+</head>
+<body data-page="manuales" data-title="Manuales" data-subtitle="Cómo se hace cada cosa en Rosaint">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px;">
+    <div class="buscador" style="flex:1; margin-bottom:0;">
+      <span class="lupa">🔍</span>
+      <input type="search" id="q" placeholder="Buscar: “cargar un pedido”, “etiquetas”, “factura”…" autocomplete="off">
+    </div>
+    <a class="btn primary no-print" href="editar.html?nuevo=1" style="flex-shrink:0;">+ Nuevo manual</a>
+  </div>
+
+  <div class="filtros" id="filtros"></div>
+
+  <div id="resultados">
+    <div class="vacio"><span class="ico">📚</span>Cargando manuales…</div>
+  </div>
+
+  <!-- Bandeja de dudas ------------------------------------------------- -->
+  <div class="dudas-panel">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px;">
+        <div>
+          <h2 style="font-size:15px; font-weight:600;">Dudas sin manual</h2>
+          <p style="font-size:12.5px; color:var(--muted); margin-top:3px;">
+            Lo que preguntó alguien y todavía no está escrito. Cada una debería terminar en un manual.
+          </p>
+        </div>
+        <span class="pill accent" id="dudas-n">—</span>
+      </div>
+
+      <div style="display:flex; gap:8px; margin:14px 0 4px; flex-wrap:wrap;">
+        <input type="text" id="duda-txt" placeholder="¿Qué preguntaron? Ej: “cómo se carga una nota de crédito”" style="flex:1; min-width:220px;">
+        <select id="duda-area" style="width:auto; min-width:150px;"></select>
+        <button class="btn primary" id="duda-add">Anotar</button>
+      </div>
+
+      <div id="dudas-lista" style="margin-top:10px;"></div>
+      <div style="margin-top:12px;">
+        <button class="btn ghost" id="ver-resueltas" style="font-size:12px;">Ver las ya resueltas</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="config.js"></script>
+<script>
+const { AREAS, ESTADOS, areaDe, tipoDe } = window.MANUALES_CFG;
+
+let MANUALES = [];
+let DUDAS = [];
+let filtroArea = 'todas';
+let verResueltas = false;
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const fecha = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const hoy = new Date();
+  const dias = Math.floor((hoy - d) / 86400000);
+  if (dias === 0) return 'hoy';
+  if (dias === 1) return 'ayer';
+  if (dias < 30) return 'hace ' + dias + ' días';
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: '2-digit' });
+};
+
+// ---- Carga -------------------------------------------------------------
+async function cargar() {
+  const [{ data: mans, error: e1 }, { data: dudas, error: e2 }] = await Promise.all([
+    window.sb.from('manuales')
+      .select('id,codigo,titulo,area,tipo,resumen,tags,estado,responsable,vistas,actualizado_en')
+      .order('actualizado_en', { ascending: false }),
+    window.sb.from('manual_dudas')
+      .select('id,pregunta,area,quien,estado,nota,creado_en')
+      .order('creado_en', { ascending: false }),
+  ]);
+  if (e1) { console.error(e1); $('#resultados').innerHTML = '<div class="msg msg--err">No se pudieron cargar los manuales: ' + esc(e1.message) + '</div>'; return; }
+  if (e2) console.error(e2);
+  MANUALES = mans || [];
+  DUDAS = dudas || [];
+  pintarFiltros();
+  pintar();
+  pintarDudas();
+}
+
+// ---- Filtros por área --------------------------------------------------
+function pintarFiltros() {
+  const cuenta = {};
+  MANUALES.forEach((m) => { cuenta[m.area] = (cuenta[m.area] || 0) + 1; });
+  const conManuales = AREAS.filter((a) => cuenta[a.key]);
+  const chips = ['<button class="chip' + (filtroArea === 'todas' ? ' on' : '') + '" data-a="todas">Todas<span class="n">' + MANUALES.length + '</span></button>']
+    .concat(conManuales.map((a) =>
+      '<button class="chip' + (filtroArea === a.key ? ' on' : '') + '" data-a="' + a.key + '">' +
+      a.ico + ' ' + esc(a.nom) + '<span class="n">' + cuenta[a.key] + '</span></button>'));
+  $('#filtros').innerHTML = chips.join('');
+  $('#filtros').querySelectorAll('.chip').forEach((c) => {
+    c.addEventListener('click', () => { filtroArea = c.dataset.a; pintarFiltros(); pintar(); });
+  });
+}
+
+// ---- Listado -----------------------------------------------------------
+// Se busca por PALABRAS y por su RAÍZ, no por la frase entera: "anotar una duda"
+// tiene que encontrar un manual que diga "anotá la duda". Mismo criterio que la
+// función buscar_manuales() de la base, para que el buscador y el asistente
+// coincidan. Los conectores se descartan.
+const norm = (s) => String(s || '').toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '');
+const VACIAS = new Set(['los','las','del','una','uno','unos','unas','por','con','que','como',
+  'para','sus','mas','cual','cuales','donde','cuando','este','esta','esto','hay','son','ser',
+  'esa','ese','eso','sobre','desde','entre','todo','toda','pero','porque','quiero','necesito']);
+const raices = (q) => norm(q).split(/[^a-z0-9]+/)
+  .filter((w) => w.length >= 3 && !VACIAS.has(w))
+  .map((w) => (w.length >= 6 ? w.slice(0, w.length - 2) : w));
+
+// Búsqueda dentro del cuerpo de los manuales (la hace la base)
+async function buscarEnElTexto(termino) {
+  $('#resultados').innerHTML = '<div class="vacio"><span class="ico">🔍</span>Buscando dentro de los manuales…</div>';
+  const { data, error } = await window.sb.rpc('buscar_manuales', { q: termino, limite: 20 });
+  if (error || !data || !data.length) {
+    $('#resultados').innerHTML =
+      '<div class="vacio"><span class="ico">🔍</span>No hay ningún manual sobre eso.<br>' +
+      '<span style="font-size:12.5px">Si es algo que se pregunta seguido, anotalo abajo como duda y lo escribimos.</span></div>';
+    return;
+  }
+  const enLista = data
+    .map((r) => MANUALES.find((m) => m.codigo === r.codigo))
+    .filter(Boolean);
+  $('#resultados').innerHTML =
+    '<div class="area-titulo"><span class="ico">🔍</span>Encontrados dentro del texto' +
+    '<span class="n">· ' + enLista.length + '</span></div>' +
+    '<div class="grilla">' + enLista.map(tarjeta).join('') + '</div>';
+  $('#resultados').querySelectorAll('.manual-card').forEach((c) => {
+    c.addEventListener('click', () => { window.location.href = 'ver.html?c=' + encodeURIComponent(c.dataset.cod); });
+  });
+}
+
+function pintar() {
+  const q = $('#q').value.trim().toLowerCase();
+  const palabras = raices(q);
+  const termino = norm(q).trim();
+
+  let lista = MANUALES.filter((m) => {
+    if (filtroArea !== 'todas' && m.area !== filtroArea) return false;
+    if (!termino) return true;
+    const heno = norm([m.titulo, m.resumen, m.codigo, (m.tags || []).join(' '), areaDe(m.area).nom].join(' '));
+    if (!palabras.length) return heno.includes(termino);
+    return palabras.every((w) => heno.includes(w));
+  });
+
+  // Si por título/resumen no salió nada, busca DENTRO del texto de los manuales
+  // (misma función que usa el asistente). Se pide al servidor para no traer
+  // el contenido completo de toda la biblioteca en cada carga.
+  if (!lista.length && termino.length >= 3) { buscarEnElTexto(termino); return; }
+
+  if (!lista.length) {
+    $('#resultados').innerHTML = MANUALES.length
+      ? '<div class="vacio"><span class="ico">🔍</span>No hay ningún manual que coincida.<br>' +
+        '<span style="font-size:12.5px">Si es algo que se pregunta seguido, anotalo abajo como duda y lo escribimos.</span></div>'
+      : '<div class="vacio"><span class="ico">📚</span>Todavía no hay manuales cargados.<br>' +
+        '<span style="font-size:12.5px">Empezá por el primero con el botón “Nuevo manual”.</span></div>';
+    return;
+  }
+
+  // Agrupado por área, respetando el orden de AREAS
+  const porArea = {};
+  lista.forEach((m) => { (porArea[m.area] = porArea[m.area] || []).push(m); });
+  const orden = AREAS.map((a) => a.key).filter((k) => porArea[k])
+    .concat(Object.keys(porArea).filter((k) => !AREAS.some((a) => a.key === k)));
+
+  $('#resultados').innerHTML = orden.map((k) => {
+    const a = areaDe(k);
+    const items = porArea[k].map(tarjeta).join('');
+    return '<div class="area-titulo"><span class="ico">' + a.ico + '</span>' + esc(a.nom) +
+      '<span class="n">· ' + porArea[k].length + '</span></div><div class="grilla">' + items + '</div>';
+  }).join('');
+
+  $('#resultados').querySelectorAll('.manual-card').forEach((c) => {
+    c.addEventListener('click', () => { window.location.href = 'ver.html?c=' + encodeURIComponent(c.dataset.cod); });
+  });
+}
+
+function tarjeta(m) {
+  const est = ESTADOS[m.estado] || ESTADOS.borrador;
+  return '<div class="manual-card" data-cod="' + esc(m.codigo) + '">' +
+    '<div class="top"><span class="codigo">' + esc(m.codigo) + '</span>' +
+      (m.estado !== 'vigente' ? '<span class="pill ' + est.clase + '">' + est.nom + '</span>' : '') +
+    '</div>' +
+    '<h3>' + esc(m.titulo) + '</h3>' +
+    (m.resumen ? '<p class="resumen">' + esc(m.resumen) + '</p>' : '') +
+    '<div class="pie"><span>' + esc(tipoDe(m.tipo).nom) + '</span><span>·</span>' +
+      '<span>actualizado ' + fecha(m.actualizado_en) + '</span></div>' +
+    '</div>';
+}
+
+// ---- Dudas -------------------------------------------------------------
+function pintarDudas() {
+  const abiertas = DUDAS.filter((d) => d.estado === 'abierta');
+  const mostrar = verResueltas ? DUDAS : abiertas;
+  $('#dudas-n').textContent = abiertas.length + (abiertas.length === 1 ? ' abierta' : ' abiertas');
+
+  if (!mostrar.length) {
+    $('#dudas-lista').innerHTML = '<p style="font-size:13px; color:var(--muted); padding:10px 0;">' +
+      (verResueltas ? 'No hay dudas anotadas.' : 'No hay dudas pendientes. 👌') + '</p>';
+    return;
+  }
+
+  $('#dudas-lista').innerHTML = mostrar.map((d) => {
+    const res = d.estado !== 'abierta';
+    return '<div class="duda' + (res ? ' resuelta' : '') + '">' +
+      '<div class="cuerpo">' +
+        '<div class="preg">' + esc(d.pregunta) + '</div>' +
+        '<div class="meta">' + (d.area ? areaDe(d.area).ico + ' ' + esc(areaDe(d.area).nom) + ' · ' : '') +
+          fecha(d.creado_en) + (d.quien ? ' · ' + esc(d.quien) : '') +
+          (d.origen === 'asistente' ? ' · vino del asistente' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="acciones">' +
+        (res ? '' :
+          '<button class="btn ghost" data-escribir="' + d.id + '" title="Crear el manual que responde esta duda">✍️ Escribir</button>' +
+          '<button class="btn ghost" data-listo="' + d.id + '" title="Marcar como resuelta">✓</button>') +
+        '<button class="btn ghost" data-borrar="' + d.id + '" title="Borrar">✕</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  $('#dudas-lista').querySelectorAll('[data-escribir]').forEach((b) => b.addEventListener('click', () => {
+    const d = DUDAS.find((x) => String(x.id) === b.dataset.escribir);
+    const p = new URLSearchParams({ nuevo: '1', duda: d.id, titulo: d.pregunta });
+    if (d.area) p.set('area', d.area);
+    window.location.href = 'editar.html?' + p.toString();
+  }));
+  $('#dudas-lista').querySelectorAll('[data-listo]').forEach((b) => b.addEventListener('click', async () => {
+    await window.sb.from('manual_dudas')
+      .update({ estado: 'resuelta', resuelto_en: new Date().toISOString() })
+      .eq('id', b.dataset.listo);
+    await cargar();
+  }));
+  $('#dudas-lista').querySelectorAll('[data-borrar]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('¿Borrar esta duda de la lista?')) return;
+    await window.sb.from('manual_dudas').delete().eq('id', b.dataset.borrar);
+    await cargar();
+  }));
+}
+
+async function agregarDuda() {
+  const txt = $('#duda-txt').value.trim();
+  if (!txt) { $('#duda-txt').focus(); return; }
+  const { data: { session } } = await window.sb.auth.getSession();
+  const { error } = await window.sb.from('manual_dudas').insert({
+    pregunta: txt,
+    area: $('#duda-area').value || null,
+    quien: session && session.user ? session.user.email : null,
+    origen: 'core',
+  });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  $('#duda-txt').value = '';
+  await cargar();
+}
+
+// ---- Botón "Nuevo manual" en el topbar ---------------------------------
+function botonNuevo() {
+  const host = document.querySelector('.app-topbar') || document.querySelector('#app-content');
+  const b = document.createElement('a');
+  b.className = 'btn primary no-print';
+  b.href = 'editar.html?nuevo=1';
+  b.textContent = '+ Nuevo manual';
+  b.style.marginLeft = 'auto';
+  if (host && host.classList.contains('app-topbar')) host.appendChild(b);
+  else document.querySelector('.buscador').insertAdjacentElement('beforebegin', b);
+}
+
+// ---- Arranque ----------------------------------------------------------
+$('#duda-area').innerHTML = '<option value="">Área…</option>' +
+  AREAS.map((a) => '<option value="' + a.key + '">' + a.ico + ' ' + a.nom + '</option>').join('');
+$('#q').addEventListener('input', pintar);
+$('#duda-add').addEventListener('click', agregarDuda);
+$('#duda-txt').addEventListener('keydown', (e) => { if (e.key === 'Enter') agregarDuda(); });
+$('#ver-resueltas').addEventListener('click', () => {
+  verResueltas = !verResueltas;
+  $('#ver-resueltas').textContent = verResueltas ? 'Ver sólo las pendientes' : 'Ver las ya resueltas';
+  pintarDudas();
+});
+
+(async () => {
+  // Espera a que el shell monte el topbar antes de colgarle el botón.
+  setTimeout(botonNuevo, 300);
+  await cargar();
+  $('#q').focus();
+})();
+</script>
+</body>
+</html>

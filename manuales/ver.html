@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manual · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="manuales.css">
+  <style>
+    .modal-fondo {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      max-width: 780px; width: 100%; max-height: 82vh; overflow-y: auto;
+      padding: 22px 24px; box-shadow: var(--shadow-menu);
+    }
+    .modal h2 { font-size: 16px; font-weight: 650; margin-bottom: 4px; }
+    .ver-fila {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .ver-fila:last-child { border-bottom: none; }
+    .ver-fila .n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); width: 34px; }
+    .ver-fila .quien { flex: 1; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body data-page="manuales" data-title="Manual" data-subtitle="">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div id="cargando" class="vacio"><span class="ico">📖</span>Abriendo el manual…</div>
+
+  <div id="ficha" style="display:none;">
+    <div class="manual-layout">
+      <div>
+        <div class="manual-head">
+          <div class="fila" id="meta-fila"></div>
+          <h1 id="titulo"></h1>
+          <p class="resumen" id="resumen"></p>
+          <div class="datos" id="datos"></div>
+        </div>
+
+        <div class="md" id="cuerpo"></div>
+
+        <div class="no-print" style="margin-top:34px; padding-top:16px; border-top:1px solid var(--border);
+                    display:flex; gap:9px; flex-wrap:wrap; align-items:center;">
+          <a class="btn primary" id="btn-editar">✏️ Editar</a>
+          <button class="btn" id="btn-imprimir">🖨️ Imprimir</button>
+          <button class="btn" id="btn-copiar">🔗 Copiar el enlace</button>
+          <button class="btn ghost" id="btn-historial">🕘 Historial</button>
+          <span style="flex:1"></span>
+          <button class="btn ghost" id="btn-destildar" style="font-size:12px;">Destildar todo</button>
+        </div>
+      </div>
+
+      <aside class="manual-indice no-print" id="indice"></aside>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="../shared/markdown.js"></script>
+<script src="config.js"></script>
+<script>
+const { ESTADOS, areaDe, tipoDe } = window.MANUALES_CFG;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const CODIGO = new URLSearchParams(location.search).get('c');
+let MANUAL = null;
+
+const fechaLarga = (iso) => iso
+  ? new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+  : '—';
+
+// El shell arma el topbar de forma asincrónica; reintenta hasta que exista.
+function topbarTexto(titulo, sub, intento) {
+  const cont = document.querySelector('.topbar-title');
+  if (!cont) {
+    if ((intento || 0) < 25) requestAnimationFrame(() => topbarTexto(titulo, sub, (intento || 0) + 1));
+    return;
+  }
+  const t = cont.querySelector('span:not([class])');
+  if (t) t.textContent = titulo;
+  const s = cont.querySelector('.sub');
+  if (s) s.textContent = sub || '';
+}
+
+async function cargar() {
+  if (!CODIGO) { noExiste('Falta indicar qué manual abrir.'); return; }
+
+  const { data, error } = await window.sb.from('manuales')
+    .select('*').eq('codigo', CODIGO).maybeSingle();
+
+  if (error) { noExiste('Error al leer el manual: ' + error.message); return; }
+  if (!data)  { noExiste('No existe ningún manual con el código <b>' + esc(CODIGO) + '</b>.'); return; }
+
+  MANUAL = data;
+  pintar();
+  // Contador de lecturas (no bloquea la pantalla si falla)
+  window.sb.rpc('manual_visto', { p_codigo: CODIGO }).then(() => {}, () => {});
+}
+
+function noExiste(html) {
+  $('#cargando').innerHTML = '<span class="ico">🤷</span>' + html +
+    '<div style="margin-top:16px"><a class="btn" href="index.html">← Volver a los manuales</a></div>';
+}
+
+function pintar() {
+  const m = MANUAL;
+  const a = areaDe(m.area);
+  const est = ESTADOS[m.estado] || ESTADOS.borrador;
+
+  document.title = m.titulo + ' · Manuales Rosaint';
+  topbarTexto(m.titulo, a.nom);
+
+  $('#meta-fila').innerHTML =
+    '<span class="codigo">' + esc(m.codigo) + '</span>' +
+    '<span class="pill">' + a.ico + ' ' + esc(a.nom) + '</span>' +
+    '<span class="pill">' + esc(tipoDe(m.tipo).nom) + '</span>' +
+    '<span class="pill ' + est.clase + '">' + est.nom + '</span>';
+
+  $('#titulo').textContent = m.titulo;
+  $('#resumen').textContent = m.resumen || '';
+  $('#resumen').style.display = m.resumen ? '' : 'none';
+
+  $('#datos').innerHTML = [
+    m.responsable ? 'Responsable: <b>' + esc(m.responsable) + '</b>' : '',
+    'Actualizado: <b>' + fechaLarga(m.actualizado_en) + '</b>',
+    'Versión <b>' + m.version + '</b>',
+    (m.tags && m.tags.length) ? 'Etiquetas: ' + m.tags.map(esc).join(', ') : '',
+  ].filter(Boolean).map((x) => '<span>' + x + '</span>').join('');
+
+  $('#cuerpo').innerHTML = window.mdRender(m.contenido) ||
+    '<p style="color:var(--muted)">Este manual todavía no tiene contenido escrito.</p>';
+
+  const secciones = window.mdIndice(m.contenido);
+  $('#indice').innerHTML = secciones.length
+    ? '<div class="tit">En esta página</div>' +
+      secciones.map((s) => '<a href="#' + s.id + '">' + esc(s.titulo) + '</a>').join('')
+    : '';
+
+  $('#btn-editar').href = 'editar.html?c=' + encodeURIComponent(m.codigo);
+  $('#cargando').style.display = 'none';
+  $('#ficha').style.display = '';
+}
+
+// ---- Historial ---------------------------------------------------------
+async function verHistorial() {
+  const { data, error } = await window.sb.from('manual_versiones')
+    .select('version,titulo,resumen,contenido,autor,creado_en')
+    .eq('manual_id', MANUAL.id).order('version', { ascending: false });
+
+  const filas = (data || []).map((v) =>
+    '<div class="ver-fila"><span class="n">v' + v.version + '</span>' +
+    '<span class="quien">' + fechaLarga(v.creado_en) +
+      (v.autor ? ' · ' + esc(v.autor) : '') + '</span>' +
+    '<button class="btn ghost" data-v="' + v.version + '" style="font-size:12px">Ver cómo decía</button></div>').join('');
+
+  const fondo = document.createElement('div');
+  fondo.className = 'modal-fondo';
+  fondo.innerHTML = '<div class="modal">' +
+    '<h2>Historial de cambios</h2>' +
+    '<p style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">' +
+      'Ahora va por la versión <b>' + MANUAL.version + '</b>. Cada edición guarda cómo estaba antes.</p>' +
+    (error ? '<div class="msg msg--err">' + esc(error.message) + '</div>' : '') +
+    (filas || '<p style="font-size:13px; color:var(--muted)">Todavía no se editó desde que se creó.</p>') +
+    '<div style="margin-top:18px; text-align:right"><button class="btn" data-cerrar>Cerrar</button></div>' +
+    '</div>';
+  document.body.appendChild(fondo);
+
+  fondo.addEventListener('click', (e) => {
+    if (e.target === fondo || e.target.hasAttribute('data-cerrar')) fondo.remove();
+    const b = e.target.closest('[data-v]');
+    if (b) {
+      const v = (data || []).find((x) => String(x.version) === b.dataset.v);
+      if (!v) return;
+      fondo.querySelector('.modal').innerHTML =
+        '<h2>' + esc(v.titulo || MANUAL.titulo) + ' — versión ' + v.version + '</h2>' +
+        '<p style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">' +
+          fechaLarga(v.creado_en) + (v.autor ? ' · ' + esc(v.autor) : '') + '</p>' +
+        '<div class="md">' + window.mdRender(v.contenido) + '</div>' +
+        '<div style="margin-top:18px; text-align:right"><button class="btn" data-cerrar>Cerrar</button></div>';
+    }
+  });
+}
+
+// ---- Acciones ----------------------------------------------------------
+$('#btn-imprimir').addEventListener('click', () => window.print());
+$('#btn-historial').addEventListener('click', verHistorial);
+$('#btn-destildar').addEventListener('click', () => {
+  document.querySelectorAll('.md-check').forEach((c) => { c.checked = false; });
+});
+$('#btn-copiar').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(location.href);
+    $('#btn-copiar').textContent = '✓ Copiado';
+    setTimeout(() => { $('#btn-copiar').textContent = '🔗 Copiar el enlace'; }, 1800);
+  } catch (e) { alert('Copiá el enlace desde la barra del navegador.'); }
+});
+
+cargar();
+</script>
+</body>
+</html>

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editar manual · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="manuales.css">
+</head>
+<body data-page="manuales" data-title="Editar manual" data-subtitle="Se guarda con el historial de cambios">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div id="aviso"></div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <div class="editor-cabecera">
+      <label class="campo">
+        <span class="lbl">Título</span>
+        <input type="text" id="titulo" placeholder="Ej: Cómo cargar un pedido en Odoo">
+      </label>
+      <label class="campo">
+        <span class="lbl">Código</span>
+        <input type="text" id="codigo" placeholder="PROD-001">
+        <span class="hint">Es el nombre corto para citarlo. Se propone solo.</span>
+      </label>
+      <label class="campo">
+        <span class="lbl">Área</span>
+        <select id="area"></select>
+      </label>
+      <label class="campo">
+        <span class="lbl">Tipo</span>
+        <select id="tipo"></select>
+        <span class="hint" id="tipo-hint"></span>
+      </label>
+      <label class="campo">
+        <span class="lbl">Estado</span>
+        <select id="estado">
+          <option value="borrador">Borrador — todavía no se muestra como vigente</option>
+          <option value="vigente">Vigente — es la forma correcta de hacerlo hoy</option>
+          <option value="archivado">Archivado — ya no se usa</option>
+        </select>
+      </label>
+      <label class="campo">
+        <span class="lbl">Responsable</span>
+        <input type="text" id="responsable" placeholder="Quién es dueño de este proceso">
+      </label>
+    </div>
+
+    <label class="campo" style="margin-bottom:0;">
+      <span class="lbl">De qué se trata (una línea)</span>
+      <input type="text" id="resumen" placeholder="Para qué sirve este manual y cuándo se usa">
+    </label>
+  </div>
+
+  <div class="editor-layout">
+    <div>
+      <div class="panel-tit">
+        <span>Contenido</span>
+        <button class="btn ghost" id="btn-chuleta" style="font-size:11px; padding:3px 8px;">¿Cómo se escribe?</button>
+      </div>
+      <textarea id="contenido" spellcheck="true" placeholder="## Cuándo se hace&#10;&#10;1. Primer paso&#10;   Una aclaración del paso&#10;2. Segundo paso&#10;&#10;>! Lo que nunca hay que hacer"></textarea>
+
+      <div class="card chuleta" id="chuleta" style="display:none; margin-top:12px;">
+        <b style="color:var(--text)">Formato</b><br>
+        <code>## Sección</code> — título que aparece en el índice lateral<br>
+        <code>1. paso</code> — los pasos numerados de la tarea<br>
+        <code>&nbsp;&nbsp;&nbsp;detalle</code> — indentado debajo de un paso, es la aclaración de ese paso<br>
+        <code>- item</code> — viñeta suelta<br>
+        <code>- [ ] tarea</code> — casilla para ir tildando mientras se hace<br>
+        <code>&gt; nota</code> — recuadro gris (una aclaración)<br>
+        <code>&gt;! cuidado</code> — recuadro rojo (lo que no hay que hacer)<br>
+        <code>&gt;+ dato</code> — recuadro verde (un atajo o un tip)<br>
+        <code>| col | col |</code> — tabla<br>
+        <code>**negrita**</code> · <code>*cursiva*</code> · <code>`código`</code> · <code>[texto](link)</code>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-tit"><span>Cómo se va a ver</span></div>
+      <div class="previa md" id="previa"></div>
+    </div>
+  </div>
+
+  <div class="barra-guardar">
+    <button class="btn primary" id="btn-guardar">Guardar</button>
+    <a class="btn" id="btn-cancelar" href="index.html">Cancelar</a>
+    <span class="estado" id="estado-txt"></span>
+    <button class="btn danger no-print" id="btn-borrar" style="display:none;">Borrar manual</button>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="../shared/markdown.js"></script>
+<script src="config.js"></script>
+<script>
+const { AREAS, TIPOS, tipoDe } = window.MANUALES_CFG;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const P = new URLSearchParams(location.search);
+const CODIGO = P.get('c');            // editar uno existente
+const ES_NUEVO = !CODIGO;
+const DUDA_ID = P.get('duda');        // viene de la bandeja de dudas
+let MANUAL = null;
+let codigoTocado = false;
+let sucio = false;
+
+// El shell arma el topbar de forma asincrónica; reintenta hasta que exista.
+function topbarTexto(titulo, sub, intento) {
+  const cont = document.querySelector('.topbar-title');
+  if (!cont) {
+    if ((intento || 0) < 25) requestAnimationFrame(() => topbarTexto(titulo, sub, (intento || 0) + 1));
+    return;
+  }
+  const t = cont.querySelector('span:not([class])');
+  if (t) t.textContent = titulo;
+  const s = cont.querySelector('.sub');
+  if (s) s.textContent = sub || '';
+}
+
+// Prefijo del código según el área
+const PREFIJOS = {
+  produccion: 'PROD', laboratorio: 'LAB', deposito: 'DEP', administracion: 'ADM',
+  comercial: 'COM', 'ventas-online': 'ONL', compras: 'CMP', calidad: 'CAL',
+  sistemas: 'SIS', general: 'GEN',
+};
+
+// ---- Armado de los desplegables ---------------------------------------
+$('#area').innerHTML = AREAS.map((a) => '<option value="' + a.key + '">' + a.ico + ' ' + a.nom + '</option>').join('');
+$('#tipo').innerHTML = TIPOS.map((t) => '<option value="' + t.key + '">' + t.nom + '</option>').join('');
+const pintarHintTipo = () => { $('#tipo-hint').textContent = tipoDe($('#tipo').value).desc; };
+$('#tipo').addEventListener('change', pintarHintTipo);
+pintarHintTipo();
+
+// ---- Código sugerido: PROD-001, PROD-002… -----------------------------
+async function sugerirCodigo() {
+  if (codigoTocado || !ES_NUEVO) return;
+  const pre = PREFIJOS[$('#area').value] || 'GEN';
+  const { data } = await window.sb.from('manuales').select('codigo').like('codigo', pre + '-%');
+  let max = 0;
+  (data || []).forEach((r) => {
+    const n = parseInt(String(r.codigo).split('-')[1], 10);
+    if (!isNaN(n) && n > max) max = n;
+  });
+  $('#codigo').value = pre + '-' + String(max + 1).padStart(3, '0');
+}
+$('#area').addEventListener('change', sugerirCodigo);
+$('#codigo').addEventListener('input', () => { codigoTocado = true; });
+
+// ---- Vista previa en vivo ---------------------------------------------
+function previa() {
+  $('#previa').innerHTML = window.mdRender($('#contenido').value) ||
+    '<p style="color:var(--muted)">Escribí a la izquierda y acá vas viendo cómo queda.</p>';
+}
+$('#contenido').addEventListener('input', () => { previa(); marcarSucio(); });
+['titulo', 'codigo', 'resumen', 'responsable', 'area', 'tipo', 'estado']
+  .forEach((id) => document.getElementById(id).addEventListener('input', marcarSucio));
+
+function marcarSucio() { sucio = true; $('#estado-txt').textContent = 'Hay cambios sin guardar.'; }
+
+// Tab dentro del textarea = indentar (para los detalles de un paso)
+$('#contenido').addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const ta = e.target, i = ta.selectionStart;
+  ta.value = ta.value.slice(0, i) + '   ' + ta.value.slice(ta.selectionEnd);
+  ta.selectionStart = ta.selectionEnd = i + 3;
+  previa(); marcarSucio();
+});
+
+$('#btn-chuleta').addEventListener('click', () => {
+  const c = $('#chuleta');
+  c.style.display = c.style.display === 'none' ? '' : 'none';
+});
+
+// ---- Carga -------------------------------------------------------------
+async function cargar() {
+  if (ES_NUEVO) {
+    topbarTexto('Nuevo manual', DUDA_ID ? 'Responde una duda anotada' : 'Se guarda con el historial de cambios');
+    if (P.get('titulo')) $('#titulo').value = P.get('titulo');
+    if (P.get('area')) $('#area').value = P.get('area');
+    $('#contenido').value = plantilla();
+    await sugerirCodigo();
+    previa();
+    return;
+  }
+
+  const { data, error } = await window.sb.from('manuales').select('*').eq('codigo', CODIGO).maybeSingle();
+  if (error || !data) {
+    $('#aviso').innerHTML = '<div class="msg msg--err">No se encontró el manual ' + esc(CODIGO) + '.</div>';
+    return;
+  }
+  MANUAL = data;
+  $('#titulo').value = data.titulo || '';
+  $('#codigo').value = data.codigo || '';
+  $('#area').value = data.area || 'general';
+  $('#tipo').value = data.tipo || 'instructivo';
+  $('#estado').value = data.estado || 'borrador';
+  $('#resumen').value = data.resumen || '';
+  $('#responsable').value = data.responsable || '';
+  $('#contenido').value = data.contenido || '';
+  $('#btn-cancelar').href = 'ver.html?c=' + encodeURIComponent(data.codigo);
+  $('#btn-borrar').style.display = '';
+  $('#estado-txt').textContent = 'Versión ' + data.version + ' · si guardás, la anterior queda en el historial.';
+  pintarHintTipo();
+  previa();
+  sucio = false;
+}
+
+function plantilla() {
+  return [
+    '## Cuándo se hace',
+    'Explicá en una o dos líneas en qué momento se usa este instructivo.',
+    '',
+    '## Paso a paso',
+    '1. Primer paso',
+    '   Una aclaración de ese paso, si hace falta.',
+    '2. Segundo paso',
+    '',
+    '>! Acá va lo que nunca hay que hacer.',
+    '',
+    '## Si algo sale mal',
+    '- Qué revisar primero',
+    '- A quién avisar',
+  ].join('\n');
+}
+
+// ---- Guardar -----------------------------------------------------------
+async function guardar() {
+  const titulo = $('#titulo').value.trim();
+  const codigo = $('#codigo').value.trim().toUpperCase();
+  if (!titulo) { aviso('err', 'Falta el título.'); $('#titulo').focus(); return; }
+  if (!codigo) { aviso('err', 'Falta el código.'); $('#codigo').focus(); return; }
+
+  const btn = $('#btn-guardar');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+
+  const { data: { session } } = await window.sb.auth.getSession();
+  const quien = session && session.user ? session.user.email : null;
+
+  const fila = {
+    codigo, titulo,
+    area: $('#area').value,
+    tipo: $('#tipo').value,
+    estado: $('#estado').value,
+    resumen: $('#resumen').value.trim() || null,
+    responsable: $('#responsable').value.trim() || null,
+    contenido: $('#contenido').value,
+    actualizado_por: quien,
+  };
+
+  let error;
+  if (ES_NUEVO) ({ error } = await window.sb.from('manuales').insert(fila));
+  else ({ error } = await window.sb.from('manuales').update(fila).eq('id', MANUAL.id));
+
+  if (error) {
+    btn.disabled = false; btn.textContent = 'Guardar';
+    aviso('err', error.code === '23505'
+      ? 'Ya existe un manual con el código ' + esc(codigo) + '. Poné otro.'
+      : 'No se pudo guardar: ' + esc(error.message));
+    return;
+  }
+
+  // Si vino de una duda, la marca resuelta y la enlaza a este manual
+  if (DUDA_ID) {
+    const { data: nuevo } = await window.sb.from('manuales').select('id').eq('codigo', codigo).maybeSingle();
+    await window.sb.from('manual_dudas').update({
+      estado: 'resuelta',
+      resuelto_en: new Date().toISOString(),
+      manual_id: nuevo ? nuevo.id : null,
+    }).eq('id', DUDA_ID);
+  }
+
+  sucio = false;
+  window.location.href = 'ver.html?c=' + encodeURIComponent(codigo);
+}
+
+async function borrar() {
+  if (!MANUAL) return;
+  if (!confirm('¿Borrar “' + MANUAL.titulo + '” definitivamente?\n\n' +
+               'Si sólo dejó de usarse, mejor ponelo en Archivado en vez de borrarlo.')) return;
+  const { error } = await window.sb.from('manuales').delete().eq('id', MANUAL.id);
+  if (error) { aviso('err', 'No se pudo borrar: ' + esc(error.message)); return; }
+  sucio = false;
+  window.location.href = 'index.html';
+}
+
+function aviso(tipo, html) {
+  $('#aviso').innerHTML = '<div class="msg msg--' + tipo + '">' + html + '</div>';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+$('#btn-guardar').addEventListener('click', guardar);
+$('#btn-borrar').addEventListener('click', borrar);
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); guardar(); }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (sucio) { e.preventDefault(); e.returnValue = ''; }
+});
+
+cargar();
+</script>
+</body>
+</html>

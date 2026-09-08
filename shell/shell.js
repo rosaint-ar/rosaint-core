@@ -12,6 +12,7 @@
 const MENU = [
   { type: 'item', id: 'dashboard', label: 'Dashboard', href: 'index.html', status: 'ready' },
   { type: 'item', id: 'asistente', label: 'Asistente',  href: 'asistente/agente.html', status: 'ready' },
+  { type: 'item', id: 'manuales',  label: 'Manuales',   href: 'manuales/index.html', status: 'ready' },
 
   { type: 'group', label: 'Atención al cliente' },
   { type: 'item', id: 'crm',          label: 'Clientes',     href: 'comercial/crm.html',          status: 'ready' },
@@ -115,6 +116,7 @@ const MODULE_ICONS = {
   seguimientos:   '<svg viewBox="0 0 24 24"><path d="M1 3h13v11H1z"/><path d="M14 7h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></svg>',
   canales:        '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.8l7.4-3.6M8.3 13.2l7.4 3.6"/></svg>',
   oportunidades:  '<svg viewBox="0 0 24 24"><path d="M9 21h6M10 21v-3M14 21v-3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2h6c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg>',
+  manuales:       '<svg viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v13h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-13h-3c-2.5 0-4.5.5-6 2z"/><path d="M12 6.5v12"/></svg>',
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
@@ -132,6 +134,7 @@ const DEFAULT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></
 // Cuando estás en una herramienta interna, el topbar muestra "← Módulo".
 // Sumar acá cuando se agregue una landing nueva a un módulo.
 const MODULE_LANDINGS = {
+  manuales: 'Manuales',
   laboratorio: 'Laboratorio',
   catalogo: 'Catálogo',
   precios: 'Precios',
