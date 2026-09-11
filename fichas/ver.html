@@ -91,6 +91,14 @@ async function cargar() {
     COMP = (comp.data || []).sort((a, b) => Number(b.pct) - Number(a.pct));
     PRES = (pres.data || []).sort((a, b) => Number(a.tamanio_kg || 0) - Number(b.tamanio_kg || 0));
     PEND = pend.data || [];
+    // Las dudas de una materia prima también son dudas de este producto
+    const mps = [...new Set(COMP.map(x => x.codigo_mp))];
+    FX.setMps(Object.fromEntries(COMP.map(x => [x.codigo_mp, x.nombre_mp])));
+    if (mps.length) {
+      const pm = await sb.from('fichas_pendientes').select('*').in('codigo_mp', mps);
+      if (pm.error) throw pm.error;
+      PEND = PEND.concat(pm.data.filter(x => !PEND.some(y => y.id === x.id)));
+    }
     FX.setGraneles((gr.data || []).map(g => ({ codigo: g.codigo_granel, nombre: g.nombre_comercial || g.codigo_granel })));
     FX.setNombres(Object.fromEntries((gr.data || []).map(g => [g.codigo_granel, g.nombre_comercial])));
 
@@ -179,10 +187,15 @@ function renderMain() {
   // Dudas de este producto
   const abiertas = PEND.filter(p => p.estado === 'por_revisar' || p.estado === 'por_corregir').sort(FX.ordenar);
   const cerradas = PEND.filter(p => p.estado === 'hecho' || p.estado === 'descartado');
+  const postergadas = PEND.filter(p => p.estado === 'postergado');
   h += bloque('Dudas de este producto',
     (abiertas.length
       ? `<div class="fx-lista fx-lista-plana">${abiertas.map(p => FX.htmlPendiente(p, { conProducto: false })).join('')}</div>`
       : vacio('No hay dudas abiertas.'))
+    + (postergadas.length
+      ? `<details class="fx-hechos"><summary>Para más adelante <span class="n">${postergadas.length}</span></summary>
+           <div class="fx-lista fx-lista-plana">${postergadas.map(p => FX.htmlPendiente(p, { conProducto: false })).join('')}</div></details>`
+      : '')
     + (cerradas.length
       ? `<details class="fx-hechos"><summary>Resueltas <span class="n">${cerradas.length}</span></summary>
            <div class="fx-lista fx-lista-plana">${cerradas.map(p => FX.htmlPendiente(p, { conProducto: false })).join('')}</div></details>`
@@ -285,7 +298,7 @@ function renderSide() {
     }
     if (!F.inci_publicado) c += '<p class="fx-nota">No está publicado en la tienda.</p>';
     else if (EST.publicado_difiere) {
-      c += `<div class="fx-aviso">La tienda publica un INCI distinto.
+      c += `<div class="fx-nota">La tienda publica un INCI distinto: se corrige más adelante.
               <details><summary>Ver lo publicado</summary><div class="fx-inci">${esc(F.inci_publicado)}</div></details></div>`;
     } else c += '<p class="fx-okline">Coincide con lo publicado en la tienda.</p>';
 

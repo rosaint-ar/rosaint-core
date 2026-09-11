@@ -11,6 +11,7 @@ const FX = (() => {
   const ESTADOS = {
     por_revisar:  { label: 'Por revisar',  ayuda: 'Necesitan una decisión' },
     por_corregir: { label: 'Por corregir', ayuda: 'Ya se sabe qué hacer, falta hacerlo' },
+    postergado:   { label: 'Para más adelante', ayuda: 'Solo afecta a la web: se corrige más adelante' },
     hecho:        { label: 'Hecho',        ayuda: 'Resuelto, queda como registro' },
     descartado:   { label: 'Descartado',   ayuda: 'No aplicaba' },
   };
@@ -25,10 +26,12 @@ const FX = (() => {
 
   let NOMBRES = {};    // codigo_granel -> nombre legible
   let GRANELES = [];   // [{codigo, nombre}] para elegir producto al anotar
+  let MPS = {};        // codigo de materia prima -> nombre
 
   const setNombres = m => { NOMBRES = { ...NOMBRES, ...m }; };
   const setGraneles = l => { GRANELES = l.slice().sort((a, b) => a.codigo.localeCompare(b.codigo)); };
   const nombre = c => (c && NOMBRES[c]) || '';
+  const setMps = m => { MPS = { ...MPS, ...m }; };
 
   function toast(msg, tipo = '') {
     let t = document.getElementById('fx-toast');
@@ -55,8 +58,11 @@ const FX = (() => {
   // ---- Una duda / inconsistencia ------------------------------------------------
   function htmlPendiente(p, { conProducto = true } = {}) {
     const cerrado = p.estado === 'hecho' || p.estado === 'descartado';
+    const apagado = cerrado || p.estado === 'postergado';
     let prod = '';
-    if (conProducto) {
+    if (p.codigo_mp) {
+      prod = `<a class="fx-prod" href="../laboratorio/materias-primas.html" title="Se corrige en Laboratorio → Materias primas">MP ${esc(p.codigo_mp)}${MPS[p.codigo_mp] ? ' · ' + esc(MPS[p.codigo_mp]) : ''}</a>`;
+    } else if (conProducto) {
       prod = p.codigo_granel
         ? `<a class="fx-prod" href="ver.html?c=${encodeURIComponent(p.codigo_granel)}">${esc(p.codigo_granel)}${nombre(p.codigo_granel) ? ' · ' + esc(nombre(p.codigo_granel)) : ''}</a>`
         : `<span class="fx-prod gral">Varios productos</span>`;
@@ -69,15 +75,18 @@ const FX = (() => {
     } else if (p.estado === 'por_corregir') {
       btns = `<button class="btn primary fx-chico" data-accion="corregido" data-id="${p.id}">Marcar corregido</button>
               <button class="btn ghost fx-chico" data-accion="editar" data-id="${p.id}">Editar</button>`;
+    } else if (p.estado === 'postergado') {
+      btns = `<button class="btn ghost fx-chico" data-accion="reabrir" data-id="${p.id}">Retomar</button>
+              <button class="btn ghost fx-chico" data-accion="editar" data-id="${p.id}">Editar</button>`;
     } else {
       btns = `<button class="btn ghost fx-chico" data-accion="reabrir" data-id="${p.id}">Reabrir</button>`;
     }
 
     const meta = cerrado
       ? `${p.estado === 'descartado' ? 'Descartado' : 'Cerrado'} ${fecha(p.resuelta_en)}${p.resuelta_por ? ' · ' + esc(quien(p.resuelta_por)) : ''}`
-      : `Anotado ${fecha(p.detectada_en)}${p.creado_por ? ' · ' + esc(quien(p.creado_por)) : ''}`;
+      : `${p.estado === 'postergado' ? 'Para más adelante · ' : ''}Anotado ${fecha(p.detectada_en)}${p.creado_por ? ' · ' + esc(quien(p.creado_por)) : ''}`;
 
-    return `<article class="fx-pend ${cerrado ? 'cerrado' : ''}">
+    return `<article class="fx-pend ${apagado ? 'cerrado' : ''}">
       <span class="sev ${esc(p.gravedad || '')}" title="Importancia: ${esc(p.gravedad || 'sin definir')}"></span>
       <div class="fx-pend-cuerpo">
         <div class="fx-pend-tit"><span>${esc(p.titulo)}</span>${prod}</div>
@@ -289,7 +298,7 @@ const FX = (() => {
   return {
     esc, norm, toast, usuario, fecha, ordenar,
     ESTADOS, FUENTES, ESTADO_FICHA,
-    setNombres, setGraneles, nombre,
+    setNombres, setGraneles, setMps, nombre,
     htmlPendiente, abrir, cerrar, abrirEditor, conectar,
   };
 })();

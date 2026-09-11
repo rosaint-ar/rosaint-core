@@ -243,6 +243,8 @@ details.fx-hechos[open] > summary { margin-bottom: 8px; }
 }
 .fx-nota { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; }
 .fx-okline { font-size: 12.5px; color: var(--ok); font-weight: 600; margin: 0; }
+.fx-nota summary { cursor: pointer; }
+.fx-nota details { margin-top: 4px; }
 details.fx-comp-wrap > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); padding: 2px 0; }
 details.fx-comp-wrap[open] > summary { margin-bottom: 6px; }
 .fx-comp { width: 100%; border-collapse: collapse; font-size: 12px; }

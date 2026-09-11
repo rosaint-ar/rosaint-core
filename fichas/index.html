@@ -62,6 +62,7 @@ const $ = s => document.querySelector(s);
 
 let PEND = [];
 let FICHAS = [];
+let MPS_NOMBRE = {};   // codigo de materia prima -> nombre
 let filtroEstado = null;   // null = por revisar + por corregir, con los hechos plegados
 
 async function cargar() {
@@ -74,6 +75,13 @@ async function cargar() {
     if (f.error) throw f.error;
     PEND = p.data || [];
     FICHAS = f.data || [];
+    const mps = [...new Set(PEND.map(x => x.codigo_mp).filter(Boolean))];
+    if (mps.length) {
+      const m = await sb.from('items').select('codigo, nombre').in('codigo', mps);
+      if (m.error) throw m.error;
+      MPS_NOMBRE = Object.fromEntries(m.data.map(x => [x.codigo, x.nombre]));
+      FX.setMps(MPS_NOMBRE);
+    }
     FX.setNombres(Object.fromEntries(FICHAS.map(x => [x.codigo_granel, x.nombre_comercial || x.nombre])));
     FX.setGraneles(FICHAS.map(x => ({ codigo: x.codigo_granel, nombre: x.nombre_comercial || x.nombre })));
     poblarProductos();
@@ -89,9 +97,11 @@ function poblarProductos() {
   const sel = $('#f-prod');
   const actual = sel.value;
   const conPend = [...new Set(PEND.filter(p => p.codigo_granel).map(p => p.codigo_granel))].sort();
+  const mps = [...new Set(PEND.filter(p => p.codigo_mp).map(p => p.codigo_mp))].sort();
   sel.innerHTML = '<option value="">Todos los productos</option>'
-    + (PEND.some(p => !p.codigo_granel) ? '<option value="__varios">Varios productos</option>' : '')
-    + conPend.map(c => `<option value="${esc(c)}">${esc(c)} · ${esc(FX.nombre(c))}</option>`).join('');
+    + (PEND.some(p => !p.codigo_granel && !p.codigo_mp) ? '<option value="__varios">Varios productos</option>' : '')
+    + (mps.length ? `<optgroup label="Materias primas">${mps.map(c => `<option value="mp:${esc(c)}">MP ${esc(c)} · ${esc(MPS_NOMBRE[c] || '')}</option>`).join('')}</optgroup>` : '')
+    + (conPend.length ? `<optgroup label="Productos">${conPend.map(c => `<option value="${esc(c)}">${esc(c)} · ${esc(FX.nombre(c))}</option>`).join('')}</optgroup>` : '');
   sel.value = [...sel.options].some(o => o.value === actual) ? actual : '';
 }
 
@@ -114,6 +124,7 @@ function renderResumen() {
   $('#resumen').innerHTML =
     cifra('revisar', 'por_revisar', c('por_revisar'), 'por revisar · necesitan tu decisión') +
     cifra('corregir', 'por_corregir', c('por_corregir'), 'por corregir · ya se sabe qué hacer') +
+    cifra('', 'postergado', c('postergado'), 'para más adelante · solo la web') +
     cifra('hecho', 'hecho', c('hecho') + c('descartado'), 'hechos · quedan como registro') +
     `<button class="fx-cifra" data-filtro="__fichas"><b>${aprobadas} de ${FICHAS.length}</b><span>fichas aprobadas</span></button>`;
 }
@@ -134,10 +145,11 @@ function renderPendientes() {
   const q = norm($('#q-pend').value.trim());
   const prod = $('#f-prod').value;
   const lista = PEND.filter(p => {
-    if (prod === '__varios' && p.codigo_granel) return false;
-    if (prod && prod !== '__varios' && p.codigo_granel !== prod) return false;
+    if (prod === '__varios' && (p.codigo_granel || p.codigo_mp)) return false;
+    if (prod.startsWith('mp:') && p.codigo_mp !== prod.slice(3)) return false;
+    if (prod && prod !== '__varios' && !prod.startsWith('mp:') && p.codigo_granel !== prod) return false;
     if (!q) return true;
-    return norm([p.titulo, p.detalle, p.accion, p.resolucion, p.ingrediente, p.codigo_granel, FX.nombre(p.codigo_granel)].join(' ')).includes(q);
+    return norm([p.titulo, p.detalle, p.accion, p.resolucion, p.ingrediente, p.codigo_granel, FX.nombre(p.codigo_granel), p.codigo_mp, MPS_NOMBRE[p.codigo_mp]].join(' ')).includes(q);
   });
 
   const grupo = (estado, items) => {
@@ -151,6 +163,7 @@ function renderPendientes() {
     .filter(p => p.estado === 'hecho' || p.estado === 'descartado')
     .sort((a, b) => (b.resuelta_en || '').localeCompare(a.resuelta_en || ''));
 
+  const postergados = lista.filter(p => p.estado === 'postergado').sort(FX.ordenar);
   let html = '';
   if (filtroEstado === 'hecho') {
     html = grupo('hecho', cerrados);
@@ -159,6 +172,10 @@ function renderPendientes() {
   } else {
     html = grupo('por_revisar', lista.filter(p => p.estado === 'por_revisar').sort(FX.ordenar))
          + grupo('por_corregir', lista.filter(p => p.estado === 'por_corregir').sort(FX.ordenar));
+    if (postergados.length) {
+      html += `<details class="fx-hechos"><summary>Para más adelante <span class="n">${postergados.length}</span> <span class="fx-muted">· solo afecta a la web</span></summary>
+        <div class="fx-lista">${postergados.map(p => FX.htmlPendiente(p)).join('')}</div></details>`;
+    }
     if (cerrados.length) {
       html += `<details class="fx-hechos"><summary>Hechos y descartados <span class="n">${cerrados.length}</span></summary>
         <div class="fx-lista">${cerrados.map(p => FX.htmlPendiente(p)).join('')}</div></details>`;
@@ -192,7 +209,7 @@ function renderFichas() {
     const b = [];
     if (!f.inci_declarado) b.push('<span class="fx-badge hot">Sin fórmula</span>');
     else if (!f.inci_publicado) b.push('<span class="fx-badge gris">Sin publicar</span>');
-    else if (f.publicado_difiere) b.push('<span class="fx-badge warn">La web difiere</span>');
+    else if (f.publicado_difiere) b.push('<span class="fx-badge gris">La web difiere</span>');
     else b.push('<span class="fx-badge ok">Coincide con la web</span>');
     if (f.estado_ficha === 'aprobada' && f.inci_desactualizado) b.push('<span class="fx-badge hot">Cambió la fórmula</span>');
     return b.join(' ');
