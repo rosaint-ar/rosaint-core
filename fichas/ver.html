@@ -147,13 +147,15 @@ function renderCab() {
   $('#cab').innerHTML = `
     <div>
       ${editando
-        ? `<input class="fx-in fx-in-titulo" data-k="nombre_comercial" value="${esc(F.nombre_comercial || '')}" aria-label="Nombre comercial">`
+        ? `<input class="fx-in fx-in-titulo" data-k="nombre_comercial" value="${esc(F.nombre_comercial || '')}" aria-label="Nombre comercial">
+           <label class="fx-check fx-check-cab"><input type="checkbox" class="fx-bool" data-k="a_pedido"${F.a_pedido ? ' checked' : ''}> Producto a pedido: no se publica en la tienda</label>`
         : `<h1>${esc(nombreProducto())}</h1>`}
       <div class="fx-meta">
         <span class="fx-mono">${esc(COD)}</span>
         <span class="fx-badge ${esc(F.estado)}">${FX.ESTADO_FICHA[F.estado] || F.estado}</span>
         ${F.revision ? `<span>${esc(F.revision)}</span>` : ''}
         ${aprobada && F.aprobada_en ? `<span>Aprobada el ${FX.fecha(F.aprobada_en)}${F.aprobada_por ? ' por ' + esc(F.aprobada_por) : ''}</span>` : ''}
+        ${F.a_pedido ? '<span class="fx-badge gris">A pedido · no se publica</span>' : ''}
         ${ITEM?.estado && ITEM.estado !== 'vigente' ? `<span class="fx-badge warn">Producto en ${esc(ITEM.estado)}</span>` : ''}
       </div>
     </div>
@@ -161,7 +163,7 @@ function renderCab() {
       ${editando
         ? `<button class="btn ghost" id="b-cancelar">Cancelar</button>
            <button class="btn primary" id="b-guardar">Guardar cambios</button>`
-        : `<button class="btn ghost" id="b-tienda">Copiar para la tienda</button>
+        : `${F.a_pedido ? '' : '<button class="btn ghost" id="b-tienda">Copiar para la tienda</button>'}
            <button class="btn ghost" id="b-imprimir">Imprimir ficha técnica</button>
            <button class="btn ghost" id="b-editar">Editar</button>
            ${aprobada
@@ -296,7 +298,9 @@ function renderSide() {
       c += `<div class="fx-aviso hot"><b>La fórmula cambió después de aprobar.</b> El INCI aprobado ya no es el vigente.
               <details><summary>Ver el aprobado</summary><div class="fx-inci">${esc(F.inci_aprobado)}</div></details></div>`;
     }
-    if (!F.inci_publicado) c += '<p class="fx-nota">No está publicado en la tienda.</p>';
+    if (!F.inci_publicado) c += F.a_pedido
+      ? '<p class="fx-nota">Producto a pedido: no se publica en la tienda.</p>'
+      : '<p class="fx-nota">No está publicado en la tienda.</p>';
     else if (EST.publicado_difiere) {
       c += `<div class="fx-nota">La tienda publica un INCI distinto: se corrige más adelante.
               <details><summary>Ver lo publicado</summary><div class="fx-inci">${esc(F.inci_publicado)}</div></details></div>`;
@@ -350,6 +354,7 @@ function recolectar() {
     else if (t === 'int') x[k] = v === '' ? null : Number(v);
     else x[k] = v || null;
   });
+  document.querySelectorAll('.fx-bool[data-k]').forEach(i => { x[i.dataset.k] = i.checked; });
   x.faq = [...document.querySelectorAll('#faq-edit .fx-par')]
     .map(par => ({ p: par.querySelector('.fq-p').value.trim(), r: par.querySelector('.fq-r').value.trim() }))
     .filter(q => q.p || q.r);
