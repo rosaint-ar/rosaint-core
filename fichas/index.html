@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fichas técnicas · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="fichas.css">
+</head>
+<body data-page="fichas" data-title="Fichas técnicas" data-subtitle="Una ficha por producto · dudas e inconsistencias a revisar">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="fx-resumen" id="resumen"></div>
+
+  <div class="fx-tabs" role="tablist">
+    <button class="fx-tab" data-tab="pendientes" role="tab">Dudas e inconsistencias <span class="n" id="n-pend">—</span></button>
+    <button class="fx-tab" data-tab="fichas" role="tab">Fichas <span class="n" id="n-fichas">—</span></button>
+  </div>
+
+  <section id="tab-pendientes" hidden>
+    <div class="fx-toolbar">
+      <input type="search" class="input" id="q-pend" placeholder="Buscar: producto, ingrediente, texto…">
+      <select class="fx-select" id="f-prod"><option value="">Todos los productos</option></select>
+      <button class="btn primary" id="btn-nueva">+ Anotar duda</button>
+    </div>
+    <div id="lista-pend"><div class="empty-box">Cargando…</div></div>
+  </section>
+
+  <section id="tab-fichas" hidden>
+    <div class="fx-toolbar">
+      <input type="search" class="input" id="q-fichas" placeholder="Buscar por nombre o código…">
+      <select class="fx-select" id="f-estado">
+        <option value="">Todas las fichas</option>
+        <option value="borrador">Borrador</option>
+        <option value="en_revision">En revisión</option>
+        <option value="aprobada">Aprobada</option>
+      </select>
+      <label class="fx-check"><input type="checkbox" id="f-conpend"> Solo con dudas abiertas</label>
+    </div>
+    <div id="tabla-fichas"><div class="empty-box">Cargando…</div></div>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="fichas.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Fichas técnicas — listado
+// fichas_pendientes (dudas e inconsistencias) + v_fichas_estado (una fila por granel)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const { esc, norm } = FX;
+const $ = s => document.querySelector(s);
+
+let PEND = [];
+let FICHAS = [];
+let filtroEstado = null;   // null = por revisar + por corregir, con los hechos plegados
+
+async function cargar() {
+  try {
+    const [p, f] = await Promise.all([
+      sb.from('fichas_pendientes').select('*'),
+      sb.from('v_fichas_estado').select('*').order('codigo_granel'),
+    ]);
+    if (p.error) throw p.error;
+    if (f.error) throw f.error;
+    PEND = p.data || [];
+    FICHAS = f.data || [];
+    FX.setNombres(Object.fromEntries(FICHAS.map(x => [x.codigo_granel, x.nombre_comercial || x.nombre])));
+    FX.setGraneles(FICHAS.map(x => ({ codigo: x.codigo_granel, nombre: x.nombre_comercial || x.nombre })));
+    poblarProductos();
+    renderTodo();
+  } catch (err) {
+    const m = `<div class="empty-box fx-error">No se pudieron cargar las fichas: ${esc(err.message)}</div>`;
+    $('#lista-pend').innerHTML = m;
+    $('#tabla-fichas').innerHTML = m;
+  }
+}
+
+function poblarProductos() {
+  const sel = $('#f-prod');
+  const actual = sel.value;
+  const conPend = [...new Set(PEND.filter(p => p.codigo_granel).map(p => p.codigo_granel))].sort();
+  sel.innerHTML = '<option value="">Todos los productos</option>'
+    + (PEND.some(p => !p.codigo_granel) ? '<option value="__varios">Varios productos</option>' : '')
+    + conPend.map(c => `<option value="${esc(c)}">${esc(c)} · ${esc(FX.nombre(c))}</option>`).join('');
+  sel.value = [...sel.options].some(o => o.value === actual) ? actual : '';
+}
+
+function renderTodo() {
+  renderResumen();
+  renderPendientes();
+  renderFichas();
+  const abiertas = PEND.filter(p => p.estado === 'por_revisar' || p.estado === 'por_corregir').length;
+  $('#n-pend').textContent = abiertas;
+  $('#n-fichas').textContent = FICHAS.length;
+}
+
+// ---- Resumen -----------------------------------------------------------------
+function renderResumen() {
+  const c = e => PEND.filter(p => p.estado === e).length;
+  const aprobadas = FICHAS.filter(f => f.estado_ficha === 'aprobada').length;
+  const cifra = (clase, estado, n, texto) =>
+    `<button class="fx-cifra ${clase}${filtroEstado === estado ? ' sel' : ''}" data-filtro="${estado}">
+       <b>${n}</b><span>${texto}</span></button>`;
+  $('#resumen').innerHTML =
+    cifra('revisar', 'por_revisar', c('por_revisar'), 'por revisar · necesitan tu decisión') +
+    cifra('corregir', 'por_corregir', c('por_corregir'), 'por corregir · ya se sabe qué hacer') +
+    cifra('hecho', 'hecho', c('hecho') + c('descartado'), 'hechos · quedan como registro') +
+    `<button class="fx-cifra" data-filtro="__fichas"><b>${aprobadas} de ${FICHAS.length}</b><span>fichas aprobadas</span></button>`;
+}
+
+$('#resumen').addEventListener('click', e => {
+  const b = e.target.closest('[data-filtro]');
+  if (!b) return;
+  const f = b.dataset.filtro;
+  if (f === '__fichas') { setTab('fichas'); return; }
+  filtroEstado = filtroEstado === f ? null : f;
+  setTab('pendientes');
+  renderResumen();
+  renderPendientes();
+});
+
+// ---- Dudas e inconsistencias ------------------------------------------------
+function renderPendientes() {
+  const q = norm($('#q-pend').value.trim());
+  const prod = $('#f-prod').value;
+  const lista = PEND.filter(p => {
+    if (prod === '__varios' && p.codigo_granel) return false;
+    if (prod && prod !== '__varios' && p.codigo_granel !== prod) return false;
+    if (!q) return true;
+    return norm([p.titulo, p.detalle, p.accion, p.resolucion, p.ingrediente, p.codigo_granel, FX.nombre(p.codigo_granel)].join(' ')).includes(q);
+  });
+
+  const grupo = (estado, items) => {
+    const e = FX.ESTADOS[estado];
+    return `<div class="fx-grupo">
+      <div class="fx-grupo-cab"><h2>${e.label}</h2><span class="n">${items.length}</span><p>${e.ayuda}</p></div>
+      ${items.length ? `<div class="fx-lista">${items.map(p => FX.htmlPendiente(p)).join('')}</div>` : '<p class="fx-nada">Nada por acá.</p>'}
+    </div>`;
+  };
+  const cerrados = lista
+    .filter(p => p.estado === 'hecho' || p.estado === 'descartado')
+    .sort((a, b) => (b.resuelta_en || '').localeCompare(a.resuelta_en || ''));
+
+  let html = '';
+  if (filtroEstado === 'hecho') {
+    html = grupo('hecho', cerrados);
+  } else if (filtroEstado) {
+    html = grupo(filtroEstado, lista.filter(p => p.estado === filtroEstado).sort(FX.ordenar));
+  } else {
+    html = grupo('por_revisar', lista.filter(p => p.estado === 'por_revisar').sort(FX.ordenar))
+         + grupo('por_corregir', lista.filter(p => p.estado === 'por_corregir').sort(FX.ordenar));
+    if (cerrados.length) {
+      html += `<details class="fx-hechos"><summary>Hechos y descartados <span class="n">${cerrados.length}</span></summary>
+        <div class="fx-lista">${cerrados.map(p => FX.htmlPendiente(p)).join('')}</div></details>`;
+    }
+  }
+  $('#lista-pend').innerHTML = lista.length ? html : '<div class="empty-box">No hay anotaciones con ese filtro.</div>';
+}
+
+FX.conectar($('#lista-pend'), id => PEND.find(p => p.id === id), cargar);
+$('#btn-nueva').addEventListener('click', () => {
+  const prod = $('#f-prod').value;
+  FX.abrirEditor(prod && prod !== '__varios' ? { codigo_granel: prod } : null, cargar);
+});
+$('#q-pend').addEventListener('input', renderPendientes);
+$('#f-prod').addEventListener('change', renderPendientes);
+
+// ---- Fichas -----------------------------------------------------------------
+function renderFichas() {
+  const q = norm($('#q-fichas').value.trim());
+  const est = $('#f-estado').value;
+  const conPend = $('#f-conpend').checked;
+  const filas = FICHAS.filter(f => {
+    if (est && f.estado_ficha !== est) return false;
+    if (conPend && !(f.por_revisar || f.por_corregir)) return false;
+    return !q || norm(`${f.codigo_granel} ${f.nombre_comercial} ${f.nombre}`).includes(q);
+  });
+  if (!filas.length) { $('#tabla-fichas').innerHTML = '<div class="empty-box">No hay fichas con ese filtro.</div>'; return; }
+
+  const chip = (si, txt) => `<span class="${si ? 'si' : ''}">${txt}</span>`;
+  const inci = f => {
+    const b = [];
+    if (!f.inci_declarado) b.push('<span class="fx-badge hot">Sin fórmula</span>');
+    else if (!f.inci_publicado) b.push('<span class="fx-badge gris">Sin publicar</span>');
+    else if (f.publicado_difiere) b.push('<span class="fx-badge warn">La web difiere</span>');
+    else b.push('<span class="fx-badge ok">Coincide con la web</span>');
+    if (f.estado_ficha === 'aprobada' && f.inci_desactualizado) b.push('<span class="fx-badge hot">Cambió la fórmula</span>');
+    return b.join(' ');
+  };
+  const pend = f => {
+    const l = [];
+    if (f.por_revisar) l.push(`<span class="hot">${f.por_revisar} por revisar</span>`);
+    if (f.por_corregir) l.push(`<span class="warn">${f.por_corregir} por corregir</span>`);
+    return l.length ? `<div class="fx-pcount">${l.join('')}</div>` : '<span class="fx-muted">—</span>';
+  };
+
+  $('#tabla-fichas').innerHTML = `<div class="fx-tabla-wrap"><table class="fx-tabla">
+    <thead><tr><th>Código</th><th>Producto</th><th>Ficha</th><th>Contenido</th><th>INCI</th><th>Dudas</th></tr></thead>
+    <tbody>${filas.map(f => `
+      <tr data-c="${esc(f.codigo_granel)}">
+        <td class="cod">${esc(f.codigo_granel)}</td>
+        <td><a class="nom" href="ver.html?c=${encodeURIComponent(f.codigo_granel)}">${esc(f.nombre_comercial || f.nombre)}</a>
+          ${f.estado_producto && f.estado_producto !== 'vigente' ? `<span class="fx-badge warn">${esc(f.estado_producto)}</span>` : ''}</td>
+        <td><span class="fx-badge ${esc(f.estado_ficha || 'borrador')}">${FX.ESTADO_FICHA[f.estado_ficha] || 'Sin ficha'}</span></td>
+        <td><div class="fx-cob">
+          ${chip(f.tiene_descripcion, 'Descripción')}${chip(f.tiene_modo_uso, 'Modo de uso')}
+          ${chip(f.tiene_datos_tecnicos, 'Datos técnicos')}${chip(f.tiene_rotulo, 'Rótulo')}${chip(f.n_faq > 0, 'Preguntas')}
+        </div></td>
+        <td>${inci(f)}</td>
+        <td>${pend(f)}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
+$('#tabla-fichas').addEventListener('click', e => {
+  if (e.target.closest('a')) return;
+  const tr = e.target.closest('tr[data-c]');
+  if (tr) location.href = 'ver.html?c=' + encodeURIComponent(tr.dataset.c);
+});
+$('#q-fichas').addEventListener('input', renderFichas);
+$('#f-estado').addEventListener('change', renderFichas);
+$('#f-conpend').addEventListener('change', renderFichas);
+
+// ---- Pestañas -----------------------------------------------------------------
+function setTab(t) {
+  document.querySelectorAll('.fx-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  $('#tab-pendientes').hidden = t !== 'pendientes';
+  $('#tab-fichas').hidden = t !== 'fichas';
+  history.replaceState(null, '', t === 'fichas' ? '#fichas' : location.pathname + location.search);
+}
+document.querySelectorAll('.fx-tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+setTab(location.hash === '#fichas' ? 'fichas' : 'pendientes');
+cargar();
+</script>
+</body>
+</html>

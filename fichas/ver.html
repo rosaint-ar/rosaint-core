@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ficha técnica · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="fichas.css">
+</head>
+<body data-page="fichas" data-title="Ficha técnica" data-subtitle="Contenido, INCI, datos técnicos y rótulo del producto">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="fx-cab" id="cab"></div>
+  <div class="fx-layout">
+    <div class="fx-col" id="col-main"><div class="empty-box">Cargando…</div></div>
+    <div class="fx-col" id="col-side"></div>
+  </div>
+</main>
+
+<!-- Lo único que sale al imprimir: la ficha técnica profesional -->
+<div id="hoja"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="fichas.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Ficha técnica de un producto (granel)
+// fichas + v_fichas_estado + v_formula_explotada + presentaciones + fichas_pendientes
+// ═══════════════════════════════════════════════════════════════════════════
+
+const { esc } = FX;
+const $ = s => document.querySelector(s);
+const COD = new URLSearchParams(location.search).get('c');
+
+let F = null;        // fila de fichas
+let ITEM = null;     // items del granel
+let EST = null;      // v_fichas_estado
+let COMP = [];       // formula explotada a materias primas
+let PRES = [];       // presentaciones
+let PEND = [];       // dudas de este producto
+let NOMBRES_IT = {}; // codigo -> nombre (SKUs y envases)
+let editando = false;
+
+const CONTENIDO = [
+  ['descripcion', 'Descripción', 'texto'],
+  ['aplicaciones', 'Aplicaciones', 'lista'],
+  ['beneficios', 'Beneficios', 'lista'],
+  ['principios_activos', 'Principios activos', 'lista'],
+  ['caracteristicas', 'Características', 'lista'],
+  ['modo_uso', 'Modo de uso', 'texto'],
+];
+const TECNICOS = [
+  ['aspecto', 'Aspecto', 'text'],
+  ['color', 'Color', 'text'],
+  ['olor', 'Olor', 'text'],
+  ['ph_min', 'pH mínimo', 'num'],
+  ['ph_max', 'pH máximo', 'num'],
+  ['densidad', 'Densidad (g/ml)', 'num'],
+  ['viscosidad', 'Viscosidad', 'text'],
+  ['solubilidad', 'Solubilidad', 'text'],
+  ['vida_util_meses', 'Vida útil (meses)', 'int'],
+];
+
+const num = n => n == null || n === '' ? '' : Number(n).toLocaleString('es-AR', { maximumFractionDigits: 4 });
+const pct = n => n == null ? '—' : num(n) + ' %';
+const nombreProducto = () => F?.nombre_comercial || ITEM?.nombre || COD;
+
+// ---- Carga --------------------------------------------------------------------
+async function cargar() {
+  if (!COD) { $('#col-main').innerHTML = '<div class="empty-box">Falta el código del producto. Entrá desde el listado de fichas.</div>'; return; }
+  try {
+    const [f, it, est, comp, pres, pend, gr] = await Promise.all([
+      sb.from('fichas').select('*').eq('codigo_granel', COD).maybeSingle(),
+      sb.from('items').select('codigo, nombre, estado').eq('codigo', COD).maybeSingle(),
+      sb.from('v_fichas_estado').select('*').eq('codigo_granel', COD).maybeSingle(),
+      sb.from('v_formula_explotada').select('codigo_mp, nombre_mp, inci_name, pct').eq('codigo_granel', COD),
+      sb.from('presentaciones').select('codigo_sku, codigo_envase, tamanio_kg, descripcion_comercial').eq('codigo_granel', COD),
+      sb.from('fichas_pendientes').select('*').eq('codigo_granel', COD),
+      sb.from('fichas').select('codigo_granel, nombre_comercial'),
+    ]);
+    for (const r of [f, it, est, comp, pres, pend, gr]) if (r.error) throw r.error;
+    if (!f.data) { $('#col-main').innerHTML = `<div class="empty-box">No hay ficha para el código ${esc(COD)}.</div>`; return; }
+
+    F = f.data; ITEM = it.data; EST = est.data;
+    COMP = (comp.data || []).sort((a, b) => Number(b.pct) - Number(a.pct));
+    PRES = (pres.data || []).sort((a, b) => Number(a.tamanio_kg || 0) - Number(b.tamanio_kg || 0));
+    PEND = pend.data || [];
+    FX.setGraneles((gr.data || []).map(g => ({ codigo: g.codigo_granel, nombre: g.nombre_comercial || g.codigo_granel })));
+    FX.setNombres(Object.fromEntries((gr.data || []).map(g => [g.codigo_granel, g.nombre_comercial])));
+
+    const cods = [...new Set(PRES.flatMap(p => [p.codigo_sku, p.codigo_envase]).filter(Boolean))];
+    if (cods.length) {
+      const n = await sb.from('items').select('codigo, nombre').in('codigo', cods);
+      if (!n.error) NOMBRES_IT = Object.fromEntries(n.data.map(x => [x.codigo, x.nombre]));
+    }
+    render();
+  } catch (err) {
+    $('#col-main').innerHTML = `<div class="empty-box fx-error">No se pudo cargar la ficha: ${esc(err.message)}</div>`;
+  }
+}
+
+// ---- Piezas de interfaz ----------------------------------------------------------
+const bloque = (titulo, cuerpo, extra = '') =>
+  `<section class="fx-bloque"><h2><span>${titulo}</span>${extra}</h2>${cuerpo}</section>`;
+const vacio = (t = 'Sin cargar') => `<p class="fx-vacio">${t}</p>`;
+const verTexto = v => v ? `<p class="fx-texto">${esc(v)}</p>` : vacio();
+const verLista = a => (Array.isArray(a) && a.length) ? `<ul class="fx-items">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : vacio();
+
+const editTexto = (k, v, filas = 4) => `<textarea class="fx-in" data-k="${k}" rows="${filas}">${esc(v || '')}</textarea>`;
+const editLista = (k, a) => {
+  const l = Array.isArray(a) ? a : [];
+  return `<textarea class="fx-in" data-k="${k}" data-tipo="lista" rows="${Math.max(3, l.length + 1)}">${esc(l.join('\n'))}</textarea>
+          <p class="field-help">Uno por renglón.</p>`;
+};
+const campo = (k, label, tipo, v, full = false) => `
+  <label class="fx-campo${full ? ' full' : ''}"><span>${label}</span>
+    ${tipo === 'area'
+      ? `<textarea class="fx-in" data-k="${k}" rows="3">${esc(v ?? '')}</textarea>`
+      : `<input class="fx-in" data-k="${k}" data-tipo="${tipo}" value="${esc(v ?? '')}"${tipo === 'num' || tipo === 'int' ? ' inputmode="decimal"' : ''}>`}
+  </label>`;
+
+// ---- Render ---------------------------------------------------------------------
+function render() {
+  renderCab();
+  renderMain();
+  renderSide();
+  renderHoja();
+}
+
+function renderCab() {
+  document.title = `${nombreProducto()} · Fichas técnicas · Rosaint CORE`;
+  const aprobada = F.estado === 'aprobada';
+  $('#cab').innerHTML = `
+    <div>
+      ${editando
+        ? `<input class="fx-in fx-in-titulo" data-k="nombre_comercial" value="${esc(F.nombre_comercial || '')}" aria-label="Nombre comercial">`
+        : `<h1>${esc(nombreProducto())}</h1>`}
+      <div class="fx-meta">
+        <span class="fx-mono">${esc(COD)}</span>
+        <span class="fx-badge ${esc(F.estado)}">${FX.ESTADO_FICHA[F.estado] || F.estado}</span>
+        ${F.revision ? `<span>${esc(F.revision)}</span>` : ''}
+        ${aprobada && F.aprobada_en ? `<span>Aprobada el ${FX.fecha(F.aprobada_en)}${F.aprobada_por ? ' por ' + esc(F.aprobada_por) : ''}</span>` : ''}
+        ${ITEM?.estado && ITEM.estado !== 'vigente' ? `<span class="fx-badge warn">Producto en ${esc(ITEM.estado)}</span>` : ''}
+      </div>
+    </div>
+    <div class="fx-acciones">
+      ${editando
+        ? `<button class="btn ghost" id="b-cancelar">Cancelar</button>
+           <button class="btn primary" id="b-guardar">Guardar cambios</button>`
+        : `<button class="btn ghost" id="b-tienda">Copiar para la tienda</button>
+           <button class="btn ghost" id="b-imprimir">Imprimir ficha técnica</button>
+           <button class="btn ghost" id="b-editar">Editar</button>
+           ${aprobada
+             ? '<button class="btn ghost" id="b-borrador">Volver a borrador</button>'
+             : '<button class="btn primary" id="b-aprobar">Aprobar</button>'}`}
+    </div>`;
+
+  $('#b-editar')?.addEventListener('click', () => { editando = true; render(); });
+  $('#b-cancelar')?.addEventListener('click', () => { editando = false; render(); });
+  $('#b-guardar')?.addEventListener('click', guardar);
+  $('#b-imprimir')?.addEventListener('click', () => window.print());
+  $('#b-tienda')?.addEventListener('click', () => copiar(htmlTienda(),
+    F.estado === 'aprobada'
+      ? 'HTML copiado: pegalo en la descripción del producto en Tienda Nube.'
+      : 'HTML copiado. Ojo: la ficha todavía no está aprobada.'));
+  $('#b-aprobar')?.addEventListener('click', abrirAprobar);
+  $('#b-borrador')?.addEventListener('click', volverABorrador);
+}
+
+function renderMain() {
+  let h = '';
+
+  // Dudas de este producto
+  const abiertas = PEND.filter(p => p.estado === 'por_revisar' || p.estado === 'por_corregir').sort(FX.ordenar);
+  const cerradas = PEND.filter(p => p.estado === 'hecho' || p.estado === 'descartado');
+  h += bloque('Dudas de este producto',
+    (abiertas.length
+      ? `<div class="fx-lista fx-lista-plana">${abiertas.map(p => FX.htmlPendiente(p, { conProducto: false })).join('')}</div>`
+      : vacio('No hay dudas abiertas.'))
+    + (cerradas.length
+      ? `<details class="fx-hechos"><summary>Resueltas <span class="n">${cerradas.length}</span></summary>
+           <div class="fx-lista fx-lista-plana">${cerradas.map(p => FX.htmlPendiente(p, { conProducto: false })).join('')}</div></details>`
+      : ''),
+    '<button class="btn ghost fx-chico" id="b-duda">+ Anotar duda</button>');
+
+  // Contenido comercial
+  for (const [k, label, tipo] of CONTENIDO) {
+    const cuerpo = editando
+      ? (tipo === 'lista' ? editLista(k, F[k]) : editTexto(k, F[k], k === 'descripcion' ? 5 : 4))
+      : (tipo === 'lista' ? verLista(F[k]) : verTexto(F[k]));
+    h += bloque(label, cuerpo);
+  }
+
+  // Preguntas frecuentes
+  const faq = Array.isArray(F.faq) ? F.faq : [];
+  h += bloque('Preguntas frecuentes', editando
+    ? `<div id="faq-edit" class="fx-col">${faq.map(parFaq).join('')}</div>
+       <div><button class="btn ghost fx-chico" id="b-faq-mas" type="button">+ Agregar pregunta</button></div>`
+    : (faq.length ? `<dl class="fx-faq">${faq.map(q => `<dt>${esc(q.p)}</dt><dd>${esc(q.r)}</dd>`).join('')}</dl>` : vacio()));
+
+  // Datos técnicos
+  if (editando) {
+    h += bloque('Datos técnicos', `<div class="fx-campos">
+      ${TECNICOS.map(([k, l, t]) => campo(k, l, t, F[k])).join('')}
+      ${campo('conservacion', 'Conservación', 'area', F.conservacion, true)}
+    </div>`);
+  } else {
+    const filas = datosTecnicos();
+    h += bloque('Datos técnicos',
+      (filas.length ? `<dl class="fx-datos">${filas.map(([l, v]) => `<dt>${l}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : '')
+      + (F.conservacion ? `<p class="fx-texto">${esc(F.conservacion)}</p>` : '')
+      || vacio('Sin cargar: aspecto, color, olor, pH, vida útil y conservación.'));
+  }
+
+  // Rótulo
+  if (editando) {
+    h += bloque('Rótulo', `<div class="fx-campos">
+      ${campo('denominacion_rotulo', 'Denominación en el rótulo', 'text', F.denominacion_rotulo, true)}
+      ${campo('precauciones', 'Precauciones', 'area', F.precauciones, true)}
+      ${campo('advertencias', 'Advertencias', 'area', F.advertencias, true)}
+      <label class="fx-campo full"><span>Leyendas</span>${editLista('leyendas_rotulo', F.leyendas_rotulo)}</label>
+    </div>`);
+  } else {
+    const r = [];
+    if (F.denominacion_rotulo) r.push(`<dl class="fx-datos"><dt>Denominación</dt><dd>${esc(F.denominacion_rotulo)}</dd></dl>`);
+    if (F.precauciones) r.push(`<div><p class="fx-nota">Precauciones</p><p class="fx-texto">${esc(F.precauciones)}</p></div>`);
+    if (F.advertencias) r.push(`<div><p class="fx-nota">Advertencias</p><p class="fx-texto">${esc(F.advertencias)}</p></div>`);
+    if (Array.isArray(F.leyendas_rotulo) && F.leyendas_rotulo.length) r.push(verLista(F.leyendas_rotulo));
+    h += bloque('Rótulo', r.join('') || vacio('Sin cargar: denominación, precauciones y leyendas.'));
+  }
+
+  $('#col-main').innerHTML = h;
+  $('#b-faq-mas')?.addEventListener('click', () => {
+    $('#faq-edit').insertAdjacentHTML('beforeend', parFaq({ p: '', r: '' }));
+    $('#faq-edit .fx-par:last-child .fq-p').focus();
+  });
+}
+
+const parFaq = q => `
+  <div class="fx-par">
+    <div class="fx-par-cab"><span>Pregunta</span><button type="button" class="fx-quitar" data-quitar-faq>Quitar</button></div>
+    <input class="fx-in fq-p" value="${esc(q.p || '')}" placeholder="¿…?">
+    <textarea class="fx-in fq-r" rows="2" placeholder="Respuesta">${esc(q.r || '')}</textarea>
+  </div>`;
+
+function datosTecnicos() {
+  const f = [];
+  const add = (l, v) => { if (v != null && v !== '') f.push([l, String(v)]); };
+  add('Aspecto', F.aspecto);
+  add('Color', F.color);
+  add('Olor', F.olor);
+  if (F.ph_min != null || F.ph_max != null) {
+    add('pH', F.ph_min != null && F.ph_max != null && Number(F.ph_min) !== Number(F.ph_max)
+      ? `${num(F.ph_min)} a ${num(F.ph_max)}` : num(F.ph_min ?? F.ph_max));
+  }
+  if (F.densidad != null) add('Densidad', `${num(F.densidad)} g/ml`);
+  add('Viscosidad', F.viscosidad);
+  add('Solubilidad', F.solubilidad);
+  if (F.vida_util_meses != null) add('Vida útil', `${F.vida_util_meses} meses`);
+  return f;
+}
+
+function renderSide() {
+  let h = '';
+
+  // INCI
+  const d = EST?.inci_declarado;
+  if (!d) {
+    h += bloque('Ingredientes (INCI)', vacio('La fórmula vigente de este producto no está cargada.'));
+  } else {
+    let c = `<div class="fx-inci">${esc(d)}</div>`;
+    if (EST.es_manual) c += '<p class="fx-nota">Es el INCI manual cargado en el Editor de fórmulas.</p>';
+    const exc = Array.isArray(F.inci_excluidos) ? F.inci_excluidos : [];
+    if (exc.length) c += `<p class="fx-nota">No se declara, por decisión del laboratorio: ${exc.map(esc).join(', ')}.</p>`;
+    if (Math.abs(Number(EST.suma_pct) - 100) > 0.01) c += `<div class="fx-aviso hot">La fórmula suma ${pct(EST.suma_pct)} en vez de 100 %.</div>`;
+    if (F.estado === 'aprobada' && EST.inci_desactualizado) {
+      c += `<div class="fx-aviso hot"><b>La fórmula cambió después de aprobar.</b> El INCI aprobado ya no es el vigente.
+              <details><summary>Ver el aprobado</summary><div class="fx-inci">${esc(F.inci_aprobado)}</div></details></div>`;
+    }
+    if (!F.inci_publicado) c += '<p class="fx-nota">No está publicado en la tienda.</p>';
+    else if (EST.publicado_difiere) {
+      c += `<div class="fx-aviso">La tienda publica un INCI distinto.
+              <details><summary>Ver lo publicado</summary><div class="fx-inci">${esc(F.inci_publicado)}</div></details></div>`;
+    } else c += '<p class="fx-okline">Coincide con lo publicado en la tienda.</p>';
+
+    if (COMP.length) {
+      c += `<details class="fx-comp-wrap"><summary>Composición · uso interno</summary>
+        <table class="fx-comp"><tbody>${COMP.map(x => `
+          <tr><td>${esc(x.nombre_mp)}<br><small>${esc(x.inci_name || 'sin INCI')}</small></td><td class="num">${pct(x.pct)}</td></tr>`).join('')}
+        </tbody><tfoot><tr><td>Total</td><td class="num">${pct(EST.suma_pct)}</td></tr></tfoot></table></details>`;
+    }
+    h += bloque('Ingredientes (INCI)', c, '<button class="btn ghost fx-chico" id="b-copiar-inci">Copiar</button>');
+  }
+
+  // Presentaciones
+  h += bloque('Presentaciones', PRES.length
+    ? `<ul class="fx-pres">${PRES.map(p => `
+        <li><span>${esc(NOMBRES_IT[p.codigo_sku] || p.descripcion_comercial || '')}</span>
+            <span class="fx-mono">${esc(p.codigo_sku)}</span>
+            ${p.codigo_envase ? `<small>Envase: ${esc(NOMBRES_IT[p.codigo_envase] || p.codigo_envase)}</small>` : ''}</li>`).join('')}</ul>`
+    : vacio('Sin presentaciones cargadas.'));
+
+  // De dónde salió
+  const fuentes = F.fuentes || {};
+  h += bloque('De dónde salió', `
+    <p class="fx-nota">El INCI se calcula desde la fórmula vigente del Laboratorio: nadie lo escribe a mano.</p>
+    ${fuentes.tienda
+      ? `<p class="fx-nota">El contenido se trajo de la tienda${fuentes.importado ? ' el ' + FX.fecha(fuentes.importado) : ''}:
+           <a href="${esc(fuentes.tienda)}" target="_blank" rel="noopener">ver la publicación</a>.</p>`
+      : '<p class="fx-nota">El contenido no vino de la tienda.</p>'}`);
+
+  $('#col-side').innerHTML = h;
+  $('#b-copiar-inci')?.addEventListener('click', () => copiar(d, 'INCI copiado'));
+}
+
+// Botones dentro del contenido (se re-renderiza, así que se escucha en el contenedor)
+$('#col-main').addEventListener('click', e => {
+  if (e.target.closest('#b-duda')) { FX.abrirEditor({ codigo_granel: COD }, cargar); return; }
+  const q = e.target.closest('[data-quitar-faq]');
+  if (q) q.closest('.fx-par').remove();
+});
+FX.conectar($('#col-main'), id => PEND.find(p => p.id === id), cargar);
+
+// ---- Guardar --------------------------------------------------------------------
+function recolectar() {
+  const x = {};
+  document.querySelectorAll('.fx-in[data-k]').forEach(i => {
+    const k = i.dataset.k, t = i.dataset.tipo, v = i.value.trim();
+    if (t === 'lista') x[k] = v ? v.split('\n').map(s => s.trim()).filter(Boolean) : [];
+    else if (t === 'num') x[k] = v === '' ? null : Number(v.replace(',', '.'));
+    else if (t === 'int') x[k] = v === '' ? null : Number(v);
+    else x[k] = v || null;
+  });
+  x.faq = [...document.querySelectorAll('#faq-edit .fx-par')]
+    .map(par => ({ p: par.querySelector('.fq-p').value.trim(), r: par.querySelector('.fq-r').value.trim() }))
+    .filter(q => q.p || q.r);
+  return x;
+}
+
+async function guardar() {
+  const x = recolectar();
+  for (const [k, label, tipo] of TECNICOS) {
+    if (x[k] == null) continue;
+    if (Number.isNaN(x[k]) || (tipo === 'int' && !Number.isInteger(x[k]))) {
+      FX.toast(`«${label}» tiene que ser un número${tipo === 'int' ? ' entero' : ''}.`, 'err');
+      return;
+    }
+  }
+  if (F.estado === 'aprobada') {
+    if (!confirm('Esta ficha está aprobada. Si guardás cambios vuelve a borrador y hay que aprobarla de nuevo. ¿Seguir?')) return;
+    x.estado = 'borrador';
+  }
+  const btn = $('#b-guardar');
+  btn.disabled = true;
+  const { data, error } = await sb.from('fichas').update(x).eq('codigo_granel', COD).select().single();
+  if (error) { btn.disabled = false; FX.toast('No se pudo guardar: ' + error.message, 'err'); return; }
+  F = data;
+  editando = false;
+  await cargar();
+  FX.toast('Ficha guardada', 'ok');
+}
+
+// ---- Aprobar ----------------------------------------------------------------------
+function abrirAprobar() {
+  const porRevisar = PEND.filter(p => p.estado === 'por_revisar').length;
+  const bloqueos = [], avisos = [];
+  if (porRevisar) bloqueos.push(`Hay ${porRevisar} ${porRevisar === 1 ? 'duda' : 'dudas'} por revisar de este producto.`);
+  if (!EST?.inci_declarado) bloqueos.push('No hay INCI: la fórmula vigente no está cargada.');
+  else if (Math.abs(Number(EST.suma_pct) - 100) > 0.01) bloqueos.push(`La fórmula suma ${pct(EST.suma_pct)} en vez de 100 %.`);
+  if (!F.descripcion) avisos.push('Falta la descripción.');
+  if (!F.modo_uso) avisos.push('Falta el modo de uso.');
+  if (F.vida_util_meses == null) avisos.push('Falta la vida útil.');
+  if (!F.conservacion) avisos.push('Faltan las condiciones de conservación.');
+  const porCorregir = PEND.filter(p => p.estado === 'por_corregir').length;
+  if (porCorregir) avisos.push(`Quedan ${porCorregir} ${porCorregir === 1 ? 'corrección' : 'correcciones'} pendientes (por ejemplo en la tienda).`);
+
+  const hoy = new Date();
+  const rev = F.revision || `Rev ${String(hoy.getMonth() + 1).padStart(2, '0')}.${String(hoy.getFullYear()).slice(2)}`;
+  const box = FX.abrir(`
+    <h3>Aprobar ficha</h3>
+    <div class="sub">${esc(nombreProducto())} · ${esc(COD)}</div>
+    ${bloqueos.length ? `<div class="fx-aviso hot"><b>Todavía no se puede aprobar:</b><ul>${bloqueos.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>` : ''}
+    ${avisos.length ? `<div class="fx-aviso"><b>Se puede aprobar, pero:</b><ul>${avisos.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : ''}
+    <p class="fx-modal-txt">Al aprobar se guarda el INCI de hoy. Si después cambia la fórmula, la ficha queda marcada como desactualizada.</p>
+    <label for="fa-rev">Revisión</label>
+    <input id="fa-rev" value="${esc(rev)}">
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button class="btn ghost" data-m="cancelar">Cancelar</button>
+      <button class="btn primary" data-m="aprobar"${bloqueos.length ? ' disabled' : ''}>Aprobar ficha</button>
+    </div>`);
+
+  box.querySelector('[data-m="aprobar"]').addEventListener('click', async ev => {
+    const revision = box.querySelector('#fa-rev').value.trim();
+    if (!revision) { FX.toast('Poné la revisión: es lo que identifica esta versión de la ficha.', 'err'); return; }
+    ev.currentTarget.disabled = true;
+    const ahora = new Date().toISOString();
+    const { error } = await sb.from('fichas').update({
+      estado: 'aprobada', revision,
+      aprobada_por: await FX.usuario(), aprobada_en: ahora,
+      inci_aprobado: EST.inci_declarado, inci_aprobado_en: ahora,
+    }).eq('codigo_granel', COD);
+    if (error) { ev.currentTarget.disabled = false; FX.toast('No se pudo aprobar: ' + error.message, 'err'); return; }
+    FX.cerrar();
+    await cargar();
+    FX.toast('Ficha aprobada', 'ok');
+  });
+}
+
+async function volverABorrador() {
+  if (!confirm('¿Volver esta ficha a borrador? Deja de estar aprobada hasta que se apruebe de nuevo.')) return;
+  const { error } = await sb.from('fichas').update({ estado: 'borrador' }).eq('codigo_granel', COD);
+  if (error) { FX.toast('No se pudo cambiar: ' + error.message, 'err'); return; }
+  await cargar();
+  FX.toast('La ficha volvió a borrador');
+}
+
+// ---- Salidas: tienda e impresión ----------------------------------------------
+const parrafos = t => t ? t.split(/\n{2,}/).map(p => `<p>${esc(p.trim()).replace(/\n/g, '<br>')}</p>`).join('\n') : '';
+const listaHtml = a => (Array.isArray(a) && a.length) ? `<ul>\n${a.map(x => `  <li>${esc(x)}</li>`).join('\n')}\n</ul>` : '';
+
+// Mismo formato que ya usa el theme de la tienda: data-tab = pestaña, data-faq = pregunta desplegable
+function htmlTienda() {
+  const out = [];
+  const sec = (t, cuerpo) => { if (cuerpo) out.push(`<h3 data-tab>${t}</h3>\n${cuerpo}`); };
+  sec('Descripción', parrafos(F.descripcion));
+  sec('Aplicaciones', listaHtml(F.aplicaciones));
+  sec('Beneficios', listaHtml(F.beneficios));
+  sec('Principios activos', listaHtml(F.principios_activos));
+  sec('Características', listaHtml(F.caracteristicas));
+  sec('Modo de uso', parrafos(F.modo_uso));
+  if (EST?.inci_declarado) sec('Ingredientes (INCI)', `<p>${esc(EST.inci_declarado)}.</p>`);
+  const faq = (Array.isArray(F.faq) ? F.faq : []).filter(q => q.p);
+  if (faq.length) {
+    out.push('<h3 data-faq-title>Preguntas frecuentes</h3>\n'
+      + faq.map(q => `<h4 data-faq>${esc(q.p)}</h4>\n<p>${esc(q.r)}</p>`).join('\n'));
+  }
+  return out.join('\n');
+}
+
+async function copiar(texto, mensaje) {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch {
+    const t = document.createElement('textarea');
+    t.value = texto; document.body.appendChild(t); t.select();
+    document.execCommand('copy'); t.remove();
+  }
+  FX.toast(mensaje, 'ok');
+}
+
+function renderHoja() {
+  const sec = (t, cuerpo) => cuerpo ? `<section class="h-sec"><h2>${t}</h2>${cuerpo}</section>` : '';
+  const lista = a => (Array.isArray(a) && a.length) ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+  const texto = t => t ? t.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') : '';
+  const datos = datosTecnicos().filter(([l]) => l !== 'Vida útil');
+  const tabla = datos.length ? `<table class="h-tabla">${datos.map(([l, v]) => `<tr><th>${l}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : '';
+  const conservacion = [F.conservacion, F.vida_util_meses != null ? `Vida útil: ${F.vida_util_meses} meses en su envase original cerrado.` : '']
+    .filter(Boolean).join('\n\n');
+
+  $('#hoja').innerHTML = `
+    ${F.estado !== 'aprobada' ? '<div class="h-borrador">BORRADOR</div>' : ''}
+    <header class="h-cab">
+      <div class="h-marca"><img src="../shell/logo.svg" alt=""><div><b>ROSAINT</b><span>Cosmética profesional</span></div></div>
+      <div class="h-doc"><b>Ficha técnica</b><span>${esc(F.revision || 'Sin aprobar')}</span><span>${new Date().toLocaleDateString('es-AR')}</span></div>
+    </header>
+    <div class="h-titulo"><h1>${esc(nombreProducto())}</h1><p>Código ${esc(COD)}</p></div>
+    ${sec('Descripción', texto(F.descripcion))}
+    ${sec('Características destacadas', lista(F.caracteristicas))}
+    ${sec('Beneficios', lista(F.beneficios))}
+    ${sec('Aplicaciones', lista(F.aplicaciones))}
+    ${sec('Principios activos', lista(F.principios_activos))}
+    ${sec('Modo de uso', texto(F.modo_uso))}
+    ${sec('Especificaciones', tabla)}
+    ${sec('Conservación', texto(conservacion))}
+    ${sec('Precauciones', texto([F.precauciones, F.advertencias].filter(Boolean).join('\n\n')))}
+    ${sec('Ingredientes (INCI)', EST?.inci_declarado ? `<p class="h-inci">${esc(EST.inci_declarado)}.</p>` : '')}
+    ${sec('Presentaciones', PRES.length ? `<p>${PRES.map(p => esc(NOMBRES_IT[p.codigo_sku] || p.codigo_sku)).join(' · ')}</p>` : '')}
+    <footer class="h-pie"><span>Rosaint · rosaint.online</span><span>${esc(COD)} · ${esc(F.revision || 'borrador')}</span></footer>`;
+}
+
+cargar();
+</script>
+</body>
+</html>

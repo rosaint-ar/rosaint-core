@@ -22,6 +22,7 @@ const MENU = [
   { type: 'group', label: 'Producto' },
   { type: 'item', id: 'laboratorio',   label: 'Laboratorio',   href: 'laboratorio/index.html', status: 'ready' },
   { type: 'item', id: 'catalogo',      label: 'Catálogo',      href: 'catalogo/index.html',      status: 'ready' },
+  { type: 'item', id: 'fichas',        label: 'Fichas técnicas', href: 'fichas/index.html',      status: 'ready' },
 
   { type: 'group', label: 'Precios' },
   { type: 'item', id: 'precios',       label: 'Precios',       href: 'precios/index.html',       status: 'ready' },
@@ -110,6 +111,7 @@ const MODULE_ICONS = {
   asistente:      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><ellipse cx="12" cy="12" rx="9" ry="4"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(75 12 12)"/></svg>',
   laboratorio:    '<svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>',
   catalogo:       '<svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
+  fichas:         '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
   precios:        '<svg viewBox="0 0 24 24"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7-7V4a1 1 0 0 1 1-1h6.6l9.4 9.4a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.4"/></svg>',
   cotizador:      '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5z"/><path d="M8 13h8M8 17h5"/></svg>',
   crm:            '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.5M21 20a5.6 5.6 0 0 0-4-5.4"/></svg>',
@@ -137,6 +139,7 @@ const MODULE_LANDINGS = {
   manuales: 'Manuales',
   laboratorio: 'Laboratorio',
   catalogo: 'Catálogo',
+  fichas: 'Fichas técnicas',
   precios: 'Precios',
   produccion: 'Producción',
   sistema: 'Sistema',
