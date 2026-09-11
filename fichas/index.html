@@ -208,7 +208,7 @@ function renderFichas() {
   const inci = f => {
     const b = [];
     if (!f.inci_declarado) b.push('<span class="fx-badge hot">Sin fórmula</span>');
-    else if (!f.inci_publicado) b.push(f.a_pedido ? '<span class="fx-badge gris">No se publica</span>' : '<span class="fx-badge gris">Sin publicar</span>');
+    else if (!f.inci_publicado) b.push('<span class="fx-badge gris">Sin publicar</span>');
     else if (f.publicado_difiere) b.push('<span class="fx-badge gris">La web difiere</span>');
     else b.push('<span class="fx-badge ok">Coincide con la web</span>');
     if (f.estado_ficha === 'aprobada' && f.inci_desactualizado) b.push('<span class="fx-badge hot">Cambió la fórmula</span>');
@@ -227,7 +227,6 @@ function renderFichas() {
       <tr data-c="${esc(f.codigo_granel)}">
         <td class="cod">${esc(f.codigo_granel)}</td>
         <td><a class="nom" href="ver.html?c=${encodeURIComponent(f.codigo_granel)}">${esc(f.nombre_comercial || f.nombre)}</a>
-          ${f.a_pedido ? '<span class="fx-badge gris">A pedido</span>' : ''}
           ${f.estado_producto && f.estado_producto !== 'vigente' ? `<span class="fx-badge warn">${esc(f.estado_producto)}</span>` : ''}</td>
         <td><span class="fx-badge ${esc(f.estado_ficha || 'borrador')}">${FX.ESTADO_FICHA[f.estado_ficha] || 'Sin ficha'}</span></td>
         <td><div class="fx-cob">
