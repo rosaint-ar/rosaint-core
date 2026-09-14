@@ -152,19 +152,40 @@ $('btnCruzar').addEventListener('click', async () => {
     e.por[a.regimen] = (e.por[a.regimen]||0) + a.importe;
   });
 
-  const coinciden=[], faltan=[], difieren=[];
+  // Emparejar ARCA con Odoo. Algunos agentes (p.ej. estaciones de servicio) informan
+  // la percepción con una numeración interna distinta a la del comprobante fiscal,
+  // así que si el número no da, se busca por CUIT del agente + importe del régimen.
+  const pares = new Map(); // comprobante ARCA -> { o, via }
+  const usados = new Set();
   arcaComp.forEach(a => {
     const o = odooMap.get(a.comprobante);
-    if (!o) { faltan.push(a); return; }
+    if (o) { pares.set(a.comprobante, { o, via:'numero' }); usados.add(o.comprobante); }
+  });
+  arcaComp.forEach(a => {
+    if (pares.has(a.comprobante)) return;
+    const o = odoo.find(x => !usados.has(x.comprobante)
+      && String(x.cuit||'') === String(a.agente||'')
+      && Object.keys(a.por).every(reg => Math.abs((a.por[reg]||0) - ((x.por_regimen&&x.por_regimen[reg])||0)) <= 0.5));
+    if (o) { pares.set(a.comprobante, { o, via:'cuit' }); usados.add(o.comprobante); }
+  });
+
+  const coinciden=[], faltan=[], difieren=[], porCuit=[];
+  arcaComp.forEach(a => {
+    const par = pares.get(a.comprobante);
+    if (!par) { faltan.push(a); return; }
+    const o = par.o;
     let hayDif = false;
     for (const reg of Object.keys(a.por)) {
       const af = a.por[reg], od = (o.por_regimen && o.por_regimen[reg]) || 0;
       if (Math.abs(af - od) > 0.5) { difieren.push({ comprobante:a.comprobante, proveedor:o.proveedor, regimen:reg, af, od }); hayDif = true; }
     }
-    if (!hayDif) coinciden.push(a);
+    if (!hayDif) {
+      coinciden.push(a);
+      if (par.via === 'cuit') porCuit.push({ arca:a.comprobante, odoo:o.comprobante, proveedor:o.proveedor, agente:a.agente, por:a.por });
+    }
   });
 
-  window._estado = { periodo, arcaComp, odooMap, coinciden, faltan, difieren, regimenesEnArchivo:[...regimenesEnArchivo], odoo };
+  window._estado = { periodo, arcaComp, odooMap, pares, coinciden, faltan, difieren, porCuit, regimenesEnArchivo:[...regimenesEnArchivo], odoo };
   render();
   setStatus('on', `Listo: ${coinciden.length} OK, ${faltan.length} faltan, ${difieren.length} difieren.`);
   $('btnCruzar').disabled = false;
@@ -202,12 +223,22 @@ function render() {
   }
   h += `</div>`;
 
+  if (r.porCuit && r.porCuit.length) {
+    h += `<div class="group"><h2>Emparejados por CUIT e importe <span class="badge v">${r.porCuit.length}</span></h2>`;
+    h += `<div class="val-info">El agente informó la percepción con una numeración propia, distinta a la del comprobante fiscal. Se encontró en Odoo por CUIT e importe exacto. Revisá que sea el comprobante correcto.</div>`;
+    h += `<table><thead><tr><th>Nº en ARCA</th><th>Comprobante en Odoo</th><th>Proveedor</th><th>Régimen</th><th class="num">Importe</th></tr></thead><tbody>`;
+    r.porCuit.forEach(p => { Object.keys(p.por).forEach(reg => {
+      h += `<tr><td class="mono">${p.arca}</td><td class="mono">${p.odoo}</td><td>${p.proveedor||''}</td><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(p.por[reg])}</td></tr>`;
+    });});
+    h += `</tbody></table></div>`;
+  }
+
   // Cuadre por régimen (solo los que están en el archivo)
   const sumArca = {}, sumOdoo = {};
   r.regimenesEnArchivo.forEach(reg => { sumArca[reg] = 0; sumOdoo[reg] = 0; });
   r.arcaComp.forEach(a => Object.keys(a.por).forEach(reg => { sumArca[reg] = (sumArca[reg]||0) + a.por[reg]; }));
   // Odoo: sumar solo los comprobantes que están en ARCA (mismo universo) y solo los regímenes del archivo
-  r.arcaComp.forEach(a => { const o = r.odooMap.get(a.comprobante); if(!o) return; r.regimenesEnArchivo.forEach(reg => { sumOdoo[reg] = (sumOdoo[reg]||0) + ((o.por_regimen&&o.por_regimen[reg])||0); }); });
+  r.arcaComp.forEach(a => { const par = r.pares.get(a.comprobante); if(!par) return; const o = par.o; r.regimenesEnArchivo.forEach(reg => { sumOdoo[reg] = (sumOdoo[reg]||0) + ((o.por_regimen&&o.por_regimen[reg])||0); }); });
 
   let totA=0, totO=0, allOk=true;
   let filas = '';
