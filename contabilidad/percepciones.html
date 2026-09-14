@@ -971,6 +971,8 @@ async function aplicarAOdoo(moveId, lineasDistribucion) {
   }
   const payload = { modo: 'aplicar_percepciones', move_id: moveId, percepciones };
   if (iva_tax_id) payload.iva_tax_id = iva_tax_id;
+  // Mandamos el total del comprobante: el backend valida que lo que quedó en Odoo cuadre.
+  if (fac.total != null) payload.total_esperado = Math.round(fac.total*100)/100;
   if (lineasDistribucion) {
     payload.lineas_distribucion = lineasDistribucion;
   } else if (fac.neto != null && fac.neto > 0) {
@@ -981,18 +983,31 @@ async function aplicarAOdoo(moveId, lineasDistribucion) {
   if (!d.ok) throw new Error(d.error);
 
   const match = window._borradorMatch || { name: 'borrador' };
+  // El backend avisa si quedó algo sin aplicar o si el total no cuadra contra el PDF.
+  const problemas = d.problemas || [];
+  const ok = problemas.length === 0;
   let hh = `<div class="invoice" style="margin-top:14px;">
     <div class="inv-head">
-      <div class="full">✓ Aplicado a ${match.name} ${d.modo === 'multi_linea' ? '(distribución multi-línea)' : ''}</div>
+      <div class="full">${ok ? '✓ Aplicado a' : '⚠ Aplicado CON PROBLEMAS a'} ${match.name} ${d.modo === 'multi_linea' ? '(distribución multi-línea)' : ''}</div>
       <div><span class="k">Total Odoo:</span> <span class="v">${money(d.cabecera.amount_total)}</span></div>
-      <div><span class="k">Percepciones aplicadas:</span> <span class="v">${d.aplicadas}</span></div>
+      <div><span class="k">Total comprobante:</span> <span class="v">${d.total_esperado != null ? money(d.total_esperado) : '—'}</span></div>
+      <div><span class="k">Percepciones aplicadas:</span> <span class="v" ${d.aplicadas < percepciones.length ? 'style="color:#dc3545;font-weight:700;"' : ''}>${d.aplicadas} de ${percepciones.length}</span></div>
     </div>
     <div class="totales">`;
   (d.lineas_tax || []).forEach(l => {
     hh += `<div class="row perc"><span class="lbl">${l.name}:</span><span class="val">${money(l.balance)}</span></div>`;
   });
-  hh += `</div></div>
-    <div class="alerta ok">Listo. Revisá la factura en Odoo y confirmala a mano. El borrador NO fue posteado.</div>`;
+  if (d.diferencia != null && Math.abs(d.diferencia) >= 0.01) {
+    hh += `<div class="row" style="color:#dc3545;font-weight:700;"><span class="lbl">⚠ Diferencia contra el comprobante:</span><span class="val">${money(d.diferencia)}</span></div>`;
+  }
+  hh += `</div></div>`;
+  if (!ok) {
+    hh += `<div class="alerta"><strong>Revisá la factura antes de confirmarla en Odoo:</strong><ul style="margin:6px 0 0 18px;padding:0;">`
+        + problemas.map(p => `<li style="margin-bottom:4px;">${p}</li>`).join('')
+        + `</ul></div>`;
+  } else {
+    hh += `<div class="alerta ok">Listo, todo cuadra al centavo. Revisá la factura en Odoo y confirmala a mano. El borrador NO fue posteado.</div>`;
+  }
   out.innerHTML = hh;
 }
 window.distrEquitativa = distrEquitativa;
