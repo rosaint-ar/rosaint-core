@@ -17,13 +17,23 @@
   async function cargarTablas() {
     const [cfg, prov, aj, items, cats] = await Promise.all([
       sb.from('repo_config').select('*').eq('id', 1).single(),
-      sb.from('repo_proveedores').select('*').order('nombre'),
+      sb.from('proveedores').select('id,nombre,odoo_nombre,plazo_entrega_dias,plazo_confirmado,condicion_pago,notas').order('nombre'),
       sb.from('repo_items').select('*'),
       sb.from('items').select('codigo,nombre,categoria_id').in('tipo', ['MP', 'IN', 'SE', 'TE']),
       sb.from('categorias').select('id,nombre'),
     ]);
     CFG = cfg.data || { dias_seguridad: 15, ciclo_dias: 30, plazo_default: 7, peso_corto: 0.65, ventana_corta_dias: 90 };
-    PLAZOS = {}; for (const p of prov.data || []) PLAZOS[p.nombre] = p;
+    // Los plazos viven en la ficha del proveedor (Laboratorio → Proveedores).
+    // Se indexan por el nombre de Odoo, que es con el que viene el historial de compras.
+    PLAZOS = {};
+    for (const p of prov.data || []) {
+      const clave = p.odoo_nombre || p.nombre;
+      PLAZOS[clave] = {
+        id: p.id, nombre: clave, nombre_core: p.nombre,
+        plazo_dias: p.plazo_entrega_dias, confirmado: p.plazo_confirmado,
+        condicion_pago: p.condicion_pago, notas: p.notas,
+      };
+    }
     AJUSTES = {}; for (const a of aj.data || []) AJUSTES[a.codigo] = a;
     const catNom = {}; for (const c of cats.data || []) catNom[c.id] = c.nombre;
     MAESTRO = {};
@@ -293,16 +303,20 @@
     for (const f of FILAS) if (f.proveedor) cuenta[f.proveedor] = (cuenta[f.proveedor] || 0) + 1;
     const provs = Object.values(PLAZOS).sort((a, b) => (cuenta[b.nombre] || 0) - (cuenta[a.nombre] || 0) || a.nombre.localeCompare(b.nombre, 'es'));
 
-    $('#tabla-plazos tbody').innerHTML = provs.map(p => `
+    // Solo los que hoy proveen algo: la lista completa vive en Proveedores.
+    const conInsumos = provs.filter(p => cuenta[p.nombre]);
+    $('#tabla-plazos tbody').innerHTML = conInsumos.map(p => `
       <tr>
         <td class="txt"><b>${esc(p.nombre)}</b>
-          <div style="font-size:11px;color:var(--muted)">${cuenta[p.nombre] || 0} ${(cuenta[p.nombre] || 0) === 1 ? 'insumo' : 'insumos'}${p.notas ? ' · ' + esc(p.notas) : ''}</div></td>
+          <div style="font-size:11px;color:var(--muted)">${cuenta[p.nombre]} ${cuenta[p.nombre] === 1 ? 'insumo' : 'insumos'}${p.condicion_pago ? ' · paga a ' + esc(p.condicion_pago) : ''}</div></td>
         <td style="width:120px" class="txt">
-          <input class="plazo-in" type="number" min="0" max="180" value="${p.plazo_dias}" data-plazo="${esc(p.nombre)}"> días</td>
+          <input class="plazo-in" type="number" min="0" max="180" value="${p.plazo_dias ?? ''}"
+            placeholder="${CFG.plazo_default}" data-plazo="${esc(p.nombre)}"> días</td>
         <td style="width:130px" class="txt">
           <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer">
             <input type="checkbox" data-conf="${esc(p.nombre)}" ${p.confirmado ? 'checked' : ''}> confirmado</label></td>
-      </tr>`).join('');
+      </tr>`).join('')
+      || '<tr><td><div class="vacio">Todavía no hay proveedores con insumos.</div></td></tr>';
 
     $$('[data-plazo]').forEach(i => i.addEventListener('change', () => guardarPlazo(i.dataset.plazo, { plazo_dias: Number(i.value) })));
     $$('[data-conf]').forEach(i => i.addEventListener('change', () => guardarPlazo(i.dataset.conf, { confirmado: i.checked })));
@@ -319,10 +333,15 @@
   }
 
   async function guardarPlazo(nombre, cambios) {
-    const { error } = await sb.from('repo_proveedores')
-      .update({ ...cambios, actualizado_en: new Date().toISOString() }).eq('nombre', nombre);
+    const p = PLAZOS[nombre];
+    if (!p?.id) return toast('Ese proveedor no está en la ficha de proveedores', 'err');
+    const aTabla = {};
+    if ('plazo_dias' in cambios) aTabla.plazo_entrega_dias = cambios.plazo_dias;
+    if ('confirmado' in cambios) aTabla.plazo_confirmado = cambios.confirmado;
+    const { error } = await sb.from('proveedores')
+      .update({ ...aTabla, actualizado_en: new Date().toISOString() }).eq('id', p.id);
     if (error) return toast('No se pudo guardar: ' + error.message, 'err');
-    PLAZOS[nombre] = { ...PLAZOS[nombre], ...cambios };
+    PLAZOS[nombre] = { ...p, ...cambios };
     recalcular(); pintarTodo();
     toast('Plazo actualizado');
   }

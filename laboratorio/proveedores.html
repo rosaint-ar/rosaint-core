@@ -8,293 +8,212 @@
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
-    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-    .toolbar .search { flex: 1; min-width: 220px; }
-    .toolbar .search input { width: 100%; }
-    .count-info { font-size: 12.5px; color: var(--muted); }
+    .pv-top { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; }
+    .pv-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; flex:1; min-width:280px; }
+    .pv-kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
+    .pv-kpi .k { font-size:11px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
+    .pv-kpi .v { font-size:23px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; line-height:1.15; }
+    .pv-kpi .sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+    .pv-kpi.hot .v { color:var(--hot); }
+    .pv-sync { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:12px 14px; min-width:215px; display:flex; flex-direction:column; gap:8px; }
+    .pv-sync .cuando { font-size:11.5px; color:var(--muted); line-height:1.45; }
 
-    .tbl { width: 100%; border-collapse: collapse; background: var(--surface);
-      border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 13px; }
-    .tbl th {
-      text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-      color: var(--muted); padding: 10px 12px; background: var(--surface-2);
-      border-bottom: 1px solid var(--border); font-weight: 600;
-    }
-    .tbl td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
-    .tbl tr:last-child td { border-bottom: none; }
-    .tbl tr:hover { background: color-mix(in srgb, var(--accent) 3%, transparent); }
-    .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .tbl .items-count {
-      color: var(--muted); font-size: 12px;
-    }
+    .pv-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap; }
+    .pv-tab { background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;
+              padding:9px 14px; font-size:13.5px; font-weight:600; color:var(--muted); font-family:inherit; }
+    .pv-tab:hover { color:var(--text); }
+    .pv-tab[aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); }
+    .pv-tab .n { font-size:11px; background:var(--bg); border:1px solid var(--border);
+                 border-radius:20px; padding:1px 7px; margin-left:5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .pv-tab[aria-selected="true"] .n { background:var(--accent-tint); border-color:transparent; color:var(--accent); }
 
-    .btn-icon {
-      background: none; border: 1px solid transparent; padding: 4px 8px;
-      border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--muted);
-      transition: color .12s, border-color .12s, background .12s;
-    }
-    .btn-icon:hover { color: var(--text); background: var(--surface-2); border-color: var(--border); }
-    .empty-box {
-      padding: 40px 20px; text-align: center; color: var(--muted);
-      background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
-    }
+    .pv-nota { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--structure);
+               border-radius:var(--radius-sm); padding:11px 14px; font-size:12.5px; color:var(--muted);
+               line-height:1.55; margin-bottom:16px; }
+    .pv-nota b { color:var(--text); font-weight:600; }
 
-    .modal-bg {
-      position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
-      display: none; align-items: center; justify-content: center;
-      z-index: 100; padding: 20px;
-    }
-    .modal-bg.show { display: flex; }
-    .modal-box {
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-      max-width: 560px; width: 100%; padding: 24px 26px;
-      max-height: calc(100vh - 40px); overflow-y: auto; overscroll-behavior: contain;
-    }
-    .modal-box h3 { font-size: 18px; margin-bottom: 16px; }
-    .modal-box label {
-      display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-      color: var(--muted); font-weight: 600; margin-bottom: 4px;
-    }
-    .modal-box input, .modal-box textarea {
-      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
-      border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
-      font: inherit; margin-bottom: 12px;
-    }
-    .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
-    .modal-box input:focus, .modal-box textarea:focus {
-      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint);
-    }
-    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
-    .field-grid .full { grid-column: 1 / -1; }
+    .pv-toolbar { display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .pv-toolbar .input, .pv-toolbar select {
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:8px 11px; font-size:13px; color:var(--text); font-family:inherit; }
+    .pv-toolbar .input { min-width:230px; flex:1; max-width:360px; }
 
-    .modal-actions { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
-    .modal-actions .spacer { flex: 1; }
+    .pv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:12px; }
+    .pv-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:14px 16px; cursor:pointer; transition:border-color .12s, transform .12s; }
+    .pv-card:hover { border-color:var(--accent); transform:translateY(-1px); }
+    .pv-card.inactivo { opacity:.72; border-style:dashed; }
+    .pv-card h3 { font-size:14.5px; font-weight:700; line-height:1.3; margin-bottom:3px; }
+    .pv-card .cuit { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+    .pv-card .linea { display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; font-size:11.5px; color:var(--muted); }
+    .pv-card .cifras { display:flex; gap:16px; margin-top:11px; padding-top:10px; border-top:1px solid var(--border); }
+    .pv-card .cifra .v { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+    .pv-card .cifra .k { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
 
-    .toast {
-      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
-      background: var(--text); color: var(--bg); padding: 12px 22px;
-      border-radius: var(--radius-sm); font-size: 14px; opacity: 0; pointer-events: none;
-      transition: all .25s; z-index: 200;
-    }
-    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .toast.err { background: var(--hot); color: var(--on-accent); }
-    .toast.ok { background: var(--ok); color: var(--on-accent); }
+    .chip { display:inline-block; font-size:10.5px; padding:2px 8px; border-radius:20px;
+            background:var(--bg); border:1px solid var(--border); color:var(--muted); }
+    .chip.est  { background:rgba(184,134,11,.13); border-color:transparent; color:var(--warn); }
+    .chip.ok   { background:rgba(47,143,91,.13); border-color:transparent; color:var(--ok); }
+    .chip.hot  { background:rgba(194,64,47,.13); border-color:transparent; color:var(--hot); }
+
+    .pv-tabla { width:100%; border-collapse:collapse; font-size:12.8px; }
+    .pv-tabla th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;
+                   color:var(--muted); font-weight:600; padding:8px 9px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .pv-tabla td { padding:9px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .pv-tabla .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .pv-tabla .cod { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+    .pv-tabla tbody tr:hover { background:var(--bg); }
+
+    .pv-drawer { position:fixed; inset:0 0 0 auto; width:min(560px,100%); background:var(--surface);
+                 border-left:1px solid var(--border); box-shadow:var(--shadow-menu); z-index:60;
+                 display:flex; flex-direction:column; transform:translateX(100%); transition:transform .18s ease; }
+    .pv-drawer.open { transform:none; }
+    .pv-drawer > header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; }
+    .pv-drawer > header h3 { font-size:15.5px; font-weight:700; line-height:1.3; }
+    .pv-drawer .cerrar { margin-left:auto; background:none; border:none; font-size:20px; color:var(--muted); cursor:pointer; line-height:1; }
+    .pv-drawer .cuerpo { padding:18px 20px; overflow:auto; flex:1; }
+    .pv-velo { position:fixed; inset:0; background:rgba(0,0,0,.28); z-index:59; display:none; }
+    .pv-velo.open { display:block; }
+
+    .pv-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:13px; }
+    .pv-campo label { display:block; font-size:11.5px; color:var(--muted); margin-bottom:5px; font-weight:600; }
+    .pv-campo input, .pv-campo select, .pv-campo textarea {
+      width:100%; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:8px 10px; font-size:13px; color:var(--text); font-family:inherit; }
+    .pv-campo .ayuda { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.45; }
+    .pv-campo.ancho { grid-column:1 / -1; }
+    .pv-h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+             font-weight:600; margin:20px 0 8px; }
+
+    .mini { width:100%; border-collapse:collapse; font-size:12px; }
+    .mini th { text-align:left; font-size:10px; text-transform:uppercase; color:var(--muted); padding:4px 6px; font-weight:600; }
+    .mini td { padding:6px; border-top:1px solid var(--border); font-variant-numeric:tabular-nums; }
+    .mini td.txt { font-variant-numeric:normal; }
+
+    .arreglo { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:12px 15px; margin-bottom:9px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    .arreglo .desc { flex:1; min-width:240px; font-size:13px; line-height:1.5; }
+    .arreglo .desc .cod { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+    .arreglo .desc b { font-weight:600; }
+    .flecha { color:var(--muted); }
+
+    .vacio { background:var(--surface); border:1px dashed var(--border); border-radius:var(--radius);
+             padding:28px; text-align:center; color:var(--muted); font-size:13px; }
+    .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(14px);
+             background:var(--structure); color:#fff; padding:10px 18px; border-radius:var(--radius-sm);
+             font-size:13px; opacity:0; pointer-events:none; transition:.18s; z-index:80; max-width:80vw; }
+    .toast.show { opacity:1; transform:translateX(-50%); }
+    .toast.err { background:var(--hot); }
+
+    @media (max-width:760px) { .pv-form { grid-template-columns:1fr; } }
   </style>
 </head>
-<body data-page="laboratorio" data-title="Proveedores" data-subtitle="Alta y datos de contacto">
+<body data-page="proveedores" data-title="Proveedores" data-subtitle="Quién provee qué, en cuánto tiempo y con qué condiciones">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
 
-  <div class="toolbar">
-    <div class="search">
-      <input type="text" class="input" id="search" placeholder="Buscar por nombre, localidad, contacto…">
+  <div class="pv-top">
+    <div class="pv-kpis">
+      <div class="pv-kpi"><div class="k">Proveedores</div><div class="v" id="k-prov">—</div><div class="sub" id="k-prov-sub">&nbsp;</div></div>
+      <div class="pv-kpi"><div class="k">Comprado en el período</div><div class="v" id="k-comprado">—</div><div class="sub" id="k-comprado-sub">&nbsp;</div></div>
+      <div class="pv-kpi hot"><div class="k">Para corregir</div><div class="v" id="k-corregir">—</div><div class="sub">datos que no coinciden</div></div>
+      <div class="pv-kpi"><div class="k">Archivados</div><div class="v" id="k-archivados">—</div><div class="sub">insumos fuera de uso</div></div>
     </div>
-    <span class="count-info" id="cnt">—</span>
-    <button class="btn primary" id="btnNuevo">+ Nuevo proveedor</button>
+    <div class="pv-sync">
+      <button class="btn primary" id="btn-sync">Sincronizar con Odoo</button>
+      <div class="cuando" id="sync-estado">Cargando…</div>
+    </div>
   </div>
 
-  <div id="content"><div class="empty-box">Cargando…</div></div>
+  <div class="pv-tabs" role="tablist">
+    <button class="pv-tab" data-tab="lista"     role="tab">Proveedores <span class="n" id="n-lista">—</span></button>
+    <button class="pv-tab" data-tab="insumos"   role="tab">Quién provee qué <span class="n" id="n-insumos">—</span></button>
+    <button class="pv-tab" data-tab="corregir"  role="tab">Para corregir <span class="n" id="n-corregir">—</span></button>
+    <button class="pv-tab" data-tab="archivados" role="tab">Archivados <span class="n" id="n-arch">—</span></button>
+  </div>
+
+  <!-- ============ PROVEEDORES ============ -->
+  <section id="tab-lista" hidden>
+    <div class="pv-toolbar">
+      <input type="search" class="input" id="q-prov" placeholder="Buscar por nombre, CUIT o mail…">
+      <select id="f-estado-prov">
+        <option value="activos">Los que uso</option>
+        <option value="todos">Todos</option>
+        <option value="sin_odoo">Sin ficha en Odoo</option>
+        <option value="inactivos">Inactivos</option>
+      </select>
+      <button class="btn secondary" id="btn-nuevo">+ Nuevo proveedor</button>
+    </div>
+    <div class="pv-grid" id="grilla-prov"></div>
+  </section>
+
+  <!-- ============ QUIÉN PROVEE QUÉ ============ -->
+  <section id="tab-insumos" hidden>
+    <div class="pv-nota">
+      El proveedor de cada materia prima, con el que dice la ficha y el que realmente factura.
+      Desde acá se cambia de proveedor: queda registrado de dónde venía y se escribe en Odoo.
+    </div>
+    <div class="pv-toolbar">
+      <input type="search" class="input" id="q-ins" placeholder="Buscar materia prima o proveedor…">
+      <select id="f-prov-ins"><option value="">Todos los proveedores</option></select>
+      <select id="f-coincide">
+        <option value="">Todos</option>
+        <option value="no">Solo los que no coinciden</option>
+        <option value="si">Solo los que coinciden</option>
+      </select>
+    </div>
+    <div class="table-wrap"><div class="table-scroll">
+      <table class="pv-tabla">
+        <thead><tr>
+          <th>Código</th><th>Materia prima</th><th>Proveedor en la ficha</th>
+          <th>Le comprás a</th><th class="num">Últ. compra</th><th class="num">Últ. precio</th><th></th>
+        </tr></thead>
+        <tbody id="tbody-ins"></tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- ============ PARA CORREGIR ============ -->
+  <section id="tab-corregir" hidden>
+    <div id="bloques-corregir"></div>
+  </section>
+
+  <!-- ============ ARCHIVADOS ============ -->
+  <section id="tab-archivados" hidden>
+    <div class="pv-nota">
+      Archivar saca la materia prima de todas las pantallas del Core (fórmulas, precios, reposición)
+      sin borrar nada: el historial queda y se puede reactivar cuando quieras.
+      <b>En Odoo no se toca</b>, así que sigue apareciendo al cargar una compra o una fabricación.
+    </div>
+    <h3 class="pv-h4" style="margin-top:0">Archivados <span class="chip" id="chip-arch">0</span></h3>
+    <div id="lista-archivados"></div>
+    <h3 class="pv-h4">Candidatos a archivar</h3>
+    <div class="pv-nota">Sin consumo ni compras desde que arrancó el historial. Revisalos: puede que
+      sean estacionales o de un producto que todavía no relanzaste.</div>
+    <div id="lista-candidatos"></div>
+  </section>
 
 </main>
 
-<div class="modal-bg" id="modalProv">
-  <div class="modal-box">
-    <h3 id="mp-title">Nuevo proveedor</h3>
-    <div class="field-grid">
-      <div class="full">
-        <label>Nombre *</label>
-        <input type="text" id="mp-nombre" maxlength="200">
-      </div>
-      <div>
-        <label>Localidad</label>
-        <input type="text" id="mp-loc">
-      </div>
-      <div>
-        <label>Contacto</label>
-        <input type="text" id="mp-cont">
-      </div>
-      <div>
-        <label>Email</label>
-        <input type="text" id="mp-email">
-      </div>
-      <div>
-        <label>Teléfono</label>
-        <input type="text" id="mp-tel">
-      </div>
-      <div class="full">
-        <label>Notas</label>
-        <textarea id="mp-notas" rows="2"></textarea>
-      </div>
+<div class="pv-velo" id="velo"></div>
+<aside class="pv-drawer" id="drawer" aria-hidden="true">
+  <header>
+    <div>
+      <h3 id="d-nombre">—</h3>
+      <div class="cuit" id="d-sub" style="font-size:11.5px;color:var(--muted)">—</div>
     </div>
-    <div class="modal-actions">
-      <button class="btn ghost" id="mpBtnDel" style="color:var(--hot); display:none;">Eliminar</button>
-      <span class="spacer"></span>
-      <button class="btn ghost" id="mpBtnCancel">Cancelar</button>
-      <button class="btn primary" id="mpBtnSave">Guardar</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
+    <button class="cerrar" id="d-cerrar" aria-label="Cerrar">&times;</button>
+  </header>
+  <div class="cuerpo" id="d-cuerpo"></div>
+</aside>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
-<script>
-let PROVS = [], ITEMS_BY_PROV = {};
-let editando = null;
-
-const $ = s => document.querySelector(s);
-const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-async function cargar() {
-  try {
-    const [provs, items] = await Promise.all([
-      sb.from('proveedores').select('*').order('nombre'),
-      sb.from('items').select('proveedor_id, tipo').in('tipo', ['MP','IN']).eq('estado', 'vigente'),
-    ]);
-    if (provs.error) throw provs.error;
-    PROVS = provs.data || [];
-    ITEMS_BY_PROV = {};
-    (items.data || []).forEach(i => {
-      if (!i.proveedor_id) return;
-      if (!ITEMS_BY_PROV[i.proveedor_id]) ITEMS_BY_PROV[i.proveedor_id] = { mp: 0, in: 0 };
-      if (i.tipo === 'MP') ITEMS_BY_PROV[i.proveedor_id].mp++;
-      else if (i.tipo === 'IN') ITEMS_BY_PROV[i.proveedor_id].in++;
-    });
-    render();
-  } catch (err) {
-    $('#content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
-  }
-}
-
-function render() {
-  const q = $('#search').value.trim().toLowerCase();
-  let rows = PROVS;
-  if (q) rows = rows.filter(p => (p.nombre + ' ' + (p.localidad||'') + ' ' + (p.contacto||'') + ' ' + (p.email||'')).toLowerCase().includes(q));
-
-  $('#cnt').textContent = rows.length + ' proveedor' + (rows.length !== 1 ? 'es' : '');
-
-  if (!rows.length) {
-    $('#content').innerHTML = `<div class="empty-box">${PROVS.length ? 'Sin coincidencias' : 'No hay proveedores. Creá uno con "+ Nuevo proveedor".'}</div>`;
-    return;
-  }
-
-  $('#content').innerHTML = `
-    <table class="tbl">
-      <thead><tr>
-        <th>Nombre</th><th>Localidad</th><th>Contacto</th><th>Email</th><th>Teléfono</th>
-        <th class="num">Items</th><th style="width:60px;"></th>
-      </tr></thead>
-      <tbody>
-        ${rows.map(p => {
-          const items = ITEMS_BY_PROV[p.id] || { mp: 0, in: 0 };
-          const total = items.mp + items.in;
-          const desglose = total > 0 ? `${items.mp} MP · ${items.in} IN` : '';
-          return `<tr>
-            <td style="font-weight:600;">${esc(p.nombre)}</td>
-            <td style="color:var(--muted);">${esc(p.localidad || '—')}</td>
-            <td style="color:var(--muted);">${esc(p.contacto || '—')}</td>
-            <td style="color:var(--muted);">${p.email ? `<a href="mailto:${esc(p.email)}" style="color:var(--accent);">${esc(p.email)}</a>` : '—'}</td>
-            <td style="color:var(--muted);">${esc(p.telefono || '—')}</td>
-            <td class="num">${total || '—'}${desglose ? `<div class="items-count">${desglose}</div>` : ''}</td>
-            <td><button class="btn-icon" onclick="abrirEditar(${p.id})" title="Editar proveedor">✎</button></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
-}
-
-function abrirNuevo() {
-  editando = null;
-  $('#mp-title').textContent = 'Nuevo proveedor';
-  ['#mp-nombre','#mp-loc','#mp-cont','#mp-email','#mp-tel','#mp-notas'].forEach(s => $(s).value = '');
-  $('#mpBtnDel').style.display = 'none';
-  $('#modalProv').classList.add('show');
-  setTimeout(() => $('#mp-nombre').focus(), 60);
-}
-
-function abrirEditar(id) {
-  const p = PROVS.find(x => x.id === id); if (!p) return;
-  editando = id;
-  $('#mp-title').textContent = 'Editar proveedor';
-  $('#mp-nombre').value = p.nombre || '';
-  $('#mp-loc').value = p.localidad || '';
-  $('#mp-cont').value = p.contacto || '';
-  $('#mp-email').value = p.email || '';
-  $('#mp-tel').value = p.telefono || '';
-  $('#mp-notas').value = p.notas || '';
-  $('#mpBtnDel').style.display = '';
-  $('#modalProv').classList.add('show');
-  setTimeout(() => $('#mp-nombre').focus(), 60);
-}
-
-function cerrarModal() { $('#modalProv').classList.remove('show'); }
-
-async function guardar() {
-  const nombre = $('#mp-nombre').value.trim();
-  if (!nombre) { toast('El nombre es obligatorio', 'err'); return; }
-  const data = {
-    nombre,
-    localidad: $('#mp-loc').value.trim() || null,
-    contacto: $('#mp-cont').value.trim() || null,
-    email: $('#mp-email').value.trim() || null,
-    telefono: $('#mp-tel').value.trim() || null,
-    notas: $('#mp-notas').value.trim() || null,
-    actualizado_en: new Date().toISOString(),
-  };
-  const btn = $('#mpBtnSave'); btn.disabled = true;
-  try {
-    if (editando) {
-      const { error } = await sb.from('proveedores').update(data).eq('id', editando); if (error) throw error;
-    } else {
-      const { error } = await sb.from('proveedores').insert(data); if (error) throw error;
-    }
-    cerrarModal(); await cargar();
-    toast(editando ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
-  } catch (err) { toast('Error: ' + err.message, 'err'); }
-  finally { btn.disabled = false; }
-}
-
-async function eliminar() {
-  if (!editando) return;
-  const items = ITEMS_BY_PROV[editando];
-  const total = items ? items.mp + items.in : 0;
-  const msg = total > 0
-    ? `Este proveedor tiene ${total} item(s) asignado(s). Al eliminarlo, esos items quedarán sin proveedor. ¿Continuar?`
-    : '¿Eliminar este proveedor?';
-  if (!confirm(msg)) return;
-
-  const btn = $('#mpBtnDel'); btn.disabled = true;
-  try {
-    // Desasignar de items
-    if (total > 0) {
-      await sb.from('items').update({ proveedor_id: null }).eq('proveedor_id', editando);
-    }
-    const { error } = await sb.from('proveedores').delete().eq('id', editando); if (error) throw error;
-    cerrarModal(); await cargar(); toast('Proveedor eliminado', 'ok');
-  } catch (err) { toast('No se pudo eliminar: ' + err.message, 'err'); }
-  finally { btn.disabled = false; }
-}
-
-let toastT;
-function toast(msg, kind) {
-  const t = $('#toast'); t.textContent = msg;
-  t.className = 'toast show ' + (kind || '');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
-}
-
-$('#btnNuevo').addEventListener('click', abrirNuevo);
-$('#search').addEventListener('input', render);
-$('#mpBtnSave').addEventListener('click', guardar);
-$('#mpBtnDel').addEventListener('click', eliminar);
-$('#mpBtnCancel').addEventListener('click', cerrarModal);
-$('#modalProv').addEventListener('click', e => { if (e.target.id === 'modalProv') cerrarModal(); });
-
-window.abrirEditar = abrirEditar;
-cargar();
-</script>
+<script src="reposicion.js"></script>
+<script src="proveedores.js"></script>
 </body>
 </html>

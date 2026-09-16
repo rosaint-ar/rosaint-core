@@ -111,8 +111,9 @@ const REPO = (() => {
         const ranking = Object.entries(veces).sort((a, b) => b[1] - a[1] || (a[0] === ultimo?.proveedor ? -1 : 1));
         proveedor = ranking.length ? ranking[0][0] : null;
       }
-      const plazo = proveedor && plazos[proveedor] ? plazos[proveedor].plazo_dias : cfg.plazo_default;
-      const plazoEstimado = !(proveedor && plazos[proveedor]?.confirmado);
+      const plazo = (proveedor && plazos[proveedor]?.plazo_dias != null)
+        ? plazos[proveedor].plazo_dias : cfg.plazo_default;
+      const plazoEstimado = !(proveedor && plazos[proveedor]?.confirmado && plazos[proveedor]?.plazo_dias != null);
 
       // Lote habitual de compra: la mediana de lo que se pidió.
       const lote = aj.lote_compra != null ? Number(aj.lote_compra) : mediana(compras.map(c => c.cantidad));
