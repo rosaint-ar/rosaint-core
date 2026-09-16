@@ -72,6 +72,7 @@
       background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
       padding:8px 11px; font-size:13px; color:var(--text); font-family:inherit; }
     .rp-toolbar .input { min-width:230px; flex:1; max-width:380px; }
+    .rp-cuenta { font-size:12px; color:var(--muted); }
     .rp-tabla { width:100%; border-collapse:collapse; font-size:12.8px; }
     .rp-tabla th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;
                    color:var(--muted); font-weight:600; padding:8px 9px; border-bottom:1px solid var(--border);
@@ -175,6 +176,10 @@
   <!-- ============ REPONER AHORA ============ -->
   <section id="tab-reponer" hidden>
     <div class="rp-nota" id="nota-reponer"></div>
+    <div class="rp-toolbar">
+      <input type="search" class="input" id="q-reponer" placeholder="Buscar materia prima o proveedor…">
+      <span class="rp-cuenta" id="cuenta-reponer"></span>
+    </div>
     <div id="lista-reponer"></div>
   </section>
 
@@ -217,6 +222,10 @@
   <!-- ============ COMPRAR MEJOR ============ -->
   <section id="tab-comprar" hidden>
     <div class="rp-nota" id="nota-comprar"></div>
+    <div class="rp-toolbar">
+      <input type="search" class="input" id="q-comprar" placeholder="Buscar materia prima, proveedor u orden…">
+      <span class="rp-cuenta" id="cuenta-comprar"></span>
+    </div>
     <div id="lista-oport"></div>
     <h3 class="rp-h4" style="margin-top:26px">Órdenes de compra que quedaron colgadas</h3>
     <div class="rp-nota">Renglones pedidos hace más de 21 días que nunca llegaron, o que llegaron
@@ -280,22 +289,12 @@
 
 </main>
 
-<div class="rp-velo" id="velo"></div>
-<aside class="rp-drawer" id="drawer" aria-hidden="true">
-  <header>
-    <div>
-      <h3 id="d-nombre">—</h3>
-      <div class="cod" id="d-codigo">—</div>
-    </div>
-    <button class="cerrar" id="d-cerrar" aria-label="Cerrar">&times;</button>
-  </header>
-  <div class="cuerpo" id="d-cuerpo"></div>
-</aside>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
 <script src="reposicion.js"></script>
+<script src="insumo-ficha.js"></script>
 <script src="reposicion-ui.js"></script>
 </body>
 </html>

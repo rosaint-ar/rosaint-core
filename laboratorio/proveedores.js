@@ -18,6 +18,7 @@
   let SINFO = [];       // product.supplierinfo: lo que Odoo tiene cargado por producto
   let TERMINOS = [];    // condiciones de pago de Odoo
   let REAL = {};        // codigo -> { proveedor, veces, ultima, ultimoPrecio, moneda, compras[] }
+  let CFG = null, AJUSTES = {}, CALC = [];   // el mismo cálculo que hace Stock y reposición
   let drawerId = null;
 
   // Cómo se ve la lista de proveedores. Filas por defecto: se leen de un vistazo
@@ -45,12 +46,18 @@
 
   // ---- Carga --------------------------------------------------------------
   async function cargar() {
-    const [prov, items, snap] = await Promise.all([
+    const [prov, items, snap, cfg, aj, cats] = await Promise.all([
       sb.from('proveedores').select('*').order('nombre'),
       sb.from('items').select('codigo,nombre,tipo,estado,proveedor_id,codigo_proveedor,unidad,categoria_id,notas')
         .in('tipo', ['MP', 'IN']),
       sb.from('repo_snapshot').select('generado_en,datos').order('generado_en', { ascending: false }).limit(1),
+      sb.from('repo_config').select('*').eq('id', 1).single(),
+      sb.from('repo_items').select('*'),
+      sb.from('categorias').select('id,nombre'),
     ]);
+    CFG = cfg.data || { dias_seguridad: 15, ciclo_dias: 30, plazo_default: 7, peso_corto: 0.65, ventana_corta_dias: 90 };
+    AJUSTES = {}; for (const a of aj.data || []) AJUSTES[a.codigo] = a;
+    const catNom = {}; for (const c of cats.data || []) catNom[c.id] = c.nombre;
     if (prov.error) throw new Error(prov.error.message);
     PROV = prov.data || [];
     ITEMS = items.data || [];
@@ -80,6 +87,18 @@
         };
       }
     }
+
+    // Mismo cálculo que Stock y reposición, para que la ficha del insumo muestre
+    // stock, cobertura y sugerencia también desde acá.
+    const plazos = {};
+    for (const p of PROV) {
+      plazos[p.odoo_nombre || p.nombre] = {
+        plazo_dias: p.plazo_entrega_dias, confirmado: p.plazo_confirmado,
+      };
+    }
+    const maestro = {};
+    for (const i of ITEMS) maestro[i.codigo] = { ...i, categoria: catNom[i.categoria_id] || null };
+    CALC = SNAP ? REPO.calcular({ datos: SNAP, cfg: CFG, plazos, ajustes: AJUSTES, maestro }) : [];
   }
 
   async function cargarSupplierinfo() {
@@ -304,7 +323,7 @@
       || a.i.codigo.localeCompare(b.i.codigo));
 
     $('#tbody-ins').innerHTML = filas.length ? filas.map(f => `
-      <tr>
+      <tr data-insumo="${esc(f.i.codigo)}">
         <td class="cod">${esc(f.i.codigo)}</td>
         <td><b>${esc(f.i.nombre)}</b>${f.i.codigo_proveedor ? `<div class="cod">cód. del proveedor: ${esc(f.i.codigo_proveedor)}</div>` : ''}</td>
         <td>${f.actual ? esc(f.actual.nombre) : '<span class="chip">sin asignar</span>'}</td>
@@ -318,13 +337,21 @@
       </tr>`).join('') : '<tr><td colspan="7"><div class="vacio">Nada coincide con el filtro.</div></td></tr>';
 
     $$('[data-cambiar]').forEach(b => b.addEventListener('click', () => cambiarProveedor(b.dataset.cambiar)));
+    FICHA.enlazar('#tbody-ins tr[data-insumo]');
   }
 
   // ---- Pestaña: para corregir --------------------------------------------
   function pintarCorregir() {
-    const des = desactualizados();
-    const sin = sinEnOdoo();
-    const pre = preciosViejos();
+    const q = norm($('#q-corregir')?.value || '');
+    const coincide = (...campos) => !q || norm(campos.filter(Boolean).join(' ')).includes(q);
+    const desT = desactualizados(), sinT = sinEnOdoo(), preT = preciosViejos();
+    const des = desT.filter(d => coincide(d.item.codigo, d.item.nombre, d.actual?.nombre, d.real?.nombre));
+    const sin = sinT.filter(x => coincide(x.item.codigo, x.item.nombre, x.prov?.nombre));
+    const pre = preT.filter(x => coincide(x.s.codigo, x.item?.nombre, x.s.proveedor));
+    const cuenta = $('#cuenta-corregir');
+    if (cuenta) cuenta.textContent = q
+      ? `${des.length + sin.length + pre.length} de ${desT.length + sinT.length + preT.length}`
+      : '';
     let html = '';
 
     html += `<h3 class="pv-h4" style="margin-top:0">El proveedor de la ficha ya no es el que factura
@@ -333,7 +360,7 @@
       lo anterior a esa fecha no figura. Así que esto <b>no quiere decir que la ficha esté mal</b>, sino que
       desde entonces le venís comprando a otro. Actualizá los que ya cambiaste de verdad.</div>`;
     html += des.length ? des.map(d => `
-      <div class="arreglo">
+      <div class="arreglo" data-insumo="${esc(d.item.codigo)}">
         <div class="desc">
           <b>${esc(d.item.nombre)}</b> <span class="cod">${esc(d.item.codigo)}</span><br>
           ${d.actual ? esc(d.actual.nombre) : '<i>sin asignar</i>'} <span class="flecha">→</span>
@@ -348,7 +375,7 @@
       <div class="pv-nota">Al cargar una orden de compra en Odoo no aparece el proveedor sugerido ni su precio.
       Cargarlo también deja registrado el plazo de entrega del proveedor.</div>`;
     html += sin.length ? sin.slice(0, 60).map(x => `
-      <div class="arreglo">
+      <div class="arreglo" data-insumo="${esc(x.item.codigo)}">
         <div class="desc"><b>${esc(x.item.nombre)}</b> <span class="cod">${esc(x.item.codigo)}</span><br>
           <span class="cod">Lo provee ${esc(x.prov.nombre)}${x.real ? ' · último precio ' + (x.real.moneda === 'ARS' ? pesos(x.real.ultimoPrecio) : 'US$ ' + num(x.real.ultimoPrecio)) : ''}</span></div>
         <button class="btn primary" data-cargar-odoo="${esc(x.item.codigo)}|${x.prov.id}">Cargar en Odoo</button>
@@ -359,7 +386,7 @@
       <span class="chip ${pre.length ? 'est' : 'ok'}">${pre.length}</span></h3>
       <div class="pv-nota">El precio de referencia que Odoo propone al comprar quedó viejo frente a lo último que pagaste.</div>`;
     html += pre.length ? pre.map(x => `
-      <div class="arreglo">
+      <div class="arreglo" data-insumo="${esc(x.s.codigo)}">
         <div class="desc"><b>${esc(x.item ? x.item.nombre : x.s.codigo)}</b> <span class="cod">${esc(x.s.codigo)}</span><br>
           <span class="cod">${esc(x.s.proveedor)} · Odoo dice ${pesos(x.s.precio)} y pagaste ${pesos(x.r.ultimoPrecio)} el ${esc(fecha(x.r.ultima))}</span></div>
         <span class="chip ${x.dif > 0 ? 'hot' : 'ok'}">${x.dif > 0 ? '+' : ''}${Math.round(x.dif * 100)}%</span>
@@ -367,6 +394,7 @@
       </div>`).join('') : '<div class="vacio">Los precios de Odoo están al día.</div>';
 
     $('#bloques-corregir').innerHTML = html;
+    FICHA.enlazar('#bloques-corregir [data-insumo]');
 
     $$('[data-actualizar-prov]').forEach(b => b.addEventListener('click', () => {
       const [codigo, provId] = b.dataset.actualizarProv.split('|');
@@ -384,24 +412,32 @@
 
   // ---- Pestaña: archivados -----------------------------------------------
   function pintarArchivados() {
-    const arch = ITEMS.filter(i => i.estado === 'descontinuado')
+    const q = norm($('#q-arch')?.value || '');
+    const filtra = l => q ? l.filter(x => norm([(x.item || x).codigo, (x.item || x).nombre].join(' ')).includes(q)) : l;
+    const archT = ITEMS.filter(i => i.estado === 'descontinuado')
       .sort((a, b) => a.codigo.localeCompare(b.codigo));
-    $('#chip-arch').textContent = arch.length;
+    const arch = filtra(archT);
+    $('#chip-arch').textContent = archT.length;
     $('#lista-archivados').innerHTML = arch.length ? arch.map(i => `
-      <div class="arreglo">
+      <div class="arreglo" data-insumo="${esc(i.codigo)}">
         <div class="desc"><b>${esc(i.nombre)}</b> <span class="cod">${esc(i.codigo)}</span>
           ${i.proveedor_id ? `<br><span class="cod">${esc(provPorId(i.proveedor_id)?.nombre || '')}</span>` : ''}</div>
         <button class="btn secondary" data-reactivar="${esc(i.codigo)}">Volver a usar</button>
       </div>`).join('') : '<div class="vacio">Todavía no archivaste nada.</div>';
 
-    const cand = candidatosArchivar();
+    const candT = candidatosArchivar();
+    const cand = filtra(candT);
+    const cuentaA = $('#cuenta-arch');
+    if (cuentaA) cuentaA.textContent = q ? `${arch.length + cand.length} de ${archT.length + candT.length}` : '';
     $('#lista-candidatos').innerHTML = cand.length ? cand.map(c => `
-      <div class="arreglo">
+      <div class="arreglo" data-insumo="${esc(c.item.codigo)}">
         <div class="desc"><b>${esc(c.item.nombre)}</b> <span class="cod">${esc(c.item.codigo)}</span><br>
           <span class="cod">Sin consumo ni compras${c.stock != null ? ' · stock ' + num(c.stock) : ''}${c.prov ? ' · ' + esc(c.prov.nombre) : ''}</span></div>
         <button class="btn secondary" data-archivar="${esc(c.item.codigo)}">Archivar</button>
       </div>`).join('') : '<div class="vacio">Todo lo vigente se está usando.</div>';
 
+    FICHA.enlazar('#lista-archivados [data-insumo]');
+    FICHA.enlazar('#lista-candidatos [data-insumo]');
     $$('[data-archivar]').forEach(b => b.addEventListener('click', () => cambiarEstadoItem(b.dataset.archivar, 'descontinuado')));
     $$('[data-reactivar]').forEach(b => b.addEventListener('click', () => cambiarEstadoItem(b.dataset.reactivar, 'vigente')));
   }
@@ -581,7 +617,7 @@
         <tbody>${insumos.map(i => {
           const rr = REAL[i.codigo];
           const ajeno = rr && rr.proveedor !== clave;
-          return `<tr>
+          return `<tr data-insumo="${esc(i.codigo)}">
             <td class="txt cod">${esc(i.codigo)}</td>
             <td class="txt">${esc(i.nombre)}${ajeno ? `<div class="cod" style="color:var(--warn)">hoy se lo comprás a ${esc(rr.proveedor)}</div>` : ''}</td>
             <td style="text-align:right">${rr ? (rr.moneda === 'ARS' ? pesos(rr.ultimoPrecio) : 'US$ ' + num(rr.ultimoPrecio)) : '—'}</td>
@@ -608,6 +644,7 @@
     const crear = $('#f-crear');
     if (crear) crear.addEventListener('click', () => crearEnOdoo(p.id));
     $$('[data-cambiar2]').forEach(b => b.addEventListener('click', () => cambiarProveedor(b.dataset.cambiar2)));
+    FICHA.enlazar('#d-cuerpo tr[data-insumo]');
   }
 
   async function guardarFicha(id) {
@@ -708,6 +745,20 @@
     marcarVista();
     ['#q-ins', '#f-prov-ins', '#f-coincide'].forEach(s => {
       $(s).addEventListener('input', pintarInsumos); $(s).addEventListener('change', pintarInsumos);
+    });
+    $('#q-corregir').addEventListener('input', pintarCorregir);
+    $('#q-arch').addEventListener('input', pintarArchivados);
+
+    // La ficha del insumo es la misma que usa Stock y reposición.
+    FICHA.configurar({
+      getItem: c => ITEMS.find(i => i.codigo === c) || null,
+      getProveedores: () => PROV,
+      getSnap: () => SNAP,
+      getCfg: () => CFG,
+      getCalculo: c => CALC.find(x => x.codigo === c) || null,
+      getAjuste: c => AJUSTES[c] || null,
+      getReal: c => REAL[c] || null,
+      alGuardar: async () => { await cargar(); pintarTodo(); },
     });
 
     irA(['lista', 'insumos', 'corregir', 'archivados'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'lista');

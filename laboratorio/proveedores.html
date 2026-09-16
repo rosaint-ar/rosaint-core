@@ -38,6 +38,7 @@
       background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
       padding:8px 11px; font-size:13px; color:var(--text); font-family:inherit; }
     .pv-toolbar .input { min-width:230px; flex:1; max-width:360px; }
+    .pv-cuenta { font-size:12px; color:var(--muted); }
 
     /* Selector de vista: filas (por defecto) o tarjetas */
     .pv-vista { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
@@ -189,6 +190,10 @@
 
   <!-- ============ PARA CORREGIR ============ -->
   <section id="tab-corregir" hidden>
+    <div class="pv-toolbar">
+      <input type="search" class="input" id="q-corregir" placeholder="Buscar materia prima o proveedor…">
+      <span class="pv-cuenta" id="cuenta-corregir"></span>
+    </div>
     <div id="bloques-corregir"></div>
   </section>
 
@@ -198,6 +203,10 @@
       Archivar saca la materia prima de todas las pantallas del Core (fórmulas, precios, reposición)
       sin borrar nada: el historial queda y se puede reactivar cuando quieras.
       <b>En Odoo no se toca</b>, así que sigue apareciendo al cargar una compra o una fabricación.
+    </div>
+    <div class="pv-toolbar">
+      <input type="search" class="input" id="q-arch" placeholder="Buscar materia prima…">
+      <span class="pv-cuenta" id="cuenta-arch"></span>
     </div>
     <h3 class="pv-h4" style="margin-top:0">Archivados <span class="chip" id="chip-arch">0</span></h3>
     <div id="lista-archivados"></div>
@@ -225,6 +234,7 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
 <script src="reposicion.js"></script>
+<script src="insumo-ficha.js"></script>
 <script src="proveedores.js"></script>
 </body>
 </html>

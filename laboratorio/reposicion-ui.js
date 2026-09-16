@@ -11,20 +11,23 @@
   const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-reposicion';
 
   let CFG = null, PLAZOS = {}, AJUSTES = {}, MAESTRO = {}, DATOS = null, FILAS = [], GENERADO = null;
+  let PROVEEDORES = [];
   let orden = { campo: 'cobertura', asc: true };
 
   // ---- Carga --------------------------------------------------------------
   async function cargarTablas() {
     const [cfg, prov, aj, items, cats] = await Promise.all([
       sb.from('repo_config').select('*').eq('id', 1).single(),
-      sb.from('proveedores').select('id,nombre,odoo_nombre,plazo_entrega_dias,plazo_confirmado,condicion_pago,notas').order('nombre'),
+      sb.from('proveedores').select('*').order('nombre'),
       sb.from('repo_items').select('*'),
-      sb.from('items').select('codigo,nombre,categoria_id').in('tipo', ['MP', 'IN', 'SE', 'TE']),
+      sb.from('items').select('codigo,nombre,tipo,estado,proveedor_id,codigo_proveedor,unidad,categoria_id,notas')
+        .in('tipo', ['MP', 'IN', 'SE', 'TE']),
       sb.from('categorias').select('id,nombre'),
     ]);
     CFG = cfg.data || { dias_seguridad: 15, ciclo_dias: 30, plazo_default: 7, peso_corto: 0.65, ventana_corta_dias: 90 };
     // Los plazos viven en la ficha del proveedor (Laboratorio → Proveedores).
     // Se indexan por el nombre de Odoo, que es con el que viene el historial de compras.
+    PROVEEDORES = prov.data || [];
     PLAZOS = {};
     for (const p of prov.data || []) {
       const clave = p.odoo_nombre || p.nombre;
@@ -37,7 +40,7 @@
     AJUSTES = {}; for (const a of aj.data || []) AJUSTES[a.codigo] = a;
     const catNom = {}; for (const c of cats.data || []) catNom[c.id] = c.nombre;
     MAESTRO = {};
-    for (const i of items.data || []) MAESTRO[i.codigo] = { nombre: i.nombre, categoria: catNom[i.categoria_id] || null };
+    for (const i of items.data || []) MAESTRO[i.codigo] = { ...i, categoria: catNom[i.categoria_id] || null };
   }
 
   async function cargarFoto() {
@@ -110,7 +113,7 @@
   }
 
   function filaHTML(f) {
-    return `<div class="rp-fila" data-cod="${esc(f.codigo)}">
+    return `<div class="rp-fila" data-insumo="${esc(f.codigo)}">
       <div>${celdaCobertura(f)}</div>
       <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
       <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
@@ -122,13 +125,25 @@
   }
 
   function pintarReponer() {
-    const alertas = FILAS.filter(f => f.alerta);
+    const todas = FILAS.filter(f => f.alerta);
+    const q = norm($('#q-reponer')?.value || '');
+    const alertas = q
+      ? todas.filter(f => norm([f.codigo, f.nombre, f.nombre_core, f.proveedor, f.familia].join(' ')).includes(q))
+      : todas;
     const cont = $('#lista-reponer');
     const nota = $('#nota-reponer');
+    const cuenta = $('#cuenta-reponer');
+    if (cuenta) cuenta.textContent = q
+      ? `${alertas.length} de ${todas.length}`
+      : (todas.length ? `${todas.length} para reponer` : '');
 
-    if (!alertas.length) {
+    if (!todas.length) {
       nota.innerHTML = 'Ninguna materia prima está por debajo de su punto de pedido.';
       cont.innerHTML = '<div class="vacio">Nada para reponer hoy.</div>';
+      return;
+    }
+    if (!alertas.length) {
+      cont.innerHTML = '<div class="vacio">Nada coincide con la búsqueda.</div>';
       return;
     }
 
@@ -181,7 +196,7 @@
       ev.stopPropagation();
       copiarPedido(b.dataset.copiar, grupos.get(b.dataset.copiar) || []);
     }));
-    $$('#lista-reponer .rp-fila').forEach(el => el.addEventListener('click', () => abrirFicha(el.dataset.cod)));
+    FICHA.enlazar('#lista-reponer .rp-fila');
   }
 
   function copiarPedido(prov, items) {
@@ -224,7 +239,7 @@
     const filas = filtradas();
     $('#tbody').innerHTML = filas.length ? filas.map(f => {
       const n = nivel(f);
-      return `<tr data-cod="${esc(f.codigo)}">
+      return `<tr data-insumo="${esc(f.codigo)}">
         <td><span class="punto ${n}" title="${esc(NIVEL_TXT[n])}"></span></td>
         <td class="cod">${esc(f.codigo)}</td>
         <td><b>${esc(f.nombre)}</b>${f.familia ? `<div class="cod">${esc(f.familia)}</div>` : ''}</td>
@@ -236,18 +251,20 @@
         <td class="num">${f.ultimaCompra ? esc(fecha(f.ultimaCompra)) : '—'}</td>
       </tr>`;
     }).join('') : '<tr><td colspan="9"><div class="vacio">Nada coincide con el filtro.</div></td></tr>';
-    $$('#tbody tr[data-cod]').forEach(tr => tr.addEventListener('click', () => abrirFicha(tr.dataset.cod)));
+    FICHA.enlazar('#tbody tr[data-insumo]');
   }
 
   // ---- Pestaña: comprar mejor --------------------------------------------
   function pintarComprar() {
-    const op = REPO.oportunidades(FILAS.filter(f => f.se_compra));
-    const total = op.reduce((a, b) => a + b.sobreprecio, 0);
+    const todas = REPO.oportunidades(FILAS.filter(f => f.se_compra));
+    const q = norm($('#q-comprar')?.value || '');
+    const op = q ? todas.filter(f => norm([f.codigo, f.nombre, f.proveedor].join(' ')).includes(q)) : todas;
+    const total = todas.reduce((a, b) => a + b.sobreprecio, 0);
     const meses = DATOS?.historia_desde
       ? Math.max(1, (new Date() - new Date(DATOS.historia_desde)) / (30.4 * 86400000)) : 6;
 
-    $('#n-comprar').textContent = op.length;
-    $('#nota-comprar').innerHTML = op.length
+    $('#n-comprar').textContent = todas.length;
+    $('#nota-comprar').innerHTML = todas.length
       ? `Comparando cada compra contra otra del <b>mismo insumo, dentro de ±45 días</b> (para no
          confundirlo con la inflación) en la que se pidió <b>más cantidad a menor precio por unidad</b>.
          En el período se pagaron <b>${pesos(total)}</b> de más por comprar de a poco:
@@ -256,7 +273,7 @@
       : 'No se detectaron compras chicas más caras que una compra grande cercana.';
 
     $('#lista-oport').innerHTML = op.length ? op.map(f => `
-      <article class="rp-prov">
+      <article class="rp-prov" data-insumo="${esc(f.codigo)}">
         <header>
           <div><h3>${esc(f.nombre)}</h3>
             <div class="meta">${esc(f.codigo)} · ${esc(f.proveedor || 'varios proveedores')} · ${f.casos} ${plural(f.casos, 'compra chica', 'compras chicas')}</div></div>
@@ -267,17 +284,24 @@
           <div class="dato"><span class="et">Comprando de a</span>${num(f.peorLote)} ${esc(f.unidad)} → ${pesos(f.peorPrecio)} por ${esc(uni(f.unidad))}</div>
           <div class="dato"><span class="et">Diferencia</span><b style="color:var(--hot)">${f.brecha != null ? '+' + Math.round(f.brecha * 100) + '%' : '—'}</b></div>
         </div>
-      </article>`).join('') : '<div class="vacio">Nada para señalar.</div>';
+      </article>`).join('') : `<div class="vacio">${q ? 'Nada coincide con la búsqueda.' : 'Nada para señalar.'}</div>`;
+    FICHA.enlazar('#lista-oport article[data-insumo]');
 
     // Órdenes colgadas
-    const colg = [];
+    let colg = [];
     for (const f of FILAS) for (const c of (f.colgadas || [])) colg.push({ ...c, insumo: f });
+    const totalColg = colg.length;
+    if (q) colg = colg.filter(c => norm([c.oc, c.proveedor, c.insumo.codigo, c.insumo.nombre].join(' ')).includes(q));
+    const cuentaC = $('#cuenta-comprar');
+    if (cuentaC) cuentaC.textContent = q
+      ? `${op.length} de ${todas.length} · ${colg.length} de ${totalColg} órdenes`
+      : (todas.length || totalColg ? `${todas.length} para mejorar · ${totalColg} ${plural(totalColg, 'orden colgada', 'órdenes colgadas')}` : '');
     colg.sort((a, b) => (a.tipo === b.tipo ? String(b.fecha).localeCompare(String(a.fecha)) : a.tipo === 'nunca_llego' ? -1 : 1));
     $('#lista-colgadas').innerHTML = colg.length ? `
       <div class="table-wrap"><div class="table-scroll"><table class="rp-tabla">
         <thead><tr><th class="na">Orden</th><th class="na">Fecha</th><th class="na">Proveedor</th>
           <th class="na">Materia prima</th><th class="na num">Pedido</th><th class="na num">Recibido</th><th class="na">Qué pasó</th></tr></thead>
-        <tbody>${colg.map(c => `<tr data-cod="${esc(c.insumo.codigo)}">
+        <tbody>${colg.map(c => `<tr data-insumo="${esc(c.insumo.codigo)}">
           <td class="cod">${esc(c.oc)}</td><td>${esc(fecha(c.fecha))}</td><td>${esc(c.proveedor)}</td>
           <td>${esc(c.insumo.nombre)}</td>
           <td class="num">${num(c.cantidad)} ${esc(c.insumo.unidad)}</td>
@@ -286,8 +310,8 @@
             ? '<span class="chip est">no llegó nada</span>'
             : '<span class="chip">llegó corta</span>'}</td>
         </tr>`).join('')}</tbody>
-      </table></div></div>` : '<div class="vacio">Ninguna orden quedó colgada.</div>';
-    $$('#lista-colgadas tr[data-cod]').forEach(tr => tr.addEventListener('click', () => abrirFicha(tr.dataset.cod)));
+      </table></div></div>` : `<div class="vacio">${q ? 'Ninguna orden coincide con la búsqueda.' : 'Ninguna orden quedó colgada.'}</div>`;
+    FICHA.enlazar('#lista-colgadas tr[data-insumo]');
   }
 
   // ---- Pestaña: ajustes ---------------------------------------------------
@@ -352,7 +376,6 @@
     if (error) return toast('No se pudo guardar: ' + error.message, 'err');
     AJUSTES[codigo] = fila;
     recalcular(); pintarTodo();
-    if (drawerCod === codigo) abrirFicha(codigo);
     toast('Guardado');
   }
 
@@ -369,118 +392,6 @@
     CFG = { ...CFG, ...cambios };
     recalcular(); pintarTodo();
     toast('Parámetros guardados');
-  }
-
-  // ---- Ficha de una materia prima ----------------------------------------
-  let drawerCod = null;
-  function abrirFicha(codigo) {
-    const f = FILAS.find(x => x.codigo === codigo);
-    if (!f) return;
-    drawerCod = codigo;
-    $('#d-nombre').textContent = f.nombre;
-    $('#d-codigo').textContent = f.codigo + (f.familia ? ' · ' + f.familia : '') + ' · ' + f.categoria;
-
-    const n = nivel(f);
-    const meses = Object.keys(f.meses || {}).sort();
-    const aj = AJUSTES[codigo] || {};
-
-    $('#d-cuerpo').innerHTML = `
-      <div class="ficha-grid">
-        <div class="ficha-dato"><div class="k">Stock</div><div class="v">${num(f.stock)} ${esc(f.unidad)}</div>
-          <div class="s">${f.enCamino ? num(f.enCamino) + ' en camino' : 'nada en camino'}</div></div>
-        <div class="ficha-dato"><div class="k">Alcanza para</div>
-          <div class="v" style="color:var(--${n === 'critico' ? 'hot' : n === 'bajo' ? 'warn' : 'text'})">${f.cobertura == null ? '—' : f.cobertura + ' días'}</div>
-          <div class="s">${esc(NIVEL_TXT[n])}</div></div>
-        <div class="ficha-dato"><div class="k">Uso por mes</div><div class="v">${num(f.mensual)} ${esc(f.unidad)}</div>
-          <div class="s">${num(f.diario, 3)} por día</div></div>
-        <div class="ficha-dato"><div class="k">Punto de pedido</div><div class="v">${num(f.puntoPedido)} ${esc(f.unidad)}</div>
-          <div class="s">${f.plazo} días de entrega${f.plazoEstimado ? '*' : ''} + ${CFG.dias_seguridad} de seguridad</div></div>
-      </div>
-
-      ${f.se_compra && f.diario > 0 && !f.excluido ? `
-        <div class="ficha-dato" style="background:var(--accent-tint)">
-          <div class="k">Sugerencia</div>
-          <div class="v" style="color:var(--accent)">${f.sugerido > 0 ? 'Pedir ' + num(f.sugerido) + ' ' + esc(f.unidad) : 'No hace falta comprar'}</div>
-          <div class="s">${f.sugerido > 0
-            ? `Cubre ${f.diasObjetivo} días. ${f.lote ? 'Redondeado al lote habitual de ' + num(f.lote) + ' ' + esc(f.unidad) + '.' : ''} ${f.proveedor ? 'A ' + esc(f.proveedor) + '.' : 'Falta definir proveedor.'}`
-            : 'El stock alcanza para el período objetivo.'}</div>
-        </div>` : ''}
-
-      <h4 class="rp-h4">Consumo mes a mes</h4>
-      ${meses.length ? `<table class="mini"><tbody>${meses.map(m => {
-        const max = Math.max(...meses.map(x => f.meses[x]));
-        return `<tr><td class="txt" style="width:80px">${m}</td>
-          <td><div style="background:var(--structure);opacity:.55;height:9px;border-radius:2px;width:${max ? (f.meses[m] / max) * 100 : 0}%;min-width:2px"></div></td>
-          <td class="num" style="width:90px">${num(f.meses[m])} ${esc(f.unidad)}</td></tr>`;
-      }).join('')}</tbody></table>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
-        Ritmo reciente ${num(f.usoCorto, 3)}/día · historia completa ${num(f.usoLargo, 3)}/día ·
-        el cálculo usa ${num(f.diario, 3)}/día.</div>`
-      : '<div class="vacio">No se consumió en el período.</div>'}
-
-      <h4 class="rp-h4">Compras</h4>
-      ${f.compras.length ? `<table class="mini">
-        <thead><tr><th>Fecha</th><th>Proveedor</th><th style="text-align:right">Cantidad</th><th style="text-align:right">$ por ${esc(uni(f.unidad))}</th></tr></thead>
-        <tbody>${f.compras.slice().reverse().map(c => `<tr>
-          <td class="txt">${esc(fecha(c.fecha))}</td>
-          <td class="txt" style="font-size:11.5px">${esc(c.proveedor)}</td>
-          <td class="num">${num(c.cantidad)}${c.recibida < c.cantidad * 0.9 ? ` <span class="chip est" title="Recibido: ${num(c.recibida)}">corta</span>` : ''}</td>
-          <td class="num">${c.moneda === 'ARS' ? pesos(c.precio) : 'US$ ' + num(c.precio)}</td>
-        </tr>`).join('')}</tbody></table>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
-          ${f.nCompras} compras${f.intervalo ? ', una cada ' + Math.round(f.intervalo) + ' días' : ''}${f.lote ? ' · lote habitual ' + num(f.lote) + ' ' + esc(f.unidad) : ''}.</div>`
-      : '<div class="vacio">Nunca se compró desde que arrancó el historial.</div>'}
-
-      <h4 class="rp-h4">Ajustes de esta materia prima</h4>
-      <div class="rp-form">
-        <div class="rp-campo">
-          <label>Lote de compra</label>
-          <input type="number" id="a-lote" step="0.01" min="0" value="${aj.lote_compra ?? ''}" placeholder="${f.lote != null ? num(f.lote) + ' (del historial)' : 'sin dato'}">
-          <div class="ayuda">La cantidad sugerida se redondea hacia arriba a un múltiplo de esto.</div>
-        </div>
-        <div class="rp-campo">
-          <label>Días a cubrir</label>
-          <input type="number" id="a-dias" min="1" max="365" value="${aj.dias_objetivo ?? ''}" placeholder="${f.diasObjetivo} (calculado)">
-          <div class="ayuda">Pisa el cálculo de plazo + seguridad + ciclo para este insumo.</div>
-        </div>
-      </div>
-      <div class="rp-campo" style="margin-top:10px">
-        <label>Notas</label>
-        <textarea id="a-notas" rows="2" placeholder="Ej: se compra junto con la glicerina">${esc(aj.notas || '')}</textarea>
-      </div>
-      <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;cursor:pointer">
-        <input type="checkbox" id="a-excl" ${f.excluido ? 'checked' : ''}>
-        No avisarme por esta materia prima</label>
-      <input class="rp-campo" id="a-motivo" placeholder="Por qué se excluye" value="${esc(aj.motivo_excluido || '')}"
-        style="margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:13px;color:var(--text);${f.excluido ? '' : 'display:none'}">
-      <button class="btn primary" id="a-guardar" style="margin-top:14px">Guardar ajustes</button>
-    `;
-
-    $('#a-excl').addEventListener('change', e => {
-      $('#a-motivo').style.display = e.target.checked ? '' : 'none';
-    });
-    $('#a-guardar').addEventListener('click', () => {
-      const lote = $('#a-lote').value.trim();
-      const dias = $('#a-dias').value.trim();
-      guardarAjuste(codigo, {
-        lote_compra: lote === '' ? null : Number(lote),
-        dias_objetivo: dias === '' ? null : Number(dias),
-        notas: $('#a-notas').value.trim() || null,
-        excluido: $('#a-excl').checked,
-        motivo_excluido: $('#a-excl').checked ? ($('#a-motivo').value.trim() || null) : null,
-      });
-    });
-
-    $('#drawer').classList.add('open');
-    $('#drawer').setAttribute('aria-hidden', 'false');
-    $('#velo').classList.add('open');
-  }
-
-  function cerrarFicha() {
-    drawerCod = null;
-    $('#drawer').classList.remove('open');
-    $('#drawer').setAttribute('aria-hidden', 'true');
-    $('#velo').classList.remove('open');
   }
 
   // ---- Pestañas -----------------------------------------------------------
@@ -513,12 +424,24 @@
     $$('.rp-tab').forEach(b => b.addEventListener('click', () => irA(b.dataset.tab)));
     $('#btn-actualizar').addEventListener('click', actualizar);
     $('#btn-guardar-cfg').addEventListener('click', guardarConfig);
-    $('#d-cerrar').addEventListener('click', cerrarFicha);
-    $('#velo').addEventListener('click', cerrarFicha);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarFicha(); });
     ['#q', '#f-nivel', '#f-tipo', '#f-prov'].forEach(s => {
       $(s).addEventListener('input', pintarTabla);
       $(s).addEventListener('change', pintarTabla);
+    });
+    $('#q-reponer').addEventListener('input', pintarReponer);
+    $('#q-comprar').addEventListener('input', pintarComprar);
+
+    // La ficha del insumo es la misma que usa Proveedores: se abre desde
+    // cualquier lista donde aparezca una materia prima.
+    FICHA.configurar({
+      getItem: c => MAESTRO[c] || null,
+      getProveedores: () => PROVEEDORES,
+      getSnap: () => DATOS,
+      getCfg: () => CFG,
+      getCalculo: c => FILAS.find(f => f.codigo === c) || null,
+      getAjuste: c => AJUSTES[c] || null,
+      getReal: c => FILAS.find(f => f.codigo === c) || null,
+      alGuardar: async () => { await cargarTablas(); recalcular(); pintarTodo(); },
     });
     $$('#tabla th[data-orden]').forEach(th => th.addEventListener('click', () => {
       const c = th.dataset.orden;
