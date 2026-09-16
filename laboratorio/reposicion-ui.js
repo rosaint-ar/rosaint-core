@@ -1,0 +1,531 @@
+/* =========================================================================
+   Rosaint · CORE — Stock y reposición (pantalla)
+   Arma las cuatro pestañas sobre lo que devuelve REPO.calcular().
+   La matemática vive en reposicion.js; acá solo se pinta y se guarda.
+   ========================================================================= */
+
+(() => {
+  const { esc, norm, pesos, num, uni, plural, fecha, fechaHora, toast, nivel, NIVEL_TXT } = REPO;
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-reposicion';
+
+  let CFG = null, PLAZOS = {}, AJUSTES = {}, MAESTRO = {}, DATOS = null, FILAS = [], GENERADO = null;
+  let orden = { campo: 'cobertura', asc: true };
+
+  // ---- Carga --------------------------------------------------------------
+  async function cargarTablas() {
+    const [cfg, prov, aj, items, cats] = await Promise.all([
+      sb.from('repo_config').select('*').eq('id', 1).single(),
+      sb.from('repo_proveedores').select('*').order('nombre'),
+      sb.from('repo_items').select('*'),
+      sb.from('items').select('codigo,nombre,categoria_id').in('tipo', ['MP', 'IN', 'SE', 'TE']),
+      sb.from('categorias').select('id,nombre'),
+    ]);
+    CFG = cfg.data || { dias_seguridad: 15, ciclo_dias: 30, plazo_default: 7, peso_corto: 0.65, ventana_corta_dias: 90 };
+    PLAZOS = {}; for (const p of prov.data || []) PLAZOS[p.nombre] = p;
+    AJUSTES = {}; for (const a of aj.data || []) AJUSTES[a.codigo] = a;
+    const catNom = {}; for (const c of cats.data || []) catNom[c.id] = c.nombre;
+    MAESTRO = {};
+    for (const i of items.data || []) MAESTRO[i.codigo] = { nombre: i.nombre, categoria: catNom[i.categoria_id] || null };
+  }
+
+  async function cargarFoto() {
+    const { data, error } = await sb.from('repo_snapshot')
+      .select('generado_en,datos').order('generado_en', { ascending: false }).limit(1);
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) return null;
+    GENERADO = data[0].generado_en;
+    return data[0].datos;
+  }
+
+  async function actualizar() {
+    const btn = $('#btn-actualizar');
+    btn.disabled = true; btn.textContent = 'Leyendo Odoo…';
+    try {
+      const { data: s } = await sb.auth.getSession();
+      const token = s?.session?.access_token || window.SUPABASE_KEY;
+      const r = await fetch(FN, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Odoo no respondió');
+      DATOS = j.datos; GENERADO = j.generado_en;
+      recalcular(); pintarTodo();
+      toast('Actualizado desde Odoo');
+    } catch (e) {
+      toast('No se pudo actualizar: ' + e.message, 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Actualizar desde Odoo';
+    }
+  }
+
+  function recalcular() {
+    FILAS = DATOS ? REPO.calcular({ datos: DATOS, cfg: CFG, plazos: PLAZOS, ajustes: AJUSTES, maestro: MAESTRO }) : [];
+  }
+
+  // ---- Encabezado ---------------------------------------------------------
+  function pintarKpis() {
+    const alertas = FILAS.filter(f => f.alerta);
+    const criticos = alertas.filter(f => (f.cobertura ?? 99) <= 3);
+    const monto = alertas.reduce((a, b) => a + b.valorSugerido, 0);
+    const stock = FILAS.filter(f => f.se_compra).reduce((a, b) => a + b.valorStock, 0);
+    const consumo = FILAS.filter(f => f.se_compra).reduce((a, b) => a + b.diario * 30 * (b.costo || 0), 0);
+
+    $('#k-reponer').textContent = alertas.length;
+    $('#k-reponer-sub').textContent = criticos.length
+      ? criticos.length + ' a punto de cortarse'
+      : 'ninguna urgente';
+    $('#k-monto').textContent = pesos(monto);
+    $('#k-stock').textContent = pesos(stock);
+    $('#k-stock-sub').textContent = FILAS.filter(f => f.se_compra).length + ' materias primas y envases';
+    $('#k-consumo').textContent = pesos(consumo);
+
+    $('#n-reponer').textContent = alertas.length;
+    $('#n-todas').textContent = FILAS.filter(f => f.se_compra).length;
+
+    const desde = DATOS?.historia_desde;
+    $('#sync-estado').innerHTML = GENERADO
+      ? 'Última lectura: <b>' + esc(fechaHora(GENERADO)) + '</b><br>Historia desde ' + esc(fecha(desde)) + '.'
+      : 'Todavía no se leyó Odoo.';
+  }
+
+  // ---- Pestaña: reponer ahora --------------------------------------------
+  function celdaCobertura(f) {
+    const n = nivel(f);
+    const txt = f.cobertura == null ? '—' : f.cobertura > 999 ? '999+' : f.cobertura;
+    return `<span class="cob ${n}" title="${esc(NIVEL_TXT[n])}"><b>${txt}</b><span>días</span></span>`;
+  }
+
+  function filaHTML(f) {
+    return `<div class="rp-fila" data-cod="${esc(f.codigo)}">
+      <div>${celdaCobertura(f)}</div>
+      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
+      <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
+      <div class="dato"><span class="et">Uso por mes</span>${num(f.mensual)} ${esc(f.unidad)}</div>
+      <div class="pedirCel"><span class="et" style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase">Pedir</span>
+        <span class="pedir">${num(f.sugerido)} ${esc(f.unidad)}</span></div>
+      <div class="dato" style="text-align:right">${f.valorSugerido ? pesos(f.valorSugerido) : '<span class="chip">sin precio</span>'}</div>
+    </div>`;
+  }
+
+  function pintarReponer() {
+    const alertas = FILAS.filter(f => f.alerta);
+    const cont = $('#lista-reponer');
+    const nota = $('#nota-reponer');
+
+    if (!alertas.length) {
+      nota.innerHTML = 'Ninguna materia prima está por debajo de su punto de pedido.';
+      cont.innerHTML = '<div class="vacio">Nada para reponer hoy.</div>';
+      return;
+    }
+
+    const conProv = alertas.filter(f => f.proveedor);
+    const sinProv = alertas.filter(f => !f.proveedor);
+    nota.innerHTML = `Agrupado por proveedor para que salga <b>un pedido por proveedor</b> en vez de
+      una compra suelta por cada faltante. La cantidad ya viene redondeada al lote con el que
+      solés comprar cada cosa, y cubre ${CFG.dias_seguridad + CFG.ciclo_dias} días más el plazo de entrega.`;
+
+    const grupos = new Map();
+    for (const f of conProv) {
+      if (!grupos.has(f.proveedor)) grupos.set(f.proveedor, []);
+      grupos.get(f.proveedor).push(f);
+    }
+    const ordenados = [...grupos.entries()].sort((a, b) =>
+      Math.min(...a[1].map(x => x.cobertura ?? 999)) - Math.min(...b[1].map(x => x.cobertura ?? 999)));
+
+    let html = '';
+    for (const [prov, items] of ordenados) {
+      items.sort((a, b) => (a.cobertura ?? 999) - (b.cobertura ?? 999));
+      const total = items.reduce((a, b) => a + b.valorSugerido, 0);
+      const p = PLAZOS[prov];
+      const plazo = p ? p.plazo_dias : CFG.plazo_default;
+      const est = !(p && p.confirmado);
+      html += `<article class="rp-prov">
+        <header>
+          <div>
+            <h3>${esc(prov)}</h3>
+            <div class="meta">Entrega en ${plazo} día${plazo === 1 ? '' : 's'}${est ? ' <span class="chip est">estimado</span>' : ' <span class="chip ok">confirmado</span>'}
+              · ${items.length} ${items.length === 1 ? 'insumo' : 'insumos'}</div>
+          </div>
+          <div class="total">${pesos(total)}</div>
+          <button class="btn secondary" data-copiar="${esc(prov)}">Copiar pedido</button>
+        </header>
+        ${items.map(filaHTML).join('')}
+      </article>`;
+    }
+
+    if (sinProv.length) {
+      html += `<article class="rp-prov huerfano">
+        <header><div><h3>Sin proveedor registrado</h3>
+          <div class="meta">Se usan en producción pero nunca se compraron desde que existe el historial:
+            están viviendo de stock viejo. Hay que decidir a quién comprarlas antes de que se terminen.</div></div></header>
+        ${sinProv.map(filaHTML).join('')}
+      </article>`;
+    }
+    cont.innerHTML = html;
+
+    $$('[data-copiar]').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      copiarPedido(b.dataset.copiar, grupos.get(b.dataset.copiar) || []);
+    }));
+    $$('#lista-reponer .rp-fila').forEach(el => el.addEventListener('click', () => abrirFicha(el.dataset.cod)));
+  }
+
+  function copiarPedido(prov, items) {
+    const lineas = items.map(f => `• ${f.nombre} — ${num(f.sugerido)} ${f.unidad}`);
+    const txt = `Pedido para ${prov}\n\n${lineas.join('\n')}\n\n(Rosaint · ${new Date().toLocaleDateString('es-AR')})`;
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('Pedido copiado — pegalo en el mail o WhatsApp'))
+      .catch(() => toast('No se pudo copiar', 'err'));
+  }
+
+  // ---- Pestaña: todas -----------------------------------------------------
+  function barritas(f) {
+    const meses = Object.keys(f.meses || {}).sort().slice(-7);
+    if (!meses.length) return '<span class="chip">sin uso</span>';
+    const max = Math.max(...meses.map(m => f.meses[m]));
+    return '<div class="barras" title="Consumo de los últimos meses">' + meses.map((m, i) =>
+      `<i style="height:${max ? Math.max(8, (f.meses[m] / max) * 100) : 8}%" class="${i === meses.length - 1 ? 'ult' : ''}" title="${m}: ${num(f.meses[m])} ${esc(f.unidad)}"></i>`
+    ).join('') + '</div>';
+  }
+
+  function filtradas() {
+    const q = norm($('#q').value);
+    const fn = $('#f-nivel').value, ft = $('#f-tipo').value, fp = $('#f-prov').value;
+    let out = FILAS.filter(f => ft === 'todo' ? true : f.se_compra);
+    if (fn) out = out.filter(f => nivel(f) === fn);
+    if (fp) out = out.filter(f => f.proveedor === fp);
+    if (q) out = out.filter(f => norm(f.codigo + ' ' + f.nombre + ' ' + (f.nombre_core || '') + ' ' + (f.proveedor || '') + ' ' + (f.familia || '')).includes(q));
+    const { campo, asc } = orden;
+    out.sort((a, b) => {
+      let x = a[campo], y = b[campo];
+      if (x == null) x = asc ? Infinity : -Infinity;
+      if (y == null) y = asc ? Infinity : -Infinity;
+      const r = typeof x === 'string' ? String(x).localeCompare(String(y), 'es') : x - y;
+      return asc ? r : -r;
+    });
+    return out;
+  }
+
+  function pintarTabla() {
+    const filas = filtradas();
+    $('#tbody').innerHTML = filas.length ? filas.map(f => {
+      const n = nivel(f);
+      return `<tr data-cod="${esc(f.codigo)}">
+        <td><span class="punto ${n}" title="${esc(NIVEL_TXT[n])}"></span></td>
+        <td class="cod">${esc(f.codigo)}</td>
+        <td><b>${esc(f.nombre)}</b>${f.familia ? `<div class="cod">${esc(f.familia)}</div>` : ''}</td>
+        <td class="num">${num(f.stock)} <span style="color:var(--muted);font-size:11px">${esc(f.unidad)}</span></td>
+        <td class="num">${f.diario > 0 ? num(f.mensual) : '—'}</td>
+        <td class="num">${f.cobertura == null ? '—' : (f.cobertura > 999 ? '+999' : f.cobertura + ' d')}</td>
+        <td style="width:90px">${barritas(f)}</td>
+        <td>${f.proveedor ? esc(f.proveedor) : '<span class="chip">sin compras</span>'}</td>
+        <td class="num">${f.ultimaCompra ? esc(fecha(f.ultimaCompra)) : '—'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="9"><div class="vacio">Nada coincide con el filtro.</div></td></tr>';
+    $$('#tbody tr[data-cod]').forEach(tr => tr.addEventListener('click', () => abrirFicha(tr.dataset.cod)));
+  }
+
+  // ---- Pestaña: comprar mejor --------------------------------------------
+  function pintarComprar() {
+    const op = REPO.oportunidades(FILAS.filter(f => f.se_compra));
+    const total = op.reduce((a, b) => a + b.sobreprecio, 0);
+    const meses = DATOS?.historia_desde
+      ? Math.max(1, (new Date() - new Date(DATOS.historia_desde)) / (30.4 * 86400000)) : 6;
+
+    $('#n-comprar').textContent = op.length;
+    $('#nota-comprar').innerHTML = op.length
+      ? `Comparando cada compra contra otra del <b>mismo insumo, dentro de ±45 días</b> (para no
+         confundirlo con la inflación) en la que se pidió <b>más cantidad a menor precio por unidad</b>.
+         En el período se pagaron <b>${pesos(total)}</b> de más por comprar de a poco:
+         unos <b>${pesos(total / meses * 12)}</b> al año si sigue el mismo ritmo. No es un problema de
+         precio, es la consecuencia de comprar apurado cuando ya no queda.`
+      : 'No se detectaron compras chicas más caras que una compra grande cercana.';
+
+    $('#lista-oport').innerHTML = op.length ? op.map(f => `
+      <article class="rp-prov">
+        <header>
+          <div><h3>${esc(f.nombre)}</h3>
+            <div class="meta">${esc(f.codigo)} · ${esc(f.proveedor || 'varios proveedores')} · ${f.casos} ${plural(f.casos, 'compra chica', 'compras chicas')}</div></div>
+          <div class="total" style="color:var(--hot)">${pesos(f.sobreprecio)}</div>
+        </header>
+        <div class="rp-fila" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="dato"><span class="et">Comprando de a</span>${num(f.mejorLote)} ${esc(f.unidad)} → ${pesos(f.mejorPrecio)} por ${esc(uni(f.unidad))}</div>
+          <div class="dato"><span class="et">Comprando de a</span>${num(f.peorLote)} ${esc(f.unidad)} → ${pesos(f.peorPrecio)} por ${esc(uni(f.unidad))}</div>
+          <div class="dato"><span class="et">Diferencia</span><b style="color:var(--hot)">${f.brecha != null ? '+' + Math.round(f.brecha * 100) + '%' : '—'}</b></div>
+        </div>
+      </article>`).join('') : '<div class="vacio">Nada para señalar.</div>';
+
+    // Órdenes colgadas
+    const colg = [];
+    for (const f of FILAS) for (const c of (f.colgadas || [])) colg.push({ ...c, insumo: f });
+    colg.sort((a, b) => (a.tipo === b.tipo ? String(b.fecha).localeCompare(String(a.fecha)) : a.tipo === 'nunca_llego' ? -1 : 1));
+    $('#lista-colgadas').innerHTML = colg.length ? `
+      <div class="table-wrap"><div class="table-scroll"><table class="rp-tabla">
+        <thead><tr><th class="na">Orden</th><th class="na">Fecha</th><th class="na">Proveedor</th>
+          <th class="na">Materia prima</th><th class="na num">Pedido</th><th class="na num">Recibido</th><th class="na">Qué pasó</th></tr></thead>
+        <tbody>${colg.map(c => `<tr data-cod="${esc(c.insumo.codigo)}">
+          <td class="cod">${esc(c.oc)}</td><td>${esc(fecha(c.fecha))}</td><td>${esc(c.proveedor)}</td>
+          <td>${esc(c.insumo.nombre)}</td>
+          <td class="num">${num(c.cantidad)} ${esc(c.insumo.unidad)}</td>
+          <td class="num">${num(c.recibida)}</td>
+          <td>${c.tipo === 'nunca_llego'
+            ? '<span class="chip est">no llegó nada</span>'
+            : '<span class="chip">llegó corta</span>'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div></div>` : '<div class="vacio">Ninguna orden quedó colgada.</div>';
+    $$('#lista-colgadas tr[data-cod]').forEach(tr => tr.addEventListener('click', () => abrirFicha(tr.dataset.cod)));
+  }
+
+  // ---- Pestaña: ajustes ---------------------------------------------------
+  function pintarAjustes() {
+    $('#c-seg').value = CFG.dias_seguridad;
+    $('#c-ciclo').value = CFG.ciclo_dias;
+    $('#c-plazo').value = CFG.plazo_default;
+    $('#c-peso').value = CFG.peso_corto;
+    $('#lbl-ventana').textContent = CFG.ventana_corta_dias;
+
+    // Cuántas materias primas depende de cada proveedor: ordena la tabla por peso real.
+    const cuenta = {};
+    for (const f of FILAS) if (f.proveedor) cuenta[f.proveedor] = (cuenta[f.proveedor] || 0) + 1;
+    const provs = Object.values(PLAZOS).sort((a, b) => (cuenta[b.nombre] || 0) - (cuenta[a.nombre] || 0) || a.nombre.localeCompare(b.nombre, 'es'));
+
+    $('#tabla-plazos tbody').innerHTML = provs.map(p => `
+      <tr>
+        <td class="txt"><b>${esc(p.nombre)}</b>
+          <div style="font-size:11px;color:var(--muted)">${cuenta[p.nombre] || 0} ${(cuenta[p.nombre] || 0) === 1 ? 'insumo' : 'insumos'}${p.notas ? ' · ' + esc(p.notas) : ''}</div></td>
+        <td style="width:120px" class="txt">
+          <input class="plazo-in" type="number" min="0" max="180" value="${p.plazo_dias}" data-plazo="${esc(p.nombre)}"> días</td>
+        <td style="width:130px" class="txt">
+          <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer">
+            <input type="checkbox" data-conf="${esc(p.nombre)}" ${p.confirmado ? 'checked' : ''}> confirmado</label></td>
+      </tr>`).join('');
+
+    $$('[data-plazo]').forEach(i => i.addEventListener('change', () => guardarPlazo(i.dataset.plazo, { plazo_dias: Number(i.value) })));
+    $$('[data-conf]').forEach(i => i.addEventListener('change', () => guardarPlazo(i.dataset.conf, { confirmado: i.checked })));
+
+    const ex = FILAS.filter(f => f.excluido);
+    $('#lista-excluidas').innerHTML = ex.length ? ex.map(f => `
+      <div class="rp-fila" style="grid-template-columns:1fr auto; border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px">
+        <div><div class="nom">${esc(f.nombre)}</div>
+          <div class="cod">${esc(f.codigo)}${f.motivo_excluido ? ' · ' + esc(f.motivo_excluido) : ''}</div></div>
+        <button class="btn secondary" data-incluir="${esc(f.codigo)}">Volver a vigilar</button>
+      </div>`).join('')
+      : '<div class="vacio">Ninguna está excluida. Se excluyen desde la ficha de cada materia prima.</div>';
+    $$('[data-incluir]').forEach(b => b.addEventListener('click', () => guardarAjuste(b.dataset.incluir, { excluido: false, motivo_excluido: null })));
+  }
+
+  async function guardarPlazo(nombre, cambios) {
+    const { error } = await sb.from('repo_proveedores')
+      .update({ ...cambios, actualizado_en: new Date().toISOString() }).eq('nombre', nombre);
+    if (error) return toast('No se pudo guardar: ' + error.message, 'err');
+    PLAZOS[nombre] = { ...PLAZOS[nombre], ...cambios };
+    recalcular(); pintarTodo();
+    toast('Plazo actualizado');
+  }
+
+  async function guardarAjuste(codigo, cambios) {
+    const fila = { codigo, ...AJUSTES[codigo], ...cambios, actualizado_en: new Date().toISOString() };
+    const { error } = await sb.from('repo_items').upsert(fila, { onConflict: 'codigo' });
+    if (error) return toast('No se pudo guardar: ' + error.message, 'err');
+    AJUSTES[codigo] = fila;
+    recalcular(); pintarTodo();
+    if (drawerCod === codigo) abrirFicha(codigo);
+    toast('Guardado');
+  }
+
+  async function guardarConfig() {
+    const cambios = {
+      dias_seguridad: Number($('#c-seg').value),
+      ciclo_dias: Number($('#c-ciclo').value),
+      plazo_default: Number($('#c-plazo').value),
+      peso_corto: Number($('#c-peso').value),
+      actualizado_en: new Date().toISOString(),
+    };
+    const { error } = await sb.from('repo_config').update(cambios).eq('id', 1);
+    if (error) return toast('No se pudo guardar: ' + error.message, 'err');
+    CFG = { ...CFG, ...cambios };
+    recalcular(); pintarTodo();
+    toast('Parámetros guardados');
+  }
+
+  // ---- Ficha de una materia prima ----------------------------------------
+  let drawerCod = null;
+  function abrirFicha(codigo) {
+    const f = FILAS.find(x => x.codigo === codigo);
+    if (!f) return;
+    drawerCod = codigo;
+    $('#d-nombre').textContent = f.nombre;
+    $('#d-codigo').textContent = f.codigo + (f.familia ? ' · ' + f.familia : '') + ' · ' + f.categoria;
+
+    const n = nivel(f);
+    const meses = Object.keys(f.meses || {}).sort();
+    const aj = AJUSTES[codigo] || {};
+
+    $('#d-cuerpo').innerHTML = `
+      <div class="ficha-grid">
+        <div class="ficha-dato"><div class="k">Stock</div><div class="v">${num(f.stock)} ${esc(f.unidad)}</div>
+          <div class="s">${f.enCamino ? num(f.enCamino) + ' en camino' : 'nada en camino'}</div></div>
+        <div class="ficha-dato"><div class="k">Alcanza para</div>
+          <div class="v" style="color:var(--${n === 'critico' ? 'hot' : n === 'bajo' ? 'warn' : 'text'})">${f.cobertura == null ? '—' : f.cobertura + ' días'}</div>
+          <div class="s">${esc(NIVEL_TXT[n])}</div></div>
+        <div class="ficha-dato"><div class="k">Uso por mes</div><div class="v">${num(f.mensual)} ${esc(f.unidad)}</div>
+          <div class="s">${num(f.diario, 3)} por día</div></div>
+        <div class="ficha-dato"><div class="k">Punto de pedido</div><div class="v">${num(f.puntoPedido)} ${esc(f.unidad)}</div>
+          <div class="s">${f.plazo} días de entrega${f.plazoEstimado ? '*' : ''} + ${CFG.dias_seguridad} de seguridad</div></div>
+      </div>
+
+      ${f.se_compra && f.diario > 0 && !f.excluido ? `
+        <div class="ficha-dato" style="background:var(--accent-tint)">
+          <div class="k">Sugerencia</div>
+          <div class="v" style="color:var(--accent)">${f.sugerido > 0 ? 'Pedir ' + num(f.sugerido) + ' ' + esc(f.unidad) : 'No hace falta comprar'}</div>
+          <div class="s">${f.sugerido > 0
+            ? `Cubre ${f.diasObjetivo} días. ${f.lote ? 'Redondeado al lote habitual de ' + num(f.lote) + ' ' + esc(f.unidad) + '.' : ''} ${f.proveedor ? 'A ' + esc(f.proveedor) + '.' : 'Falta definir proveedor.'}`
+            : 'El stock alcanza para el período objetivo.'}</div>
+        </div>` : ''}
+
+      <h4 class="rp-h4">Consumo mes a mes</h4>
+      ${meses.length ? `<table class="mini"><tbody>${meses.map(m => {
+        const max = Math.max(...meses.map(x => f.meses[x]));
+        return `<tr><td class="txt" style="width:80px">${m}</td>
+          <td><div style="background:var(--structure);opacity:.55;height:9px;border-radius:2px;width:${max ? (f.meses[m] / max) * 100 : 0}%;min-width:2px"></div></td>
+          <td class="num" style="width:90px">${num(f.meses[m])} ${esc(f.unidad)}</td></tr>`;
+      }).join('')}</tbody></table>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
+        Ritmo reciente ${num(f.usoCorto, 3)}/día · historia completa ${num(f.usoLargo, 3)}/día ·
+        el cálculo usa ${num(f.diario, 3)}/día.</div>`
+      : '<div class="vacio">No se consumió en el período.</div>'}
+
+      <h4 class="rp-h4">Compras</h4>
+      ${f.compras.length ? `<table class="mini">
+        <thead><tr><th>Fecha</th><th>Proveedor</th><th style="text-align:right">Cantidad</th><th style="text-align:right">$ por ${esc(uni(f.unidad))}</th></tr></thead>
+        <tbody>${f.compras.slice().reverse().map(c => `<tr>
+          <td class="txt">${esc(fecha(c.fecha))}</td>
+          <td class="txt" style="font-size:11.5px">${esc(c.proveedor)}</td>
+          <td class="num">${num(c.cantidad)}${c.recibida < c.cantidad * 0.9 ? ` <span class="chip est" title="Recibido: ${num(c.recibida)}">corta</span>` : ''}</td>
+          <td class="num">${c.moneda === 'ARS' ? pesos(c.precio) : 'US$ ' + num(c.precio)}</td>
+        </tr>`).join('')}</tbody></table>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
+          ${f.nCompras} compras${f.intervalo ? ', una cada ' + Math.round(f.intervalo) + ' días' : ''}${f.lote ? ' · lote habitual ' + num(f.lote) + ' ' + esc(f.unidad) : ''}.</div>`
+      : '<div class="vacio">Nunca se compró desde que arrancó el historial.</div>'}
+
+      <h4 class="rp-h4">Ajustes de esta materia prima</h4>
+      <div class="rp-form">
+        <div class="rp-campo">
+          <label>Lote de compra</label>
+          <input type="number" id="a-lote" step="0.01" min="0" value="${aj.lote_compra ?? ''}" placeholder="${f.lote != null ? num(f.lote) + ' (del historial)' : 'sin dato'}">
+          <div class="ayuda">La cantidad sugerida se redondea hacia arriba a un múltiplo de esto.</div>
+        </div>
+        <div class="rp-campo">
+          <label>Días a cubrir</label>
+          <input type="number" id="a-dias" min="1" max="365" value="${aj.dias_objetivo ?? ''}" placeholder="${f.diasObjetivo} (calculado)">
+          <div class="ayuda">Pisa el cálculo de plazo + seguridad + ciclo para este insumo.</div>
+        </div>
+      </div>
+      <div class="rp-campo" style="margin-top:10px">
+        <label>Notas</label>
+        <textarea id="a-notas" rows="2" placeholder="Ej: se compra junto con la glicerina">${esc(aj.notas || '')}</textarea>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="a-excl" ${f.excluido ? 'checked' : ''}>
+        No avisarme por esta materia prima</label>
+      <input class="rp-campo" id="a-motivo" placeholder="Por qué se excluye" value="${esc(aj.motivo_excluido || '')}"
+        style="margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;font-size:13px;color:var(--text);${f.excluido ? '' : 'display:none'}">
+      <button class="btn primary" id="a-guardar" style="margin-top:14px">Guardar ajustes</button>
+    `;
+
+    $('#a-excl').addEventListener('change', e => {
+      $('#a-motivo').style.display = e.target.checked ? '' : 'none';
+    });
+    $('#a-guardar').addEventListener('click', () => {
+      const lote = $('#a-lote').value.trim();
+      const dias = $('#a-dias').value.trim();
+      guardarAjuste(codigo, {
+        lote_compra: lote === '' ? null : Number(lote),
+        dias_objetivo: dias === '' ? null : Number(dias),
+        notas: $('#a-notas').value.trim() || null,
+        excluido: $('#a-excl').checked,
+        motivo_excluido: $('#a-excl').checked ? ($('#a-motivo').value.trim() || null) : null,
+      });
+    });
+
+    $('#drawer').classList.add('open');
+    $('#drawer').setAttribute('aria-hidden', 'false');
+    $('#velo').classList.add('open');
+  }
+
+  function cerrarFicha() {
+    drawerCod = null;
+    $('#drawer').classList.remove('open');
+    $('#drawer').setAttribute('aria-hidden', 'true');
+    $('#velo').classList.remove('open');
+  }
+
+  // ---- Pestañas -----------------------------------------------------------
+  function irA(tab) {
+    $$('.rp-tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    $$('main section').forEach(s => { s.hidden = s.id !== 'tab-' + tab; });
+    location.hash = tab;
+  }
+
+  function pintarTodo() {
+    pintarKpis();
+    pintarReponer();
+    pintarSelectProv();
+    pintarTabla();
+    pintarComprar();
+    pintarAjustes();
+  }
+
+  function pintarSelectProv() {
+    const sel = $('#f-prov');
+    const actual = sel.value;
+    const provs = [...new Set(FILAS.filter(f => f.proveedor).map(f => f.proveedor))].sort((a, b) => a.localeCompare(b, 'es'));
+    sel.innerHTML = '<option value="">Todos los proveedores</option>' +
+      provs.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    sel.value = actual;
+  }
+
+  // ---- Arranque -----------------------------------------------------------
+  async function iniciar() {
+    $$('.rp-tab').forEach(b => b.addEventListener('click', () => irA(b.dataset.tab)));
+    $('#btn-actualizar').addEventListener('click', actualizar);
+    $('#btn-guardar-cfg').addEventListener('click', guardarConfig);
+    $('#d-cerrar').addEventListener('click', cerrarFicha);
+    $('#velo').addEventListener('click', cerrarFicha);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarFicha(); });
+    ['#q', '#f-nivel', '#f-tipo', '#f-prov'].forEach(s => {
+      $(s).addEventListener('input', pintarTabla);
+      $(s).addEventListener('change', pintarTabla);
+    });
+    $$('#tabla th[data-orden]').forEach(th => th.addEventListener('click', () => {
+      const c = th.dataset.orden;
+      orden = { campo: c, asc: orden.campo === c ? !orden.asc : true };
+      pintarTabla();
+    }));
+
+    irA(['reponer', 'todas', 'comprar', 'ajustes'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'reponer');
+
+    try {
+      await cargarTablas();
+      DATOS = await cargarFoto();
+      if (!DATOS) {
+        $('#sync-estado').textContent = 'Todavía no se leyó Odoo. Tocá «Actualizar».';
+        await actualizar();
+        return;
+      }
+      recalcular();
+      pintarTodo();
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo cargar: ' + e.message, 'err');
+    }
+  }
+
+  // shell.js valida la sesión y arma la barra; recién después tiene sentido pintar.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+  else iniciar();
+})();

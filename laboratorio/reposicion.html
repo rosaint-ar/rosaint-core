@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock y reposición · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Encabezado: estado general + botón de actualizar ---------------- */
+    .rp-top { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; }
+    .rp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; flex:1; min-width:280px; }
+    .rp-kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
+    .rp-kpi .k { font-size:11px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
+    .rp-kpi .v { font-size:23px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; line-height:1.15; }
+    .rp-kpi .sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+    .rp-kpi.hot .v { color:var(--hot); }
+    .rp-sync { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:12px 14px; min-width:210px; display:flex; flex-direction:column; gap:8px; }
+    .rp-sync .cuando { font-size:11.5px; color:var(--muted); line-height:1.45; }
+
+    /* ---- Pestañas -------------------------------------------------------- */
+    .rp-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap; }
+    .rp-tab { background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;
+              padding:9px 14px; font-size:13.5px; font-weight:600; color:var(--muted); font-family:inherit; }
+    .rp-tab:hover { color:var(--text); }
+    .rp-tab[aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); }
+    .rp-tab .n { font-size:11px; background:var(--surface-2,var(--bg)); border:1px solid var(--border);
+                 border-radius:20px; padding:1px 7px; margin-left:5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .rp-tab[aria-selected="true"] .n { background:var(--accent-tint); border-color:transparent; color:var(--accent); }
+
+    /* ---- Nota explicativa ------------------------------------------------ */
+    .rp-nota { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--structure);
+               border-radius:var(--radius-sm); padding:11px 14px; font-size:12.5px; color:var(--muted);
+               line-height:1.55; margin-bottom:16px; }
+    .rp-nota b { color:var(--text); font-weight:600; }
+
+    /* ---- Tarjeta de proveedor ------------------------------------------- */
+    .rp-prov { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               margin-bottom:14px; overflow:hidden; }
+    .rp-prov > header { display:flex; align-items:center; gap:12px; padding:13px 16px;
+                        border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .rp-prov h3 { font-size:14.5px; font-weight:700; }
+    .rp-prov .meta { font-size:12px; color:var(--muted); }
+    .rp-prov .total { margin-left:auto; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+    .rp-prov.huerfano { border-style:dashed; }
+
+    /* ---- Filas de materia prima ----------------------------------------- */
+    .rp-fila { display:grid; grid-template-columns:62px minmax(180px,2.2fr) 110px 110px 130px 110px;
+               gap:10px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; }
+    .rp-fila:last-child { border-bottom:none; }
+    .rp-fila .nom { font-weight:600; line-height:1.3; }
+    .rp-fila .cod { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+    .rp-fila .dato { font-variant-numeric:tabular-nums; }
+    .rp-fila .dato .et { display:block; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .rp-fila .pedir { font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+
+    .cob { display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+           min-width:54px; padding:4px 0; border-radius:var(--radius-sm); font-variant-numeric:tabular-nums; }
+    .cob b { font-size:15px; line-height:1; }
+    .cob span { font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; opacity:.85; }
+    .cob.critico { background:rgba(194,64,47,.14); color:var(--hot); }
+    .cob.bajo    { background:rgba(184,134,11,.14); color:var(--warn); }
+    .cob.ok      { background:rgba(47,143,91,.13); color:var(--ok); }
+    .cob.holgado { background:var(--bg); color:var(--muted); }
+    .cob.quieto, .cob.off, .cob.fabricado { background:var(--bg); color:var(--muted); }
+
+    /* ---- Tabla del listado completo ------------------------------------- */
+    .rp-toolbar { display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .rp-toolbar .input, .rp-toolbar select {
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:8px 11px; font-size:13px; color:var(--text); font-family:inherit; }
+    .rp-toolbar .input { min-width:230px; flex:1; max-width:380px; }
+    .rp-tabla { width:100%; border-collapse:collapse; font-size:12.8px; }
+    .rp-tabla th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;
+                   color:var(--muted); font-weight:600; padding:8px 9px; border-bottom:1px solid var(--border);
+                   white-space:nowrap; cursor:pointer; user-select:none; }
+    .rp-tabla th.na { cursor:default; }
+    .rp-tabla th .fl { opacity:.4; font-size:9px; }
+    .rp-tabla td { padding:9px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .rp-tabla tbody tr { cursor:pointer; }
+    .rp-tabla tbody tr:hover { background:var(--bg); }
+    .rp-tabla .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .rp-tabla .cod { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+    .punto { display:inline-block; width:9px; height:9px; border-radius:50%; }
+    .punto.critico { background:var(--hot); } .punto.bajo { background:var(--warn); }
+    .punto.ok { background:var(--ok); } .punto.holgado { background:var(--border); }
+    .punto.quieto, .punto.off, .punto.fabricado { background:transparent; border:1.5px solid var(--border); }
+
+    /* ---- Barras de consumo por mes -------------------------------------- */
+    .barras { display:flex; gap:2px; align-items:flex-end; height:26px; }
+    .barras i { flex:1; min-width:4px; background:var(--structure); opacity:.5; border-radius:1px 1px 0 0; }
+    .barras i.ult { opacity:.9; background:var(--accent); }
+
+    /* ---- Ficha lateral --------------------------------------------------- */
+    .rp-drawer { position:fixed; inset:0 0 0 auto; width:min(520px,100%); background:var(--surface);
+                 border-left:1px solid var(--border); box-shadow:var(--shadow-menu); z-index:60;
+                 display:flex; flex-direction:column; transform:translateX(100%); transition:transform .18s ease; }
+    .rp-drawer.open { transform:none; }
+    .rp-drawer > header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; }
+    .rp-drawer > header h3 { font-size:15.5px; font-weight:700; line-height:1.3; }
+    .rp-drawer > header .cod { font-family:var(--font-mono); font-size:11.5px; color:var(--muted); }
+    .rp-drawer .cerrar { margin-left:auto; background:none; border:none; font-size:20px; color:var(--muted); cursor:pointer; line-height:1; }
+    .rp-drawer .cuerpo { padding:18px 20px; overflow:auto; flex:1; }
+    .rp-velo { position:fixed; inset:0; background:rgba(0,0,0,.28); z-index:59; display:none; }
+    .rp-velo.open { display:block; }
+    .ficha-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+    .ficha-dato { background:var(--bg); border-radius:var(--radius-sm); padding:9px 11px; }
+    .ficha-dato .k { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+    .ficha-dato .v { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:2px; }
+    .ficha-dato .s { font-size:11px; color:var(--muted); }
+    .rp-h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+             font-weight:600; margin:18px 0 8px; }
+    .mini { width:100%; border-collapse:collapse; font-size:12px; }
+    .mini th { text-align:left; font-size:10px; text-transform:uppercase; color:var(--muted); padding:4px 6px; font-weight:600; }
+    .mini td { padding:5px 6px; border-top:1px solid var(--border); font-variant-numeric:tabular-nums; }
+    .mini td.txt { font-variant-numeric:normal; }
+
+    /* ---- Ajustes --------------------------------------------------------- */
+    .rp-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:8px; }
+    .rp-campo label { display:block; font-size:11.5px; color:var(--muted); margin-bottom:5px; font-weight:600; }
+    .rp-campo input, .rp-campo select, .rp-campo textarea {
+      width:100%; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:8px 10px; font-size:13px; color:var(--text); font-family:inherit; }
+    .rp-campo .ayuda { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.45; }
+    .plazo-in { width:64px; text-align:right; }
+    .chip { display:inline-block; font-size:10.5px; padding:2px 8px; border-radius:20px;
+            background:var(--bg); border:1px solid var(--border); color:var(--muted); }
+    .chip.est { background:rgba(184,134,11,.13); border-color:transparent; color:var(--warn); }
+    .chip.ok  { background:rgba(47,143,91,.13); border-color:transparent; color:var(--ok); }
+
+    .vacio { background:var(--surface); border:1px dashed var(--border); border-radius:var(--radius);
+             padding:28px; text-align:center; color:var(--muted); font-size:13px; }
+
+    .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(14px);
+             background:var(--structure); color:#fff; padding:10px 18px; border-radius:var(--radius-sm);
+             font-size:13px; opacity:0; pointer-events:none; transition:.18s; z-index:80; }
+    .toast.show { opacity:1; transform:translateX(-50%); }
+    .toast.err { background:var(--hot); }
+
+    @media (max-width:760px) {
+      .rp-fila { grid-template-columns:56px 1fr; gap:6px 10px; }
+      .rp-fila .dato, .rp-fila .pedirCel { grid-column:2; }
+      .ficha-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body data-page="reposicion" data-title="Stock y reposición" data-subtitle="Qué materia prima se está por terminar, cuánto comprar y a quién">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="rp-top">
+    <div class="rp-kpis">
+      <div class="rp-kpi hot"><div class="k">A reponer</div><div class="v" id="k-reponer">—</div><div class="sub" id="k-reponer-sub">&nbsp;</div></div>
+      <div class="rp-kpi"><div class="k">Pedido sugerido</div><div class="v" id="k-monto">—</div><div class="sub">aproximado, al último precio</div></div>
+      <div class="rp-kpi"><div class="k">Stock de insumos</div><div class="v" id="k-stock">—</div><div class="sub" id="k-stock-sub">&nbsp;</div></div>
+      <div class="rp-kpi"><div class="k">Consumo por mes</div><div class="v" id="k-consumo">—</div><div class="sub">promedio de lo que se usa</div></div>
+    </div>
+    <div class="rp-sync">
+      <button class="btn primary" id="btn-actualizar">Actualizar desde Odoo</button>
+      <div class="cuando" id="sync-estado">Cargando…</div>
+    </div>
+  </div>
+
+  <div class="rp-tabs" role="tablist">
+    <button class="rp-tab" data-tab="reponer"  role="tab">Reponer ahora <span class="n" id="n-reponer">—</span></button>
+    <button class="rp-tab" data-tab="todas"    role="tab">Materias primas <span class="n" id="n-todas">—</span></button>
+    <button class="rp-tab" data-tab="comprar"  role="tab">Comprar mejor <span class="n" id="n-comprar">—</span></button>
+    <button class="rp-tab" data-tab="ajustes"  role="tab">Ajustes</button>
+  </div>
+
+  <!-- ============ REPONER AHORA ============ -->
+  <section id="tab-reponer" hidden>
+    <div class="rp-nota" id="nota-reponer"></div>
+    <div id="lista-reponer"></div>
+  </section>
+
+  <!-- ============ TODAS ============ -->
+  <section id="tab-todas" hidden>
+    <div class="rp-toolbar">
+      <input type="search" class="input" id="q" placeholder="Buscar por nombre, código o proveedor…">
+      <select id="f-nivel">
+        <option value="">Todos los estados</option>
+        <option value="critico">Sin stock o a punto de cortarse</option>
+        <option value="bajo">Debajo del punto de pedido</option>
+        <option value="ok">En rango</option>
+        <option value="holgado">De sobra</option>
+        <option value="quieto">Sin consumo en el período</option>
+      </select>
+      <select id="f-tipo">
+        <option value="compra">Lo que se compra</option>
+        <option value="todo">Todo, incluido lo que se fabrica</option>
+      </select>
+      <select id="f-prov"><option value="">Todos los proveedores</option></select>
+    </div>
+    <div class="table-wrap"><div class="table-scroll">
+      <table class="rp-tabla" id="tabla">
+        <thead><tr>
+          <th class="na"></th>
+          <th data-orden="codigo">Código <span class="fl">↕</span></th>
+          <th data-orden="nombre">Materia prima <span class="fl">↕</span></th>
+          <th data-orden="stock" class="num">Stock <span class="fl">↕</span></th>
+          <th data-orden="mensual" class="num">Uso / mes <span class="fl">↕</span></th>
+          <th data-orden="cobertura" class="num">Alcanza <span class="fl">↕</span></th>
+          <th class="na">Últimos meses</th>
+          <th data-orden="proveedor">Proveedor <span class="fl">↕</span></th>
+          <th data-orden="ultimaCompra" class="num">Últ. compra <span class="fl">↕</span></th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <!-- ============ COMPRAR MEJOR ============ -->
+  <section id="tab-comprar" hidden>
+    <div class="rp-nota" id="nota-comprar"></div>
+    <div id="lista-oport"></div>
+    <h3 class="rp-h4" style="margin-top:26px">Órdenes de compra que quedaron colgadas</h3>
+    <div class="rp-nota">Renglones pedidos hace más de 21 días que nunca llegaron, o que llegaron
+      bastante más cortos de lo pedido. <b>No cuentan como stock en camino.</b> Los que dicen «llegó corta»
+      suelen ser merma de pesaje en líquidos; los que dicen «no llegó nada» hay que reclamarlos o cancelarlos.</div>
+    <div id="lista-colgadas"></div>
+  </section>
+
+  <!-- ============ AJUSTES ============ -->
+  <section id="tab-ajustes" hidden>
+    <div class="rp-nota">
+      El punto de pedido sale de <b>uso diario × (plazo de entrega + días de seguridad)</b>.
+      Cuando el stock cae por debajo, la materia prima aparece en «Reponer ahora» y se pide lo que
+      haga falta para cubrir <b>plazo + seguridad + ciclo de compra</b>, redondeado al lote con el que
+      solés comprarla.
+    </div>
+
+    <div class="card" style="padding:18px 20px; margin-bottom:18px">
+      <h3 class="rp-h4" style="margin-top:0">Parámetros del cálculo</h3>
+      <div class="rp-form">
+        <div class="rp-campo">
+          <label for="c-seg">Días de seguridad</label>
+          <input type="number" id="c-seg" min="0" max="120">
+          <div class="ayuda">Colchón por encima del plazo de entrega, para absorber una semana de producción fuerte.</div>
+        </div>
+        <div class="rp-campo">
+          <label for="c-ciclo">Ciclo de compra (días)</label>
+          <input type="number" id="c-ciclo" min="7" max="180">
+          <div class="ayuda">Cada cuánto querés volver a comprarle al mismo proveedor. Más alto = pedidos más grandes y espaciados.</div>
+        </div>
+        <div class="rp-campo">
+          <label for="c-plazo">Plazo por defecto (días)</label>
+          <input type="number" id="c-plazo" min="0" max="120">
+          <div class="ayuda">Se usa cuando la materia prima no tiene un proveedor con plazo cargado.</div>
+        </div>
+        <div class="rp-campo">
+          <label for="c-peso">Peso del ritmo reciente</label>
+          <input type="number" id="c-peso" min="0" max="1" step="0.05">
+          <div class="ayuda">0 = solo mira toda la historia. 1 = solo los últimos <span id="lbl-ventana">90</span> días. 0,65 es un buen punto medio.</div>
+        </div>
+      </div>
+      <button class="btn primary" id="btn-guardar-cfg" style="margin-top:14px">Guardar parámetros</button>
+    </div>
+
+    <div class="card" style="padding:18px 20px; margin-bottom:18px">
+      <h3 class="rp-h4" style="margin-top:0">Plazo de entrega por proveedor</h3>
+      <div class="rp-nota" style="margin-bottom:12px">
+        Esto <b>no se puede sacar de Odoo</b>: la orden de compra se carga el mismo día que llega la
+        mercadería, así que el historial marca «0 días» en casi todas. Los valores de abajo son
+        estimados a partir de lo que sí se pudo medir. A medida que confirmes uno, marcalo como
+        confirmado: los estimados se muestran con un asterisco en toda la pantalla.
+      </div>
+      <table class="mini" id="tabla-plazos"><tbody></tbody></table>
+    </div>
+
+    <div class="card" style="padding:18px 20px">
+      <h3 class="rp-h4" style="margin-top:0">Materias primas excluidas de las alertas</h3>
+      <div id="lista-excluidas"></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="rp-velo" id="velo"></div>
+<aside class="rp-drawer" id="drawer" aria-hidden="true">
+  <header>
+    <div>
+      <h3 id="d-nombre">—</h3>
+      <div class="cod" id="d-codigo">—</div>
+    </div>
+    <button class="cerrar" id="d-cerrar" aria-label="Cerrar">&times;</button>
+  </header>
+  <div class="cuerpo" id="d-cuerpo"></div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="reposicion.js"></script>
+<script src="reposicion-ui.js"></script>
+</body>
+</html>
