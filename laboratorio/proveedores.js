@@ -20,6 +20,12 @@
   let REAL = {};        // codigo -> { proveedor, veces, ultima, ultimoPrecio, moneda, compras[] }
   let drawerId = null;
 
+  // Cómo se ve la lista de proveedores. Filas por defecto: se leen de un vistazo
+  // y entran más en pantalla. La preferencia queda en este navegador.
+  const VISTA_KEY = 'rosaint-prov-vista';
+  let VISTA = 'filas';
+  try { VISTA = localStorage.getItem(VISTA_KEY) || 'filas'; } catch { /* sin localStorage */ }
+
   const provPorId = id => PROV.find(p => p.id === id) || null;
   const provPorOdooNombre = n => PROV.find(p => (p.odoo_nombre || p.nombre) === n) || null;
 
@@ -211,25 +217,70 @@
     const conDatos = lista.map(p => ({ p, r: resumenProv(p) }))
       .sort((a, b) => b.r.comprado - a.r.comprado || b.r.insumos - a.r.insumos || a.p.nombre.localeCompare(b.p.nombre, 'es'));
 
-    $('#grilla-prov').innerHTML = conDatos.length ? conDatos.map(({ p, r }) => `
-      <article class="pv-card ${p.activo === false ? 'inactivo' : ''}" data-id="${p.id}">
-        <h3>${esc(p.nombre)}</h3>
-        <div class="cuit">${p.cuit ? esc(p.cuit) : '<span style="color:var(--muted)">sin CUIT</span>'}</div>
-        <div class="linea">
-          ${p.odoo_partner_id ? '<span class="chip ok">en Odoo</span>' : '<span class="chip est">solo en el Core</span>'}
-          ${p.plazo_entrega_dias != null
-            ? `<span class="chip">entrega ${p.plazo_entrega_dias} d${p.plazo_confirmado ? '' : ' (est.)'}</span>` : ''}
-          ${p.condicion_pago ? `<span class="chip">${esc(p.condicion_pago)}</span>` : '<span class="chip est">sin condición de pago</span>'}
-          ${p.activo === false ? '<span class="chip">inactivo</span>' : ''}
-        </div>
-        <div class="cifras">
-          <div class="cifra"><div class="v">${r.insumos}</div><div class="k">insumos</div></div>
-          <div class="cifra"><div class="v">${r.compras}</div><div class="k">compras</div></div>
-          <div class="cifra"><div class="v">${r.comprado ? pesos(r.comprado) : '—'}</div><div class="k">facturado</div></div>
-        </div>
-      </article>`).join('') : '<div class="vacio">Nada coincide con el filtro.</div>';
+    const cont = $('#grilla-prov');
+    if (!conDatos.length) {
+      cont.className = '';
+      cont.innerHTML = '<div class="vacio">Nada coincide con el filtro.</div>';
+      return;
+    }
+    if (VISTA === 'tarjetas') {
+      cont.className = 'pv-grid';
+      cont.innerHTML = conDatos.map(({ p, r }) => tarjetaProv(p, r)).join('');
+    } else {
+      cont.className = '';
+      cont.innerHTML = `<div class="table-wrap"><div class="table-scroll">
+        <table class="pv-tabla">
+          <thead><tr>
+            <th>Proveedor</th><th>Situación</th><th>Entrega</th><th>Condición de pago</th>
+            <th class="num">Insumos</th><th class="num">Compras</th><th class="num">Facturado</th>
+          </tr></thead>
+          <tbody>${conDatos.map(({ p, r }) => filaProv(p, r)).join('')}</tbody>
+        </table></div></div>`;
+    }
+    $$('#grilla-prov [data-id]').forEach(c => c.addEventListener('click', () => abrirFicha(Number(c.dataset.id))));
+  }
 
-    $$('#grilla-prov .pv-card').forEach(c => c.addEventListener('click', () => abrirFicha(Number(c.dataset.id))));
+  function chipsProv(p) {
+    return [
+      p.odoo_partner_id ? '<span class="chip ok">en Odoo</span>' : '<span class="chip est">solo en el Core</span>',
+      p.activo === false ? '<span class="chip">inactivo</span>' : '',
+    ].filter(Boolean).join(' ');
+  }
+  const entregaProv = p => p.plazo_entrega_dias != null
+    ? p.plazo_entrega_dias + ' d' + (p.plazo_confirmado ? '' : ' <span class="chip est">est.</span>')
+    : '<span class="chip est">sin cargar</span>';
+  const pagoProv = p => p.condicion_pago
+    ? esc(p.condicion_pago) : '<span class="chip est">sin definir</span>';
+
+  function filaProv(p, r) {
+    return `<tr data-id="${p.id}" style="cursor:pointer${p.activo === false ? ';opacity:.7' : ''}">
+      <td><b>${esc(p.nombre)}</b>
+        <div class="cod">${p.cuit ? esc(p.cuit) : 'sin CUIT'}${p.contacto ? ' · ' + esc(p.contacto) : ''}</div></td>
+      <td>${chipsProv(p)}</td>
+      <td class="num">${entregaProv(p)}</td>
+      <td>${pagoProv(p)}</td>
+      <td class="num">${r.insumos || '—'}</td>
+      <td class="num">${r.compras || '—'}</td>
+      <td class="num">${r.comprado ? pesos(r.comprado) : '—'}</td>
+    </tr>`;
+  }
+
+  function tarjetaProv(p, r) {
+    return `<article class="pv-card ${p.activo === false ? 'inactivo' : ''}" data-id="${p.id}">
+      <h3>${esc(p.nombre)}</h3>
+      <div class="cuit">${p.cuit ? esc(p.cuit) : '<span style="color:var(--muted)">sin CUIT</span>'}</div>
+      <div class="linea">
+        ${chipsProv(p)}
+        ${p.plazo_entrega_dias != null
+          ? `<span class="chip">entrega ${p.plazo_entrega_dias} d${p.plazo_confirmado ? '' : ' (est.)'}</span>` : ''}
+        ${p.condicion_pago ? `<span class="chip">${esc(p.condicion_pago)}</span>` : '<span class="chip est">sin condición de pago</span>'}
+      </div>
+      <div class="cifras">
+        <div class="cifra"><div class="v">${r.insumos}</div><div class="k">insumos</div></div>
+        <div class="cifra"><div class="v">${r.compras}</div><div class="k">compras</div></div>
+        <div class="cifra"><div class="v">${r.comprado ? pesos(r.comprado) : '—'}</div><div class="k">facturado</div></div>
+      </div>
+    </article>`;
   }
 
   // ---- Pestaña: quién provee qué -----------------------------------------
@@ -615,6 +666,10 @@
     location.hash = tab;
   }
 
+  function marcarVista() {
+    $$('.pv-vista button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.vista === VISTA)));
+  }
+
   function pintarSelectProv() {
     const sel = $('#f-prov-ins');
     const actual = sel.value;
@@ -644,6 +699,13 @@
     ['#q-prov', '#f-estado-prov'].forEach(s => {
       $(s).addEventListener('input', pintarLista); $(s).addEventListener('change', pintarLista);
     });
+    $$('.pv-vista button').forEach(b => b.addEventListener('click', () => {
+      VISTA = b.dataset.vista;
+      try { localStorage.setItem(VISTA_KEY, VISTA); } catch { /* sin localStorage */ }
+      marcarVista();
+      pintarLista();
+    }));
+    marcarVista();
     ['#q-ins', '#f-prov-ins', '#f-coincide'].forEach(s => {
       $(s).addEventListener('input', pintarInsumos); $(s).addEventListener('change', pintarInsumos);
     });

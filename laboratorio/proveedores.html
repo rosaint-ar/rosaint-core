@@ -39,6 +39,13 @@
       padding:8px 11px; font-size:13px; color:var(--text); font-family:inherit; }
     .pv-toolbar .input { min-width:230px; flex:1; max-width:360px; }
 
+    /* Selector de vista: filas (por defecto) o tarjetas */
+    .pv-vista { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+    .pv-vista button { background:var(--surface); border:none; padding:8px 13px; font-size:12.5px;
+                       font-family:inherit; color:var(--muted); cursor:pointer; }
+    .pv-vista button + button { border-left:1px solid var(--border); }
+    .pv-vista button[aria-pressed="true"] { background:var(--accent-tint); color:var(--accent); font-weight:600; }
+
     .pv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:12px; }
     .pv-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
                padding:14px 16px; cursor:pointer; transition:border-color .12s, transform .12s; }
@@ -145,9 +152,13 @@
         <option value="sin_odoo">Sin ficha en Odoo</option>
         <option value="inactivos">Inactivos</option>
       </select>
+      <div class="pv-vista" role="group" aria-label="Cómo ver la lista">
+        <button data-vista="filas" aria-pressed="true">Filas</button>
+        <button data-vista="tarjetas" aria-pressed="false">Tarjetas</button>
+      </div>
       <button class="btn secondary" id="btn-nuevo">+ Nuevo proveedor</button>
     </div>
-    <div class="pv-grid" id="grilla-prov"></div>
+    <div id="grilla-prov"></div>
   </section>
 
   <!-- ============ QUIÉN PROVEE QUÉ ============ -->
