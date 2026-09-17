@@ -153,7 +153,9 @@ const FICHA = (() => {
     $('#fi-cuerpo').innerHTML = `
       ${calc ? `<div class="fi-grid">
         <div class="fi-dato"><div class="k">Stock</div><div class="v">${num(calc.stock)} ${esc(unidad)}</div>
-          <div class="s">${calc.enCamino ? num(calc.enCamino) + ' en camino' : 'nada en camino'}</div></div>
+          <div class="s">${calc.enCamino ? num(calc.enCamino) + ' en camino'
+            : calc.tienePedido ? num(calc.pedidos.reduce((a, b) => a + b.falta, 0)) + ' ' + esc(unidad) + ' pedidos'
+            : 'nada en camino'}</div></div>
         <div class="fi-dato"><div class="k">Alcanza para</div>
           <div class="v">${calc.cobertura == null ? '—' : calc.cobertura + ' días'}</div>
           <div class="s">${esc(REPO.NIVEL_TXT[REPO.nivel(calc)] || '')}</div></div>
@@ -163,10 +165,24 @@ const FICHA = (() => {
           <div class="s">${calc.plazo} d de entrega${calc.plazoEstimado ? '*' : ''} + ${CTX.getCfg().dias_seguridad} de seguridad</div></div>
       </div>` : ''}
 
+      ${calc?.tienePedido ? `<div class="fi-dato" style="background:${calc.pedidoDemorado ? 'rgba(194,64,47,.12)' : 'rgba(47,143,91,.12)'};margin-bottom:6px">
+        <div class="k">${calc.pedidoDemorado ? 'Pedido demorado' : 'Ya está pedido'}</div>
+        <table class="fi-tabla" style="margin-top:4px">
+          <tbody>${calc.pedidos.map(o => `<tr>
+            <td class="txt" style="width:74px">${esc(o.oc)}</td>
+            <td class="txt">${esc(o.proveedor)}
+              <div style="font-size:10.5px;color:var(--muted)">${esc(o.estado_txt)} · ${esc(fecha(o.fecha_pedido))}${o.demorado ? ' · sin llegar hace más de un mes' : ''}</div></td>
+            <td style="width:80px;text-align:right">${num(o.falta)} ${esc(unidad)}</td>
+          </tr>`).join('')}</tbody></table></div>` : ''}
+
       ${calc && calc.sugerido > 0 ? `<div class="fi-dato" style="background:var(--accent-tint);margin-bottom:6px">
         <div class="k">Sugerencia</div>
         <div class="v" style="color:var(--accent)">Pedir ${num(calc.sugerido)} ${esc(unidad)}</div>
-        <div class="s">Cubre ${calc.diasObjetivo} días${calc.proveedor ? ' · a ' + esc(calc.proveedor) : ''}</div></div>` : ''}
+        <div class="s">Cubre ${calc.diasObjetivo} días${calc.proveedor ? ' · a ' + esc(calc.proveedor) : ''}${calc.yaPedido ? ` · además de los ${num(calc.yaPedido)} ${esc(unidad)} ya pedidos` : ''}</div></div>`
+      : calc?.alerta && calc?.tienePedido && !calc.pedidoDemorado ? `<div class="fi-dato" style="background:var(--bg);margin-bottom:6px">
+        <div class="k">Sugerencia</div>
+        <div class="v">No hace falta comprar más</div>
+        <div class="s">Está por debajo del punto de pedido, pero lo pedido alcanza para cubrirlo.</div></div>` : ''}
 
       ${desalineado ? `<div class="fi-dato" style="background:rgba(184,134,11,.12);margin-bottom:6px">
         <div class="k">Ojo</div><div class="s" style="font-size:12.5px;line-height:1.5">

@@ -94,6 +94,13 @@ const REPO = (() => {
       if (!porProducto.has(c.producto_id)) porProducto.set(c.producto_id, []);
       porProducto.get(c.producto_id).push(c);
     }
+    // Pedidos en curso, igual agrupados
+    const pedidosPor = new Map();
+    for (const p of datos.pedidos || []) {
+      if (p.producto_id == null) continue;
+      if (!pedidosPor.has(p.producto_id)) pedidosPor.set(p.producto_id, []);
+      pedidosPor.get(p.producto_id).push(p);
+    }
 
     const filas = [];
     for (const p of datos.productos || []) {
@@ -134,11 +141,33 @@ const REPO = (() => {
         else if (c.recibida < c.cantidad * 0.9) colgadas.push({ ...c, tipo: 'corta' });
       }
 
+      // ---- Lo que ya está pedido -----------------------------------------
+      // Un renglón confirmado al que le falta poco NO es mercadería en camino:
+      // es la merma de pesaje de los líquidos (piden 10 kg, entran 9,53) y esos
+      // renglones quedan abiertos para siempre. Recién por debajo de la mitad
+      // recibida se toma como algo que de verdad no llegó.
+      const pedidos = (pedidosPor.get(p.id) || [])
+        .filter(x => x.estado !== 'purchase' || x.recibida <= x.cantidad * 0.5)
+        .map(x => ({
+          ...x,
+          // Pasado un mes sin llegar, deja de ser "en camino" y pasa a ser algo
+          // para reclamar: se muestra distinto y no tranquiliza.
+          demorado: x.fecha_pedido
+            ? dias(new Date(x.fecha_pedido + 'T12:00:00'), hasta) > 30 : false,
+        }))
+        .sort((a, b) => String(b.fecha_pedido).localeCompare(String(a.fecha_pedido)));
+      // Solo lo que todavía es razonable esperar cuenta como ya pedido. Si hace
+      // más de un mes que no llega, hay que volver a comprarlo igual.
+      const yaPedido = pedidos.filter(x => !x.demorado).reduce((a, b) => a + (b.falta || 0), 0);
+      const pedidoDemorado = pedidos.some(x => x.demorado);
+
       const disponible = p.stock + enCamino;
       const puntoPedido = diario * (plazo + cfg.dias_seguridad);
       const diasObjetivo = aj.dias_objetivo != null ? Number(aj.dias_objetivo) : plazo + cfg.dias_seguridad + cfg.ciclo_dias;
       const objetivo = diario * diasObjetivo;
-      let sugerido = Math.max(0, objetivo - disponible);
+      // Lo ya pedido se descuenta de la sugerencia para no comprar dos veces lo
+      // mismo, pero NO se suma al stock: hasta que no llega, no está.
+      let sugerido = Math.max(0, objetivo - disponible - yaPedido);
       if (lote && sugerido > 0) sugerido = Math.ceil(sugerido / lote) * lote;
 
       // Intervalo entre compras: cuánto tarda hoy en volver a comprarse.
@@ -159,6 +188,8 @@ const REPO = (() => {
         proveedor, plazo, plazoEstimado, lote,
         loteManual: aj.lote_compra != null,
         enCamino, colgadas,
+        pedidos, yaPedido, pedidoDemorado,
+        tienePedido: pedidos.length > 0,
         disponible, puntoPedido, diasObjetivo, sugerido,
         cobertura: diario > 0 ? Math.round(disponible / diario) : null,
         alerta: !aj.excluido && diario > 0 && p.se_compra && disponible <= puntoPedido,
@@ -210,6 +241,22 @@ const REPO = (() => {
     return out.sort((a, b) => b.sobreprecio - a.sobreprecio);
   }
 
+  /* Cómo se anuncia un pedido en curso, en una línea. Se usa igual en las
+     listas y en la ficha, para que "pedido" signifique lo mismo en todos lados. */
+  function textoPedido(f) {
+    if (!f.tienePedido) return null;
+    const p = f.pedidos[0];
+    const varios = f.pedidos.length > 1 ? ` (+${f.pedidos.length - 1})` : '';
+    const cuanto = `${num(f.yaPedido || p.falta)} ${f.unidad}`;
+    if (f.pedidoDemorado) {
+      return { clase: 'hot', corto: 'pedido demorado', largo: `${p.oc}: ${cuanto} pedidos el ${fecha(p.fecha_pedido)} y todavía no llegaron${varios}` };
+    }
+    if (!p.comprometido) {
+      return { clase: 'est', corto: 'presupuesto pedido', largo: `${p.oc}: ${cuanto} a ${p.proveedor}, ${p.estado_txt} del ${fecha(p.fecha_pedido)}${varios}` };
+    }
+    return { clase: 'ok', corto: 'en camino', largo: `${p.oc}: ${cuanto} de ${p.proveedor}, confirmado el ${fecha(p.fecha_pedido)}${varios}` };
+  }
+
   // ---- Semáforo de cobertura ---------------------------------------------
   // Solo se le pone semáforo a lo que se repone comprando. Los graneles y
   // semielaborados se fabrican: su faltante lo resuelve producción, no una
@@ -233,5 +280,5 @@ const REPO = (() => {
     fabricado: 'Se fabrica, no se compra',
   };
 
-  return { esc, norm, pesos, num, uni, plural, fecha, fechaHora, dias, mediana, toast, calcular, oportunidades, usoDiario, nivel, NIVEL_TXT };
+  return { esc, norm, pesos, num, uni, plural, fecha, fechaHora, dias, mediana, toast, calcular, oportunidades, usoDiario, nivel, NIVEL_TXT, textoPedido };
 })();

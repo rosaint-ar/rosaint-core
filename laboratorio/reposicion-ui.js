@@ -5,7 +5,7 @@
    ========================================================================= */
 
 (() => {
-  const { esc, norm, pesos, num, uni, plural, fecha, fechaHora, toast, nivel, NIVEL_TXT } = REPO;
+  const { esc, norm, pesos, num, uni, plural, fecha, fechaHora, toast, nivel, NIVEL_TXT, textoPedido } = REPO;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-reposicion';
@@ -112,14 +112,22 @@
     return `<span class="cob ${n}" title="${esc(NIVEL_TXT[n])}"><b>${txt}</b><span>días</span></span>`;
   }
 
+  // Distintivo de "esto ya está pedido", con el detalle en el globo de ayuda.
+  function chipPedido(f) {
+    const t = textoPedido(f);
+    return t ? ` <span class="chip ${t.clase}" title="${esc(t.largo)}">${esc(t.corto)}</span>` : '';
+  }
+
   function filaHTML(f) {
     return `<div class="rp-fila" data-insumo="${esc(f.codigo)}">
       <div>${celdaCobertura(f)}</div>
-      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
+      <div><div class="nom">${esc(f.nombre)}${chipPedido(f)}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
       <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
       <div class="dato"><span class="et">Uso por mes</span>${num(f.mensual)} ${esc(f.unidad)}</div>
       <div class="pedirCel"><span class="et" style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase">Pedir</span>
-        <span class="pedir">${num(f.sugerido)} ${esc(f.unidad)}</span></div>
+        ${f.sugerido > 0
+          ? `<span class="pedir">${num(f.sugerido)} ${esc(f.unidad)}</span>`
+          : '<span class="chip ok">ya está pedido</span>'}</div>
       <div class="dato" style="text-align:right">${f.valorSugerido ? pesos(f.valorSugerido) : '<span class="chip">sin precio</span>'}</div>
     </div>`;
   }
@@ -127,13 +135,20 @@
   function pintarReponer() {
     const todas = FILAS.filter(f => f.alerta);
     const q = norm($('#q-reponer')?.value || '');
-    const alertas = q
-      ? todas.filter(f => norm([f.codigo, f.nombre, f.nombre_core, f.proveedor, f.familia].join(' ')).includes(q))
-      : todas;
+    const ocultarPedidos = $('#f-pedidos')?.checked;
+    const conPedido = todas.filter(f => f.tienePedido).length;
+    let alertas = ocultarPedidos ? todas.filter(f => !f.tienePedido) : todas;
+    if (q) alertas = alertas.filter(f => norm([f.codigo, f.nombre, f.nombre_core, f.proveedor, f.familia].join(' ')).includes(q));
     const cont = $('#lista-reponer');
     const nota = $('#nota-reponer');
     const cuenta = $('#cuenta-reponer');
-    if (cuenta) cuenta.textContent = q
+    const lblPed = $('#lbl-pedidos');
+    if (lblPed) {
+      lblPed.hidden = !conPedido;
+      const n = lblPed.querySelector('span');
+      if (n) n.textContent = `Ocultar los ${conPedido} que ya pedí`;
+    }
+    if (cuenta) cuenta.textContent = (q || ocultarPedidos)
       ? `${alertas.length} de ${todas.length}`
       : (todas.length ? `${todas.length} para reponer` : '');
 
@@ -200,7 +215,8 @@
   }
 
   function copiarPedido(prov, items) {
-    const lineas = items.map(f => `• ${f.nombre} — ${num(f.sugerido)} ${f.unidad}`);
+    const lineas = items.filter(f => f.sugerido > 0).map(f => `• ${f.nombre} — ${num(f.sugerido)} ${f.unidad}`);
+    if (!lineas.length) return toast('Todo lo de este proveedor ya está pedido', 'err');
     const txt = `Pedido para ${prov}\n\n${lineas.join('\n')}\n\n(Rosaint · ${new Date().toLocaleDateString('es-AR')})`;
     navigator.clipboard.writeText(txt)
       .then(() => toast('Pedido copiado — pegalo en el mail o WhatsApp'))
@@ -246,11 +262,12 @@
         <td class="num">${num(f.stock)} <span style="color:var(--muted);font-size:11px">${esc(f.unidad)}</span></td>
         <td class="num">${f.diario > 0 ? num(f.mensual) : '—'}</td>
         <td class="num">${f.cobertura == null ? '—' : (f.cobertura > 999 ? '+999' : f.cobertura + ' d')}</td>
+        <td>${chipPedido(f).trim() || ''}</td>
         <td style="width:90px">${barritas(f)}</td>
         <td>${f.proveedor ? esc(f.proveedor) : '<span class="chip">sin compras</span>'}</td>
         <td class="num">${f.ultimaCompra ? esc(fecha(f.ultimaCompra)) : '—'}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="9"><div class="vacio">Nada coincide con el filtro.</div></td></tr>';
+    }).join('') : '<tr><td colspan="10"><div class="vacio">Nada coincide con el filtro.</div></td></tr>';
     FICHA.enlazar('#tbody tr[data-insumo]');
   }
 
@@ -429,6 +446,7 @@
       $(s).addEventListener('change', pintarTabla);
     });
     $('#q-reponer').addEventListener('input', pintarReponer);
+    $('#f-pedidos').addEventListener('change', pintarReponer);
     $('#q-comprar').addEventListener('input', pintarComprar);
 
     // La ficha del insumo es la misma que usa Proveedores: se abre desde
