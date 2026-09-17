@@ -64,7 +64,7 @@
     .cob.bajo    { background:rgba(184,134,11,.14); color:var(--warn); }
     .cob.ok      { background:rgba(47,143,91,.13); color:var(--ok); }
     .cob.holgado { background:var(--bg); color:var(--muted); }
-    .cob.quieto, .cob.off, .cob.fabricado { background:var(--bg); color:var(--muted); }
+    .cob.quieto, .cob.off, .cob.fabricado, .cob.archivado { background:var(--bg); color:var(--muted); }
 
     /* ---- Tabla del listado completo ------------------------------------- */
     .rp-toolbar { display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
@@ -88,7 +88,7 @@
     .punto { display:inline-block; width:9px; height:9px; border-radius:50%; }
     .punto.critico { background:var(--hot); } .punto.bajo { background:var(--warn); }
     .punto.ok { background:var(--ok); } .punto.holgado { background:var(--border); }
-    .punto.quieto, .punto.off, .punto.fabricado { background:transparent; border:1.5px solid var(--border); }
+    .punto.quieto, .punto.off, .punto.fabricado, .punto.archivado { background:transparent; border:1.5px solid var(--border); }
 
     /* ---- Barras de consumo por mes -------------------------------------- */
     .barras { display:flex; gap:2px; align-items:flex-end; height:26px; }
@@ -198,6 +198,7 @@
         <option value="ok">En rango</option>
         <option value="holgado">De sobra</option>
         <option value="quieto">Sin consumo en el período</option>
+        <option value="archivado">Archivadas</option>
       </select>
       <select id="f-tipo">
         <option value="compra">Lo que se compra</option>

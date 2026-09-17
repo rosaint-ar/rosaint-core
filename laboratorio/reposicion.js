@@ -176,9 +176,13 @@ const REPO = (() => {
         inter.push(dias(new Date(compras[i - 1].fecha + 'T12:00:00'), new Date(compras[i].fecha + 'T12:00:00')));
       }
 
+      // Archivada en el Core = fuera de uso: no se repone ni cuenta en ningún
+      // total, pero se puede seguir mirando filtrando por "Archivadas".
       const m = maestro[p.codigo] || {};
+      const archivado = m.estado === 'descontinuado';
       filas.push({
         ...p,
+        archivado,
         familia: m.categoria || null,
         nombre_core: m.nombre || null,
         meses, diario, usoLargo: largo, usoCorto: corto,
@@ -192,7 +196,7 @@ const REPO = (() => {
         tienePedido: pedidos.length > 0,
         disponible, puntoPedido, diasObjetivo, sugerido,
         cobertura: diario > 0 ? Math.round(disponible / diario) : null,
-        alerta: !aj.excluido && diario > 0 && p.se_compra && disponible <= puntoPedido,
+        alerta: !archivado && !aj.excluido && diario > 0 && p.se_compra && disponible <= puntoPedido,
         compras,
         nCompras: compras.length,
         ultimaCompra: ultimo ? ultimo.fecha : null,
@@ -262,6 +266,7 @@ const REPO = (() => {
   // semielaborados se fabrican: su faltante lo resuelve producción, no una
   // orden de compra, así que quedan aparte y no ensucian la lista de alertas.
   function nivel(f) {
+    if (f.archivado) return 'archivado';
     if (!f.se_compra) return 'fabricado';
     if (f.excluido) return 'off';
     if (!(f.diario > 0) || f.cobertura == null) return 'quieto';
@@ -278,6 +283,7 @@ const REPO = (() => {
     quieto: 'Sin consumo en el período',
     off: 'Excluido de las alertas',
     fabricado: 'Se fabrica, no se compra',
+    archivado: 'Archivada: ya no se usa',
   };
 
   return { esc, norm, pesos, num, uni, plural, fecha, fechaHora, dias, mediana, toast, calcular, oportunidades, usoDiario, nivel, NIVEL_TXT, textoPedido };

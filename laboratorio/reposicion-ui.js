@@ -84,8 +84,10 @@
     const alertas = FILAS.filter(f => f.alerta);
     const criticos = alertas.filter(f => (f.cobertura ?? 99) <= 3);
     const monto = alertas.reduce((a, b) => a + b.valorSugerido, 0);
-    const stock = FILAS.filter(f => f.se_compra).reduce((a, b) => a + b.valorStock, 0);
-    const consumo = FILAS.filter(f => f.se_compra).reduce((a, b) => a + b.diario * 30 * (b.costo || 0), 0);
+    // Lo archivado no suma en ningún total: dejó de ser parte del laboratorio.
+    const enUso = FILAS.filter(f => f.se_compra && !f.archivado);
+    const stock = enUso.reduce((a, b) => a + b.valorStock, 0);
+    const consumo = enUso.reduce((a, b) => a + b.diario * 30 * (b.costo || 0), 0);
 
     $('#k-reponer').textContent = alertas.length;
     $('#k-reponer-sub').textContent = criticos.length
@@ -93,11 +95,11 @@
       : 'ninguna urgente';
     $('#k-monto').textContent = pesos(monto);
     $('#k-stock').textContent = pesos(stock);
-    $('#k-stock-sub').textContent = FILAS.filter(f => f.se_compra).length + ' materias primas y envases';
+    $('#k-stock-sub').textContent = enUso.length + ' materias primas y envases';
     $('#k-consumo').textContent = pesos(consumo);
 
     $('#n-reponer').textContent = alertas.length;
-    $('#n-todas').textContent = FILAS.filter(f => f.se_compra).length;
+    $('#n-todas').textContent = enUso.length;
 
     const desde = DATOS?.historia_desde;
     $('#sync-estado').innerHTML = GENERADO
@@ -237,6 +239,8 @@
     const q = norm($('#q').value);
     const fn = $('#f-nivel').value, ft = $('#f-tipo').value, fp = $('#f-prov').value;
     let out = FILAS.filter(f => ft === 'todo' ? true : f.se_compra);
+    // Lo archivado solo se ve si se lo pide expresamente.
+    if (fn !== 'archivado') out = out.filter(f => !f.archivado);
     if (fn) out = out.filter(f => nivel(f) === fn);
     if (fp) out = out.filter(f => f.proveedor === fp);
     if (q) out = out.filter(f => norm(f.codigo + ' ' + f.nombre + ' ' + (f.nombre_core || '') + ' ' + (f.proveedor || '') + ' ' + (f.familia || '')).includes(q));
@@ -273,7 +277,7 @@
 
   // ---- Pestaña: comprar mejor --------------------------------------------
   function pintarComprar() {
-    const todas = REPO.oportunidades(FILAS.filter(f => f.se_compra));
+    const todas = REPO.oportunidades(FILAS.filter(f => f.se_compra && !f.archivado));
     const q = norm($('#q-comprar')?.value || '');
     const op = q ? todas.filter(f => norm([f.codigo, f.nombre, f.proveedor].join(' ')).includes(q)) : todas;
     const total = todas.reduce((a, b) => a + b.sobreprecio, 0);
@@ -306,7 +310,7 @@
 
     // Órdenes colgadas
     let colg = [];
-    for (const f of FILAS) for (const c of (f.colgadas || [])) colg.push({ ...c, insumo: f });
+    for (const f of FILAS) { if (f.archivado) continue; for (const c of (f.colgadas || [])) colg.push({ ...c, insumo: f }); }
     const totalColg = colg.length;
     if (q) colg = colg.filter(c => norm([c.oc, c.proveedor, c.insumo.codigo, c.insumo.nombre].join(' ')).includes(q));
     const cuentaC = $('#cuenta-comprar');
