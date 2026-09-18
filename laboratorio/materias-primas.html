@@ -126,6 +126,9 @@
       margin-bottom: 12px;
     }
     .modal-box textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+    .ficha-box { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; padding: 4px 0; }
+    .ficha-box .nom { color: var(--muted); }
+    .ficha-box .btn { padding: 5px 10px; font-size: 12.5px; }
     .modal-box input:focus, .modal-box select:focus, .modal-box textarea:focus {
       outline: none; border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent-tint);
@@ -183,6 +186,11 @@
       <option value="falta">⚠ Sin INCI (usadas)</option>
       <option value="tiene">Con INCI</option>
       <option value="sin_usar">Sin usar en fórmulas</option>
+    </select>
+    <select id="filter-ficha">
+      <option value="">Ficha del proveedor · todas</option>
+      <option value="tiene">Con ficha</option>
+      <option value="falta">Sin ficha (usadas)</option>
     </select>
     <button class="btn primary" id="btnNueva">+ Nueva MP</button>
   </div>
@@ -254,6 +262,12 @@
       <div class="full">
         <label>Función principal</label>
         <input type="text" id="mi-func">
+      </div>
+      <div class="full">
+        <label>Ficha técnica del proveedor</label>
+        <div class="ficha-box" id="mi-ficha-box"></div>
+        <input type="file" id="mi-ficha-file" accept="application/pdf" hidden
+               onchange="if (this.files[0]) subirFicha(this.files[0]); this.value = '';">
       </div>
       <div class="full">
         <label>Precio USD <span style="text-transform:none; letter-spacing:normal; font-weight:400; color:var(--muted); font-size:11px;">(al crear: precio inicial · al editar: dejá vacío para no cambiar)</span></label>
@@ -406,6 +420,7 @@ function render() {
   const fCat = $('#filter-cat').value;
   const fProv = $('#filter-prov').value;
   const fInci = $('#filter-inci').value;
+  const fFicha = $('#filter-ficha').value;
 
   let rows = ITEMS;
   if (q) rows = rows.filter(i => (i.nombre + ' ' + i.codigo).toLowerCase().includes(q));
@@ -419,6 +434,9 @@ function render() {
     rows = rows.filter(i => !USADAS_EN_FORMULAS.has(i.codigo));
   }
 
+  if (fFicha === 'tiene') rows = rows.filter(i => i.hoja_datos_url);
+  else if (fFicha === 'falta') rows = rows.filter(i => !i.hoja_datos_url && USADAS_EN_FORMULAS.has(i.codigo));
+
   if (!rows.length) {
     $('#content').innerHTML = '<div class="empty-box">Sin resultados</div>';
     return;
@@ -430,6 +448,7 @@ function render() {
         <tr>
           <th>Código</th><th>Nombre</th><th>Categoría</th><th>Proveedor</th>
           <th class="num">USD unit.</th><th class="num">ARS s/IVA</th><th class="num">ARS c/IVA</th>
+          <th style="width:70px; text-align:center;">Ficha</th>
           <th style="width:100px;">Acciones</th>
         </tr>
       </thead>
@@ -452,6 +471,11 @@ function render() {
             <td class="num editable" onclick="abrirPrecio('${esc(i.codigo)}')" title="Clic para actualizar precio">${fmtUSD(p?.usd_unidad)}</td>
             <td class="num" style="color:var(--muted);">${fmtARS(calcARSsinIVA(i.codigo))}</td>
             <td class="num" style="font-weight:600;">${fmtARS(calcARS(i.codigo))}</td>
+            <td style="text-align:center;">
+              ${i.hoja_datos_url
+                ? `<button class="btn-icon" onclick="abrirFicha('${esc(i.codigo)}')" title="Ver la ficha técnica del proveedor">📎</button>`
+                : `<span style="color:var(--border);" title="Sin ficha del proveedor">—</span>`}
+            </td>
             <td>
               <div class="row-actions">
                 <button class="btn-icon warn" onclick="abrirPrecio('${esc(i.codigo)}')" title="Actualizar precio">$</button>
@@ -488,6 +512,7 @@ function abrirNueva() {
   $('#mi-prov').value = '';
   $('#mi-unidad').value = 'Kg';
   $('#miBtnDel').style.display = 'none';
+  pintarFichaBox(null);
   $('#modalItem').classList.add('show');
   setTimeout(() => $('#mi-nombre').focus(), 60);
 }
@@ -513,11 +538,78 @@ function abrirEditar(codigo) {
   $('#mi-notas').value = i.notas || '';
   $('#mi-usd').value = '';
   $('#miBtnDel').style.display = '';
+  pintarFichaBox(i);
   $('#modalItem').classList.add('show');
   setTimeout(() => $('#mi-nombre').focus(), 60);
 }
 
 function cerrarItem() { $('#modalItem').classList.remove('show'); }
+
+// ─── Ficha técnica del proveedor ───────────────────────────────────────────
+// El PDF vive en un depósito privado de Supabase; se abre con un enlace firmado
+// que dura 5 minutos, así el archivo nunca queda público.
+const BUCKET_FICHAS = 'fichas-proveedor';
+const FICHA_SIN_GUARDAR = '<span class="nom">Guardá la materia prima y volvé a abrirla para adjuntar su ficha.</span>';
+
+function pintarFichaBox(i) {
+  const box = $('#mi-ficha-box');
+  if (!i || !editando) { box.innerHTML = FICHA_SIN_GUARDAR; return; }
+  box.innerHTML = i.hoja_datos_url
+    ? `<span class="nom">📎 ${esc(i.hoja_datos_url.split('/').pop())}</span>
+       <button type="button" class="btn ghost" onclick="abrirFicha('${esc(i.codigo)}')">Ver</button>
+       <button type="button" class="btn ghost" onclick="elegirFicha()">Reemplazar</button>
+       <button type="button" class="btn ghost" style="color:var(--hot);" onclick="quitarFicha('${esc(i.codigo)}')">Quitar</button>`
+    : `<span class="nom">Todavía no tiene ficha del proveedor.</span>
+       <button type="button" class="btn ghost" onclick="elegirFicha()">Adjuntar PDF</button>`;
+}
+
+function elegirFicha() { $('#mi-ficha-file').click(); }
+
+async function abrirFicha(codigo) {
+  const i = ITEMS.find(x => x.codigo === codigo);
+  if (!i || !i.hoja_datos_url) return;
+  const { data, error } = await sb.storage.from(BUCKET_FICHAS).createSignedUrl(i.hoja_datos_url, 300);
+  if (error) { toast('No se pudo abrir la ficha: ' + error.message, 'err'); return; }
+  window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+async function subirFicha(file) {
+  if (!editando) { toast('Guardá la materia prima antes de adjuntar la ficha', 'err'); return; }
+  if (file.type !== 'application/pdf') { toast('La ficha tiene que ser un PDF', 'err'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('El PDF supera los 10 MB', 'err'); return; }
+
+  const ruta = `mp/${editando}.pdf`;
+  toast('Subiendo la ficha…');
+  const subida = await sb.storage.from(BUCKET_FICHAS)
+    .upload(ruta, file, { upsert: true, contentType: 'application/pdf' });
+  if (subida.error) { toast('No se pudo subir: ' + subida.error.message, 'err'); return; }
+
+  const { error } = await sb.from('items').update({ hoja_datos_url: ruta }).eq('codigo', editando);
+  if (error) { toast('El archivo se subió pero no se pudo guardar en la MP: ' + error.message, 'err'); return; }
+
+  const i = ITEMS.find(x => x.codigo === editando);
+  if (i) i.hoja_datos_url = ruta;
+  pintarFichaBox(i);
+  render();
+  toast('Ficha adjuntada', 'ok');
+}
+
+async function quitarFicha(codigo) {
+  const i = ITEMS.find(x => x.codigo === codigo);
+  if (!i || !i.hoja_datos_url) return;
+  if (!confirm('¿Quitar la ficha técnica de esta materia prima?')) return;
+
+  const borrado = await sb.storage.from(BUCKET_FICHAS).remove([i.hoja_datos_url]);
+  if (borrado.error) { toast('No se pudo borrar el archivo: ' + borrado.error.message, 'err'); return; }
+
+  const { error } = await sb.from('items').update({ hoja_datos_url: null }).eq('codigo', codigo);
+  if (error) { toast('No se pudo actualizar la MP: ' + error.message, 'err'); return; }
+
+  i.hoja_datos_url = null;
+  pintarFichaBox(i);
+  render();
+  toast('Ficha quitada', 'ok');
+}
 
 async function guardarItem() {
   const codigo = $('#mi-codigo').value.trim();
@@ -651,6 +743,7 @@ $('#search').addEventListener('input', render);
 $('#filter-cat').addEventListener('change', render);
 $('#filter-prov').addEventListener('change', render);
 $('#filter-inci').addEventListener('change', render);
+$('#filter-ficha').addEventListener('change', render);
 
 $('#miBtnSave').addEventListener('click', guardarItem);
 $('#miBtnDel').addEventListener('click', eliminarItem);
