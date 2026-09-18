@@ -850,24 +850,28 @@ async function cargarML() {
       <button class="subtab active" data-sub="pubs">Publicaciones</button>
       <button class="subtab" data-sub="promos">Promociones</button>
       <button class="subtab" data-sub="ads">Publicidad</button>
+      <button class="subtab" data-sub="precios">Precios sugeridos</button>
       <button class="subtab" data-sub="cfg">Configuración</button>
     </div>
 
     <div id="sub-pubs"></div>
     <div id="sub-promos" style="display:none;"></div>
     <div id="sub-ads" style="display:none;"></div>
+    <div id="sub-precios" style="display:none;"></div>
     <div id="sub-cfg" style="display:none;"></div>
   `;
 
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','promos','ads','cfg'].forEach(v => {
+    ['pubs','promos','ads','precios','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
   }));
 
-  await Promise.all([cargarPublicaciones(), cargarPromociones(), cargarPublicidad(), cargarConfigML()]);
+  // Config y precios sugeridos van despues: leen PUBS para resaltar pesos y umbrales.
+  await Promise.all([cargarPublicaciones(), cargarPromociones(), cargarPublicidad()]);
+  await Promise.all([cargarConfigML(), cargarPreciosSugeridos()]);
 }
 
 // ─────── SUB-TAB PROMOCIONES ───────
@@ -878,7 +882,7 @@ const fFecha = f => f ? new Date(f).toLocaleDateString('es-AR', { day: '2-digit'
 // Tamaño del producto según el título (para saber qué regla de descuento aplica).
 function tamanoDe(titulo) {
   const t = (titulo || '').toLowerCase();
-  if (/combo/.test(t)) return 'combo';
+  if (/combo/.test(t)) return /crema/.test(t) ? 'combo-crema' : 'combo-gel';
   if (/10\s?kg/.test(t)) return '10kg';
   if (/4\s?kg/.test(t)) return '4kg';
   if (/1\s?kg/.test(t)) return '1kg';
@@ -930,7 +934,7 @@ const pctTxt = n => (n == null) ? '—' : (+Number(n).toFixed(2)).toLocaleString
 // Control: muestra el panorama de TODAS las publicaciones en promo con su descuento
 // real (general y Meli+, exacto) y marca las que SUPERAN el tope Meli+ costeado por
 // tamaño. Distingue DEAL (vos elegís) de SMART/oferta compartida (ML gestiona).
-// Combos: regla propia a definir, no se evalúan.
+// Combos: dos familias — combo-gel (30/35) y combo-crema (35/40).
 function renderControlDescuentos() {
   const cont = $('#promo-control');
   if (!cont) return;
@@ -946,12 +950,11 @@ function renderControlDescuentos() {
   }
 
   const rows = [];
-  let excede = 0, combos = 0, haySmart = false;
+  let excede = 0, sinRegla = 0, haySmart = false;
   for (const p of enPromo) {
     const tam = tamanoDe(p.titulo);
-    const esCombo = tam === 'combo';
-    if (esCombo) combos++;
-    const regla = (tam && !esCombo) ? CTRL_REGLAS[tam] : null;
+    const regla = tam ? CTRL_REGLAS[tam] : null;
+    if (!regla) sinRegla++;
     const tope = regla ? Number(regla.desc_meli_pct) : null;
     const gen = 100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio);
     const meli = p.precio_meli != null ? 100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio) : null;
@@ -960,7 +963,7 @@ function renderControlDescuentos() {
     if (genExc || meliExc) excede++;
     const tipos = tiposPorItem[p.item_id] ? Array.from(tiposPorItem[p.item_id]) : [];
     if (tipos.includes('SMART')) haySmart = true;
-    rows.push({ titulo: p.titulo, etq: regla ? regla.etiqueta : (esCombo ? 'combo' : '—'), tope, gen, meli, genExc, meliExc, tipos, esCombo });
+    rows.push({ titulo: p.titulo, etq: regla ? regla.etiqueta : '—', tope, gen, meli, genExc, meliExc, tipos });
   }
   // Los que superan el tope, primero.
   rows.sort((a, b) => (((b.genExc || b.meliExc) ? 1 : 0) - ((a.genExc || a.meliExc) ? 1 : 0)));
@@ -975,7 +978,7 @@ function renderControlDescuentos() {
       <td>${esc(r.etq)}</td>
       <td class="num ${r.genExc ? 'pct-off' : ''}">${pctTxt(r.gen)}</td>
       <td class="num ${r.meliExc ? 'pct-off' : ''}">${pctTxt(r.meli)}</td>
-      <td class="num pct-ok">${r.esCombo ? 'a definir' : pctTxt(r.tope)}</td>
+      <td class="num pct-ok">${r.tope != null ? pctTxt(r.tope) : '—'}</td>
       <td>${tipoBadges(r.tipos)}</td>
     </tr>`).join('');
 
@@ -985,7 +988,7 @@ function renderControlDescuentos() {
     : '✓ Ningún descuento supera el tope de Meli+';
   const notas = [];
   if (haySmart) notas.push('Las <b>SMART</b> son ofertas compartidas: ML gestiona el descuento (y co-financia parte); no podés fijar general/Meli+ por separado.');
-  if (combos) notas.push(`${combos} combo${combos !== 1 ? 's' : ''}: regla propia a definir (no evaluados).`);
+  if (sinRegla) notas.push(`${sinRegla} sin regla por tamaño (revisar el título).`);
 
   cont.innerHTML = `
     <div class="control-card ${clase}">
@@ -1693,63 +1696,240 @@ async function cargarBitacora() {
 }
 
 // ─────── 3.3) SUB-TAB CONFIG ML ───────
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB CONFIGURACIÓN — espejo de lo que Mercado Libre cobra hoy
+//
+// Lo que la API de ML puede confirmar se actualiza solo con "Verificar con ML".
+// Lo que NO expone la API se edita a mano desde la Ayuda oficial y queda con su
+// fuente y su fecha a la vista:
+//   · el cargo fijo por PESO (listing_prices ignora el peso y devuelve el mínimo)
+//   · el envío por debajo de $33.000 (ahí el envío gratis es opcional, no se cotiza)
+//   · el costo de las cuotas (la API informa el add-on de Premium, no el de "3 cuotas")
+// ═══════════════════════════════════════════════════════════════════════════
+let ML_COSTO_UNIDAD = [], ML_COSTO_ENVIO = [], ML_CUOTAS = [], ML_SYNC = [];
+
+const AYUDA_ML = {
+  unidad: 'https://www.mercadolibre.com.ar/ayuda/cambios-costos-venta_42400',
+  envio:  'https://www.mercadolibre.com.ar/ayuda/40538',
+  cuotas: 'https://www.mercadolibre.com.ar/ayuda/Costos-para-vender-productos_870',
+};
+const fFechaHora = f => f
+  ? new Date(f).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+  : '—';
+const fPeso = kg => Number(kg) >= 99999 ? 'más de 15 kg' : `hasta ${Number(kg)} kg`;
+const fFranja = (d, h) => h == null ? `${fmtARS(d)} o más`
+  : (Number(d) === 0 ? `hasta ${fmtARS(h)}` : `${fmtARS(d)} a ${fmtARS(h)}`);
+
+// Pivot: filas = tramo de peso, columnas = franja de precio.
+function tablaPorPeso(filas, campo, pesosUsados) {
+  const franjas = [...new Map(filas.map(r => [String(r.precio_desde),
+    { d: Number(r.precio_desde), h: r.precio_hasta == null ? null : Number(r.precio_hasta) }])).values()]
+    .sort((a, b) => a.d - b.d);
+  const pesos = [...new Set(filas.map(r => Number(r.peso_hasta_kg)))].sort((a, b) => a - b);
+  return `
+    <table class="tbl">
+      <thead><tr><th>Peso facturable</th>${franjas.map(f => `<th class="num">${fFranja(f.d, f.h)}</th>`).join('')}</tr></thead>
+      <tbody>${pesos.map(p => {
+        const usado = pesosUsados.has(p);
+        return `<tr${usado ? ' style="background:var(--surface-2);"' : ''}>
+          <td style="font-weight:${usado ? 600 : 400};">${fPeso(p)}${usado ? ' <span class="pill muted">tus productos</span>' : ''}</td>
+          ${franjas.map(f => {
+            const c = filas.find(r => Number(r.peso_hasta_kg) === p && Number(r.precio_desde) === f.d);
+            return `<td class="num">${c ? fmtARS(c[campo]) : '—'}</td>`;
+          }).join('')}
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
 async function cargarConfigML() {
-  const [params, cargos, envios] = await Promise.all([
+  const [params, unidad, envio, cuotas, sync] = await Promise.all([
     sb.from('ml_parametros').select('*').order('clave'),
-    sb.from('ml_cargo_fijo').select('*').eq('vigente', true).order('precio_hasta'),
-    sb.from('ml_envio_peso').select('*').eq('vigente', true).order('peso_hasta_kg'),
+    sb.from('ml_costo_unidad').select('*').eq('vigente', true).order('precio_desde').order('peso_hasta_kg'),
+    sb.from('ml_costo_envio').select('*').eq('vigente', true).order('precio_desde').order('peso_hasta_kg'),
+    sb.from('ml_costo_cuotas').select('*').eq('vigente', true).order('cuotas_cantidad'),
+    sb.from('ml_costos_sync').select('*').order('corrido_en', { ascending: false }).limit(40),
   ]);
   ML_PARAMS = params.data || [];
-  ML_CARGO = cargos.data || [];
-  ML_ENVIO = envios.data || [];
+  ML_COSTO_UNIDAD = unidad.data || [];
+  ML_COSTO_ENVIO = envio.data || [];
+  ML_CUOTAS = cuotas.data || [];
+  ML_SYNC = sync.data || [];
+
+  const par = c => ML_PARAMS.find(p => p.clave === c)?.valor;
+  const umbral = Number(par('umbral_envio_gratis') || 33000);
+  const cuota3 = ML_CUOTAS.find(c => Number(c.cuotas_cantidad) === 3);
+  const ultimoSync = ML_SYNC[0]?.corrido_en;
+
+  // Tramos de peso que efectivamente usan las publicaciones activas: se resaltan
+  // para no tener que leer 27 filas cuando importan cuatro.
+  const topes = [...new Set(ML_COSTO_UNIDAD.map(r => Number(r.peso_hasta_kg)))].sort((a, b) => a - b);
+  const pesosUsados = new Set(PUBS.filter(p => p.estado === 'active' && p.peso_kg)
+    .map(p => topes.find(t => Number(p.peso_kg) <= t)).filter(t => t != null));
+
+  // Publicaciones cerca del acantilado de los $33.000.
+  const alBorde = PUBS.filter(p => p.zona_umbral === 'al borde')
+    .sort((a, b) => Number(a.falta_para_umbral) - Number(b.falta_para_umbral));
 
   $('#sub-cfg').innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="v">${Number(par('comision_estandar_pct') || 0).toFixed(2)}%</div><div class="l">Comisión por vender</div></div>
+      <div class="kpi"><div class="v">${cuota3 ? Number(cuota3.costo_pct).toFixed(2) + '%' : '—'}</div><div class="l">3 cuotas al mismo precio</div></div>
+      <div class="kpi hot"><div class="v">${fmtARS(umbral)}</div><div class="l">Umbral de envío gratis</div></div>
+      <div class="kpi"><div class="v" style="font-size:14px;">${fFechaHora(ultimoSync)}</div><div class="l">Última verificación</div></div>
+    </div>
+
+    ${alBorde.length ? `
+      <div class="canal-hint ml" style="border-color:var(--hot);">
+        <span class="icon">⚠️</span>
+        <div class="txt">
+          <b>${alBorde.length} publicación${alBorde.length > 1 ? 'es' : ''} al borde de los ${fmtARS(umbral)}</b>
+          Si el precio final cruza ese valor, el envío gratis pasa a ser obligatorio y lo pagás vos.
+          ${alBorde.map(p => `<div style="margin-top:4px;">· <b>${esc((p.titulo || '').slice(0, 42))}</b> —
+            a ${fmtARS(p.falta_para_umbral)} del umbral; cruzarlo cuesta
+            <b style="color:var(--hot);">${Number(p.costo_cruzar_umbral_pts || 0).toFixed(1)} puntos</b> de margen</div>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <div class="save-row" style="margin:14px 0 6px;">
+      <span class="spacer"></span>
+      <span class="status" id="ml-sync-status"></span>
+      <button class="btn" id="ml-sync-dry">Verificar sin aplicar</button>
+      <button class="btn primary" id="ml-sync-run">Verificar con ML y actualizar</button>
+    </div>
+
     <details class="config-box" open>
-      <summary>Parámetros ML <span class="sub">— valores globales del cálculo de rentabilidad</span></summary>
+      <summary>Parámetros generales <span class="sub">— los usa el cálculo de rentabilidad</span></summary>
       <div class="cfg-body">
-        ${ML_PARAMS.length ? `
-          <table class="tbl">
-            <thead><tr><th>Clave</th><th class="num">Valor</th><th>Descripción</th></tr></thead>
-            <tbody>${ML_PARAMS.map(p => `
-              <tr data-clave="${esc(p.clave)}">
-                <td style="font-family:var(--font-mono); color:var(--accent); font-size:11.5px;">${esc(p.clave)}</td>
-                <td class="num"><input type="number" step="0.01" class="inline-edit ml-param-val" value="${p.valor ?? ''}"></td>
-                <td style="color:var(--muted); font-size:12px;">${esc(p.descripcion || '—')}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-          <div class="save-row"><span class="spacer"></span><span class="status" id="ml-params-status"></span><button class="btn primary" id="ml-params-save">Guardar parámetros</button></div>
-        ` : '<div style="color:var(--muted); font-size:13px;">Sin parámetros.</div>'}
+        <table class="tbl">
+          <thead><tr><th>Clave</th><th class="num">Valor</th><th>Qué es</th><th class="date">Actualizado</th></tr></thead>
+          <tbody>${ML_PARAMS.map(p => `
+            <tr data-clave="${esc(p.clave)}">
+              <td class="mono" style="color:var(--accent);">${esc(p.clave)}</td>
+              <td class="num"><input type="number" step="0.00001" class="inline-edit ml-param-val" value="${p.valor ?? ''}"></td>
+              <td class="muted">${esc(p.descripcion || '—')}</td>
+              <td class="date">${fFechaHora(p.actualizado_en)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="save-row"><span class="spacer"></span><span class="status" id="ml-params-status"></span><button class="btn primary" id="ml-params-save">Guardar parámetros</button></div>
       </div>
     </details>
 
     <details class="config-box">
-      <summary>Cargos fijos por precio <span class="sub">— auto-detectados por el sync</span></summary>
+      <summary>Costo por unidad vendida
+        <span class="sub">— por precio y por peso · solo debajo de ${fmtARS(umbral)}</span></summary>
       <div class="cfg-body">
-        ${ML_CARGO.length ? `
-          <table class="tbl">
-            <thead><tr><th class="num">Precio hasta</th><th class="num">Cargo</th></tr></thead>
-            <tbody>${ML_CARGO.map(c => `<tr><td class="num" style="font-weight:600;">${fmtARS(c.precio_hasta)}</td><td class="num">${fmtARS(c.cargo)}</td></tr>`).join('')}</tbody>
-          </table>
-        ` : '<div style="color:var(--muted); font-size:13px;">Sin cargos.</div>'}
+        <p class="muted" style="font-size:12.5px; margin:0 0 10px;">
+          Aplica a Full, correo, colecta y puntos de despacho. El peso es el <b>facturable</b>:
+          el mayor entre el físico y el volumétrico. En Flex, retiro en domicilio y acuerdo con el
+          comprador se paga siempre el valor de la primera fila.
+          La API de ML <b>no expone esta escala</b>, así que se carga a mano desde
+          <a href="${AYUDA_ML.unidad}" target="_blank" rel="noopener">la Ayuda oficial</a>.
+        </p>
+        ${ML_COSTO_UNIDAD.length ? tablaPorPeso(ML_COSTO_UNIDAD, 'cargo', pesosUsados)
+          : '<div class="muted">Sin datos cargados.</div>'}
+        <p class="muted" style="font-size:11.5px; margin:10px 0 0;">
+          Fuente: ${esc(ML_COSTO_UNIDAD[0]?.fuente || '—')} · vigente desde ${esc(ML_COSTO_UNIDAD[0]?.vigente_desde || '—')}
+          · última edición ${fFechaHora(ML_COSTO_UNIDAD[0]?.actualizado_en)}
+        </p>
       </div>
     </details>
 
     <details class="config-box">
-      <summary>Envío por peso <span class="sub">— auto-detectado por el sync</span></summary>
+      <summary>Costo de ofrecer envío gratis
+        <span class="sub">— reputación verde, descuento ya aplicado</span></summary>
       <div class="cfg-body">
-        ${ML_ENVIO.length ? `
-          <table class="tbl">
-            <thead><tr><th class="num">Peso hasta (Kg)</th><th class="num">Costo base</th></tr></thead>
-            <tbody>${ML_ENVIO.map(e => `<tr><td class="num" style="font-weight:600;">${Number(e.peso_hasta_kg).toFixed(2)} Kg</td><td class="num">${fmtARS(e.costo_base)}</td></tr>`).join('')}</tbody>
-          </table>
-        ` : '<div style="color:var(--muted); font-size:13px;">Sin costos.</div>'}
+        <p class="muted" style="font-size:12.5px; margin:0 0 10px;">
+          Ya incluye el descuento por reputación (30% por debajo de ${fmtARS(umbral)}, 50% por encima).
+          Los tramos desde ${fmtARS(umbral)} los confirma el botón de verificación contra la API;
+          los de abajo se cargan de <a href="${AYUDA_ML.envio}" target="_blank" rel="noopener">la Ayuda oficial</a>,
+          porque ahí el envío gratis es opcional y ML no lo cotiza.
+        </p>
+        ${ML_COSTO_ENVIO.length ? tablaPorPeso(ML_COSTO_ENVIO, 'costo', pesosUsados)
+          : '<div class="muted">Sin datos cargados.</div>'}
+        <p class="muted" style="font-size:11.5px; margin:10px 0 0;">
+          Fuente: ${esc(ML_COSTO_ENVIO[0]?.fuente || '—')} · última edición ${fFechaHora(ML_COSTO_ENVIO[0]?.actualizado_en)}
+        </p>
       </div>
+    </details>
+
+    <details class="config-box">
+      <summary>Costo de ofrecer cuotas <span class="sub">— a mano, la API no lo expone</span></summary>
+      <div class="cfg-body">
+        <p class="muted" style="font-size:12.5px; margin:0 0 10px;">
+          Se suma a la comisión. Para gold_pro la API devuelve el add-on de la publicación Premium
+          (13,4%), que <b>no</b> es lo mismo: el valor bueno está en
+          <a href="${AYUDA_ML.cuotas}" target="_blank" rel="noopener">la Ayuda oficial</a> y se confirma
+          contra las ventas reales.
+        </p>
+        <table class="tbl">
+          <thead><tr><th>Opción</th><th class="num">Costo</th><th class="date">Actualizado</th></tr></thead>
+          <tbody>${ML_CUOTAS.map(c => `
+            <tr data-cuota="${c.cuotas_cantidad}">
+              <td>${esc(c.etiqueta || (c.cuotas_cantidad + ' cuotas'))}</td>
+              <td class="num"><input type="number" step="0.01" class="inline-edit ml-cuota-val" value="${c.costo_pct ?? ''}"></td>
+              <td class="date">${fFechaHora(c.actualizado_en)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="save-row"><span class="spacer"></span><span class="status" id="ml-cuotas-status"></span><button class="btn primary" id="ml-cuotas-save">Guardar cuotas</button></div>
+      </div>
+    </details>
+
+    <details class="config-box">
+      <summary>Historial de verificaciones <span class="sub">— qué se miró y qué cambió</span></summary>
+      <div class="cfg-body" id="ml-sync-hist">${renderHistorialSync()}</div>
     </details>
   `;
 
-  const mlSave = $('#ml-params-save');
-  if (mlSave) mlSave.addEventListener('click', guardarMLParams);
+  $('#ml-params-save')?.addEventListener('click', guardarMLParams);
+  $('#ml-cuotas-save')?.addEventListener('click', guardarMLCuotas);
+  $('#ml-sync-run')?.addEventListener('click', () => verificarCostosML(true));
+  $('#ml-sync-dry')?.addEventListener('click', () => verificarCostosML(false));
+}
+
+function renderHistorialSync() {
+  if (!ML_SYNC.length) return '<div class="muted" style="font-size:13px;">Todavía no se corrió ninguna verificación.</div>';
+  return `
+    <table class="tbl">
+      <thead><tr><th class="date">Cuándo</th><th>Concepto</th><th class="num">Antes</th><th class="num">Ahora</th><th>Estado</th></tr></thead>
+      <tbody>${ML_SYNC.map(h => `
+        <tr>
+          <td class="date">${fFechaHora(h.corrido_en)}</td>
+          <td>${esc(h.concepto)}${h.detalle ? `<div class="muted" style="font-size:11px;">${esc(h.detalle)}</div>` : ''}</td>
+          <td class="num">${esc(h.valor_anterior ?? '—')}</td>
+          <td class="num">${esc(h.valor_nuevo ?? '—')}</td>
+          <td><span class="pill ${h.origen === 'manual' ? 'warn' : (h.coincide ? 'ok' : 'hot')}">${
+            h.origen === 'manual' ? 'revisar a mano' : (h.coincide ? 'sin cambios' : 'cambió')}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// Corre ml-costos-sync. Con aplicar=false solo informa; con true escribe los
+// valores que la API confirmó (nunca toca las tablas que ML no expone).
+async function verificarCostosML(aplicar) {
+  const btns = [$('#ml-sync-run'), $('#ml-sync-dry')];
+  btns.forEach(b => b && (b.disabled = true));
+  const st = $('#ml-sync-status');
+  st.textContent = 'Consultando a Mercado Libre…'; st.className = 'status';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-costos-sync', { body: { aplicar } });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || 'Respuesta inesperada');
+    const r = data.resumen;
+    st.textContent = `✓ ${r.verificados} verificados · ${r.con_cambio} con cambio · ${r.a_revisar_a_mano} a mano`;
+    st.className = 'status ' + (r.con_cambio ? 'err' : 'ok');
+    toast(aplicar
+      ? `Costos verificados: ${r.con_cambio} actualizados`
+      : `Verificación sin aplicar: ${r.con_cambio} diferencias`, r.con_cambio ? 'warn' : 'ok');
+    await cargarConfigML();
+    if (aplicar && r.con_cambio) await cargarPublicaciones();
+  } catch (err) {
+    st.textContent = '✗ ' + (err.message || err); st.className = 'status err';
+    toast('No se pudo verificar: ' + (err.message || err), 'err');
+  } finally { btns.forEach(b => b && (b.disabled = false)); }
 }
 
 async function guardarMLParams() {
@@ -1759,13 +1939,201 @@ async function guardarMLParams() {
     for (const tr of $$('#sub-cfg tr[data-clave]')) {
       const clave = tr.dataset.clave;
       const valor = parseFloat(tr.querySelector('.ml-param-val').value);
-      const { error } = await sb.from('ml_parametros').update({ valor: isNaN(valor) ? null : valor, actualizado_en: new Date().toISOString() }).eq('clave', clave);
+      const { error } = await sb.from('ml_parametros')
+        .update({ valor: isNaN(valor) ? null : valor, actualizado_en: new Date().toISOString() })
+        .eq('clave', clave);
       if (error) throw new Error(clave + ': ' + error.message);
     }
     st.textContent = '✓ Guardado'; st.className = 'status ok';
     toast('Parámetros actualizados', 'ok');
+    await cargarPublicaciones();
   } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
   finally { btn.disabled = false; }
+}
+
+async function guardarMLCuotas() {
+  const btn = $('#ml-cuotas-save'); btn.disabled = true;
+  const st = $('#ml-cuotas-status'); st.textContent = 'Guardando…'; st.className = 'status';
+  try {
+    for (const tr of $$('#sub-cfg tr[data-cuota]')) {
+      const n = Number(tr.dataset.cuota);
+      const valor = parseFloat(tr.querySelector('.ml-cuota-val').value);
+      if (isNaN(valor)) continue;
+      const { error } = await sb.from('ml_costo_cuotas')
+        .update({ costo_pct: valor, actualizado_en: new Date().toISOString(), fuente: 'manual' })
+        .eq('cuotas_cantidad', n);
+      if (error) throw new Error(n + ' cuotas: ' + error.message);
+    }
+    st.textContent = '✓ Guardado'; st.className = 'status ok';
+    toast('Costo de cuotas actualizado', 'ok');
+    await cargarPublicaciones();
+  } catch (err) { st.textContent = '✗ ' + err.message; st.className = 'status err'; toast('Error: ' + err.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUB-TAB PRECIOS SUGERIDOS
+//
+// Cuánto habría que cobrar para recuperar el margen que cada publicación tenía
+// antes del aumento de ML del 01-09-2026, sin cruzar el umbral de envío gratis.
+// Es una propuesta: no escribe nada en Mercado Libre.
+// ═══════════════════════════════════════════════════════════════════════════
+let SUGERIDOS = [];
+
+let ESCALONES = [];
+
+// ─────── Meli+ y escalones de cargo fijo ───────
+// Dos efectos que solo se ven mirando el precio contra los cortes de ML:
+//  · el 5% extra de Meli+ cuesta plata, salvo que el descuento cruce un corte hacia
+//    abajo — ahí el ahorro de cargo fijo puede más que compensar
+//  · un precio apenas ARRIBA de un corte paga el escalón entero en todas las ventas
+function renderEscalones() {
+  if (!ESCALONES.length) return '';
+  const conMeli = ESCALONES.filter(e => Number(e.pn) !== Number(e.pm));
+  const malUbicadas = ESCALONES.filter(e => e.conviene_bajar);
+
+  return `
+    ${malUbicadas.length ? `
+      <div class="canal-hint ml" style="border-color:var(--ok); margin-top:18px;">
+        <span class="icon">💡</span>
+        <div class="txt">
+          <b>${malUbicadas.length} precio${malUbicadas.length > 1 ? 's mal ubicados' : ' mal ubicado'} respecto del corte de ML</b>
+          Están apenas por encima de un corte de cargo fijo. Bajarlos unos pesos ahorra el escalón
+          entero, en todas las ventas — sin subir nada.
+          ${malUbicadas.map(e => `<div style="margin-top:4px;">· <b>${esc((e.titulo || '').slice(0, 40))}</b> —
+            hoy ${fmtARS(e.pn)} (${e.arriba_del_corte > 0 ? fmtARS(e.arriba_del_corte) + ' arriba del corte' : 'justo en el corte'}):
+            bajando a ${fmtARS(Number(e.pn) - Number(e.arriba_del_corte) - 1)} ahorrás
+            <b style="color:var(--ok);">${fmtARS(e.ahorro_si_baja)} por unidad</b>
+            y el margen pasa de ${Number(e.margen_normal_pct).toFixed(1)}% a
+            <b style="color:var(--ok);">${Number(e.margen_si_baja_pct).toFixed(1)}%</b></div>`).join('')}
+        </div>
+      </div>` : ''}
+
+    <details class="config-box" style="margin-top:18px;">
+      <summary>Qué te cuesta cada venta Meli+
+        <span class="sub">— el 5% extra de descuento, publicación por publicación</span></summary>
+      <div class="cfg-body">
+        <p class="muted" style="font-size:12.5px; margin:0 0 10px;">
+          A los compradores Meli+ se les hace 5 puntos más de descuento. Casi siempre eso baja el
+          margen, pero cuando el descuento cruza un corte de cargo fijo hacia abajo el ahorro puede
+          más que compensar: ahí el margen Meli+ sale <b>mejor</b> que el normal (en plata igual entra menos).
+        </p>
+        <table class="tbl">
+          <thead><tr>
+            <th>Producto</th><th class="num">Precio normal</th><th class="num">Precio Meli+</th>
+            <th class="num">Margen normal</th><th class="num">Margen Meli+</th>
+            <th class="num">Diferencia</th><th class="num">Deja de entrar</th>
+          </tr></thead>
+          <tbody>${conMeli.map(e => {
+            const dif = Number(e.margen_meli_pct) - Number(e.margen_normal_pct);
+            return `<tr>
+              <td>${esc((e.titulo || '').slice(0, 36))}<div class="muted" style="font-size:11px;">${esc(e.codigo_sku || '')}</div></td>
+              <td class="num">${fmtARS(e.pn)}</td>
+              <td class="num">${fmtARS(e.pm)}</td>
+              <td class="num muted">${Number(e.margen_normal_pct).toFixed(1)}%</td>
+              <td class="num"><span class="pill ${dif >= 0 ? 'ok' : 'hot'}">${Number(e.margen_meli_pct).toFixed(1)}%</span></td>
+              <td class="num" style="color:${dif >= 0 ? 'var(--ok)' : 'var(--hot)'};">${dif >= 0 ? '+' : ''}${dif.toFixed(1)} pts</td>
+              <td class="num">${fmtARS(e.pierde_por_meli)}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </details>`;
+}
+
+async function cargarPreciosSugeridos() {
+  const [sug, esc_] = await Promise.all([
+    sb.from('v_ml_precios_sugeridos').select('*'),
+    sb.from('v_ml_escalones').select('*'),
+  ]);
+  const { data, error } = sug;
+  ESCALONES = (esc_.data || []).sort((a, b) => String(a.codigo_sku).localeCompare(String(b.codigo_sku)));
+  if (error) { $('#sub-precios').innerHTML = `<div class="muted">Error: ${esc(error.message)}</div>`; return; }
+  // Orden por código de SKU: agrupa por familia y de menor a mayor tamaño
+  // (10201/10202/10203 = Clásica 1, 4 y 10 kg), que es como se lee el catálogo.
+  SUGERIDOS = (data || []).sort((a, b) => String(a.codigo_sku).localeCompare(String(b.codigo_sku)));
+
+  const conSuba = SUGERIDOS.filter(s => Number(s.suba_pct) > 0);
+  const topeadas = SUGERIDOS.filter(s => s.topeado_por_umbral);
+  const subaProm = conSuba.length
+    ? conSuba.reduce((a, s) => a + Number(s.suba_pct), 0) / conSuba.length : 0;
+  const caidaProm = SUGERIDOS.length
+    ? SUGERIDOS.reduce((a, s) => a + Number(s.caida_pts || 0), 0) / SUGERIDOS.length : 0;
+
+  $('#sub-precios').innerHTML = `
+    <div class="canal-hint ml">
+      <span class="icon">🧮</span>
+      <div class="txt">
+        <b>Precios para recuperar el margen anterior</b>
+        Cuánto habría que cobrar para volver a la rentabilidad que cada publicación tenía antes del
+        aumento de costos del 1 de septiembre. Ninguna propuesta cruza los ${fmtARS(SUGERIDOS[0]?.umbral_envio || 33000)}:
+        si para llegar al margen habría que pasarlo, se topea y se marca.
+        <b>Esto no modifica nada en Mercado Libre.</b>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi hot"><div class="v">${caidaProm.toFixed(1)} pts</div><div class="l">Margen perdido (promedio)</div></div>
+      <div class="kpi"><div class="v">${conSuba.length}</div><div class="l">Publicaciones a ajustar</div></div>
+      <div class="kpi"><div class="v">+${subaProm.toFixed(1)}%</div><div class="l">Suba promedio necesaria</div></div>
+      <div class="kpi warn"><div class="v">${topeadas.length}</div><div class="l">Frenadas por el umbral</div></div>
+    </div>
+
+    <table class="tbl">
+      <thead><tr>
+        <th>Producto</th><th class="num">Publicado hoy</th><th class="num">Desc. real</th>
+        <th class="num">Precio efectivo</th><th class="num">Margen antes</th><th class="num">Margen hoy</th>
+        <th class="num">Efectivo sugerido</th><th class="num">A publicar</th><th class="num">Suba</th><th>Umbral</th>
+      </tr></thead>
+      <tbody>${SUGERIDOS.map(s => {
+        const suba = Number(s.suba_pct ?? 0);
+        const zona = s.topeado_por_umbral ? 'hot' : (s.zona_umbral === 'al borde' ? 'warn' : 'muted');
+        const zonaTxt = s.topeado_por_umbral ? 'topeado' : (s.zona_umbral === 'al borde' ? 'al borde' : s.zona_umbral);
+        // Con menos de 3 unidades vendidas no hay promedio confiable: ahí el
+        // precio efectivo es el precio_meli cargado, y se avisa.
+        const flojo = s.origen_precio !== 'ventas';
+        return `<tr>
+          <td>${esc((s.titulo || '').slice(0, 40))}<div class="muted" style="font-size:11px;">${esc(s.codigo_sku || '')} · ${Number(s.peso_kg || 0)} kg</div></td>
+          <td class="num">${fmtARS(s.precio_publicado)}</td>
+          <td class="num muted">${Number(s.descuento_pct || 0).toFixed(1)}%</td>
+          <td class="num" title="${flojo
+            ? 'Sin ventas suficientes en los últimos 60 días: se usa el precio con descuento Meli, que es el más bajo cargado'
+            : 'Promedio real de ' + s.uds_efectivo + ' unidades vendidas en los últimos 60 días'}">
+            ${fmtARS(s.precio_efectivo)}
+            <div class="muted" style="font-size:11px;">${flojo ? '⚠ sin ventas' : s.uds_efectivo + ' u. reales'}</div></td>
+          <td class="num muted">${Number(s.rent_anterior).toFixed(1)}%</td>
+          <td class="num"><span class="pill ${Number(s.caida_pts) < 0 ? 'hot' : 'ok'}" title="Cambio: ${Number(s.caida_pts).toFixed(1)} pts">${Number(s.rent_hoy).toFixed(1)}%</span></td>
+          <td class="num" style="font-weight:600;">${fmtARS(s.precio_efectivo_sug)}</td>
+          <td class="num" style="font-weight:600; color:var(--accent);">${fmtARS(s.precio_publicado_sug)}</td>
+          <td class="num" style="font-weight:600; color:${suba > 0 ? 'var(--hot)' : 'var(--ok)'};">${suba > 0 ? '+' : ''}${suba.toFixed(1)}%</td>
+          <td><span class="pill ${zona}" title="${s.topeado_por_umbral
+            ? 'Para recuperar el margen habría que cruzar el umbral: se topea en $32.999'
+            : 'Faltan ' + fmtARS(s.falta_para_umbral) + ' para el umbral'}">${zonaTxt}</span></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+    <p class="muted" style="font-size:12px; margin:10px 0 0;">
+      El margen se mide sobre el <b>precio efectivo</b>: el promedio real de venta de los últimos
+      60 días según las órdenes de ML, no el precio de lista ni el precio con descuento teórico.
+      Entre promociones de ML, Meli+ y los descuentos propios, lo que entra por venta es más bajo.
+    </p>
+
+    ${renderEscalones()}
+
+    ${topeadas.length ? `
+      <div class="canal-hint ml" style="border-color:var(--warn); margin-top:14px;">
+        <span class="icon">🧱</span>
+        <div class="txt">
+          <b>${topeadas.length} publicación${topeadas.length > 1 ? 'es no llegan' : ' no llega'} al margen anterior</b>
+          Subirlas lo necesario las pasaría de los ${fmtARS(SUGERIDOS[0]?.umbral_envio || 33000)} y el envío gratis
+          se comería más de lo que se gana. Quedan topeadas abajo del umbral:
+          ${topeadas.map(t => `<div style="margin-top:4px;">· <b>${esc((t.titulo || '').slice(0, 40))}</b> —
+            tope ${fmtARS(t.precio_efectivo_sug)} (margen ${Number(t.rent_hoy).toFixed(1)}% contra
+            ${Number(t.rent_anterior).toFixed(1)}% de antes)</div>`).join('')}
+          <div style="margin-top:6px;">Para estas conviene bajar el costo o el peso del paquete, no subir el precio.</div>
+        </div>
+      </div>` : ''}
+  `;
 }
 
 // ─── Arranque ───
