@@ -1256,14 +1256,24 @@ function renderPanelAdsML(pubs) {
     }
     const rsa = g.vars.filter(p => p.rentabilidad_pct != null).map(p => parseFloat(p.rentabilidad_pct));
     const rentSinAds = rsa.length ? rsa.reduce((a,b)=>a+b,0)/rsa.length : null;
-    return { ...g, gastoProd, gasto7Prod, ventasProd, ventas7Prod, visitas7Prod, rentProd, rentSinAds };
+    // pauta_activa = el anuncio está activo Y su campaña activa (si está pausado, no gasta: no recomendar pausarlo).
+    const esBool = (v) => v === true || v === 'true';
+    const pautaActiva = g.vars.some(p => esBool(p.pauta_activa));
+    // Gastó y no vendió NADA por pauta: ML reporta ACOS 0% (parece bárbaro y es lo peor).
+    const sinVentasActiva = g.vars.some(p => esBool(p.pauta_activa) && esBool(p.pauta_sin_ventas));
+    return { ...g, gastoProd, gasto7Prod, ventasProd, ventas7Prod, visitas7Prod, rentProd, rentSinAds, pautaActiva, sinVentasActiva };
   });
 
-  const plataTirada = productos.filter(g => g.gasto7Prod > 0 && g.rentProd != null && g.rentProd < 15 && g.ventas7Prod <= 1 && g.ventasProd <= 10)
+  // Solo se recomienda accionar sobre pauta ACTIVA (lo pausado ya no gasta).
+  const plataTirada = productos.filter(g => g.pautaActiva && g.gastoProd > 0 && (
+        g.sinVentasActiva ||
+        (g.rentProd != null && g.rentProd < 0) ||
+        (g.rentProd != null && g.rentProd < 15 && g.ventas7Prod <= 1 && g.ventasProd <= 10)
+     ))
+    .sort((a,b) => (a.sinVentasActiva?-999:(a.rentProd??999)) - (b.sinVentasActiva?-999:(b.rentProd??999)));
+  const optimizar = productos.filter(g => g.pautaActiva && g.gastoProd > 0 && g.rentProd != null && g.rentProd >= 0 && g.rentProd < 25 && (g.ventas7Prod >= 2 || g.ventasProd > 30) && !plataTirada.includes(g))
     .sort((a,b) => a.rentProd - b.rentProd);
-  const optimizar = productos.filter(g => g.gasto7Prod > 0 && g.rentProd != null && g.rentProd < 25 && (g.ventas7Prod >= 2 || g.ventasProd > 30) && !plataTirada.includes(g))
-    .sort((a,b) => a.rentProd - b.rentProd);
-  const candidatos = productos.filter(g => g.gasto7Prod === 0 && g.ventasProd >= 10 && g.rentSinAds != null && g.rentSinAds >= 40)
+  const candidatos = productos.filter(g => g.gastoProd === 0 && g.ventasProd >= 10 && g.rentSinAds != null && g.rentSinAds >= 40)
     .sort((a,b) => b.ventasProd - a.ventasProd);
 
   const badgesVariantes = (g) => g.vars.slice()
@@ -1274,12 +1284,14 @@ function renderPanelAdsML(pubs) {
     .join(' ');
 
   const filaProd = (g, color) => {
-    const r = g.rentProd != null ? g.rentProd.toFixed(0) : '—';
+    const metric = g.sinVentasActiva
+      ? `<b style="color:var(--hot)">0 ventas por pauta</b>`
+      : `<b style="color:${color}">${g.rentProd != null ? g.rentProd.toFixed(0) : '—'}%</b> c/ADS`;
     return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid var(--border);">
       <span style="font-size:12.5px">${limpio(g.titulo)} ${badgesVariantes(g)}</span>
       <span style="font-size:11.5px; white-space:nowrap; text-align:right">
-        <b style="color:${color}">${r}%</b> c/ADS ·
-        <span style="color:var(--muted)">ventas ${g.ventasProd} (7d: ${g.ventas7Prod}) · gasto 7d ${fmtARS(g.gasto7Prod)}</span>
+        ${metric} ·
+        <span style="color:var(--muted)">ventas ${g.ventasProd} (7d: ${g.ventas7Prod}) · gasto ${fmtARS(g.gastoProd)}</span>
       </span>
     </div>`;
   };
@@ -1372,7 +1384,7 @@ function renderPanelAdsML(pubs) {
       <summary style="cursor:pointer; padding:9px 14px; display:flex; align-items:center; gap:10px; font-size:13px; list-style:none; user-select:none;">
         <span style="font-weight:600;">📊 Publicidad</span>
         ${badge}
-        <span style="color:var(--muted); font-weight:400;">gasto acum. ${fmtARS(gastoTotal)} · 7d ${fmtARS(gasto7d)} · ${conAds.length} con ADS</span>
+        <span style="color:var(--muted); font-weight:400;">gasto mes ${fmtARS(gastoTotal)} · 7d ${fmtARS(gasto7d)} · ${conAds.length} con ADS</span>
         <span style="color:var(--muted); margin-left:auto; font-size:11px;">ver detalle ▾</span>
       </summary>
       <div style="padding:12px 14px; background:var(--surface);">
@@ -1537,7 +1549,7 @@ async function sincronizarAdsGasto() {
     if (data && data.ok === false) throw new Error(data.error || 'Error');
     const partes = [`${data.guardadas} publicaciones`];
     if (data.conGasto) partes.push(`${data.conGasto} con gasto`);
-    if (data.reseteadas) partes.push(`${data.reseteadas} reseteadas a 0`);
+    if (data.gastoMes != null) partes.push(`gasto mes ${fmtARS(data.gastoMes)}`);
     toast('✓ ADS · ' + partes.join(' · '), 'ok');
     await cargarPublicaciones();
   } catch (err) { toast('Error: ' + err.message, 'err'); }
