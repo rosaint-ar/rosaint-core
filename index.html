@@ -645,7 +645,8 @@ async function cargarDespacho() {
     } else manCont.innerHTML = '';
 
     despachoTxt = construirTextoDespacho(j);
-    btnW.onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent(despachoTxt), '_blank');
+    // OJO: api.whatsapp.com/send directo, NO wa.me (wa.me re-codifica mal los emojis → �)
+    btnW.onclick = () => window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(despachoTxt), '_blank');
     btnC.onclick = async () => {
       try {
         await navigator.clipboard.writeText(despachoTxt);
