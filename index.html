@@ -160,6 +160,30 @@
     .integ-item .dot.ok { background: #2ea043; }
     .integ-item .dot.warn { background: #ff8c00; }
     .integ-item .dot.off { background: var(--muted); }
+
+    /* ---- A despachar (Mercado Libre) ---- */
+    .despacho-actions { display: flex; gap: 8px; align-items: center; }
+    .despacho-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11.5px; font-weight: 600; cursor: pointer;
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text); padding: 4px 9px; border-radius: 16px;
+      transition: border-color .12s, background .12s; font-family: inherit;
+    }
+    .despacho-btn:hover { border-color: var(--accent); }
+    .despacho-btn.wpp { color: #128C7E; }
+    .despacho-btn.wpp svg { width: 13px; height: 13px; fill: #25D366; }
+    .despacho-sub { font-size: 12px; color: var(--muted); font-weight: 400; }
+    .item__qty.despacho { color: var(--accent); font-size: 15px; }
+    .despacho-atrasado-tag {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; color: #dc3545;
+      background: rgba(220, 53, 69, .12); padding: 1px 6px; border-radius: 8px; margin-left: 6px;
+    }
+    .despacho-manana {
+      margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);
+      font-size: 12.5px; color: var(--muted);
+    }
+    .despacho-manana .tit { font-weight: 600; color: var(--text); display: block; margin-bottom: 3px; font-size: 12px; }
   </style>
 </head>
 <body data-page="dashboard" data-title="Dashboard" data-subtitle="Estado general de Rosaint">
@@ -203,6 +227,23 @@
       <span class="v" id="kpi-actividades">—</span>
       <span class="d" id="kpi-actividades-sub">—</span>
     </a>
+  </div>
+
+  <!-- A despachar hoy (Mercado Libre) -->
+  <div class="panel" id="despacho-ml" style="margin-bottom: 20px;">
+    <div class="panel__header">
+      <h2>📦 A despachar hoy · Mercado Libre <span class="despacho-sub" id="despacho-sub"></span></h2>
+      <div class="despacho-actions">
+        <button class="despacho-btn wpp" id="btn-despacho-wpp" title="Enviar listado por WhatsApp" style="display: none;">
+          <svg viewBox="0 0 24 24"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm5.8 14.01c-.24.68-1.42 1.31-1.96 1.39-.5.07-1.14.11-1.83-.12-.42-.13-.96-.31-1.66-.61-2.92-1.26-4.83-4.2-4.98-4.39-.14-.19-1.19-1.58-1.19-3.02s.76-2.14 1.02-2.43c.27-.29.58-.37.78-.37.19 0 .39 0 .55.01.18.01.42-.07.65.5.24.58.81 2.01.88 2.16.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.38-.42.51-.14.14-.28.29-.12.57.16.28.72 1.19 1.55 1.93 1.06.95 1.97 1.24 2.24 1.38.28.14.44.12.6-.07.17-.19.69-.8.87-1.08.18-.28.36-.23.61-.14.24.09 1.55.73 1.82.87.27.13.44.2.51.31.07.12.07.68-.17 1.35z"/></svg>
+          WhatsApp
+        </button>
+        <button class="despacho-btn" id="btn-despacho-copy" title="Copiar listado" style="display: none;">⧉ Copiar</button>
+        <a href="javascript:cargarDespacho()" class="panel__link" title="Actualizar">↻ Actualizar</a>
+      </div>
+    </div>
+    <div class="lista-mini" id="despacho-lista"><div class="empty-mini">Cargando…</div></div>
+    <div id="despacho-manana"></div>
   </div>
 
   <!-- Alertas cruzadas -->
@@ -537,8 +578,89 @@ async function cargarMLStatus() {
   }
 }
 
-// Autorefresh cada 60s
+// ---- A despachar hoy (Mercado Libre) ----
+let despachoTxt = '';
+function fmtFechaCorta(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p[2] + '/' + p[1];
+}
+function construirTextoDespacho(j) {
+  const L = [];
+  const hoy = j.hoy || { productos: [] }, atr = j.atrasado || { productos: [] };
+  const totPaq = (hoy.paquetes || 0) + (atr.paquetes || 0);
+  L.push('📦 A despachar HOY (' + fmtFechaCorta(j.fecha_hoy) + ') — ' + totPaq + ' paquete' + (totPaq === 1 ? '' : 's'));
+  if (atr.productos && atr.productos.length) {
+    L.push('⚠️ ATRASADOS:');
+    atr.productos.forEach(p => L.push('• ' + p.qty + '  ' + p.nombre));
+  }
+  (hoy.productos || []).forEach(p => L.push('• ' + p.qty + '  ' + p.nombre));
+  const man = j.manana || { productos: [] };
+  if (man.productos && man.productos.length) {
+    L.push('');
+    L.push('🕒 Mañana (' + fmtFechaCorta(j.fecha_manana) + ') — ' + man.paquetes + ' paquete' + (man.paquetes === 1 ? '' : 's'));
+    man.productos.forEach(p => L.push('• ' + p.qty + '  ' + p.nombre));
+  }
+  return L.join('\n');
+}
+async function cargarDespacho() {
+  const cont = document.getElementById('despacho-lista');
+  const manCont = document.getElementById('despacho-manana');
+  const sub = document.getElementById('despacho-sub');
+  const btnW = document.getElementById('btn-despacho-wpp');
+  const btnC = document.getElementById('btn-despacho-copy');
+  cont.innerHTML = '<div class="empty-mini">Cargando…</div>';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-despacho', { body: {} });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    const hoy = j.hoy || { productos: [], paquetes: 0, unidades: 0 };
+    const atr = j.atrasado || { productos: [], paquetes: 0, unidades: 0 };
+    const totPaq = (hoy.paquetes || 0) + (atr.paquetes || 0);
+    const totUds = (hoy.unidades || 0) + (atr.unidades || 0);
+
+    let html = '';
+    for (const p of (atr.productos || [])) {
+      html += '<div class="item"><span class="item__nombre">' + escapeHTML(p.nombre) + ' <span class="despacho-atrasado-tag">atrasado</span></span><span class="item__qty despacho">' + p.qty + '</span></div>';
+    }
+    for (const p of (hoy.productos || [])) {
+      html += '<div class="item"><span class="item__nombre">' + escapeHTML(p.nombre) + '</span><span class="item__qty despacho">' + p.qty + '</span></div>';
+    }
+    if (!html) {
+      cont.innerHTML = '<div class="empty-mini">✓ Nada para despachar hoy</div>';
+      sub.textContent = '';
+      btnW.style.display = 'none'; btnC.style.display = 'none';
+    } else {
+      cont.innerHTML = html;
+      sub.textContent = '· ' + totPaq + ' paquete' + (totPaq === 1 ? '' : 's') + ' · ' + totUds + ' u.';
+      btnW.style.display = ''; btnC.style.display = '';
+    }
+
+    const man = j.manana || { productos: [] };
+    if (man.productos && man.productos.length) {
+      let mh = '<div class="despacho-manana"><span class="tit">🕒 Mañana (' + fmtFechaCorta(j.fecha_manana) + ') · ' + man.paquetes + ' paquete' + (man.paquetes === 1 ? '' : 's') + '</span>';
+      mh += man.productos.map(p => escapeHTML(p.qty + '  ' + p.nombre)).join(' · ');
+      mh += '</div>';
+      manCont.innerHTML = mh;
+    } else manCont.innerHTML = '';
+
+    despachoTxt = construirTextoDespacho(j);
+    btnW.onclick = () => window.open('https://wa.me/?text=' + encodeURIComponent(despachoTxt), '_blank');
+    btnC.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(despachoTxt);
+        const prev = btnC.textContent; btnC.textContent = '✓ Copiado';
+        setTimeout(() => { btnC.textContent = prev; }, 1500);
+      } catch { alert('No se pudo copiar. Copiá manualmente:\n\n' + despachoTxt); }
+    };
+  } catch (err) {
+    cont.innerHTML = '<div class="empty-mini">No se pudo cargar el despacho (' + escapeHTML(err.message) + ')</div>';
+  }
+}
+
+// Autorefresh cada 60s (el despacho se carga aparte: 1 vez al abrir + botón ↻, porque consulta ML)
 cargarTodo();
+cargarDespacho();
 setInterval(cargarTodo, 60000);
 </script>
 </body>
