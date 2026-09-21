@@ -418,6 +418,17 @@
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .toast.err { background: var(--hot); color: var(--on-accent); }
     .toast.ok { background: var(--ok); color: var(--on-accent); }
+
+    /* Ventas -> Odoo */
+    .vo-fila { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+    .vo-fila.cargada { border-style: dashed; opacity: .8; padding: 6px 12px; margin-bottom: 4px; }
+    .vo-cab { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .vo-info { font-size: 13px; }
+    .vo-acc { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+    .vo-acc .btn { padding: 4px 10px; font-size: 12px; }
+    .vo-detalle { margin-top: 8px; }
+    .vo-det-box { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; font-size: 13px; }
+    .vo-linea { padding: 2px 0; font-size: 12.5px; }
   </style>
 </head>
 <body data-page="canales" data-title="Canales" data-subtitle="Venta Directa · Tienda Nube · Mercado Libre">
@@ -850,6 +861,7 @@ async function cargarML() {
       <button class="subtab active" data-sub="pubs">Publicaciones</button>
       <button class="subtab" data-sub="promos">Promociones</button>
       <button class="subtab" data-sub="ads">Publicidad</button>
+      <button class="subtab" data-sub="odoo">Ventas → Odoo</button>
       <button class="subtab" data-sub="precios">Precios sugeridos</button>
       <button class="subtab" data-sub="cfg">Configuración</button>
     </div>
@@ -857,6 +869,7 @@ async function cargarML() {
     <div id="sub-pubs"></div>
     <div id="sub-promos" style="display:none;"></div>
     <div id="sub-ads" style="display:none;"></div>
+    <div id="sub-odoo" style="display:none;"></div>
     <div id="sub-precios" style="display:none;"></div>
     <div id="sub-cfg" style="display:none;"></div>
   `;
@@ -864,14 +877,132 @@ async function cargarML() {
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','promos','ads','precios','cfg'].forEach(v => {
+    ['pubs','promos','ads','odoo','precios','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
+    if (which === 'odoo' && !VENTAS_ODOO_CARGADO) cargarVentasOdoo();
   }));
 
   // Config y precios sugeridos van despues: leen PUBS para resaltar pesos y umbrales.
   await Promise.all([cargarPublicaciones(), cargarPromociones(), cargarPublicidad()]);
   await Promise.all([cargarConfigML(), cargarPreciosSugeridos()]);
+}
+
+// ─────── SUB-TAB VENTAS → ODOO ───────
+// Revisar las ventas de ML (por pack, desde 01/09) y cargarlas en Odoo como borrador.
+// Usa la edge function ml-odoo-cargar (modos listar/preview/cargar). Ver memoria rosaint-ml-odoo-conector.
+let VENTAS_ODOO_CARGADO = false;
+const fFechaHora = f => f ? new Date(f).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+
+async function cargarVentasOdoo() {
+  VENTAS_ODOO_CARGADO = true;
+  const el = $('#sub-odoo');
+  el.innerHTML = '<div class="empty-box">Consultando ventas de Mercado Libre…</div>';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'listar' } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    renderVentasOdoo(j);
+  } catch (err) {
+    el.innerHTML = '<div class="empty-box" style="color:var(--hot)">No se pudo consultar: ' + esc(err.message) + '</div>';
+  }
+}
+
+function renderVentasOdoo(j) {
+  const packs = (j.packs || []).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  const pend = packs.filter(p => !p.ya_cargada);
+  const cargadas = packs.filter(p => p.ya_cargada);
+  const filaPend = (p) => `
+    <div class="vo-fila" data-order="${esc(p.order_id)}" data-pack="${esc(p.pack_id)}">
+      <div class="vo-cab">
+        <span class="vo-info">${fFechaHora(p.fecha)} · <b>${esc(p.comprador || '—')}</b> · ${fmtARS(p.total)} · ${p.items} ${p.items === 1 ? 'ítem' : 'ítems'}</span>
+        <span class="vo-acc">
+          <button class="btn secondary vo-ver" onclick="verVentaOdoo('${esc(p.order_id)}', this)">👁 Ver</button>
+          <button class="btn primary vo-cargar" onclick="cargarVentaOdoo('${esc(p.order_id)}', this)">Cargar borrador</button>
+        </span>
+      </div>
+      <div class="vo-detalle" style="display:none;"></div>
+    </div>`;
+  const filaCargada = (p) => `
+    <div class="vo-fila cargada">
+      <div class="vo-cab">
+        <span class="vo-info" style="color:var(--muted)">${fFechaHora(p.fecha)} · ${esc(p.comprador || '—')} · ${fmtARS(p.total)}</span>
+        <span class="vo-acc" style="color:var(--ok); font-size:12px;">✓ ${esc(p.so_name)}</span>
+      </div>
+    </div>`;
+  $('#sub-odoo').innerHTML = `
+    <div class="main-section">
+      <div class="head">
+        <div>
+          <h3>🧾 Ventas de Mercado Libre → Odoo</h3>
+          <div class="sub">Desde el ${esc(j.corte)}. Se cargan como <b>borrador</b> (presupuesto) en VELAZQUEZ. Una venta = un pack; cliente por datos de facturación; combos y Flex incluidos.</div>
+        </div>
+        <button class="btn secondary" onclick="cargarVentasOdoo()">↻ Actualizar</button>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap;">
+        <span class="badge-vinculo" style="background:var(--accent-tint); color:var(--accent); font-weight:600;">${pend.length} pendiente${pend.length === 1 ? '' : 's'}</span>
+        <span style="color:var(--muted); font-size:12px;">${cargadas.length} ya cargada${cargadas.length === 1 ? '' : 's'}</span>
+        ${pend.length ? `<button class="btn primary" style="margin-left:auto;" onclick="cargarTodasVentasOdoo(this)">Cargar todas (${pend.length})</button>` : ''}
+      </div>
+      <div id="vo-pend">
+        ${pend.length ? pend.map(filaPend).join('') : '<div class="empty-box" style="color:var(--ok)">✓ No hay ventas pendientes de cargar.</div>'}
+      </div>
+      ${cargadas.length ? `<details style="margin-top:14px;"><summary style="cursor:pointer; color:var(--muted); font-size:13px;">Ver ${cargadas.length} ya cargadas</summary><div style="margin-top:8px;">${cargadas.map(filaCargada).join('')}</div></details>` : ''}
+    </div>`;
+}
+
+async function verVentaOdoo(orderId, btn) {
+  const fila = btn.closest('.vo-fila');
+  const det = fila.querySelector('.vo-detalle');
+  if (det.style.display !== 'none') { det.style.display = 'none'; return; }
+  det.style.display = '';
+  det.innerHTML = '<div style="padding:8px; color:var(--muted); font-size:12.5px;">Cargando detalle…</div>';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'preview', order_id: orderId } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    const c = j.cliente || {};
+    const lineas = (j.lineas || []).map(l => `<div class="vo-linea">${l.qty} × <b>${esc((l.titulo || '').replace(/ - Rosaint.*$/i, ''))}</b> <span style="color:var(--muted)">(SKU ${esc(l.sku)})</span> · ${fmtARS(l.precio)}${l.product_id ? '' : ' <span style="color:var(--hot)">⚠ sin producto en Odoo</span>'}</div>`).join('');
+    const warn = (j.warnings || []).length ? `<div style="color:var(--hot); font-size:12px; margin-top:6px;">⚠ ${j.warnings.map(esc).join('<br>⚠ ')}</div>` : '';
+    det.innerHTML = `
+      <div class="vo-det-box">
+        <div><b>Cliente:</b> ${esc(c.nombre)} · ${esc(c.tipo_doc)} ${esc(c.documento)} · ${esc(c.condicion_afip)} ${j.cliente_existe ? '<span style="color:var(--ok)">(ya existe)</span>' : '<span style="color:var(--accent)">(nuevo)</span>'}</div>
+        <div style="color:var(--muted); font-size:12.5px;">${esc(c.localidad)} · ${esc(c.provincia_nombre)} · CP ${esc(c.cp)}${j.flex ? ' · <b style="color:#128C7E">🛵 FLEX</b>' : ''}</div>
+        <div style="margin-top:6px;">${lineas}</div>
+        <div style="margin-top:6px;"><b>Total: ${fmtARS(j.total)}</b></div>
+        ${warn}
+      </div>`;
+  } catch (err) { det.innerHTML = '<div style="color:var(--hot); padding:8px;">Error: ' + esc(err.message) + '</div>'; }
+}
+
+async function cargarVentaOdoo(orderId, btn) {
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Cargando…';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'cargar', order_id: orderId } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    if (j.ya_cargada) { toast('Ya estaba cargada: ' + j.so_id, 'warn'); }
+    else { toast('✓ ' + (j.so_name || 'Cargada') + ' · ' + fmtARS(j.total_odoo) + (j.total_coincide ? '' : ' ⚠ total no coincide'), 'ok'); }
+    cargarVentasOdoo();
+  } catch (err) { toast('Error: ' + err.message, 'err'); btn.disabled = false; btn.textContent = prev; }
+}
+
+async function cargarTodasVentasOdoo(btn) {
+  const filas = $$('#vo-pend .vo-fila');
+  if (!filas.length) return;
+  if (!confirm('¿Cargar las ' + filas.length + ' ventas pendientes como borrador en Odoo?')) return;
+  btn.disabled = true; const prev = btn.textContent;
+  let ok = 0, err = 0;
+  for (let i = 0; i < filas.length; i++) {
+    const orderId = filas[i].dataset.order;
+    btn.textContent = `⏳ ${i + 1}/${filas.length}…`;
+    try {
+      const { data: j } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'cargar', order_id: orderId } });
+      if (j && j.ok) ok++; else err++;
+    } catch { err++; }
+  }
+  toast(`Cargadas ${ok}${err ? ' · ' + err + ' con error' : ''}`, err ? 'warn' : 'ok');
+  cargarVentasOdoo();
 }
 
 // ─────── SUB-TAB PROMOCIONES ───────
