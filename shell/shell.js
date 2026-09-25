@@ -35,6 +35,7 @@ const MENU = [
 
   { type: 'group', label: 'Producción' },
   { type: 'item', id: 'produccion',    label: 'Producción',    href: 'produccion/index.html',    status: 'ready' },
+  { type: 'item', id: 'escandallo',    label: 'Escandallo (costos)', href: 'produccion/escandallo.html', status: 'ready' },
 
   { type: 'group', label: 'Contabilidad' },
   { type: 'item', id: 'cierre',           label: 'Cierre mensual',         href: 'contabilidad/cierre.html',            status: 'ready' },
@@ -124,6 +125,7 @@ const MODULE_ICONS = {
   oportunidades:  '<svg viewBox="0 0 24 24"><path d="M9 21h6M10 21v-3M14 21v-3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2h6c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg>',
   manuales:       '<svg viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v13h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-13h-3c-2.5 0-4.5.5-6 2z"/><path d="M12 6.5v12"/></svg>',
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
+  escandallo:     '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
   percepcionesarca: '<svg viewBox="0 0 24 24"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>',
