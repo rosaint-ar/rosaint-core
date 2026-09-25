@@ -8,29 +8,18 @@
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css">
   <style>
-    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
     .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
     .kpi .k { font-size: 10px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
     .kpi .v { font-size: 21px; font-weight: 700; color: var(--text); margin-top: 3px; font-variant-numeric: tabular-nums; }
     .kpi .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-    .controls { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 18px; }
-    .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end; }
-    .ctl { display: flex; flex-direction: column; gap: 5px; }
-    .ctl label { font-size: 11px; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; font-weight: 600; }
-    .ctl input[type=number], .ctl select {
-      background: var(--surface); color: var(--text); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 8px 10px; font-size: 14px; font-variant-numeric: tabular-nums;
-    }
-    .ctl .hint { font-size: 11px; color: var(--muted); }
-    .split-val { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
-    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .nota { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 12px; margin-bottom:16px; }
+    .nota .dot { width:8px;height:8px;border-radius:50%;background:#2ea043;flex-shrink:0; box-shadow:0 0 0 3px rgba(46,160,67,.15); }
 
     .toolbar2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-    .toolbar2 input[type=search] {
-      background: var(--surface); color: var(--text); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; flex: 1; min-width: 180px;
-    }
+    .toolbar2 input[type=search] { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; flex: 1; min-width: 180px; }
+    .toolbar2 select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; }
     .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
     .seg button { background: var(--surface); color: var(--muted); border: none; padding: 8px 14px; font-size: 12px; cursor: pointer; font-weight: 600; }
     .seg button.on { background: var(--accent); color: #fff; }
@@ -54,7 +43,6 @@
     .dl-line { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
     .dl-line.tot { border-bottom: none; border-top: 2px solid var(--border); margin-top: 4px; padding-top: 6px; font-weight: 700; }
     .dl-line .lbl { color: var(--muted); }
-    .dl-line .val { font-variant-numeric: tabular-nums; }
     .dl-sec-title { grid-column: 1/-1; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 700; margin-top: 4px; }
     .empty { text-align: center; padding: 40px; color: var(--muted); }
     .msg { margin-bottom: 14px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; }
@@ -62,52 +50,33 @@
     .msg--info { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
   </style>
 </head>
-<body data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo desglosado por producto: materia prima + envase + mano de obra">
+<body data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo real por producto: materia prima + envase + mano de obra · en vivo desde Odoo">
 
 <div id="app-shell"></div>
 <main id="app-content">
 
-  <div id="msg" class="msg msg--info">Cargando recetas y producción…</div>
+  <div id="msg" class="msg msg--info">Cargando recetas y producción en vivo…</div>
+
+  <div class="nota" id="nota" style="display:none">
+    <span class="dot"></span>
+    <span id="nota-txt">Datos en vivo de Odoo (Fabricación). La mano de obra de Producción se toma de la contabilidad de Odoo — no se muestran sueldos.</span>
+  </div>
 
   <div class="kpi-row">
-    <div class="kpi"><div class="k">Mano de obra / mes</div><div class="v" id="kpi-pool">—</div><div class="sub">Sebastián + Daiana</div></div>
     <div class="kpi"><div class="k">$ / kg elaboración</div><div class="v" id="kpi-ratekg">—</div><div class="sub" id="kpi-kgmes">—</div></div>
     <div class="kpi"><div class="k">$ / u fraccionamiento</div><div class="v" id="kpi-rateun">—</div><div class="sub" id="kpi-unmes">—</div></div>
     <div class="kpi"><div class="k">Productos costeados</div><div class="v" id="kpi-nprod">—</div><div class="sub">SKUs + packs</div></div>
     <div class="kpi"><div class="k">MO sobre costo (prom.)</div><div class="v" id="kpi-momedio">—</div><div class="sub">peso de la mano de obra</div></div>
-  </div>
-
-  <div class="controls">
-    <div class="controls-grid">
-      <div class="ctl">
-        <label>Sueldo Sebastián / mes</label>
-        <input type="number" id="in-seba" value="1000000" step="10000">
-        <span class="hint">Producción, jornada fija</span>
-      </div>
-      <div class="ctl">
-        <label>Costo Daiana / mes</label>
-        <input type="number" id="in-daiana" value="408000" step="6000">
-        <span class="hint">Producción, por hora</span>
-      </div>
-      <div class="ctl">
-        <label>Reparto del trabajo: elaborar <span class="split-val" id="split-lbl">50%</span> / fraccionar <span class="split-val" id="split-lbl2">50%</span></label>
-        <input type="range" id="in-split" min="0" max="100" value="50" step="5">
-        <span class="hint">Cuánto del día se va en hacer el granel vs envasar</span>
-      </div>
-      <div class="ctl">
-        <label>Período de referencia</label>
-        <select id="in-periodo">
-          <option value="all">Todo el historial (mar–sep)</option>
-          <option value="3">Últimos 3 meses</option>
-          <option value="1">Último mes</option>
-        </select>
-        <span class="hint">Base para el promedio de producción</span>
-      </div>
-    </div>
+    <div class="kpi"><div class="k">Producción usada</div><div class="v" id="kpi-periodo">—</div><div class="sub" id="kpi-periodo-sub">—</div></div>
   </div>
 
   <div class="toolbar2">
     <input type="search" id="q" placeholder="Buscar por código o nombre…">
+    <select id="in-periodo" title="Ventana de producción para promediar la carga de trabajo">
+      <option value="tres">Últimos 3 meses</option>
+      <option value="all">Todo el historial</option>
+      <option value="uno">Último mes</option>
+    </select>
     <div class="seg" id="seg-clase">
       <button data-c="all" class="on">Todos</button>
       <button data-c="SKU">SKUs</button>
@@ -124,59 +93,27 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
-const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-conta-relevar';
+const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/escandallo-prod';
 const KEY = window.SUPABASE_KEY;
-const LS = 'rosaint_escandallo_cfg';
+const LS = 'rosaint_escandallo_periodo';
+// Reparto del trabajo elaborar/fraccionar (sin dato de tiempos, supuesto neutro 50/50).
+const SPLIT_ELAB = 0.5;
 
-const state = { rows: [], meses: [], sort: { col: 'total', dir: -1 }, filtro: 'all', q: '' };
+const state = { rows: [], windows: null, sort: { col: 'total', dir: -1 }, filtro: 'all', q: '' };
 
 function fmt(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function fmt2(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 
-function cfg(){
-  return {
-    seba: +document.getElementById('in-seba').value || 0,
-    daiana: +document.getElementById('in-daiana').value || 0,
-    split: +document.getElementById('in-split').value,
-    periodo: document.getElementById('in-periodo').value,
-  };
-}
-function guardarCfg(){ try { localStorage.setItem(LS, JSON.stringify(cfg())); } catch(e){} }
-function cargarCfg(){
-  try {
-    const c = JSON.parse(localStorage.getItem(LS) || 'null'); if (!c) return;
-    if (c.seba != null) document.getElementById('in-seba').value = c.seba;
-    if (c.daiana != null) document.getElementById('in-daiana').value = c.daiana;
-    if (c.split != null) document.getElementById('in-split').value = c.split;
-    if (c.periodo) document.getElementById('in-periodo').value = c.periodo;
-  } catch(e){}
-}
-
-// Promedios de produccion segun el periodo elegido
-function promedios(){
-  const meses = state.meses;
-  if (!meses.length) return { kg: 0, un: 0, label: '—', nm: 0 };
+function ventanaSel(){
   const per = document.getElementById('in-periodo').value;
-  let sel = meses;
-  if (per === '3') sel = meses.slice(-3);
-  else if (per === '1') sel = meses.slice(-1);
-  const nm = sel.length;
-  const kg = sel.reduce((a,m)=>a+m.kg_elab,0) / nm;
-  const un = sel.reduce((a,m)=>a+m.unid_fracc,0) / nm;
-  return { kg, un, nm, label: sel.length ? (sel[0].mes + (sel.length>1 ? ' → '+sel[sel.length-1].mes : '')) : '—' };
+  return (state.windows && state.windows[per]) ? state.windows[per] : null;
 }
-
 function tarifas(){
-  const c = cfg();
-  const pool = c.seba + c.daiana;
-  const pr = promedios();
-  const pElab = c.split/100;
-  const rateKg = pr.kg>0 ? pool*pElab / pr.kg : 0;
-  const rateUn = pr.un>0 ? pool*(1-pElab) / pr.un : 0;
-  return { pool, rateKg, rateUn, pr };
+  const w = ventanaSel();
+  if (!w) return { rateKg:0, rateUn:0, w:null };
+  return { rateKg: (w.rate_kg_full||0)*SPLIT_ELAB, rateUn: (w.rate_un_full||0)*(1-SPLIT_ELAB), w };
 }
-
 function calcRow(r, t){
   const laborElab = (r.kg_elab_equiv||0) * t.rateKg;
   const laborFrac = (r.n_fracc||0) * t.rateUn;
@@ -188,37 +125,29 @@ function calcRow(r, t){
 
 function render(){
   const t = tarifas();
-  // KPIs
-  document.getElementById('kpi-pool').textContent = '$' + fmt(t.pool);
+  const w = t.w || { kg_mes:0, u_mes:0, label:'—', n_meses:0 };
   document.getElementById('kpi-ratekg').textContent = '$' + fmt(t.rateKg);
   document.getElementById('kpi-rateun').textContent = '$' + fmt(t.rateUn);
-  document.getElementById('kpi-kgmes').textContent = fmt(t.pr.kg) + ' kg/mes · ' + t.pr.label;
-  document.getElementById('kpi-unmes').textContent = fmt(t.pr.un) + ' u/mes';
+  document.getElementById('kpi-kgmes').textContent = fmt(w.kg_mes) + ' kg/mes elaborados';
+  document.getElementById('kpi-unmes').textContent = fmt(w.u_mes) + ' u/mes fraccionadas';
   document.getElementById('kpi-nprod').textContent = state.rows.length;
-  document.getElementById('split-lbl').textContent = cfg().split + '%';
-  document.getElementById('split-lbl2').textContent = (100-cfg().split) + '%';
+  document.getElementById('kpi-periodo').textContent = w.n_meses + (w.n_meses===1?' mes':' meses');
+  document.getElementById('kpi-periodo-sub').textContent = w.label;
 
   let rows = state.rows.map(r => calcRow(r, t));
   const momedio = rows.length ? rows.reduce((a,r)=>a+r.pctMO,0)/rows.length : 0;
   document.getElementById('kpi-momedio').textContent = momedio.toFixed(0) + '%';
 
-  // filtro + busqueda
   if (state.filtro !== 'all') rows = rows.filter(r => r.clase === state.filtro);
   if (state.q) { const q = state.q.toLowerCase(); rows = rows.filter(r => (r.codigo||'').toLowerCase().includes(q) || (r.nombre||'').toLowerCase().includes(q)); }
-  // sort
   const { col, dir } = state.sort;
   rows.sort((a,b)=>{ let va=a[col], vb=b[col]; if (typeof va==='string'){ va=va||''; vb=vb||''; return dir*va.localeCompare(vb); } return dir*((va||0)-(vb||0)); });
 
   const maxTot = Math.max(1, ...rows.map(r=>r.total));
   let h = '<table class="data"><thead><tr>' +
-    '<th data-s="codigo">Código</th>' +
-    '<th data-s="nombre">Producto</th>' +
-    '<th data-s="clase">Tipo</th>' +
-    '<th class="num" data-s="mat">Materia prima<br>+ envase</th>' +
-    '<th class="num" data-s="labor">Mano de obra</th>' +
-    '<th class="num" data-s="total">Costo total</th>' +
-    '<th class="num" data-s="pctMO">% MO</th>' +
-    '</tr></thead><tbody>';
+    '<th data-s="codigo">Código</th><th data-s="nombre">Producto</th><th data-s="clase">Tipo</th>' +
+    '<th class="num" data-s="mat">Materia prima<br>+ envase</th><th class="num" data-s="labor">Mano de obra</th>' +
+    '<th class="num" data-s="total">Costo total</th><th class="num" data-s="pctMO">% MO</th></tr></thead><tbody>';
   if (!rows.length) h += '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   for (const r of rows) {
     const barW = Math.round(r.total/maxTot*60);
@@ -229,9 +158,8 @@ function render(){
     h += '<td class="num">$'+fmt(r.mat)+'</td>';
     h += '<td class="num">$'+fmt(r.labor)+'</td>';
     h += '<td class="num"><span class="mo-bar" style="width:'+barW+'px;opacity:.25"></span> <strong>$'+fmt(r.total)+'</strong></td>';
-    h += '<td class="num">'+r.pctMO.toFixed(0)+'%</td>';
-    h += '</tr>';
-    h += '<tr class="desglose" id="dg-'+esc(r.codigo)+'" style="display:none"><td colspan="7"><div class="desglose-inner">'+desglose(r)+'</div></td></tr>';
+    h += '<td class="num">'+r.pctMO.toFixed(0)+'%</td></tr>';
+    h += '<tr class="desglose" id="dg-'+esc(r.codigo)+'" style="display:none"><td colspan="7"><div class="desglose-inner">'+desglose(r,t)+'</div></td></tr>';
   }
   h += '</tbody></table>';
   document.getElementById('tabla').innerHTML = h;
@@ -244,14 +172,14 @@ function render(){
   });
 }
 
-function desglose(r){
+function desglose(r,t){
   let h = '<div>';
   h += '<div class="dl-sec-title">Material</div>';
   h += '<div class="dl-line"><span class="lbl">Materia prima + envase + etiqueta</span><span class="val">$'+fmt2(r.mat)+'</span></div>';
   h += '</div><div>';
   h += '<div class="dl-sec-title">Mano de obra</div>';
-  h += '<div class="dl-line"><span class="lbl">Elaboración · '+fmt2(r.kg_elab_equiv)+' kg × $'+fmt(tarifas().rateKg)+'/kg</span><span class="val">$'+fmt2(r.laborElab)+'</span></div>';
-  h += '<div class="dl-line"><span class="lbl">Fraccionamiento · '+fmt2(r.n_fracc)+' u × $'+fmt(tarifas().rateUn)+'/u</span><span class="val">$'+fmt2(r.laborFrac)+'</span></div>';
+  h += '<div class="dl-line"><span class="lbl">Elaboración · '+fmt2(r.kg_elab_equiv)+' kg × $'+fmt(t.rateKg)+'/kg</span><span class="val">$'+fmt2(r.laborElab)+'</span></div>';
+  h += '<div class="dl-line"><span class="lbl">Fraccionamiento · '+fmt2(r.n_fracc)+' u × $'+fmt(t.rateUn)+'/u</span><span class="val">$'+fmt2(r.laborFrac)+'</span></div>';
   h += '</div>';
   h += '<div class="dl-line tot" style="grid-column:1/-1"><span class="lbl">COSTO TOTAL'+(r.tamanio_kg?' · '+(r.tamanio_kg>=1?r.tamanio_kg+' kg':(r.tamanio_kg*1000)+' g'):'')+'</span><span class="val">$'+fmt2(r.total)+'  (mano de obra '+r.pctMO.toFixed(0)+'%)</span></div>';
   return h;
@@ -270,15 +198,17 @@ function exportCSV(){
 async function cargar(){
   const msg = document.getElementById('msg');
   try {
-    const [esc1, agg] = await Promise.all([
+    const [esc1, prod] = await Promise.all([
       sb.from('v_escandallo').select('*'),
-      fetch(FN, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY,'apikey':KEY}, body: JSON.stringify({ modo:'prod_agg', desde:'2026-03-01 00:00:00', hasta:'2026-10-01 00:00:00' }) }).then(r=>r.json()),
+      fetch(FN, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY,'apikey':KEY}, body: '{}' }).then(r=>r.json()),
     ]);
     if (esc1.error) throw new Error('recetas: ' + esc1.error.message);
-    if (!agg.ok) throw new Error('producción: ' + (agg.error||'?'));
+    if (!prod.ok) throw new Error('producción: ' + (prod.error||'?'));
     state.rows = esc1.data || [];
-    state.meses = agg.meses || [];
+    state.windows = prod.windows || null;
     msg.style.display = 'none';
+    document.getElementById('nota').style.display = '';
+    if (!prod.labor_ok) document.getElementById('nota-txt').textContent = 'Producción en vivo de Odoo. ⚠ No encontré la mano de obra de Producción en la contabilidad del período; las tarifas quedan en 0.';
     render();
   } catch(e){
     msg.className = 'msg msg--err';
@@ -286,17 +216,14 @@ async function cargar(){
   }
 }
 
-// eventos
-['in-seba','in-daiana','in-split','in-periodo'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', ()=>{ guardarCfg(); render(); });
-});
 document.getElementById('q').addEventListener('input', e=>{ state.q = e.target.value; render(); });
+document.getElementById('in-periodo').addEventListener('change', e=>{ try{localStorage.setItem(LS,e.target.value);}catch(_){} render(); });
 document.querySelectorAll('#seg-clase button').forEach(b=>{
   b.addEventListener('click', ()=>{ document.querySelectorAll('#seg-clase button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); state.filtro=b.dataset.c; render(); });
 });
 document.getElementById('btn-csv').addEventListener('click', exportCSV);
 
-cargarCfg();
+try { const p = localStorage.getItem(LS); if (p) document.getElementById('in-periodo').value = p; } catch(_){}
 cargar();
 </script>
 </body>
