@@ -15,7 +15,7 @@
     .kpi .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
     .nota { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 12px; margin-bottom:16px; }
-    .nota .dot { width:8px;height:8px;border-radius:50%;background:#2ea043;flex-shrink:0; box-shadow:0 0 0 3px rgba(46,160,67,.15); }
+    .nota .dot { width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0; box-shadow:0 0 0 3px rgba(46,160,67,.15); }
 
     .toolbar2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .toolbar2 input[type=search] { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; flex: 1; min-width: 180px; }
@@ -35,7 +35,7 @@
     table.data tr.row-main:hover { background: var(--surface-2); }
     .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; letter-spacing: .03em; }
     .tag.sku { background: var(--accent-tint); color: var(--accent); }
-    .tag.pack { background: rgba(255,140,0,.15); color: #ff8c00; }
+    .tag.pack { background: rgba(255,140,0,.15); color: var(--warn); }
     .mo-bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--accent); vertical-align: middle; }
     .desglose { background: var(--surface-2); }
     .desglose td { padding: 0; border-bottom: 1px solid var(--border); }
@@ -46,7 +46,7 @@
     .dl-sec-title { grid-column: 1/-1; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 700; margin-top: 4px; }
     .empty { text-align: center; padding: 40px; color: var(--muted); }
     .msg { margin-bottom: 14px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; }
-    .msg--err { background: rgba(220,53,69,.1); color: #dc3545; border: 1px solid rgba(220,53,69,.2); }
+    .msg--err { background: rgba(220,53,69,.1); color: var(--hot); border: 1px solid rgba(220,53,69,.2); }
     .msg--info { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
 
     .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-bottom: 18px; }
@@ -58,8 +58,8 @@
     .chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
     .chart-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
     .trend { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
-    .trend.up { background: rgba(46,160,67,.15); color: #2ea043; }
-    .trend.down { background: rgba(220,53,69,.12); color: #dc3545; }
+    .trend.up { background: rgba(46,160,67,.15); color: var(--ok); }
+    .trend.down { background: rgba(220,53,69,.12); color: var(--hot); }
   </style>
 </head>
 <body data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo real por producto: materia prima + envase + mano de obra · en vivo desde Odoo">

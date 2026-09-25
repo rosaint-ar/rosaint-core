@@ -154,7 +154,7 @@
       pointer-events: none; z-index: 200;
     }
     .toast.show { opacity: 1; }
-    .toast.ok { border-color: #2ea043; color: #2ea043; }
+    .toast.ok { border-color: var(--ok); color: var(--ok); }
     .toast.err { border-color: var(--accent); color: var(--accent); }
   </style>
 </head>
@@ -184,7 +184,7 @@
     </div>
     <div class="kpi">
       <div class="k">Sin componentes</div>
-      <div class="v" id="kpi-vacios" style="color: #ff8c00;">—</div>
+      <div class="v" id="kpi-vacios" style="color: var(--warn);">—</div>
     </div>
   </div>
 
@@ -331,7 +331,7 @@ function render() {
       html += '<td class="sku">' + escapeHTML(comp.codigo_sku) + '</td>';
       html += '<td class="num"><input type="number" class="qty-inline" data-field="cantidad" value="' + comp.cantidad + '" min="1" step="1"></td>';
     } else {
-      html += '<td colspan="2" style="color:#ff8c00;font-size:12px;">Sin componente — <a href="javascript:void(0)" onclick="agregarComponentePack(\'' + p.codigo + '\')">agregar</a></td>';
+      html += '<td colspan="2" style="color:var(--warn);font-size:12px;">Sin componente — <a href="javascript:void(0)" onclick="agregarComponentePack(\'' + p.codigo + '\')">agregar</a></td>';
     }
     html += '<td class="num">' + (costoTotal != null ? fmtMoney(costoTotal) : '—') + '</td>';
     html += '<td class="num">' + (costoUnit != null ? fmtMoney(costoUnit) : '—') + '</td>';

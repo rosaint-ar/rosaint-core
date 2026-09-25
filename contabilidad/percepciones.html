@@ -660,11 +660,11 @@ function renderPreview(fac, percLineas, grupos) {
 
   // Bloque de totales en ORDEN VISUAL claro: Subtotal → IVA → Percepciones → Total.
   const sumaIva = (fac.ivas || []).reduce((s,v)=>s+v.monto, 0);
-  const netoLabel = fac.neto != null ? money(fac.neto) : '<span style="color:#dc3545;">no detectado</span>';
+  const netoLabel = fac.neto != null ? money(fac.neto) : '<span style="color:var(--hot);">no detectado</span>';
   h += `<div class="totales">`;
   h += `<div class="row"><span class="lbl">Subtotal (neto):</span><span class="val">${netoLabel}</span></div>`;
   if ((fac.ivas||[]).length === 0) {
-    h += `<div class="row"><span class="lbl">IVA:</span><span class="val" style="color:#dc3545;">no detectado</span></div>`;
+    h += `<div class="row"><span class="lbl">IVA:</span><span class="val" style="color:var(--hot);">no detectado</span></div>`;
   } else {
     (fac.ivas || []).forEach(v => {
       h += `<div class="row"><span class="lbl">IVA ${v.alicuota}%:</span><span class="val">${money(v.monto)}</span></div>`;
@@ -685,15 +685,15 @@ function renderPreview(fac, percLineas, grupos) {
   }
   // Total factura (fuente de verdad del PDF)
   h += `<div class="row" style="height:6px;"></div>`;
-  h += `<div class="row total"><span class="lbl">TOTAL factura:</span><span class="val">${fac.total != null ? money(fac.total) : '<span style="color:#dc3545;">no detectado</span>'}</span></div>`;
+  h += `<div class="row total"><span class="lbl">TOTAL factura:</span><span class="val">${fac.total != null ? money(fac.total) : '<span style="color:var(--hot);">no detectado</span>'}</span></div>`;
   // Validación cruzada: subtotal + IVA + percepciones debe dar total
   if (fac.neto != null && fac.total != null) {
     const calculado = fac.neto + sumaIva + totalPerc;
     const dif = Math.abs(fac.total - calculado);
     if (dif > 1) {
-      h += `<div class="row" style="color:#dc3545; font-size:12px;"><span class="lbl">⚠ Diferencia neto+IVA+perc vs Total:</span><span class="val">${money(dif)}</span></div>`;
+      h += `<div class="row" style="color:var(--hot); font-size:12px;"><span class="lbl">⚠ Diferencia neto+IVA+perc vs Total:</span><span class="val">${money(dif)}</span></div>`;
     } else {
-      h += `<div class="row" style="color:#2ea043; font-size:12px;"><span class="lbl">✓ Neto + IVA + Percepciones = Total</span><span class="val"></span></div>`;
+      h += `<div class="row" style="color:var(--ok); font-size:12px;"><span class="lbl">✓ Neto + IVA + Percepciones = Total</span><span class="val"></span></div>`;
     }
   }
   h += `</div></div>`;
@@ -702,9 +702,9 @@ function renderPreview(fac, percLineas, grupos) {
   // crudo que pdfjs extrajo del PDF. Sirve para diagnosticar por qué algo no se
   // detecta sin necesidad de abrir la consola.
   const lineasCrudas = (window._debugFactura && window._debugFactura.lineas) || [];
-  h += `<details style="margin-top:12px; background:#f7f5f2; border:1px solid #e5e0d8; border-radius:6px; padding:10px 14px;">
+  h += `<details style="margin-top:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:10px 14px;">
     <summary style="cursor:pointer; font-weight:600; font-size:13px; color:#666;">🔍 Ver texto crudo del PDF (${lineasCrudas.length} líneas) — para diagnosticar detecciones</summary>
-    <div style="margin-top:10px; font-family:monospace; font-size:11px; background:#fff; padding:10px; border-radius:4px; max-height:400px; overflow:auto; white-space:pre-wrap;">${
+    <div style="margin-top:10px; font-family:monospace; font-size:11px; background:var(--surface); padding:10px; border-radius:4px; max-height:400px; overflow:auto; white-space:pre-wrap;">${
       lineasCrudas.map((l, i) => `<div><span style="color:#999;">${String(i+1).padStart(3,' ')}:</span> ${esc(l)}</div>`).join('')
     }</div>
     <div style="margin-top:8px; font-size:11px; color:#666;">
@@ -882,13 +882,13 @@ function validarDistribucion() {
   const diffEl = $('distDiff');
   const btn = $('btnAplicarDist');
   if (Math.abs(dif) < 0.01) {
-    diffEl.innerHTML = `<span class="lbl" style="color:#2ea043;">✓ Suma coincide con el subtotal</span><span class="val"></span>`;
+    diffEl.innerHTML = `<span class="lbl" style="color:var(--ok);">✓ Suma coincide con el subtotal</span><span class="val"></span>`;
     btn.disabled = false;
   } else if (dif > 0) {
-    diffEl.innerHTML = `<span class="lbl" style="color:#dc3545;">⚠ Sobra:</span><span class="val" style="color:#dc3545;">${money(dif)}</span>`;
+    diffEl.innerHTML = `<span class="lbl" style="color:var(--hot);">⚠ Sobra:</span><span class="val" style="color:var(--hot);">${money(dif)}</span>`;
     btn.disabled = true;
   } else {
-    diffEl.innerHTML = `<span class="lbl" style="color:#dc3545;">⚠ Falta:</span><span class="val" style="color:#dc3545;">${money(Math.abs(dif))}</span>`;
+    diffEl.innerHTML = `<span class="lbl" style="color:var(--hot);">⚠ Falta:</span><span class="val" style="color:var(--hot);">${money(Math.abs(dif))}</span>`;
     btn.disabled = true;
   }
 }
@@ -991,14 +991,14 @@ async function aplicarAOdoo(moveId, lineasDistribucion) {
       <div class="full">${ok ? '✓ Aplicado a' : '⚠ Aplicado CON PROBLEMAS a'} ${match.name} ${d.modo === 'multi_linea' ? '(distribución multi-línea)' : ''}</div>
       <div><span class="k">Total Odoo:</span> <span class="v">${money(d.cabecera.amount_total)}</span></div>
       <div><span class="k">Total comprobante:</span> <span class="v">${d.total_esperado != null ? money(d.total_esperado) : '—'}</span></div>
-      <div><span class="k">Percepciones aplicadas:</span> <span class="v" ${d.aplicadas < percepciones.length ? 'style="color:#dc3545;font-weight:700;"' : ''}>${d.aplicadas} de ${percepciones.length}</span></div>
+      <div><span class="k">Percepciones aplicadas:</span> <span class="v" ${d.aplicadas < percepciones.length ? 'style="color:var(--hot);font-weight:700;"' : ''}>${d.aplicadas} de ${percepciones.length}</span></div>
     </div>
     <div class="totales">`;
   (d.lineas_tax || []).forEach(l => {
     hh += `<div class="row perc"><span class="lbl">${l.name}:</span><span class="val">${money(l.balance)}</span></div>`;
   });
   if (d.diferencia != null && Math.abs(d.diferencia) >= 0.01) {
-    hh += `<div class="row" style="color:#dc3545;font-weight:700;"><span class="lbl">⚠ Diferencia contra el comprobante:</span><span class="val">${money(d.diferencia)}</span></div>`;
+    hh += `<div class="row" style="color:var(--hot);font-weight:700;"><span class="lbl">⚠ Diferencia contra el comprobante:</span><span class="val">${money(d.diferencia)}</span></div>`;
   }
   hh += `</div></div>`;
   if (!ok) {
