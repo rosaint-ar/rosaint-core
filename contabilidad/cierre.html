@@ -38,6 +38,21 @@
 <main id="app-content">
 
   <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:14px;flex-wrap:wrap;">
+      <div>
+        <strong style="font-size:14px;">Evolución del IVA</strong>
+        <div class="muted" style="font-size:12px;margin-top:2px;">Débito (ventas) vs crédito (compras) por mes · en vivo desde Odoo</div>
+      </div>
+      <span id="iva-saldo" class="muted" style="font-size:12.5px;font-weight:700;"></span>
+    </div>
+    <div id="iva-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
+    <div style="display:flex;gap:16px;font-size:11.5px;color:var(--text-2);padding-top:6px;">
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--accent);margin-right:5px;vertical-align:-1px;"></i>IVA débito (ventas)</span>
+      <span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--cyan);margin-right:5px;vertical-align:-1px;"></i>IVA crédito (compras)</span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
     <div class="controls">
       <div class="field">
         <span class="label">Período</span>
@@ -77,6 +92,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -91,12 +107,38 @@ const FN_MAIL   = window.SUPABASE_URL + '/functions/v1/odoo-enviar-mail';
 const HEADERS = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY };
 let adjuntos = []; // {filename, base64, mimetype}
 
+const FN_IVA = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iva-serie';
+const M3 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
 (function init(){
   const d = new Date(); d.setMonth(d.getMonth() - 1); // mes anterior por defecto
   $('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   actualizarTextos();
   $('periodo').addEventListener('change', actualizarTextos);
+  cargarGraficoIVA();
 })();
+
+async function cargarGraficoIVA(){
+  try {
+    const j = await fetch(FN_IVA, { method:'POST', headers:HEADERS, body: JSON.stringify({ meses: 12 }) }).then(r=>r.json());
+    if(!j.ok) throw new Error(j.error || 'error');
+    const rows = (j.meses||[]).filter(m => m.debito > 0 || m.credito > 0);
+    if(!rows.length){ $('iva-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
+    const labels = rows.map(m => { const p = m.mes.split('-'); return M3[(+p[1])-1] + "'" + p[0].slice(2); });
+    const money = v => '$' + Math.round(v).toLocaleString('es-AR');
+    Charts.trend($('iva-chart'), {
+      labels, sharedScale: true, fmt: money,
+      series: [
+        { name: 'Débito', type: 'bar', values: rows.map(m=>m.debito), color: 'var(--accent)' },
+        { name: 'Crédito', type: 'bar', values: rows.map(m=>m.credito), color: 'var(--cyan)' }
+      ]
+    });
+    const last = rows[rows.length-1];
+    const el = $('iva-saldo');
+    el.textContent = 'Saldo ' + labels[labels.length-1] + ': ' + money(Math.abs(last.saldo)) + (last.saldo >= 0 ? ' a pagar' : ' a favor');
+    el.style.color = last.saldo >= 0 ? 'var(--hot)' : 'var(--ok)';
+  } catch(e){ $('iva-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar la evolución del IVA</div>'; }
+}
 
 function nombrePeriodo(mes){ const [y,m]=mes.split('-').map(Number); return MESES[m-1]+' '+y; }
 function setStatus(dot, msg, cls=''){ $('status').innerHTML = `<span class="dot ${dot}"></span>${msg}`; $('status').className='status-bar '+cls; }
