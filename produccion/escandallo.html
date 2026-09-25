@@ -48,6 +48,18 @@
     .msg { margin-bottom: 14px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; }
     .msg--err { background: rgba(220,53,69,.1); color: #dc3545; border: 1px solid rgba(220,53,69,.2); }
     .msg--info { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px 8px; }
+    .chart-card h3 { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 2px; }
+    .chart-card .csub { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .chart-card svg { width: 100%; height: auto; display: block; }
+    .chart-legend { display: flex; gap: 16px; margin-top: 6px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+    .chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .chart-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .trend { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+    .trend.up { background: rgba(46,160,67,.15); color: #2ea043; }
+    .trend.down { background: rgba(220,53,69,.12); color: #dc3545; }
   </style>
 </head>
 <body data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo real por producto: materia prima + envase + mano de obra · en vivo desde Odoo">
@@ -61,6 +73,8 @@
     <span class="dot"></span>
     <span id="nota-txt">Datos en vivo de Odoo (Fabricación). La mano de obra de Producción se toma de la contabilidad de Odoo — no se muestran sueldos.</span>
   </div>
+
+  <div class="charts" id="charts"></div>
 
   <div class="kpi-row">
     <div class="kpi"><div class="k">$ / kg elaboración</div><div class="v" id="kpi-ratekg">—</div><div class="sub" id="kpi-kgmes">—</div></div>
@@ -96,10 +110,8 @@
 const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/escandallo-prod';
 const KEY = window.SUPABASE_KEY;
 const LS = 'rosaint_escandallo_periodo';
-// Reparto del trabajo elaborar/fraccionar (sin dato de tiempos, supuesto neutro 50/50).
-const SPLIT_ELAB = 0.5;
 
-const state = { rows: [], windows: null, sort: { col: 'total', dir: -1 }, filtro: 'all', q: '' };
+const state = { rows: [], windows: null, meses: [], info: null, sort: { col: 'total', dir: -1 }, filtro: 'all', q: '' };
 
 function fmt(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function fmt2(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -112,7 +124,7 @@ function ventanaSel(){
 function tarifas(){
   const w = ventanaSel();
   if (!w) return { rateKg:0, rateUn:0, w:null };
-  return { rateKg: (w.rate_kg_full||0)*SPLIT_ELAB, rateUn: (w.rate_un_full||0)*(1-SPLIT_ELAB), w };
+  return { rateKg: w.rate_kg||0, rateUn: w.rate_un||0, w };
 }
 function calcRow(r, t){
   const laborElab = (r.kg_elab_equiv||0) * t.rateKg;
@@ -195,6 +207,51 @@ function exportCSV(){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'escandallo_rosaint.csv'; a.click();
 }
 
+// ── Gráficos (SVG inline, sin librerías) ──────────────────────────────
+const MES3 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function mesLbl(m){ const p=(m||'').split('-'); return p.length===2 ? MES3[(+p[1])-1]+"'"+p[0].slice(2) : m; }
+const COL_BAR = 'var(--accent)', COL_LINE = '#4a9eff';
+
+function svgBarLine(data, barKey, lineKey, barFmt, lineFmt){
+  if (!data.length) return '<div class="empty">Sin datos</div>';
+  const W=480, H=200, mL=8, mR=8, mT=16, mB=22;
+  const iw=W-mL-mR, ih=H-mT-mB, n=data.length, bw=Math.min(46, iw/n*0.55);
+  const maxBar=Math.max(1,...data.map(d=>+d[barKey]||0)), maxLine=Math.max(1,...data.map(d=>+d[lineKey]||0));
+  const xC=i=>mL+iw*(i+0.5)/n, yB=v=>mT+ih-(ih*(+v||0)/maxBar), yL=v=>mT+ih-(ih*(+v||0)/maxLine);
+  let s='<svg viewBox="0 0 '+W+' '+H+'" role="img" preserveAspectRatio="xMidYMid meet">';
+  s+='<line x1="'+mL+'" y1="'+(mT+ih)+'" x2="'+(W-mR)+'" y2="'+(mT+ih)+'" stroke="var(--border)"/>';
+  data.forEach((d,i)=>{ const x=xC(i), y=yB(d[barKey]); s+='<rect x="'+(x-bw/2)+'" y="'+y+'" width="'+bw+'" height="'+(mT+ih-y)+'" rx="3" fill="'+COL_BAR+'" opacity="0.85"/>';
+    s+='<text x="'+x+'" y="'+(y-4)+'" text-anchor="middle" font-size="9" fill="var(--muted)">'+barFmt(d[barKey])+'</text>';
+    s+='<text x="'+x+'" y="'+(mT+ih+14)+'" text-anchor="middle" font-size="9.5" fill="var(--muted)">'+mesLbl(d.mes)+'</text>'; });
+  let path=''; data.forEach((d,i)=>{ path+=(i?'L':'M')+xC(i)+' '+yL(d[lineKey]); });
+  s+='<path d="'+path+'" fill="none" stroke="'+COL_LINE+'" stroke-width="2.5"/>';
+  data.forEach((d,i)=>{ s+='<circle cx="'+xC(i)+'" cy="'+yL(d[lineKey])+'" r="3" fill="'+COL_LINE+'"/>';
+    s+='<text x="'+xC(i)+'" y="'+(yL(d[lineKey])-7)+'" text-anchor="middle" font-size="9" fill="'+COL_LINE+'">'+lineFmt(d[lineKey])+'</text>'; });
+  s+='</svg>'; return s;
+}
+function trendBadge(data, key){
+  if (data.length<2) return '';
+  const a=+data[0][key]||0, b=+data[data.length-1][key]||0; if(!a) return '';
+  const pct=Math.round((b-a)/a*100); const up=pct>=0;
+  return '<span class="trend '+(up?'up':'down')+'">'+(up?'▲':'▼')+' '+Math.abs(pct)+'% vs '+mesLbl(data[0].mes)+'</span>';
+}
+function renderCharts(){
+  const m = state.meses || [];
+  const prod = m.map(x=>({ mes:x.mes, kg:x.kg, u:x.u }));
+  const productividad = m.map(x=>({ mes:x.mes, kgd: x.dias?+(x.kg/x.dias).toFixed(1):0, ud: x.dias?+(x.u/x.dias).toFixed(1):0 }));
+  const leg = (c,t)=>'<span><i style="background:'+c+'"></i>'+t+'</span>';
+  let h='';
+  h+='<div class="chart-card"><h3>Producción por mes '+trendBadge(prod,'kg')+'</h3>'+
+     '<div class="csub">Cuánto se elabora y se fracciona cada mes</div>'+
+     svgBarLine(prod,'kg','u',v=>Math.round(v),v=>Math.round(v))+
+     '<div class="chart-legend">'+leg(COL_BAR,'kg elaborados (granel)')+leg(COL_LINE,'unidades fraccionadas')+'</div></div>';
+  h+='<div class="chart-card"><h3>Productividad por día trabajado '+trendBadge(productividad,'kgd')+'</h3>'+
+     '<div class="csub">Rendimiento con la misma dotación: más por día = mejor</div>'+
+     svgBarLine(productividad,'kgd','ud',v=>Math.round(v),v=>Math.round(v))+
+     '<div class="chart-legend">'+leg(COL_BAR,'kg elaborados / día')+leg(COL_LINE,'unidades / día')+'</div></div>';
+  document.getElementById('charts').innerHTML = h;
+}
+
 async function cargar(){
   const msg = document.getElementById('msg');
   try {
@@ -206,9 +263,16 @@ async function cargar(){
     if (!prod.ok) throw new Error('producción: ' + (prod.error||'?'));
     state.rows = esc1.data || [];
     state.windows = prod.windows || null;
+    state.meses = prod.meses || [];
+    state.info = prod;
     msg.style.display = 'none';
     document.getElementById('nota').style.display = '';
-    if (!prod.labor_ok) document.getElementById('nota-txt').textContent = 'Producción en vivo de Odoo. ⚠ No encontré la mano de obra de Producción en la contabilidad del período; las tarifas quedan en 0.';
+    const spE = Math.round((prod.split_elab||0.5)*100);
+    let txt = 'Datos en vivo de Odoo (Fabricación). Mano de obra de Producción tomada de la contabilidad de Odoo — no se muestran sueldos. ';
+    txt += 'Reparto del trabajo deducido de los datos: elaborar ' + spE + '% / fraccionar ' + (100-spE) + '% (capacidad ≈ ' + prod.cap_kg_dia + ' kg/día vs ' + prod.cap_u_dia + ' u/día).';
+    if (!prod.labor_ok) txt = 'Producción en vivo de Odoo. ⚠ No encontré la mano de obra de Producción en la contabilidad; las tarifas quedan en 0.';
+    document.getElementById('nota-txt').textContent = txt;
+    renderCharts();
     render();
   } catch(e){
     msg.className = 'msg msg--err';
