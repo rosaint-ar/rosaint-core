@@ -156,10 +156,17 @@
 
 <main id="app-content">
 
-  <div class="toggle-nivel">
-    <button class="active" data-nivel="l1">Lista 1 · Público</button>
-    <button data-nivel="l2">Lista 2 · Profesional</button>
+  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+    <div class="toggle-nivel" id="tg-nivel">
+      <button class="active" data-nivel="l1">Lista 1 · Público</button>
+      <button data-nivel="l2">Lista 2 · Profesional</button>
+    </div>
+    <div class="toggle-nivel" id="tg-costo">
+      <button class="active" data-costo="mat">Costo: solo material</button>
+      <button data-costo="mo">Costo: con mano de obra</button>
+    </div>
   </div>
+  <div id="nota-mo" style="display:none; font-size:12px; color:var(--muted); margin:8px 0 0;"></div>
 
   <div class="kpi-row" id="kpis">
     <div class="kpi"><div class="v" id="k-total">—</div><div class="l">SKUs con precio</div></div>
@@ -209,9 +216,20 @@ let OBJ = null;       // { L1: {objetivo, tolerancia}, L2: {...} }
 let nivel = 'l1';     // 'l1' | 'l2'
 let sortBy = 'rent';  // 'codigo' | 'nombre' | 'precio' | 'costo' | 'rent'
 let sortDir = 'asc';  // 'asc' | 'desc'
+let usarMO = false;   // false = costo solo material · true = costo con mano de obra
+let TARIFA = null;    // tarifa de mano de obra vigente (escandallo)
 
 function precioDe(r) { return nivel === 'l1' ? r.l1_publicado : r.l2_publicado; }
-function rentDe(r) { return nivel === 'l1' ? r.rentab_real_l1 : r.rentab_real_l2; }
+// Costo según el modo elegido: material solo, o con mano de obra (del escandallo)
+function costoDe(r) { return usarMO ? r.costo_con_mo : r.costo_unitario; }
+// Margen SIEMPRE sobre neto: (precio sin IVA − costo) / precio sin IVA
+function rentDe(r) {
+  const p = precioDe(r); const c = costoDe(r);
+  if (p == null || c == null || Number(c) <= 0) return null;
+  const net = Number(p) / 1.21;
+  if (net <= 0) return null;
+  return (net - Number(c)) / net * 100;
+}
 function objDe() { return OBJ?.[nivel.toUpperCase()]; }
 
 function classRent(pct) {
@@ -226,14 +244,29 @@ function classRent(pct) {
 
 async function cargar() {
   try {
-    const [skus, objs, lineas] = await Promise.all([
+    const [skus, objs, lineas, costoMO, tarifa] = await Promise.all([
       sb.from('v_precios_listas_completos').select('*'),
       sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts'),
       sb.from('lineas').select('id, nombre, orden').order('orden'),
+      sb.from('v_costo_mano_obra').select('codigo, costo_mo, costo_con_mo'),
+      sb.from('escandallo_tarifas').select('*').eq('id', 1).maybeSingle(),
     ]);
     if (skus.error) throw skus.error;
     SKUS = skus.data || [];
     LINEAS = lineas.data || [];
+    // Cruzar el costo con mano de obra (del escandallo) en cada SKU
+    const moMap = {};
+    for (const m of (costoMO.data || [])) moMap[m.codigo] = m;
+    for (const s of SKUS) {
+      const m = moMap[s.codigo_sku];
+      s.costo_mo = m ? Number(m.costo_mo) : null;
+      s.costo_con_mo = m ? Number(m.costo_con_mo) : (s.costo_unitario != null ? Number(s.costo_unitario) : null);
+    }
+    TARIFA = tarifa.data || null;
+    if (TARIFA) {
+      const spE = Math.round((TARIFA.split_elab || 0) * 100);
+      $('#nota-mo').textContent = 'Con mano de obra: usa la tarifa del escandallo (' + Math.round(TARIFA.rate_kg) + ' $/kg elaborado + ' + Math.round(TARIFA.rate_un) + ' $/u fraccionada · reparto ' + spE + '/' + (100 - spE) + '). Se actualiza sola desde Odoo.';
+    }
     OBJ = {};
     for (const o of (objs.data || [])) {
       OBJ[o.nivel] = { objetivo: Number(o.objetivo_pct), tolerancia: Number(o.tolerancia_pts) };
@@ -256,7 +289,7 @@ function renderTodo() {
 }
 
 function renderKPIs() {
-  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(s.costo_unitario) > 0);
+  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(costoDe(s)) > 0);
   const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
   const avg = rents.length ? rents.reduce((a,n)=>a+n,0)/rents.length : null;
   const o = objDe();
@@ -296,7 +329,7 @@ function renderAlerta() {
 }
 
 function renderDistribucion() {
-  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(s.costo_unitario) > 0);
+  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(costoDe(s)) > 0);
   const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
   const buckets = [
     { l: '< 0% (perdiendo)', min: -Infinity, max: 0, cls: 'hot' },
@@ -334,7 +367,7 @@ function renderDistribucion() {
 
 function renderPorLinea() {
   const grupos = LINEAS.map(l => {
-    const filas = SKUS.filter(s => s.linea === l.nombre && precioDe(s) != null && Number(s.costo_unitario) > 0);
+    const filas = SKUS.filter(s => s.linea === l.nombre && precioDe(s) != null && Number(costoDe(s)) > 0);
     const rents = filas.map(s => Number(rentDe(s))).filter(n => isFinite(n));
     return {
       nombre: l.nombre,
@@ -385,7 +418,7 @@ function renderTabla() {
     if (sortBy === 'codigo') { va = a.codigo_sku || ''; vb = b.codigo_sku || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
     if (sortBy === 'nombre') { va = a.nombre_sku || ''; vb = b.nombre_sku || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
     if (sortBy === 'precio') { va = Number(precioDe(a) || 0); vb = Number(precioDe(b) || 0); }
-    else if (sortBy === 'costo') { va = Number(a.costo_unitario || 0); vb = Number(b.costo_unitario || 0); }
+    else if (sortBy === 'costo') { va = Number(costoDe(a) || 0); vb = Number(costoDe(b) || 0); }
     else { va = Number(rentDe(a) || -999); vb = Number(rentDe(b) || -999); }
     return sortDir === 'asc' ? va - vb : vb - va;
   });
@@ -401,7 +434,7 @@ function renderTabla() {
         <th class="sort${sortBy==='codigo'?' '+sortDir:''}" data-sort="codigo">Código</th>
         <th class="sort${sortBy==='nombre'?' '+sortDir:''}" data-sort="nombre">Nombre</th>
         <th>Línea</th>
-        <th class="num sort${sortBy==='costo'?' '+sortDir:''}" data-sort="costo">Costo</th>
+        <th class="num sort${sortBy==='costo'?' '+sortDir:''}" data-sort="costo">Costo${usarMO?' c/MO':''}</th>
         <th class="num sort${sortBy==='precio'?' '+sortDir:''}" data-sort="precio">${nivelUp} c/IVA</th>
         <th class="num sort${sortBy==='rent'?' '+sortDir:''}" data-sort="rent">Margen ${nivelUp}</th>
       </tr></thead>
@@ -411,7 +444,7 @@ function renderTabla() {
             <td class="codigo">${esc(s.codigo_sku)}</td>
             <td>${esc(s.nombre_sku||'—')}</td>
             <td style="color:var(--muted); font-size:12px;">${esc(s.linea||'—')}</td>
-            <td class="num" style="color:var(--muted);">${fmtARS(s.costo_unitario)}</td>
+            <td class="num" style="color:var(--muted);" title="${usarMO && s.costo_mo!=null ? 'Material '+fmtARS(s.costo_unitario)+' + mano de obra '+fmtARS(s.costo_mo) : ''}">${fmtARS(costoDe(s))}</td>
             <td class="num">${fmtARS(precioDe(s))}</td>
             <td class="num"><span class="pill ${classRent(rentDe(s))}">${fmtPct(rentDe(s))}</span></td>
           </tr>
@@ -430,9 +463,15 @@ function renderTabla() {
 }
 
 // ─── Handlers ───
-$$('.toggle-nivel button').forEach(b => b.addEventListener('click', () => {
-  $$('.toggle-nivel button').forEach(x => x.classList.toggle('active', x === b));
+$$('#tg-nivel button').forEach(b => b.addEventListener('click', () => {
+  $$('#tg-nivel button').forEach(x => x.classList.toggle('active', x === b));
   nivel = b.dataset.nivel;
+  renderTodo();
+}));
+$$('#tg-costo button').forEach(b => b.addEventListener('click', () => {
+  $$('#tg-costo button').forEach(x => x.classList.toggle('active', x === b));
+  usarMO = b.dataset.costo === 'mo';
+  $('#nota-mo').style.display = usarMO ? '' : 'none';
   renderTodo();
 }));
 $('#search').addEventListener('input', renderTabla);
