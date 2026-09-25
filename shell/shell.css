@@ -417,6 +417,26 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mod-grid > *:nth-child(n+7) { animation-delay: .30s; }
 
 /* =========================================================================
+   Realce global de tarjetas (aplica a las páginas que definen sus propias
+   .card/.panel/.kpi/.stat locales). Mayor especificidad que el <style> de
+   cada página (via #app-content) → les devuelve sombra y hover del sistema
+   SIN tocar sus layouts. Solo agrega relieve; no cambia colores ni tamaños.
+   ========================================================================= */
+#app-content .card, #app-content .panel { box-shadow: var(--shadow-card); }
+#app-content .card:hover, #app-content .panel:hover { box-shadow: var(--shadow); }
+
+#app-content .kpi, #app-content .kpi-card, #app-content .stat, #app-content .stat-card {
+  box-shadow: var(--shadow-card);
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+}
+#app-content .kpi:hover, #app-content .kpi-card:hover,
+#app-content .stat:hover, #app-content .stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow), 0 0 26px -12px var(--accent-glow);
+  border-color: var(--border-2);
+}
+
+/* =========================================================================
    Responsive (mobile)
    ========================================================================= */
 
