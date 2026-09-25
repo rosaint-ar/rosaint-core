@@ -141,22 +141,24 @@
     }
     .kpi-seg {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 12px 14px;
+      border-radius: var(--radius); padding: 13px 15px;
       cursor: pointer; position: relative; overflow: hidden;
-      transition: transform .12s, border-color .12s;
+      box-shadow: var(--shadow-card);
+      transition: transform .18s, border-color .18s, box-shadow .18s;
     }
     .kpi-seg::before {
       content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-      width: 4px; background: var(--c);
+      width: 4px; background: var(--c); box-shadow: 0 0 12px -2px var(--c);
     }
-    .kpi-seg:hover { transform: translateY(-1px); border-color: var(--muted); }
+    .kpi-seg:hover { transform: translateY(-3px); border-color: var(--c);
+      box-shadow: var(--shadow), 0 0 26px -12px var(--c); }
     .kpi-seg.active {
       border-color: var(--c);
-      box-shadow: 0 0 0 1px var(--c);
+      box-shadow: 0 0 0 1px var(--c), 0 0 22px -8px var(--c);
     }
     .kpi-seg .n {
-      font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
-      color: var(--text); font-variant-numeric: tabular-nums;
+      font-size: 24px; font-weight: 800; letter-spacing: -0.02em;
+      color: var(--text); font-variant-numeric: tabular-nums; text-shadow: var(--value-glow);
     }
     .kpi-seg .l {
       font-size: 11px; color: var(--muted); margin-top: 2px;

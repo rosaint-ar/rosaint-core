@@ -11,10 +11,15 @@
     .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
     .kpi {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 14px 16px;
+      border-radius: var(--radius); padding: 15px 17px;
+      box-shadow: var(--shadow-card); position: relative; overflow: hidden;
+      transition: transform .2s, box-shadow .2s, border-color .2s;
     }
+    .kpi::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--accent), transparent); opacity: 0; transition: opacity .2s; }
+    .kpi:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 0 26px -12px var(--accent-glow); border-color: var(--border-2); }
+    .kpi:hover::after { opacity: 1; }
     .kpi .k { font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
-    .kpi .v { font-size: 24px; font-weight: 700; color: var(--text); margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .kpi .v { font-size: 27px; font-weight: 800; color: var(--text); margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-shadow: var(--value-glow); }
     .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
     .toolbar {
@@ -24,18 +29,21 @@
     }
     .toolbar .status { font-size: 12px; color: var(--muted); flex: 1; min-width: 200px; }
     .btn-primary {
-      background: var(--accent); color: #fff; border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-press)); color: #fff; border: none;
       padding: 10px 18px; border-radius: var(--radius-sm);
       font-weight: 600; font-size: 13px; cursor: pointer;
       display: inline-flex; align-items: center; gap: 8px;
+      box-shadow: 0 4px 12px var(--accent-tint); transition: transform .14s, box-shadow .14s;
     }
-    .btn-primary:hover { opacity: .9; }
-    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px var(--accent-glow); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
     .panel {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px;
+      border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px;
+      box-shadow: var(--shadow-card); transition: box-shadow .2s;
     }
+    .panel:hover { box-shadow: var(--shadow); }
     .panel-header {
       display: flex; justify-content: space-between; align-items: baseline;
       margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
@@ -46,7 +54,7 @@
       background: var(--accent-tint); color: var(--accent); font-weight: 700;
       font-size: 13px; padding: 4px 12px; border-radius: 20px;
     }
-    .panel-header .count-badge.warn { background: rgba(255, 165, 0, 0.15); color: #ff8c00; }
+    .panel-header .count-badge.warn { background: rgba(255, 165, 0, 0.15); color: var(--warn); }
 
     table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
     table.data th {
@@ -63,9 +71,9 @@
       font-family: 'SF Mono', Consolas, monospace; font-size: 12px;
       color: var(--muted);
     }
-    table.data td.warn { color: #ff8c00; font-weight: 600; }
-    table.data td.error { color: #dc3545; font-weight: 600; }
-    table.data td.ok { color: #28a745; }
+    table.data td.warn { color: var(--warn); font-weight: 600; }
+    table.data td.error { color: var(--hot); font-weight: 600; }
+    table.data td.ok { color: var(--ok); }
     table.data tr:last-child td { border-bottom: none; }
 
     .componentes {
@@ -75,9 +83,9 @@
     .comp-row { display: flex; gap: 8px; align-items: baseline; }
     .comp-row .comp-name { flex: 1; }
     .comp-row .comp-qty { font-variant-numeric: tabular-nums; }
-    .comp-row.faltante { color: #dc3545; }
+    .comp-row.faltante { color: var(--hot); }
     .comp-row.faltante::before { content: '✗'; }
-    .comp-row.ok::before { content: '✓'; color: #28a745; }
+    .comp-row.ok::before { content: '✓'; color: var(--ok); }
     .comp-row.ok { color: var(--muted); }
     .comp-row::before { display: inline-block; width: 12px; }
 
@@ -105,34 +113,34 @@
     }
     .lineas-list .linea .sku { font-family: 'SF Mono', Consolas, monospace; color: var(--muted); }
     .lineas-list .linea .qty { text-align: right; font-variant-numeric: tabular-nums; }
-    .lineas-list .linea .qty.pendiente { color: #dc3545; font-weight: 600; }
+    .lineas-list .linea .qty.pendiente { color: var(--hot); font-weight: 600; }
 
     .msg {
       margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-sm);
       font-size: 13px;
     }
-    .msg--ok { background: rgba(40, 167, 69, 0.1); color: #28a745; border: 1px solid rgba(40, 167, 69, 0.2); }
-    .msg--err { background: rgba(220, 53, 69, 0.1); color: #dc3545; border: 1px solid rgba(220, 53, 69, 0.2); }
+    .msg--ok { background: rgba(40, 167, 69, 0.1); color: var(--ok); border: 1px solid rgba(40, 167, 69, 0.2); }
+    .msg--err { background: rgba(220, 53, 69, 0.1); color: var(--hot); border: 1px solid rgba(220, 53, 69, 0.2); }
     .msg--info { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
 
     .badge-partial {
-      background: rgba(255, 165, 0, 0.15); color: #ff8c00;
+      background: rgba(255, 165, 0, 0.15); color: var(--warn);
       padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
     }
     .badge-pending {
-      background: rgba(220, 53, 69, 0.12); color: #dc3545;
+      background: rgba(220, 53, 69, 0.12); color: var(--hot);
       padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
     }
 
     .hoja-cta {
       display: flex; align-items: center; justify-content: space-between; gap: 20px;
       padding: 22px 24px; margin-bottom: 20px;
-      background: linear-gradient(135deg, var(--accent) 0%, #d02537 100%);
-      border-radius: var(--radius); color: #fff; text-decoration: none;
-      box-shadow: 0 4px 16px rgba(249, 53, 73, 0.25);
-      transition: transform 0.1s, box-shadow 0.15s;
+      background: linear-gradient(135deg, var(--accent), var(--accent-press));
+      border-radius: var(--radius-lg); color: #fff; text-decoration: none;
+      box-shadow: 0 6px 20px var(--accent-glow);
+      transition: transform .15s, box-shadow .15s;
     }
-    .hoja-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(249, 53, 73, 0.35); text-decoration: none; color: #fff; }
+    .hoja-cta:hover { transform: translateY(-2px); box-shadow: 0 10px 30px var(--accent-glow); text-decoration: none; color: #fff; }
     .hoja-cta__ico { font-size: 30px; flex-shrink: 0; }
     .hoja-cta__body { flex: 1; }
     .hoja-cta__title { font-size: 17px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
@@ -159,12 +167,12 @@
     </div>
     <div class="kpi">
       <div class="k">A Fabricar</div>
-      <div class="v" id="kpi-fabricar" style="color: #dc3545;">—</div>
+      <div class="v" id="kpi-fabricar" style="color: var(--hot);">—</div>
       <div class="sub">Falta granel o MP</div>
     </div>
     <div class="kpi">
       <div class="k">A Fraccionar</div>
-      <div class="v" id="kpi-fraccionar" style="color: #ff8c00;">—</div>
+      <div class="v" id="kpi-fraccionar" style="color: var(--warn);">—</div>
       <div class="sub">Solo envasar</div>
     </div>
   </div>
@@ -232,6 +240,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 const SYNC_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
@@ -284,12 +293,19 @@ async function cargarDatos() {
   renderPedidos(pedidos, lineas);
 }
 
+let _kpiAnimado = false;
+function setKpi(id, n) {
+  const el = document.getElementById(id); if (!el) return;
+  el.dataset.n = n;
+  if (!_kpiAnimado && window.Charts) Charts.countUp(el);
+  else el.textContent = Number(n).toLocaleString('es-AR');
+}
 function renderKPIs(pedidos, lineas, faltantes) {
-  document.getElementById('kpi-pedidos').textContent = pedidos.length;
-  const productos = new Set(lineas.filter(l => l.qty_pendiente > 0).map(l => l.sku)).size;
-  document.getElementById('kpi-productos').textContent = productos;
-  document.getElementById('kpi-fabricar').textContent = faltantes.filter(f => f.accion === 'a_fabricar').length;
-  document.getElementById('kpi-fraccionar').textContent = faltantes.filter(f => f.accion === 'a_fraccionar').length;
+  setKpi('kpi-pedidos', pedidos.length);
+  setKpi('kpi-productos', new Set(lineas.filter(l => l.qty_pendiente > 0).map(l => l.sku)).size);
+  setKpi('kpi-fabricar', faltantes.filter(f => f.accion === 'a_fabricar').length);
+  setKpi('kpi-fraccionar', faltantes.filter(f => f.accion === 'a_fraccionar').length);
+  _kpiAnimado = true;
 }
 
 function renderStatus(lastLog) {
@@ -298,7 +314,7 @@ function renderStatus(lastLog) {
   const dt = new Date(lastLog.ejecutado_en);
   const hace = tiempoRelativo(dt);
   const status = lastLog.ok ? '✓' : '✗';
-  el.innerHTML = 'Última sync: <strong>' + hace + '</strong> ' + status + (lastLog.error ? ' — <span style="color:#dc3545;">' + escapeHTML(lastLog.error) + '</span>' : '');
+  el.innerHTML = 'Última sync: <strong>' + hace + '</strong> ' + status + (lastLog.error ? ' — <span style="color:var(--hot);">' + escapeHTML(lastLog.error) + '</span>' : '');
 }
 
 function tiempoRelativo(fecha) {
