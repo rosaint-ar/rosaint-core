@@ -10,47 +10,51 @@
 // Editá este array para agregar/quitar módulos. `href` es relativo a la raíz.
 // `status: 'soon'` deja el item visible pero deshabilitado (con etiqueta "pronto").
 const MENU = [
-  { type: 'item', id: 'dashboard', label: 'Dashboard', href: 'index.html', status: 'ready' },
-  { type: 'item', id: 'asistente', label: 'Asistente',  href: 'asistente/agente.html', status: 'ready' },
-  { type: 'item', id: 'manuales',  label: 'Manuales',   href: 'manuales/index.html', status: 'ready' },
+  { type: 'group', label: 'General' },
+  { type: 'item', id: 'dashboard', label: 'Inicio',    href: 'index.html', status: 'ready' },
+  { type: 'item', id: 'asistente', label: 'Asistente', href: 'asistente/agente.html', status: 'ready' },
+  { type: 'item', id: 'manuales',  label: 'Manuales',  href: 'manuales/index.html', status: 'ready' },
 
-  { type: 'group', label: 'Atención al cliente' },
+  { type: 'group', label: 'Comercial' },
   { type: 'item', id: 'crm',          label: 'Clientes',     href: 'comercial/crm.html',          status: 'ready' },
   { type: 'item', id: 'cotizador',    label: 'Cotizador',    href: 'comercial/cotizador.html',    status: 'ready' },
   { type: 'item', id: 'seguimientos', label: 'Seguimientos', href: 'comercial/seguimientos.html', status: 'ready' },
-
-  { type: 'group', label: 'Producto' },
-  { type: 'item', id: 'laboratorio',   label: 'Laboratorio',   href: 'laboratorio/index.html', status: 'ready' },
-  { type: 'item', id: 'reposicion',    label: 'Stock y reposición', href: 'laboratorio/reposicion.html', status: 'ready' },
-  { type: 'item', id: 'proveedores',   label: 'Proveedores',        href: 'laboratorio/proveedores.html', status: 'ready' },
-  { type: 'item', id: 'catalogo',      label: 'Catálogo',      href: 'catalogo/index.html',      status: 'ready' },
-  { type: 'item', id: 'fichas',        label: 'Fichas técnicas', href: 'fichas/index.html',      status: 'ready' },
-
-  { type: 'group', label: 'Precios' },
-  { type: 'item', id: 'precios',       label: 'Precios',       href: 'precios/index.html',       status: 'ready' },
 
   { type: 'group', label: 'Ventas online' },
   { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',   status: 'ready' },
   { type: 'item', id: 'oportunidades', label: 'Oportunidades', href: 'comercial/oportunidades.html', status: 'ready' },
 
+  { type: 'group', label: 'Producto' },
+  { type: 'item', id: 'laboratorio', label: 'Laboratorio',     href: 'laboratorio/index.html', status: 'ready' },
+  { type: 'item', id: 'catalogo',    label: 'Catálogo',        href: 'catalogo/index.html',    status: 'ready' },
+  { type: 'item', id: 'fichas',      label: 'Fichas técnicas', href: 'fichas/index.html',      status: 'ready' },
+
+  { type: 'group', label: 'Abastecimiento' },
+  { type: 'item', id: 'reposicion',  label: 'Stock y reposición', href: 'laboratorio/reposicion.html',  status: 'ready' },
+  { type: 'item', id: 'proveedores', label: 'Proveedores',        href: 'laboratorio/proveedores.html', status: 'ready' },
+
   { type: 'group', label: 'Producción' },
-  { type: 'item', id: 'produccion',    label: 'Producción',    href: 'produccion/index.html',    status: 'ready' },
-  { type: 'item', id: 'escandallo',    label: 'Escandallo (costos)', href: 'produccion/escandallo.html', status: 'ready' },
+  { type: 'item', id: 'produccion', label: 'Producción', href: 'produccion/index.html',      status: 'ready' },
+  { type: 'item', id: 'escandallo', label: 'Escandallo', href: 'produccion/escandallo.html', status: 'ready' },
+
+  { type: 'group', label: 'Precios' },
+  { type: 'item', id: 'precios',      label: 'Precios',      href: 'precios/index.html',        status: 'ready' },
+  { type: 'item', id: 'rentabilidad', label: 'Rentabilidad', href: 'precios/rentabilidad.html', status: 'ready' },
 
   { type: 'group', label: 'Contabilidad' },
-  { type: 'item', id: 'cierre',           label: 'Cierre mensual',         href: 'contabilidad/cierre.html',            status: 'ready' },
-  { type: 'item', id: 'conciliador',      label: 'Conciliador IVA',        href: 'contabilidad/conciliador.html',       status: 'ready' },
-  { type: 'item', id: 'percepcionesarca', label: 'Contraste Percepciones', href: 'contabilidad/percepciones-arca.html', status: 'ready' },
-  { type: 'item', id: 'librosiva',        label: 'Libros de IVA (ZIP)',    href: 'contabilidad/libros-iva.html',        status: 'ready' },
-  { type: 'item', id: 'percepciones', label: 'Percepciones',          href: 'contabilidad/percepciones.html', status: 'ready' },
-  { type: 'item', id: 'iibb',         label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',         status: 'ready' },
+  { type: 'item', id: 'cierre',           label: 'Cierre mensual',        href: 'contabilidad/cierre.html',            status: 'ready' },
+  { type: 'item', id: 'conciliador',      label: 'Conciliador IVA',       href: 'contabilidad/conciliador.html',       status: 'ready' },
+  { type: 'item', id: 'percepciones',     label: 'Percepciones (cargar)', href: 'contabilidad/percepciones.html',      status: 'ready' },
+  { type: 'item', id: 'percepcionesarca', label: 'Contraste ARCA',        href: 'contabilidad/percepciones-arca.html', status: 'ready' },
+  { type: 'item', id: 'iibb',             label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',              status: 'ready' },
+  { type: 'item', id: 'librosiva',        label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html',        status: 'ready' },
 
   { type: 'group', label: 'Backoffice' },
-  { type: 'item', id: 'calidad',        label: 'Calidad',         href: '#', status: 'soon' },
-  { type: 'item', id: 'administracion', label: 'Administración',  href: '#', status: 'soon' },
+  { type: 'item', id: 'calidad',        label: 'Calidad',        href: '#', status: 'soon' },
+  { type: 'item', id: 'administracion', label: 'Administración', href: '#', status: 'soon' },
 
   { type: 'group', label: 'Sistema' },
-  { type: 'item', id: 'sistema',       label: 'Sistema',       href: 'sistema/index.html', status: 'ready' },
+  { type: 'item', id: 'sistema', label: 'Sistema', href: 'sistema/index.html', status: 'ready' },
 ];
 
 // ---- Utilidades --------------------------------------------------------
@@ -126,6 +130,7 @@ const MODULE_ICONS = {
   manuales:       '<svg viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v13h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-13h-3c-2.5 0-4.5.5-6 2z"/><path d="M12 6.5v12"/></svg>',
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   escandallo:     '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>',
+  rentabilidad:   '<svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
   percepcionesarca: '<svg viewBox="0 0 24 24"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>',
@@ -262,18 +267,36 @@ function renderTopbar(pageTitle, pageSub) {
 // Se pinta solo si la página tiene <div id="module-accesos">. Accesos rápidos
 // a cada herramienta; la navegación principal sigue siendo la sidebar.
 function renderModuleGrid(root, host) {
-  const cards = MENU
-    .filter(e => e.type === 'item' && e.id !== 'dashboard')
-    .map(it => {
-      const soon = it.status === 'soon';
-      const href = soon ? 'javascript:void(0)' : (root + it.href);
-      return `<a class="mod-card${soon ? ' soon' : ''}" href="${href}"${soon ? ' aria-disabled="true"' : ''}>
-        <span class="mod-ico">${MODULE_ICONS[it.id] || DEFAULT_ICON}</span>
-        <span class="mod-name">${it.label}</span>
-        ${soon ? '<span class="mod-soon">pronto</span>' : ''}
-      </a>`;
-    }).join('');
-  host.innerHTML = `<div class="mod-grid">${cards}</div>`;
+  // Recorre el MENU agrupando por sección; salta la sección "General" (Inicio/Asistente/Manuales
+  // ya están arriba de todo) para no repetir, y arma un bloque por cada grupo.
+  const cardHTML = (it) => {
+    const soon = it.status === 'soon';
+    const href = soon ? 'javascript:void(0)' : (root + it.href);
+    return `<a class="mod-card${soon ? ' soon' : ''}" href="${href}"${soon ? ' aria-disabled="true"' : ''}>
+      <span class="mod-ico">${MODULE_ICONS[it.id] || DEFAULT_ICON}</span>
+      <span class="mod-name">${it.label}</span>
+      ${soon ? '<span class="mod-soon">pronto</span>' : ''}
+    </a>`;
+  };
+
+  let html = '';
+  let currentItems = [];
+  let currentLabel = null;
+  const flush = () => {
+    if (!currentItems.length) { currentLabel = null; return; }
+    html += `<div class="mod-section">
+      <div class="mod-section-head"><h2>${currentLabel || ''}</h2><span class="ln"></span></div>
+      <div class="mod-grid">${currentItems.map(cardHTML).join('')}</div>
+    </div>`;
+    currentItems = []; currentLabel = null;
+  };
+  for (const entry of MENU) {
+    if (entry.type === 'group') { flush(); currentLabel = entry.label; continue; }
+    if (entry.id === 'dashboard') continue;          // no repetir el Inicio en su propia grilla
+    currentItems.push(entry);
+  }
+  flush();
+  host.innerHTML = html;
 }
 
 // ---- Auth guard ------------------------------------------------------
