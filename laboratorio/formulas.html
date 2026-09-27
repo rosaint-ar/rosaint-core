@@ -55,24 +55,62 @@
       color: var(--muted);
     }
 
-    /* ---- Selector de fórmula ---- */
-    .formula-list {
-      max-height: 400px; overflow-y: auto;
-      border: 1px solid var(--border); border-radius: var(--radius-sm);
+    /* ---- Selector de fórmula (panel) ---- */
+    #selector-view { max-width: 940px; margin: 0 auto; }
+    .fp-hero {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; align-items: center;
+      margin-bottom: 18px;
     }
-    .formula-row {
-      padding: 10px 14px; border-bottom: 1px solid var(--border);
-      cursor: pointer; display: flex; align-items: center; gap: 12px;
+    @media (max-width: 720px) { .fp-hero { grid-template-columns: 1fr; } }
+    .fp-donut-wrap { display: flex; align-items: center; gap: 18px; }
+    .fp-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
+    .fp-legend .li { display: flex; align-items: center; gap: 8px; color: var(--text); }
+    .fp-legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .fp-legend .n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 600; }
+    .fp-search { position: relative; margin: 4px 0 14px; }
+    .fp-search input { width: 100%; padding-left: 38px; }
+    .fp-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px; stroke: var(--muted); fill: none; stroke-width: 2; }
+    .fp-sech {
+      display: flex; align-items: baseline; gap: 10px; margin: 20px 2px 10px;
     }
-    .formula-row:hover { background: var(--surface-2); }
-    .formula-row:last-child { border-bottom: none; }
-    .formula-row .codigo {
-      font-family: var(--font-mono); color: var(--accent);
-      font-size: 12px; min-width: 60px;
+    .fp-sech .t { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: .01em; }
+    .fp-sech .c { font-size: 12px; font-weight: 700; color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      padding: 1px 8px; border-radius: 999px; }
+    .fp-sech .s { font-size: 12px; color: var(--muted); margin-left: auto; text-align: right; }
+    .fp-fam { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); font-weight: 700; margin: 12px 4px 6px; }
+    .fp-fam:first-child { margin-top: 2px; }
+    .fp-row {
+      display: flex; align-items: center; gap: 13px; cursor: pointer;
+      padding: 11px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); margin-bottom: 7px;
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
     }
-    .formula-row .linea {
-      font-size: 11px; color: var(--muted); margin-left: auto;
-    }
+    .fp-row:hover { transform: translateX(3px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      box-shadow: var(--shadow-1); }
+    .fp-ico { width: 34px; height: 34px; border-radius: 9px; flex: none;
+      display: grid; place-items: center; background: var(--surface-2); }
+    .fp-ico svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .fp-body { min-width: 0; flex: 1; }
+    .fp-name { font-size: 13.5px; font-weight: 600; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fp-desc { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .fp-desc .cod { font-family: var(--font-mono); color: var(--accent); }
+    .fp-meta { display: flex; align-items: center; gap: 12px; flex: none; }
+    .fp-cost { text-align: right; }
+    .fp-cost .v { font-size: 13.5px; font-weight: 700; color: var(--text);
+      font-variant-numeric: tabular-nums; }
+    .fp-cost .u { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    .fp-cost.hi .v { color: var(--warn); }
+    .fp-bar { width: 52px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+    .fp-bar > i { display: block; height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--warn))); }
+    .fp-arr svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 2; }
+    .fp-empty { padding: 26px; text-align: center; color: var(--muted); }
+    .fp-badge { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+      background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); flex: none; }
 
     /* ---- Formula header ---- */
     .formula-header { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 18px; }
@@ -402,10 +440,36 @@
   <div id="loading-screen" class="loading-screen">Cargando...</div>
 
   <!-- Selector inicial (cuando no hay ?codigo=...) -->
-  <div id="selector-view" class="card hidden" style="max-width:720px; margin: 0 auto;">
-    <div class="sec-title mb-12">Elegí una fórmula para editar</div>
-    <input type="text" id="filter-input" class="input" placeholder="Buscar por código o nombre..." oninput="filtrarFormulas()" style="width:100%; margin-bottom:10px;">
-    <div id="formula-list" class="formula-list"></div>
+  <div id="selector-view" class="hidden">
+
+    <div class="statbar">
+      <div class="stat"><div class="v" id="fp-te">—</div><div class="l">Graneles terminados</div></div>
+      <div class="stat"><div class="v" id="fp-skus">—</div><div class="l">SKUs que fraccionan</div></div>
+      <div class="stat"><div class="v" id="fp-se">—</div><div class="l">Semielaborados</div></div>
+      <div class="stat"><div class="v" id="fp-kg">—</div><div class="l">Costo/kg prom. granel</div></div>
+    </div>
+
+    <div class="card fp-hero">
+      <div class="fp-donut-wrap">
+        <div id="fp-donut" style="width:150px;height:150px;flex:none;"></div>
+        <div class="fp-legend" id="fp-legend"></div>
+      </div>
+      <div>
+        <div class="sec-title">El corazón de Rosaint</div>
+        <div class="sec-sub" style="margin-top:6px; line-height:1.5;">
+          Cada fórmula se elabora por kilo. Los <strong>graneles terminados</strong> se fraccionan
+          directo en las presentaciones que se venden; los <strong>semielaborados</strong> son bases
+          y soluciones que se reutilizan dentro de otras fórmulas.
+        </div>
+      </div>
+    </div>
+
+    <div class="fp-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+      <input type="text" id="filter-input" class="input" placeholder="Buscar por código o nombre..." oninput="filtrarFormulas()">
+    </div>
+
+    <div id="formula-list"></div>
   </div>
 
   <!-- Editor -->
@@ -668,6 +732,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -933,42 +998,117 @@ async function cargarDatosSecundarios() {
 // ═══════════════════════════════════════════════════════════════════════════
 // Selector de fórmula
 // ═══════════════════════════════════════════════════════════════════════════
+// Familias de graneles: orden, etiqueta e ícono
+const FP_FAM = {
+  CREMA:  { label: 'Cremas',           color: '#E23145', ico: '<svg viewBox="0 0 24 24"><path d="M6 8h12v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8z"/><path d="M8 8V5h8v3M10 5V3h4v2"/></svg>' },
+  GEL:    { label: 'Geles',            color: '#2F9E6E', ico: '<svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>' },
+  ACEITE: { label: 'Aceites de masaje',color: '#E0A93B', ico: '<svg viewBox="0 0 24 24"><path d="M9 3h6v3l2 4v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9l2-4V3z"/></svg>' },
+  OLEO:   { label: 'Óleos faciales',   color: '#6C5CE7', ico: '<svg viewBox="0 0 24 24"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z"/></svg>' },
+};
+const FP_SE = { label: 'Semielaborados', color: '#7A8794', ico: '<svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>' };
+const fpMoney = (n) => n == null ? '—' : '$' + Math.round(Number(n)).toLocaleString('es-AR');
+const fpFam = (f) => FP_FAM[f.familia] ? f.familia : (f.tipo === 'SE' ? 'SE' : 'OTRO');
+
 async function mostrarSelector() {
   document.getElementById('selector-view').classList.remove('hidden');
   document.getElementById('link-listado').style.display = 'none';
 
-  const { data: items } = await sb
-    .from('items')
-    .select('codigo, nombre, tipo, linea_id, lineas(nombre)')
-    .in('tipo', ['TE', 'SE'])
-    .eq('estado', 'vigente')
-    .order('codigo');
+  const { data, error } = await sb.from('v_formulas_panel').select('*');
+  if (error) console.warn('v_formulas_panel:', error);
+  state.todasFormulas = (data || []).map(r => ({ ...r, costo_kg: r.costo_kg == null ? null : Number(r.costo_kg) }));
 
-  state.todasFormulas = items || [];
+  renderFormulaStats();
   renderFormulaList();
+}
+
+function renderFormulaStats() {
+  const rows = state.todasFormulas;
+  const te = rows.filter(r => r.tipo === 'TE');
+  const se = rows.filter(r => r.tipo === 'SE');
+  const skus = te.reduce((a, r) => a + (Number(r.n_skus) || 0), 0);
+  const kgs = te.map(r => r.costo_kg).filter(v => v != null);
+  const avgKg = kgs.length ? kgs.reduce((a, b) => a + b, 0) / kgs.length : null;
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('fp-te', te.length); set('fp-skus', skus); set('fp-se', se.length); set('fp-kg', fpMoney(avgKg));
+
+  // Donut: composición del portafolio por familia + semielaborados
+  const segs = Object.keys(FP_FAM).map(k => ({
+    label: FP_FAM[k].label, color: FP_FAM[k].color,
+    value: te.filter(r => r.familia === k).length,
+  })).filter(s => s.value > 0);
+  segs.push({ label: FP_SE.label, color: FP_SE.color, value: se.length });
+
+  const donut = document.getElementById('fp-donut');
+  if (donut && window.Charts) {
+    Charts.donut(donut, { segments: segs, centerBig: String(rows.length), centerSmall: 'fórmulas', size: 150 });
+  }
+  const leg = document.getElementById('fp-legend');
+  if (leg) leg.innerHTML = segs.map(s =>
+    `<div class="li"><span class="dot" style="background:${s.color}"></span>${s.label}<span class="n">${s.value}</span></div>`
+  ).join('');
 }
 
 function renderFormulaList() {
   const filtro = document.getElementById('filter-input').value.toLowerCase().trim();
   const lista = document.getElementById('formula-list');
+  const rows = state.todasFormulas.filter(f =>
+    !filtro || f.codigo.includes(filtro) || (f.nombre || '').toLowerCase().includes(filtro));
 
-  const filtradas = state.todasFormulas.filter(f => {
-    if (!filtro) return true;
-    return f.codigo.includes(filtro) || f.nombre.toLowerCase().includes(filtro);
-  });
+  if (!rows.length) { lista.innerHTML = '<div class="fp-empty">Sin resultados para «' + filtro + '»</div>'; return; }
 
-  if (filtradas.length === 0) {
-    lista.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--muted)">Sin resultados</div>';
-    return;
+  const maxKg = Math.max(...state.todasFormulas.filter(r => r.tipo === 'TE' && r.costo_kg != null).map(r => r.costo_kg), 1);
+  const te = rows.filter(r => r.tipo === 'TE');
+  const se = rows.filter(r => r.tipo === 'SE');
+  let html = '';
+
+  // ── Graneles terminados, sub-agrupados por familia ──────────────────────
+  if (te.length) {
+    const totalTe = state.todasFormulas.filter(r => r.tipo === 'TE').length;
+    const skus = te.reduce((a, r) => a + (Number(r.n_skus) || 0), 0);
+    html += `<div class="fp-sech"><span class="t">Graneles terminados</span><span class="c">${te.length}${filtro ? ' de ' + totalTe : ''}</span>`
+          + `<span class="s">Se fraccionan directo · ${skus} SKUs a la venta</span></div>`;
+    for (const fam of Object.keys(FP_FAM)) {
+      const grupo = te.filter(r => r.familia === fam).sort((a, b) => (b.costo_kg || 0) - (a.costo_kg || 0));
+      if (!grupo.length) continue;
+      html += `<div class="fp-fam">${FP_FAM[fam].label}</div>`;
+      html += grupo.map(f => fpRow(f, maxKg)).join('');
+    }
+    // familias no contempladas (por si aparece un tipo nuevo)
+    const otros = te.filter(r => !FP_FAM[r.familia]).sort((a, b) => (b.costo_kg || 0) - (a.costo_kg || 0));
+    if (otros.length) { html += `<div class="fp-fam">Otros</div>` + otros.map(f => fpRow(f, maxKg)).join(''); }
   }
 
-  lista.innerHTML = filtradas.map(f => `
-    <div class="formula-row" onclick="abrirFormula('${f.codigo}')">
-      <span class="codigo">${f.codigo}</span>
-      <span>${f.nombre}</span>
-      <span class="linea">${f.lineas?.nombre || ''}</span>
-    </div>
-  `).join('');
+  // ── Semielaborados ───────────────────────────────────────────────────────
+  if (se.length) {
+    const totalSe = state.todasFormulas.filter(r => r.tipo === 'SE').length;
+    html += `<div class="fp-sech"><span class="t">Semielaborados</span><span class="c">${se.length}${filtro ? ' de ' + totalSe : ''}</span>`
+          + `<span class="s">Bases y soluciones · se reutilizan en otras fórmulas</span></div>`;
+    html += se.sort((a, b) => (b.usado_en || 0) - (a.usado_en || 0)).map(f => fpRow(f, maxKg)).join('');
+  }
+
+  lista.innerHTML = html;
+}
+
+function fpRow(f, maxKg) {
+  const meta = FP_FAM[f.familia] || FP_SE;
+  const esSE = f.tipo === 'SE';
+  const desc = esSE
+    ? `<span class="cod">${f.codigo}</span> · ${f.n_comp || 0} componentes${f.usado_en ? ' · usado en ' + f.usado_en + ' fórmula' + (f.usado_en === 1 ? '' : 's') : ''}`
+    : `<span class="cod">${f.codigo}</span> · ${f.destino} · fracciona en ${f.n_skus || 0} SKUs · ${f.n_comp || 0} componentes`;
+  const costo = f.costo_kg;
+  const hi = !esSE && costo != null && costo >= 30000;
+  const bar = (!esSE && costo != null)
+    ? `<span class="fp-bar"><i style="width:${Math.max(6, Math.round(100 * Math.sqrt(costo / maxKg)))}%"></i></span>`
+    : (esSE ? `<span class="fp-badge">base</span>` : '');
+  return `<div class="fp-row" onclick="abrirFormula('${f.codigo}')">
+      <span class="fp-ico" style="color:${meta.color}">${meta.ico}</span>
+      <span class="fp-body"><div class="fp-name">${f.nombre}</div><div class="fp-desc">${desc}</div></span>
+      <span class="fp-meta">
+        ${bar}
+        <span class="fp-cost${hi ? ' hi' : ''}"><div class="v">${fpMoney(costo)}</div><div class="u">por kg</div></span>
+        <span class="fp-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+      </span>
+    </div>`;
 }
 
 function filtrarFormulas() { renderFormulaList(); }
