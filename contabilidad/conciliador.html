@@ -185,6 +185,14 @@
     <div class="hint">Trae facturas y notas de crédito de Odoo por fecha contable, y las cruza contra ARCA. Las NC restan.</div>
   </div>
 
+  <div class="card" style="margin-bottom:12px;">
+    <div style="margin-bottom:8px;">
+      <strong style="font-size:14px;">Evolución del IVA crédito (compras)</strong>
+      <div class="muted" style="font-size:12px;margin-top:2px;">Crédito fiscal de compras por mes · en vivo desde Odoo</div>
+    </div>
+    <div id="cred-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
+  </div>
+
   <div class="status-bar" id="status"><span class="dot off"></span>Listo para conciliar.</div>
   <div id="results"></div>
 
@@ -192,6 +200,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -205,6 +214,21 @@ let arcaRows = null;
 let arcaDescartadas = null;
 let arcaMeta = null;
 let estado = null;
+
+// ── Evolución del IVA crédito (compras) — gráfico, en vivo desde Odoo ──────
+const FN_IVA_SERIE = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iva-serie';
+const M3C = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+async function cargarGraficoCredito() {
+  try {
+    const j = await fetch(FN_IVA_SERIE, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY }, body: JSON.stringify({ meses: 12 }) }).then(r => r.json());
+    if (!j.ok) throw new Error(j.error || 'error');
+    const rows = (j.meses || []).filter(m => m.credito > 0);
+    if (!rows.length) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
+    const labels = rows.map(m => { const p = m.mes.split('-'); return M3C[(+p[1]) - 1] + "'" + p[0].slice(2); });
+    Charts.trend($('cred-chart'), { labels, fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series: [{ name: 'IVA crédito', type: 'bar', values: rows.map(m => m.credito), color: 'var(--accent)' }] });
+  } catch (e) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar la evolución</div>'; }
+}
+cargarGraficoCredito();
 
 // Normaliza un header a una clave estable: minúsculas, sin acentos, sin puntuación,
 // espacios colapsados. Así "Nro. Doc. Emisor", "NRO DOC EMISOR", "Nro Doc. Emisor"
