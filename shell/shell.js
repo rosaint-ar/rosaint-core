@@ -266,34 +266,33 @@ function renderTopbar(pageTitle, pageSub) {
 // ---- Grilla de accesos a módulos (Dashboard) --------------------------
 // Se pinta solo si la página tiene <div id="module-accesos">. Accesos rápidos
 // a cada herramienta; la navegación principal sigue siendo la sidebar.
+const CHEVRON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+
 function renderModuleGrid(root, host) {
-  // Recorre el MENU agrupando por sección; salta la sección "General" (Inicio/Asistente/Manuales
-  // ya están arriba de todo) para no repetir, y arma un bloque por cada grupo.
-  const cardHTML = (it) => {
+  // Recorre el MENU agrupando por sección y arma una LISTA DE FILAS por grupo
+  // (más compacto y escaneable que las tarjetas). Salta el propio Inicio.
+  const rowHTML = (it) => {
     const soon = it.status === 'soon';
     const href = soon ? 'javascript:void(0)' : (root + it.href);
-    return `<a class="mod-card${soon ? ' soon' : ''}" href="${href}"${soon ? ' aria-disabled="true"' : ''}>
-      <span class="mod-ico">${MODULE_ICONS[it.id] || DEFAULT_ICON}</span>
-      <span class="mod-name">${it.label}</span>
-      ${soon ? '<span class="mod-soon">pronto</span>' : ''}
+    return `<a class="tr${soon ? ' soon' : ''}" href="${href}"${soon ? ' aria-disabled="true"' : ''}>
+      <span class="tr-ico">${MODULE_ICONS[it.id] || DEFAULT_ICON}</span>
+      <span class="tr-body"><div class="tr-name">${it.label}</div></span>
+      ${soon ? '<span class="tr-badge">pronto</span>' : `<span class="tr-arr">${CHEVRON_ICON}</span>`}
     </a>`;
   };
 
   let html = '';
-  let currentItems = [];
-  let currentLabel = null;
+  let items = [];
+  let label = null;
   const flush = () => {
-    if (!currentItems.length) { currentLabel = null; return; }
-    html += `<div class="mod-section">
-      <div class="mod-section-head"><h2>${currentLabel || ''}</h2><span class="ln"></span></div>
-      <div class="mod-grid">${currentItems.map(cardHTML).join('')}</div>
-    </div>`;
-    currentItems = []; currentLabel = null;
+    if (!items.length) { label = null; return; }
+    html += `<div class="list-sec-h">${label || ''}</div><div class="tool-list">${items.map(rowHTML).join('')}</div>`;
+    items = []; label = null;
   };
   for (const entry of MENU) {
-    if (entry.type === 'group') { flush(); currentLabel = entry.label; continue; }
-    if (entry.id === 'dashboard') continue;          // no repetir el Inicio en su propia grilla
-    currentItems.push(entry);
+    if (entry.type === 'group') { flush(); label = entry.label; continue; }
+    if (entry.id === 'dashboard') continue;          // no repetir el Inicio en su propia lista
+    items.push(entry);
   }
   flush();
   host.innerHTML = html;

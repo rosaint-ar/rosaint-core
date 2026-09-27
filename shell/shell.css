@@ -301,6 +301,47 @@ body { display: grid; grid-template-columns: var(--sidebar-w) 1fr; grid-template
 .mod-card.soon { opacity: .5; pointer-events: none; }
 .mod-soon { margin-left: auto; font-size: 10px; font-weight: 600; color: var(--muted); background: var(--surface-2); padding: 1px 7px; border-radius: 10px; }
 
+/* =========================================================================
+   Filas de herramientas (patrón de landings) — reemplaza las tarjetas.
+   Compacto, escaneable, con dato/indicador en vivo a la derecha.
+   ========================================================================= */
+.statbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.statbar .stat { flex: 1; min-width: 118px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 13px; box-shadow: var(--shadow-card); }
+.statbar .stat .v { font-size: 20px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.statbar .stat .l { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-top: 1px; }
+
+.list-sec-h { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 22px 2px 8px; }
+.list-sec-h:first-child { margin-top: 4px; }
+
+.tool-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); overflow: hidden; }
+.tool-list + .tool-list { margin-top: 12px; }
+.tr { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .14s; text-decoration: none; color: inherit; }
+.tr:last-child { border-bottom: none; }
+.tr:hover { background: var(--surface-2); text-decoration: none; color: inherit; }
+.tr-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; transition: box-shadow .2s; }
+.tr:hover .tr-ico { box-shadow: 0 0 16px -4px var(--accent-glow); }
+.tr-ico svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tr-body { flex: 1; min-width: 0; }
+.tr-name { font-size: 14px; font-weight: 650; }
+.tr-desc { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-meta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.tr-stat { text-align: right; }
+.tr-stat .n { font-size: 15px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.tr-stat .u { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.tr-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.tr-badge.hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
+.tr-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tr-badge.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.tr-spark { width: 92px; height: 28px; flex-shrink: 0; }
+.tr-arr { color: var(--muted); display: flex; }
+.tr-arr svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+.tr.soon { opacity: .55; pointer-events: none; }
+.hero-row { background: linear-gradient(135deg, var(--accent), var(--accent-press)); color: #fff; border: none; box-shadow: 0 6px 18px var(--accent-glow); }
+.hero-row .tr-ico { background: rgba(255,255,255,.18); color: #fff; }
+.hero-row .tr-desc { color: rgba(255,255,255,.85); }
+.hero-row .tr-arr { color: #fff; }
+.hero-row:hover { background: linear-gradient(135deg, var(--accent), var(--accent-press)); filter: brightness(1.04); color: #fff; }
+
 @media (max-width: 560px) { .brand-name, .topbar-title .sub { display: none; } }
 
 /* =========================================================================
