@@ -182,7 +182,7 @@
           <span class="chip"><svg viewBox="0 0 24 24"><path d="M12 3v10M8 7l4-4 4 4M7 20h10"/></svg>Agitador hélice · alta velocidad</span>
           <span class="chip"><svg viewBox="0 0 24 24"><path d="M5 8h10v4a5 5 0 0 1-10 0zM15 9h3v3"/></svg>Válvula lateral de descarga</span>
           <span class="chip"><svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="10" rx="2"/><path d="M9 9V6h6v3"/></svg>Balanza Systel 31 kg</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1z"/><path d="M6 4h12"/></svg>1 balde de 30 L (agua + glicerina)</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1z"/><path d="M6 4h12"/></svg>1 cuñete de 30 L (agua + glicerina)</span>
           <span class="chip"><svg viewBox="0 0 24 24"><path d="M8 5h8l-1 14a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/><path d="M7 5h10"/></svg>Baldes de 10 L (carbopol)</span>
         </div>
       </div>
@@ -213,12 +213,12 @@ const PROCESO = {
   materiales: [
     { orden: 1, cod: '20000', nombre: 'Agua purificada',       pct: 87.9, color: '#49B6FF' },
     { orden: 2, cod: '20030', nombre: 'Glicerina vegetal',     pct: 10.0, color: '#E0A93B' },
-    { orden: 3, cod: '20015', nombre: 'Carbomer 940/980',      pct: 2.0,  color: '#E23145' },
-    { orden: 4, cod: '20016', nombre: 'Conservante Kathon LX', pct: 0.1,  color: '#6C5CE7' },
+    { orden: 3, cod: '20016', nombre: 'Conservante Kathon LX', pct: 0.1,  color: '#6C5CE7' },
+    { orden: 4, cod: '20015', nombre: 'Carbomer 940/980',      pct: 2.0,  color: '#E23145' },
   ],
   // Pasos reales. tiempo:null = a definir
   pasos: [
-    { tit: 'Pesar el agua', desc: 'En baldes de 30 L, de a <b>25 kg</b> por tachada (la última, 23 kg). En el mismo balde se incorporan la glicerina y el conservante Kathon.', tiempo: null },
+    { tit: 'Pesar el agua', desc: 'En un cuñete de 30 L, de a <b>25 kg</b> por tachada (la última, 23 kg). En el mismo cuñete se incorporan la glicerina y el conservante Kathon.', tiempo: null },
     { tit: 'Pesar el carbomer', desc: 'Polvo fino, volátil y muy liviano: se pesa de a <b>1 kg</b> en baldes de 10 L (los del envasado).', tiempo: null },
     { tit: 'Cargar al reactor', desc: 'Se vuelcan las tachadas de agua. El carbomer se incorpora <b>antes de la última tachada (23 kg)</b>, que lo arrastra.', tiempo: null },
     { tit: 'Mezclar a alta velocidad', desc: 'Agitador tipo hélice de bajo diámetro, a alta velocidad, hasta hidratar por completo el carbomer.', tiempo: '≈ 14–16 h' },
@@ -303,7 +303,7 @@ function pxFrame(nowMs) {
     const prevCum = seg.i === 0 ? 0 : cum[seg.i - 1];
     level = prevCum + (cum[seg.i] - prevCum) * pourP;
     color = mixColorUpTo(seg.i, pourP);
-    activeMat = seg.i; activeStep = (seg.i === 2) ? 2 : 1;
+    activeMat = seg.i; activeStep = 2;
     clockTxt = `Carga · ${seg.i + 1}/4`;
     const { y } = levelToY(level);
     if (prog < 0.7) { stream.setAttribute('opacity', '0.9'); const rr = stream.firstElementChild; rr.setAttribute('height', Math.max(0, y - 72)); rr.setAttribute('fill', mats[seg.i].color); }
