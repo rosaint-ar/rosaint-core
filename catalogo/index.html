@@ -7,39 +7,6 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css">
-  <style>
-    .tool-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 20px 22px;
-      display: flex; flex-direction: column; gap: 8px;
-      transition: border-color .12s, transform .12s;
-      cursor: pointer; text-decoration: none; color: inherit;
-    }
-    .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
-    .tool-card .icon {
-      width: 36px; height: 36px; border-radius: var(--radius-sm);
-      background: var(--accent-tint); color: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; margin-bottom: 6px;
-    }
-    .tool-card h3 { font-size: 15px; font-weight: 600; color: var(--text); }
-    .tool-card .desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
-    .tool-card.disabled { opacity: 0.6; cursor: not-allowed; }
-    .tool-card.disabled:hover { border-color: var(--border); transform: none; }
-    .grid-tools {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 14px;
-    }
-    .status-current {
-      display: flex; gap: 24px; padding: 14px 18px; flex-wrap: wrap;
-      background: var(--surface-2); border-radius: var(--radius);
-      margin-bottom: 20px; font-size: 13px;
-    }
-    .status-current .k { color: var(--muted); }
-    .status-current .v {
-      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
-    }
-  </style>
 </head>
 <body data-page="catalogo" data-title="Catálogo" data-subtitle="Productos terminados · presentaciones · combos">
 
@@ -47,45 +14,34 @@
 
 <main id="app-content">
 
-  <div class="status-current" id="statusCat">
-    <span><span class="k">SKUs activos:</span> <span class="v" id="cnt-sku">—</span></span>
-    <span><span class="k">Combos:</span> <span class="v" id="cnt-combo">—</span></span>
-    <span><span class="k">Packs x4:</span> <span class="v" id="cnt-pack">—</span></span>
+  <div class="statbar">
+    <div class="stat"><div class="v" id="cnt-sku">—</div><div class="l">SKUs vigentes</div></div>
+    <div class="stat"><div class="v" id="cnt-pack">—</div><div class="l">Packs x4</div></div>
+    <div class="stat"><div class="v" id="cnt-combo">—</div><div class="l">Combos</div></div>
+    <div class="stat"><div class="v" id="cnt-lineas">—</div><div class="l">Líneas comerciales</div></div>
   </div>
 
-  <div class="card" style="margin-bottom:20px;">
-    <div style="margin-bottom:8px;">
-      <strong style="font-size:14px;">SKUs por línea comercial</strong>
-      <div class="muted" style="font-size:12px;margin-top:2px;">Productos terminados vigentes en cada línea</div>
-    </div>
-    <div id="cat-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
-  </div>
-
-  <h2 style="font-size:16px; font-weight:600; margin-bottom:12px;">Herramientas del catálogo</h2>
-
-  <div class="grid-tools">
-    <a href="combos.html" class="tool-card">
-      <div class="icon">◐</div>
-      <h3>Combos</h3>
-      <div class="desc">Armá combos de 2 a 5 productos, con cálculo de costo automático y publicación por canal.</div>
+  <div class="list-sec-h">Herramientas del catálogo</div>
+  <div class="tool-list">
+    <a class="tr" href="presentaciones.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Presentaciones (SKUs)</div><div class="tr-desc">Alta de SKU: granel + envase + etiqueta + tamaño · con canales y línea</div></span>
+      <span class="tr-meta"><span class="tr-stat"><div class="n" id="row-sku">—</div><div class="u">SKUs</div></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
     </a>
-
-    <a href="presentaciones.html" class="tool-card">
-      <div class="icon">□</div>
-      <h3>Presentaciones (SKUs)</h3>
-      <div class="desc">Alta de SKU: granel + envase + etiqueta + tamaño. Con canales y línea comercial.</div>
+    <a class="tr" href="packs.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Packs x4</div><div class="tr-desc">Combos mayoristas de 4 unidades · costo automático, editar y agregar</div></span>
+      <span class="tr-meta"><span class="tr-stat"><div class="n" id="row-pack">—</div><div class="u">packs</div></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
     </a>
-
-    <a href="lineas.html" class="tool-card">
-      <div class="icon">☰</div>
-      <h3>Líneas comerciales</h3>
-      <div class="desc">ABM de las 5 líneas (Neutra, Termoactiva, Corporal, Facial, Packs). Nombre, color, orden y activo. Contador de items por línea.</div>
+    <a class="tr" href="combos.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Combos</div><div class="tr-desc">Combos de 2 a 5 productos · costo automático y publicación por canal</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
     </a>
-
-    <a href="packs.html" class="tool-card">
-      <div class="icon">◈</div>
-      <h3>Packs x4</h3>
-      <div class="desc">Combos mayoristas de 4 unidades. Ver todos los packs vigentes con costo automático, editar cantidad, agregar nuevos.</div>
+    <a class="tr" href="lineas.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Líneas comerciales</div><div class="tr-desc">ABM de las líneas (Neutra, Termoactiva, Corporal, Facial, Packs)</div></span>
+      <span class="tr-meta"><span class="tr-stat"><div class="n" id="row-lineas">—</div><div class="u">líneas</div></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
     </a>
   </div>
 
@@ -93,35 +49,23 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
-<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 (async () => {
   try {
     const [itemsR, lineasR] = await Promise.all([
-      sb.from('items').select('tipo, estado, linea_id'),
-      sb.from('lineas').select('id, nombre, orden').order('orden'),
+      sb.from('items').select('tipo, estado'),
+      sb.from('lineas').select('activo'),
     ]);
     const vig = (itemsR.data || []).filter(r => r.estado === 'vigente');
-    document.getElementById('cnt-sku').textContent = vig.filter(r => r.tipo === 'SKU').length;
-    document.getElementById('cnt-combo').textContent = vig.filter(r => r.tipo === 'COMBO').length;
-    document.getElementById('cnt-pack').textContent = vig.filter(r => r.tipo === 'PACK').length;
-
-    // Gráfico: SKUs vigentes por línea comercial
-    const lineas = lineasR.data || [];
-    const nombreLinea = {}; lineas.forEach(l => nombreLinea[l.id] = l.nombre);
-    const cont = {};
-    vig.filter(r => r.tipo === 'SKU').forEach(r => { const n = nombreLinea[r.linea_id] || '(Sin línea)'; cont[n] = (cont[n] || 0) + 1; });
-    const entries = lineas.map(l => [l.nombre, cont[l.nombre] || 0]).filter(e => e[1] > 0);
-    if (cont['(Sin línea)']) entries.push(['(Sin línea)', cont['(Sin línea)']]);
-    const el = document.getElementById('cat-chart');
-    if (window.Charts && entries.length) {
-      Charts.barsH(el, { fmt: v => Math.round(v), items: entries.map(e => ({ label: e[0], value: e[1] })) });
-    } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
-  } catch (e) {
-    console.warn('No se pudo cargar el resumen:', e);
-    const el = document.getElementById('cat-chart'); if (el) el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar</div>';
-  }
+    const sku = vig.filter(r => r.tipo === 'SKU').length;
+    const pack = vig.filter(r => r.tipo === 'PACK').length;
+    const combo = vig.filter(r => r.tipo === 'COMBO').length;
+    const lineas = (lineasR.data || []).filter(l => l.activo !== false).length;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('cnt-sku', sku); set('cnt-pack', pack); set('cnt-combo', combo); set('cnt-lineas', lineas);
+    set('row-sku', sku); set('row-pack', pack); set('row-lineas', lineas);
+  } catch (e) { console.warn(e); }
 })();
 </script>
 </body>

@@ -7,56 +7,6 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css">
-  <style>
-    .hero-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 22px 26px;
-      display: flex; gap: 20px; align-items: center; margin-bottom: 16px;
-      transition: border-color .12s;
-      text-decoration: none; color: inherit;
-    }
-    .hero-card:hover { border-color: var(--accent); text-decoration: none; }
-    .hero-card .icon {
-      width: 52px; height: 52px; border-radius: var(--radius);
-      background: var(--accent-tint); color: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 26px; flex-shrink: 0;
-    }
-    .hero-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-    .hero-card .desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
-
-    .tool-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 18px 20px;
-      display: flex; flex-direction: column; gap: 8px;
-      transition: border-color .12s, transform .12s;
-      cursor: pointer; text-decoration: none; color: inherit;
-    }
-    .tool-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
-    .tool-card .icon {
-      width: 32px; height: 32px; border-radius: var(--radius-sm);
-      background: var(--accent-tint); color: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; margin-bottom: 4px;
-    }
-    .tool-card h3 { font-size: 14.5px; font-weight: 600; color: var(--text); }
-    .tool-card .desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-    .tool-card.disabled { opacity: 0.6; cursor: not-allowed; }
-    .tool-card.disabled:hover { border-color: var(--border); transform: none; }
-    .grid-tools {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 12px;
-    }
-    .status-current {
-      display: flex; gap: 24px; padding: 12px 18px; flex-wrap: wrap;
-      background: var(--surface-2); border-radius: var(--radius);
-      margin-bottom: 20px; font-size: 13px;
-    }
-    .status-current .k { color: var(--muted); }
-    .status-current .v {
-      font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
-    }
-  </style>
 </head>
 <body data-page="laboratorio" data-title="Laboratorio" data-subtitle="I+D · Formulación · Materias primas">
 
@@ -64,76 +14,61 @@
 
 <main id="app-content">
 
-  <div class="status-current" id="statusLab">
-    <span><span class="k">Materias primas:</span> <span class="v" id="cnt-mp">—</span></span>
-    <span><span class="k">Insumos:</span> <span class="v" id="cnt-in">—</span></span>
-    <span><span class="k">Semi-elaborados:</span> <span class="v" id="cnt-se">—</span></span>
-    <span><span class="k">Fórmulas vigentes:</span> <span class="v" id="cnt-te">—</span></span>
-    <span><span class="k">En desarrollo:</span> <span class="v" id="cnt-dev">—</span></span>
+  <div class="statbar">
+    <div class="stat"><div class="v" id="cnt-mp">—</div><div class="l">Materias primas</div></div>
+    <div class="stat"><div class="v" id="cnt-in">—</div><div class="l">Insumos</div></div>
+    <div class="stat"><div class="v" id="cnt-se">—</div><div class="l">Semi-elaborados</div></div>
+    <div class="stat"><div class="v" id="cnt-te">—</div><div class="l">Fórmulas vigentes</div></div>
+    <div class="stat"><div class="v" id="cnt-dev">—</div><div class="l">En desarrollo</div></div>
   </div>
 
-  <a href="formulas.html" class="hero-card">
-    <div class="icon">⚗</div>
-    <div>
-      <h3>Editor de fórmulas</h3>
-      <div class="desc">La herramienta principal: composición del granel, precios por presentación, INCI recursivo, versiones. Requiere login.</div>
-    </div>
-  </a>
-
-  <a href="reposicion.html" class="hero-card">
-    <div class="icon">◎</div>
-    <div>
-      <h3>Stock y reposición</h3>
-      <div class="desc">Qué materia prima se está por terminar, cuánto comprar y a quién. Calcula el ritmo de uso
-        con el consumo real de las órdenes de fabricación y agrupa el pedido por proveedor.</div>
-    </div>
-  </a>
-
-  <div class="card" style="margin: 4px 0 8px;">
-    <div style="margin-bottom:8px;">
-      <strong style="font-size:14px;">Materias primas por categoría</strong>
-      <div class="muted" style="font-size:12px;margin-top:2px;">Las principales familias de insumos de fórmula</div>
-    </div>
-    <div id="lab-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
+  <div class="tool-list" style="margin-bottom:12px;">
+    <a class="tr hero-row" href="formulas.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Editor de fórmulas</div><div class="tr-desc">Composición del granel, precios por presentación, INCI recursivo y versiones</div></span>
+      <span class="tr-meta"><span class="tr-stat"><div class="n" id="he-te">—</div><div class="u" style="color:rgba(255,255,255,.8)">vigentes</div></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
+    </a>
   </div>
 
-  <h2 style="font-size:15px; font-weight:600; margin: 20px 0 12px;">Base maestra</h2>
-
-  <div class="grid-tools">
-    <a href="materias-primas.html" class="tool-card">
-      <div class="icon">MP</div>
-      <h3>Materias primas</h3>
-      <div class="desc">Catálogo de MPs con USD, flete e IVA. Precios históricos y actualización.</div>
+  <div class="tool-list">
+    <a class="tr" href="reposicion.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Stock y reposición</div><div class="tr-desc">Qué materia prima se está por terminar, cuánto comprar y a quién</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
     </a>
+  </div>
 
-    <a href="insumos.html" class="tool-card">
-      <div class="icon">IN</div>
-      <h3>Insumos y envases</h3>
-      <div class="desc">Envases, etiquetas y otros insumos. Precios USD con historial y conversión ARS.</div>
+  <div class="list-sec-h">Base maestra</div>
+  <div class="tool-list">
+    <a class="tr" href="materias-primas.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Materias primas</div><div class="tr-desc">Catálogo de MPs con USD, flete e IVA · precios históricos y actualización</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
     </a>
-
-    <a href="semi-elaborados.html" class="tool-card">
-      <div class="icon">SE</div>
-      <h3>Semi-elaborados</h3>
-      <div class="desc">Fórmulas intermedias reutilizables. Costo calculado desde la fórmula.</div>
+    <a class="tr" href="insumos.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Insumos y envases</div><div class="tr-desc">Envases, etiquetas y otros insumos · precios USD con historial</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
     </a>
-
-    <a href="desarrollos.html" class="tool-card">
-      <div class="icon">✎</div>
-      <h3>Desarrollos</h3>
-      <div class="desc">Fórmulas en estado "desarrollo" para I+D. Listado y salto directo al editor.</div>
+    <a class="tr" href="semi-elaborados.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Semi-elaborados</div><div class="tr-desc">Fórmulas intermedias reutilizables · costo calculado desde la fórmula</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
     </a>
-
-    <a href="proveedores.html" class="tool-card">
-      <div class="icon">◈</div>
-      <h3>Proveedores</h3>
-      <div class="desc">Alta y datos de contacto. Ver cuántos ítems tiene cada proveedor.</div>
+    <a class="tr" href="desarrollos.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Desarrollos</div><div class="tr-desc">Fórmulas en estado "desarrollo" para I+D · salto directo al editor</div></span>
+      <span class="tr-meta"><span class="tr-stat"><div class="n" id="row-dev">—</div><div class="u">en curso</div></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
     </a>
-
-    <a href="../fichas/index.html" class="tool-card">
-      <div class="icon">FT</div>
-      <h3>Fichas técnicas</h3>
-      <div class="desc">Una ficha por producto: INCI calculado desde la fórmula, contenido de tienda, rótulo y PDF técnico. Con la lista de dudas a revisar.</div>
+    <a class="tr" href="proveedores.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M3 21V8l6-4 6 4v13"/><path d="M15 21V11h6v10"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Proveedores</div><div class="tr-desc">Alta y datos de contacto · cuántos ítems tiene cada proveedor</div></span>
+      <span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
+    </a>
+    <a class="tr" href="../fichas/index.html">
+      <span class="tr-ico"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>
+      <span class="tr-body"><div class="tr-name">Fichas técnicas</div><div class="tr-desc">INCI calculado desde la fórmula, rótulo y PDF técnico · con la lista de dudas</div></span>
+      <span class="tr-meta"><span id="row-fichas"></span><span class="tr-arr"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span></span>
     </a>
   </div>
 
@@ -141,34 +76,26 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
-<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 (async () => {
   try {
-    const [items, formulas, cats] = await Promise.all([
-      sb.from('items').select('tipo, estado, categoria_id'),
+    const [items, formulas, fichasPend] = await Promise.all([
+      sb.from('items').select('tipo, estado'),
       sb.from('formulas').select('estado'),
-      sb.from('categorias').select('id, nombre'),
+      sb.from('fichas_pendientes').select('estado'),
     ]);
     const rows = items.data || [];
-    document.getElementById('cnt-mp').textContent = rows.filter(r => r.tipo==='MP' && r.estado==='vigente').length;
-    document.getElementById('cnt-in').textContent = rows.filter(r => r.tipo==='IN' && r.estado==='vigente').length;
-    document.getElementById('cnt-se').textContent = rows.filter(r => r.tipo==='SE' && r.estado==='vigente').length;
-    document.getElementById('cnt-te').textContent = rows.filter(r => r.tipo==='TE' && r.estado==='vigente').length;
-    document.getElementById('cnt-dev').textContent = (formulas.data || []).filter(f => f.estado==='desarrollo').length;
-
-    // Gráfico: MP vigentes por categoría (top 8)
-    const catName = {}; (cats.data || []).forEach(c => catName[c.id] = c.nombre);
-    const cont = {};
-    rows.filter(r => r.tipo === 'MP' && r.estado === 'vigente').forEach(r => { const n = catName[r.categoria_id] || '(Sin categoría)'; cont[n] = (cont[n] || 0) + 1; });
-    const entries = Object.entries(cont).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const limpio = (s) => s.split('/')[0].trim();
-    const el = document.getElementById('lab-chart');
-    if (window.Charts && entries.length) {
-      Charts.barsH(el, { fmt: v => Math.round(v), items: entries.map(e => ({ label: limpio(e[0]), value: e[1] })) });
-    } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
-  } catch (e) { console.warn(e); const el = document.getElementById('lab-chart'); if (el) el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar</div>'; }
+    const c = (t) => rows.filter(r => r.tipo === t && r.estado === 'vigente').length;
+    const mp = c('MP'), ins = c('IN'), se = c('SE'), te = c('TE');
+    const dev = (formulas.data || []).filter(f => f.estado === 'desarrollo').length;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('cnt-mp', mp); set('cnt-in', ins); set('cnt-se', se); set('cnt-te', te); set('cnt-dev', dev);
+    set('he-te', te); set('row-dev', dev);
+    const dudas = (fichasPend.data || []).filter(f => f.estado === 'por_revisar' || f.estado === 'por_corregir').length;
+    const rf = document.getElementById('row-fichas');
+    if (rf && dudas > 0) rf.innerHTML = `<span class="tr-badge hot">${dudas} duda${dudas === 1 ? '' : 's'}</span>`;
+  } catch (e) { console.warn(e); }
 })();
 </script>
 </body>
