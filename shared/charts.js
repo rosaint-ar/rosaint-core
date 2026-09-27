@@ -21,8 +21,13 @@
     const labels = opts.labels || [];
     const series = (opts.series || []).map(s => ({ ...s, values: (s.values || []).map(num) }));
     const n = labels.length;
-    const W = opts.width || 560, H = opts.height || 230;
-    const mL = 12, mR = 12, mT = 16, mB = 26, iw = W - mL - mR, ih = H - mT - mB;
+    // Ancho real del contenedor → altura fija: el gráfico llena el ancho sin
+    // estirarse a lo alto, y las etiquetas quedan bien espaciadas.
+    const cw = Math.floor((el.clientWidth || 0));
+    const W = Math.max(320, cw || opts.width || 620);
+    const H = opts.height || 240;
+    const rot = !!opts.rotateLabels;
+    const mL = 12, mR = 12, mT = 16, mB = rot ? 54 : 26, iw = W - mL - mR, ih = H - mT - mB;
     const fmt = opts.fmt || (v => Math.round(v).toLocaleString('es-AR'));
     const anim = !reduce();
 
@@ -79,7 +84,11 @@
       body += dots;
     });
 
-    labels.forEach((lb, i) => { labelsSvg += `<text x="${xc(i)}" y="${mT + ih + 16}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(lb)}</text>`; });
+    labels.forEach((lb, i) => {
+      const lx = xc(i), ly = mT + ih + 15;
+      if (rot) labelsSvg += `<text x="${lx}" y="${ly}" text-anchor="end" font-size="10.5" fill="var(--muted)" transform="rotate(-32 ${lx} ${ly})">${esc(lb)}</text>`;
+      else labelsSvg += `<text x="${lx}" y="${ly}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(lb)}</text>`;
+    });
     const guide = `<line class="ch-guide" x1="0" y1="${mT}" x2="0" y2="${mT + ih}" stroke="var(--muted)" stroke-dasharray="3 3" opacity="0"/>`;
 
     el.style.position = 'relative';
