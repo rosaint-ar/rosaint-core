@@ -1057,44 +1057,59 @@ function renderFormulaList() {
   if (!rows.length) { lista.innerHTML = '<div class="fp-empty">Sin resultados para «' + filtro + '»</div>'; return; }
 
   const maxKg = Math.max(...state.todasFormulas.filter(r => r.tipo === 'TE' && r.costo_kg != null).map(r => r.costo_kg), 1);
-  const te = rows.filter(r => r.tipo === 'TE');
+  const porSku = (a, b) => (Number(b.n_skus) || 0) - (Number(a.n_skus) || 0) || a.codigo.localeCompare(b.codigo);
+  const sumSkus = (arr) => arr.reduce((a, r) => a + (Number(r.n_skus) || 0), 0);
+  const productos = rows.filter(r => r.tipo === 'TE' && !esBase(r));
+  const bases = rows.filter(r => r.tipo === 'TE' && esBase(r));
   const se = rows.filter(r => r.tipo === 'SE');
   let html = '';
 
-  // ── Graneles terminados, sub-agrupados por familia ──────────────────────
-  if (te.length) {
-    const totalTe = state.todasFormulas.filter(r => r.tipo === 'TE').length;
-    const skus = te.reduce((a, r) => a + (Number(r.n_skus) || 0), 0);
-    html += `<div class="fp-sech"><span class="t">Graneles terminados</span><span class="c">${te.length}${filtro ? ' de ' + totalTe : ''}</span>`
-          + `<span class="s">Se fraccionan directo · ${skus} SKUs a la venta</span></div>`;
+  // ── Graneles terminados (productos), sub-agrupados por familia ────────────
+  if (productos.length) {
+    const total = state.todasFormulas.filter(r => r.tipo === 'TE' && !esBase(r)).length;
+    html += `<div class="fp-sech"><span class="t">Graneles terminados</span><span class="c">${productos.length}${filtro ? ' de ' + total : ''}</span>`
+          + `<span class="s">Se fraccionan directo · ${sumSkus(productos)} SKUs a la venta</span></div>`;
     for (const fam of Object.keys(FP_FAM)) {
-      const grupo = te.filter(r => r.familia === fam).sort((a, b) => (b.costo_kg || 0) - (a.costo_kg || 0));
+      const grupo = productos.filter(r => r.familia === fam).sort(porSku);
       if (!grupo.length) continue;
-      html += `<div class="fp-fam">${FP_FAM[fam].label}</div>`;
-      html += grupo.map(f => fpRow(f, maxKg)).join('');
+      html += `<div class="fp-fam">${FP_FAM[fam].label}</div>` + grupo.map(f => fpRow(f, maxKg)).join('');
     }
-    // familias no contempladas (por si aparece un tipo nuevo)
-    const otros = te.filter(r => !FP_FAM[r.familia]).sort((a, b) => (b.costo_kg || 0) - (a.costo_kg || 0));
-    if (otros.length) { html += `<div class="fp-fam">Otros</div>` + otros.map(f => fpRow(f, maxKg)).join(''); }
+    const otros = productos.filter(r => !FP_FAM[r.familia]).sort(porSku);
+    if (otros.length) html += `<div class="fp-fam">Otros</div>` + otros.map(f => fpRow(f, maxKg)).join('');
+  }
+
+  // ── Bases (punto de partida de otras fórmulas) ───────────────────────────
+  if (bases.length) {
+    const total = state.todasFormulas.filter(r => r.tipo === 'TE' && esBase(r)).length;
+    html += `<div class="fp-sech"><span class="t">Bases</span><span class="c">${bases.length}${filtro ? ' de ' + total : ''}</span>`
+          + `<span class="s">Punto de partida de otras fórmulas · también se venden</span></div>`;
+    html += bases.sort(porSku).map(f => fpRow(f, maxKg)).join('');
   }
 
   // ── Semielaborados ───────────────────────────────────────────────────────
   if (se.length) {
-    const totalSe = state.todasFormulas.filter(r => r.tipo === 'SE').length;
-    html += `<div class="fp-sech"><span class="t">Semielaborados</span><span class="c">${se.length}${filtro ? ' de ' + totalSe : ''}</span>`
-          + `<span class="s">Bases y soluciones · se reutilizan en otras fórmulas</span></div>`;
-    html += se.sort((a, b) => (b.usado_en || 0) - (a.usado_en || 0)).map(f => fpRow(f, maxKg)).join('');
+    const total = state.todasFormulas.filter(r => r.tipo === 'SE').length;
+    html += `<div class="fp-sech"><span class="t">Semielaborados</span><span class="c">${se.length}${filtro ? ' de ' + total : ''}</span>`
+          + `<span class="s">Soluciones intermedias · se reutilizan en otras fórmulas</span></div>`;
+    html += se.sort(porSku).map(f => fpRow(f, maxKg)).join('');
   }
 
   lista.innerHTML = html;
 }
 
+// Base = arranque de otras fórmulas: nombre con "BASE", o "NEUTRO" salvo los aceites (el aceite neutro queda en Aceites)
+function esBase(f) {
+  const n = (f.nombre || '').toUpperCase();
+  return /\bBASE\b/.test(n) || (/NEUTR/.test(n) && f.familia !== 'ACEITE');
+}
+
 function fpRow(f, maxKg) {
   const meta = FP_FAM[f.familia] || FP_SE;
   const esSE = f.tipo === 'SE';
+  const reuso = f.usado_en ? ' · base de ' + f.usado_en + ' fórmula' + (f.usado_en === 1 ? '' : 's') : '';
   const desc = esSE
     ? `<span class="cod">${f.codigo}</span> · ${f.n_comp || 0} componentes${f.usado_en ? ' · usado en ' + f.usado_en + ' fórmula' + (f.usado_en === 1 ? '' : 's') : ''}`
-    : `<span class="cod">${f.codigo}</span> · ${f.destino} · fracciona en ${f.n_skus || 0} SKUs · ${f.n_comp || 0} componentes`;
+    : `<span class="cod">${f.codigo}</span> · ${f.destino} · fracciona en ${f.n_skus || 0} SKUs · ${f.n_comp || 0} componentes${reuso}`;
   const costo = f.costo_kg;
   const hi = !esSE && costo != null && costo >= 30000;
   const bar = (!esSE && costo != null)
