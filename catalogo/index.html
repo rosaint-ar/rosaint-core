@@ -116,7 +116,7 @@
     if (cont['(Sin línea)']) entries.push(['(Sin línea)', cont['(Sin línea)']]);
     const el = document.getElementById('cat-chart');
     if (window.Charts && entries.length) {
-      Charts.trend(el, { labels: entries.map(e => e[0]), fmt: v => Math.round(v), series: [{ name: 'SKUs', type: 'bar', values: entries.map(e => e[1]), color: 'var(--accent)' }] });
+      Charts.barsH(el, { fmt: v => Math.round(v), items: entries.map(e => ({ label: e[0], value: e[1] })) });
     } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
   } catch (e) {
     console.warn('No se pudo cargar el resumen:', e);

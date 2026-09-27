@@ -126,11 +126,11 @@ async function cargarGraficoIVA(){
     if(!rows.length){ $('iva-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
     const labels = rows.map(m => { const p = m.mes.split('-'); return M3[(+p[1])-1] + "'" + p[0].slice(2); });
     const money = v => '$' + Math.round(v).toLocaleString('es-AR');
-    Charts.trend($('iva-chart'), {
-      labels, sharedScale: true, fmt: money,
+    Charts.area($('iva-chart'), {
+      labels, fmt: money, prefix: '$',
       series: [
-        { name: 'Débito', type: 'bar', values: rows.map(m=>m.debito), color: 'var(--accent)' },
-        { name: 'Crédito', type: 'bar', values: rows.map(m=>m.credito), color: 'var(--cyan)' }
+        { name: 'Débito (ventas)', values: rows.map(m=>m.debito), color: 'var(--accent)', fill: true },
+        { name: 'Crédito (compras)', values: rows.map(m=>m.credito), color: 'var(--cyan)', fill: false }
       ]
     });
     const last = rows[rows.length-1];

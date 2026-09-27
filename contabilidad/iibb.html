@@ -117,9 +117,9 @@ async function cargarEvolucion() {
     if (!idx.length) { $('evol-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
     const labels = idx.map(i => { const p = j.meses[i].split('-'); return M3[(+p[1]) - 1] + "'" + p[0].slice(2); });
     const top = j.provincias.slice(0, 5), rest = j.provincias.slice(5);
-    const series = top.map((p, k) => ({ name: limpiarProv(p.provincia), type: 'line', values: idx.map(i => p.valores[i]), color: PALETA[k % PALETA.length] }));
-    if (rest.length) series.push({ name: 'Otras', type: 'line', values: idx.map(i => rest.reduce((a, p) => a + p.valores[i], 0)), color: 'var(--muted)', glow: false });
-    Charts.trend($('evol-chart'), { labels, sharedScale: true, fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series });
+    const series = top.map((p, k) => ({ name: limpiarProv(p.provincia), values: idx.map(i => p.valores[i]), color: PALETA[k % PALETA.length], fill: false }));
+    if (rest.length) series.push({ name: 'Otras', values: idx.map(i => rest.reduce((a, p) => a + p.valores[i], 0)), color: 'var(--muted)', fill: false });
+    Charts.area($('evol-chart'), { labels, prefix: '$', fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series });
     $('evol-leg').innerHTML = series.map(s => `<span><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${s.color};margin-right:5px;vertical-align:-1px;"></i>${s.name}</span>`).join('');
   } catch (e) { $('evol-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar la evolución</div>'; }
 }

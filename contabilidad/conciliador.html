@@ -225,7 +225,7 @@ async function cargarGraficoCredito() {
     const rows = (j.meses || []).filter(m => m.credito > 0);
     if (!rows.length) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
     const labels = rows.map(m => { const p = m.mes.split('-'); return M3C[(+p[1]) - 1] + "'" + p[0].slice(2); });
-    Charts.trend($('cred-chart'), { labels, fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series: [{ name: 'IVA crédito', type: 'bar', values: rows.map(m => m.credito), color: 'var(--accent)' }] });
+    Charts.area($('cred-chart'), { labels, prefix: '$', fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series: [{ name: 'IVA crédito', values: rows.map(m => m.credito), color: 'var(--accent)', fill: true }] });
   } catch (e) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar la evolución</div>'; }
 }
 cargarGraficoCredito();

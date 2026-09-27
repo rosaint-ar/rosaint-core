@@ -312,11 +312,11 @@ async function cargarGraficoProduccion() {
     if (!j.ok || !j.meses || !j.meses.length) throw new Error('sin datos');
     const M3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const labels = j.meses.map(m => { const p = (m.mes || '').split('-'); return p.length === 2 ? M3[(+p[1]) - 1] : m.mes; });
-    Charts.trend(document.getElementById('ini-chart'), {
+    Charts.area(document.getElementById('ini-chart'), {
       labels,
       series: [
-        { name: 'kg elaborados', type: 'bar', values: j.meses.map(m => m.kg), color: 'var(--accent)' },
-        { name: 'unidades', type: 'line', values: j.meses.map(m => m.u), color: 'var(--cyan)', area: true }
+        { name: 'kg elaborados', values: j.meses.map(m => m.kg), color: 'var(--accent)', fill: true },
+        { name: 'unidades', values: j.meses.map(m => m.u), color: 'var(--cyan)', fill: false }
       ],
       fmt: v => Math.round(v).toLocaleString('es-AR')
     });

@@ -163,10 +163,10 @@
     const cont = {};
     rows.filter(r => r.tipo === 'MP' && r.estado === 'vigente').forEach(r => { const n = catName[r.categoria_id] || '(Sin categoría)'; cont[n] = (cont[n] || 0) + 1; });
     const entries = Object.entries(cont).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const corto = (s) => { const t = s.split('/')[0].trim(); return t.length > 14 ? t.slice(0, 13) + '…' : t; };
+    const limpio = (s) => s.split('/')[0].trim();
     const el = document.getElementById('lab-chart');
     if (window.Charts && entries.length) {
-      Charts.trend(el, { labels: entries.map(e => corto(e[0])), fmt: v => Math.round(v), series: [{ name: 'MP', type: 'bar', values: entries.map(e => e[1]), color: 'var(--accent)' }] });
+      Charts.barsH(el, { fmt: v => Math.round(v), items: entries.map(e => ({ label: limpio(e[0]), value: e[1] })) });
     } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
   } catch (e) { console.warn(e); const el = document.getElementById('lab-chart'); if (el) el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar</div>'; }
 })();
