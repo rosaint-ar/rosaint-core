@@ -1064,6 +1064,14 @@ function renderFormulaList() {
   const se = rows.filter(r => r.tipo === 'SE');
   let html = '';
 
+  // ── Bases (punto de partida de otras fórmulas) — arriba de todo ──────────
+  if (bases.length) {
+    const total = state.todasFormulas.filter(r => r.tipo === 'TE' && esBase(r)).length;
+    html += `<div class="fp-sech"><span class="t">Bases</span><span class="c">${bases.length}${filtro ? ' de ' + total : ''}</span>`
+          + `<span class="s">Punto de partida de otras fórmulas · también se venden</span></div>`;
+    html += bases.sort(porSku).map(f => fpRow(f, maxKg)).join('');
+  }
+
   // ── Graneles terminados (productos), sub-agrupados por familia ────────────
   if (productos.length) {
     const total = state.todasFormulas.filter(r => r.tipo === 'TE' && !esBase(r)).length;
@@ -1076,14 +1084,6 @@ function renderFormulaList() {
     }
     const otros = productos.filter(r => !FP_FAM[r.familia]).sort(porSku);
     if (otros.length) html += `<div class="fp-fam">Otros</div>` + otros.map(f => fpRow(f, maxKg)).join('');
-  }
-
-  // ── Bases (punto de partida de otras fórmulas) ───────────────────────────
-  if (bases.length) {
-    const total = state.todasFormulas.filter(r => r.tipo === 'TE' && esBase(r)).length;
-    html += `<div class="fp-sech"><span class="t">Bases</span><span class="c">${bases.length}${filtro ? ' de ' + total : ''}</span>`
-          + `<span class="s">Punto de partida de otras fórmulas · también se venden</span></div>`;
-    html += bases.sort(porSku).map(f => fpRow(f, maxKg)).join('');
   }
 
   // ── Semielaborados ───────────────────────────────────────────────────────
