@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Procesos de elaboración · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .px-wrap { max-width: 1040px; margin: 0 auto; }
+
+    .px-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+    .px-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+      padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+    .px-title { font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: var(--text); }
+    .px-cod { font-family: var(--font-mono); color: var(--accent); font-size: 13px; }
+
+    .px-scene { display: grid; grid-template-columns: 340px 1fr; gap: 22px; align-items: start; }
+    @media (max-width: 780px) { .px-scene { grid-template-columns: 1fr; } }
+    .px-stage { position: relative; display: grid; place-items: center; padding: 10px 0;
+      background: radial-gradient(120% 90% at 50% 12%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%); border-radius: var(--radius); }
+    .px-svg { width: 300px; height: 360px; max-width: 100%; }
+
+    .px-controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; width: 100%; padding: 0 6px; }
+    .px-btn { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+    .px-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-1); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    .px-btn svg { width: 15px; height: 15px; fill: currentColor; }
+    .px-btn.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #000)); color: #fff; border: none; }
+    .px-clock { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: right; }
+
+    .px-panel-h { font-size: 13px; font-weight: 700; color: var(--text); margin: 2px 0 12px;
+      display: flex; align-items: center; gap: 8px; }
+    .px-panel-h .hint { font-weight: 500; color: var(--muted); font-size: 11.5px; margin-left: auto; }
+
+    /* Equipo chips */
+    .px-eq { display: flex; flex-wrap: wrap; gap: 8px; }
+    .px-eq .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
+      color: var(--text); background: var(--surface-2); border: 1px solid var(--border); padding: 6px 11px; border-radius: 999px; }
+    .px-eq .chip svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 2; }
+
+    /* Materiales */
+    .px-mat { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); margin-bottom: 8px; background: var(--surface);
+      transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+    .px-mat.active { border-color: var(--m-color); box-shadow: 0 0 0 1px var(--m-color), 0 0 18px color-mix(in srgb, var(--m-color) 40%, transparent); transform: translateX(3px); }
+    .px-mat.done { opacity: .62; }
+    .px-mat .num { width: 24px; height: 24px; flex: none; border-radius: 50%; display: grid; place-items: center;
+      font-size: 12px; font-weight: 800; color: #fff; background: var(--m-color); }
+    .px-mat .swatch { width: 12px; height: 34px; border-radius: 4px; flex: none; background: var(--m-color); box-shadow: 0 0 10px color-mix(in srgb, var(--m-color) 45%, transparent); }
+    .px-mat .body { flex: 1; min-width: 0; }
+    .px-mat .nm { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .px-mat .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .px-mat .sub .cod { font-family: var(--font-mono); color: var(--accent); }
+    .px-mat .pct { text-align: right; flex: none; }
+    .px-mat .pct .v { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+    .px-mat .pct .u { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+    /* Timeline de pasos */
+    .px-steps { position: relative; }
+    .px-step { position: relative; padding: 0 0 18px 30px; }
+    .px-step::before { content: ''; position: absolute; left: 9px; top: 3px; bottom: -3px; width: 2px; background: var(--border); }
+    .px-step:last-child::before { display: none; }
+    .px-step.active::before { background: var(--m-color); }
+    .px-step .dot { position: absolute; left: 3px; top: 2px; width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid var(--m-color); background: var(--surface); z-index: 1; transition: box-shadow .2s ease; }
+    .px-step.active .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--m-color) 22%, transparent); }
+    .px-step .st { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .px-step .sd { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .px-step .sd .cod { font-family: var(--font-mono); color: var(--accent); }
+    .px-badge-t { display: inline-block; font-size: 10.5px; font-weight: 700; margin-top: 5px; padding: 1px 8px; border-radius: 999px; }
+    .px-badge-t.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+    .px-badge-t.pend { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+
+    @keyframes px-spin { to { transform: rotate(360deg); } }
+    .px-impeller { transform-box: view-box; transform-origin: 150px 214px; animation: px-spin .5s linear infinite; }
+    @media (prefers-reduced-motion: reduce) { .px-impeller { animation: none; } }
+  </style>
+</head>
+<body data-page="laboratorio" data-title="Procesos de elaboración" data-subtitle="Cómo se elabora cada fórmula · base de los manuales">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+ <div class="px-wrap">
+
+  <div class="px-head">
+    <span class="px-tag" id="px-tipo">Semielaborado</span>
+    <span class="px-title" id="px-nombre">—</span>
+    <span class="px-cod" id="px-cod"></span>
+  </div>
+
+  <div class="statbar" style="margin:14px 0 18px;">
+    <div class="stat"><div class="v" id="px-n-mat">—</div><div class="l">Materias primas</div></div>
+    <div class="stat"><div class="v" id="px-suma">—</div><div class="l">Composición total</div></div>
+    <div class="stat"><div class="v" id="px-base">—</div><div class="l">Base de</div></div>
+    <div class="stat"><div class="v">≈ 14–16 h</div><div class="l">Tiempo de mezcla</div></div>
+  </div>
+
+  <div class="px-scene">
+    <!-- ESCENA -->
+    <div class="card px-stage">
+      <svg class="px-svg" viewBox="0 0 300 380" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="pxSteel" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#c7ced6"/><stop offset="18%" stop-color="#eef2f6"/>
+            <stop offset="50%" stop-color="#aeb8c2"/><stop offset="82%" stop-color="#e2e7ec"/>
+            <stop offset="100%" stop-color="#9aa4af"/>
+          </linearGradient>
+          <clipPath id="pxBodyClip"><rect x="86" y="96" width="128" height="154" rx="8"/></clipPath>
+          <clipPath id="pxBucketClip"><path d="M124 256 h52 l-4 46 a3 3 0 0 1 -3 3 h-35 a3 3 0 0 1 -3 -3 z"/></clipPath>
+        </defs>
+
+        <!-- Patas + ruedas (fondo plano) -->
+        <path d="M100 250 L80 316" stroke="#9aa4af" stroke-width="6" stroke-linecap="round"/>
+        <path d="M200 250 L220 316" stroke="#9aa4af" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="78" cy="322" r="8" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="3"/>
+        <circle cx="222" cy="322" r="8" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="3"/>
+
+        <!-- Cuerpo cilíndrico de fondo plano -->
+        <rect x="86" y="96" width="128" height="154" rx="8" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+        <ellipse cx="150" cy="250" rx="64" ry="7" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+
+        <!-- Líquido dentro del cuerpo -->
+        <g clip-path="url(#pxBodyClip)">
+          <rect id="pxFill" x="86" y="248" width="128" height="0" fill="var(--accent)"/>
+          <path id="pxWave" d="" fill="var(--accent)"/>
+          <g id="pxBubbles"></g>
+        </g>
+
+        <!-- Válvula lateral cerca del fondo -->
+        <rect x="140" y="230" width="16" height="9" rx="2" fill="#8b95a0"/>
+        <rect x="150" y="231" width="24" height="4" rx="2" fill="#6b7480"/>
+        <rect x="146" y="238" width="8" height="11" rx="2" fill="#8b95a0"/>
+
+        <!-- Chorro de carga (arriba) -->
+        <g id="pxStream" opacity="0"><rect x="147" y="70" width="6" height="0" rx="3" fill="var(--accent)"/></g>
+
+        <!-- Balde de descarga (cuelga de la válvula) -->
+        <path d="M124 256 h52 l-4 46 a3 3 0 0 1 -3 3 h-35 a3 3 0 0 1 -3 -3 z" fill="#f4f6f8" stroke="var(--border)" stroke-width="2"/>
+        <g clip-path="url(#pxBucketClip)"><rect id="pxBucket" x="122" y="305" width="56" height="0" fill="var(--accent)" opacity="0.85"/></g>
+        <ellipse cx="150" cy="256" rx="26" ry="4" fill="#fff" stroke="var(--border)" stroke-width="2"/>
+        <path d="M128 256 q22 -18 44 0" fill="none" stroke="var(--border)" stroke-width="2"/>
+        <!-- Chorro de descarga -->
+        <g id="pxDrain" opacity="0"><rect x="147" y="248" width="5" height="0" rx="2" fill="var(--accent)"/></g>
+
+        <!-- Tapa + rim -->
+        <rect x="80" y="88" width="140" height="12" rx="5" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+        <rect x="118" y="80" width="10" height="10" fill="#8b95a0"/><rect x="172" y="80" width="10" height="10" fill="#8b95a0"/>
+
+        <!-- Motor -->
+        <rect x="128" y="30" width="44" height="34" rx="8" fill="#3b4046"/>
+        <ellipse cx="150" cy="30" rx="22" ry="6" fill="#4a5057"/>
+        <rect x="140" y="64" width="20" height="12" rx="3" fill="#5a616a"/>
+
+        <!-- Eje + hélice (gira rápido) -->
+        <rect x="147" y="74" width="6" height="140" rx="3" fill="#8b95a0"/>
+        <g class="px-impeller">
+          <rect x="136" y="211" width="28" height="5" rx="2.5" fill="#6b7480"/>
+          <rect x="147.5" y="200" width="5" height="28" rx="2.5" fill="#6b7480" transform="rotate(60 150 214)"/>
+          <rect x="147.5" y="200" width="5" height="28" rx="2.5" fill="#6b7480" transform="rotate(120 150 214)"/>
+        </g>
+      </svg>
+
+      <div class="px-controls">
+        <button class="px-btn primary" id="pxPlay" onclick="pxToggle()"><svg id="pxPlayIco" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span id="pxPlayTxt">Reproducir</span></button>
+        <button class="px-btn" onclick="pxRestart()"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 7l5 5V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>Reiniciar</button>
+        <span class="px-clock" id="pxClock">listo</span>
+      </div>
+    </div>
+
+    <!-- PANEL -->
+    <div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="px-panel-h">Equipo</div>
+        <div class="px-panel-h" style="margin:-2px 0 10px;font-size:11.5px;font-weight:600;color:var(--muted)">Lo que usa este proceso</div>
+        <div class="px-eq">
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M6 4h12v3l-2 2v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9L6 7z"/></svg>Reactor inox. móvil</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M12 3v10M8 7l4-4 4 4M7 20h10"/></svg>Agitador hélice · alta velocidad</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M5 8h10v4a5 5 0 0 1-10 0zM15 9h3v3"/></svg>Válvula lateral de descarga</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="10" rx="2"/><path d="M9 9V6h6v3"/></svg>Balanza Systel 31 kg</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1z"/><path d="M6 4h12"/></svg>1 balde de 30 L (agua + glicerina)</span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M8 5h8l-1 14a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/><path d="M7 5h10"/></svg>Baldes de 10 L (carbopol)</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="px-panel-h">Orden de carga <span class="hint">según la fórmula vigente</span></div>
+        <div id="px-materiales"></div>
+      </div>
+
+      <div class="card">
+        <div class="px-panel-h">Pasos del proceso <span class="hint" id="px-pend-hint">faltan algunos tiempos</span></div>
+        <div class="px-steps" id="px-pasos"></div>
+      </div>
+    </div>
+  </div>
+
+ </div>
+</main>
+
+<script src="../shell/shell.js"></script>
+<script>
+// ── Datos del proceso (ingredientes REALES; equipo/tiempos confirmados por Diego) ──
+const PROCESO = {
+  codigo: '90302',
+  nombre: 'Solución de Carbopol 2% c/ glicerina',
+  tipo: 'Semielaborado',
+  base_de: 6,
+  materiales: [
+    { orden: 1, cod: '20000', nombre: 'Agua purificada',       pct: 87.9, color: '#49B6FF' },
+    { orden: 2, cod: '20030', nombre: 'Glicerina vegetal',     pct: 10.0, color: '#E0A93B' },
+    { orden: 3, cod: '20015', nombre: 'Carbomer 940/980',      pct: 2.0,  color: '#E23145' },
+    { orden: 4, cod: '20016', nombre: 'Conservante Kathon LX', pct: 0.1,  color: '#6C5CE7' },
+  ],
+  // Pasos reales. tiempo:null = a definir
+  pasos: [
+    { tit: 'Pesar el agua', desc: 'En baldes de 30 L, de a <b>25 kg</b> por tachada (la última, 23 kg). En el mismo balde se incorporan la glicerina y el conservante Kathon.', tiempo: null },
+    { tit: 'Pesar el carbomer', desc: 'Polvo fino, volátil y muy liviano: se pesa de a <b>1 kg</b> en baldes de 10 L (los del envasado).', tiempo: null },
+    { tit: 'Cargar al reactor', desc: 'Se vuelcan las tachadas de agua. El carbomer se incorpora <b>antes de la última tachada (23 kg)</b>, que lo arrastra.', tiempo: null },
+    { tit: 'Mezclar a alta velocidad', desc: 'Agitador tipo hélice de bajo diámetro, a alta velocidad, hasta hidratar por completo el carbomer.', tiempo: '≈ 14–16 h' },
+    { tit: 'Descargar', desc: 'Se descarga por la válvula inferior a baldes.', tiempo: null },
+  ],
+};
+
+const fmtPct = (n) => (n % 1 === 0 ? String(n) : n.toFixed(1)) + '%';
+
+function pxRenderStatic() {
+  document.getElementById('px-tipo').textContent = PROCESO.tipo;
+  document.getElementById('px-nombre').textContent = PROCESO.nombre;
+  document.getElementById('px-cod').textContent = '#' + PROCESO.codigo;
+  document.getElementById('px-n-mat').textContent = PROCESO.materiales.length;
+  const suma = PROCESO.materiales.reduce((a, m) => a + m.pct, 0);
+  document.getElementById('px-suma').textContent = fmtPct(Math.round(suma * 10) / 10);
+  document.getElementById('px-base').textContent = PROCESO.base_de + ' fórmulas';
+
+  document.getElementById('px-materiales').innerHTML = PROCESO.materiales.map(m => `
+    <div class="px-mat" id="mat-${m.orden}" style="--m-color:${m.color}">
+      <span class="num">${m.orden}</span>
+      <span class="swatch"></span>
+      <span class="body"><div class="nm">${m.nombre}</div><div class="sub"><span class="cod">${m.cod}</span> · orden de carga ${m.orden}</div></span>
+      <span class="pct"><div class="v">${fmtPct(m.pct)}</div><div class="u">p/p</div></span>
+    </div>`).join('');
+
+  const stepColor = ['#49B6FF', '#E0A93B', '#E23145', '#2F9E6E', '#6C5CE7'];
+  document.getElementById('px-pasos').innerHTML = PROCESO.pasos.map((p, i) => `
+    <div class="px-step" id="step-${i}" style="--m-color:${stepColor[i % stepColor.length]}">
+      <span class="dot"></span>
+      <div class="st">Paso ${i + 1} · ${p.tit}</div>
+      <div class="sd">${p.desc}</div>
+      <span class="px-badge-t ${p.tiempo ? 'ok' : 'pend'}">${p.tiempo ? p.tiempo : 'tiempo a definir'}</span>
+      ${p.confirmar ? '<span class="px-badge-t pend" style="margin-left:6px">punto de carga a confirmar</span>' : ''}
+    </div>`).join('');
+}
+
+// ── Motor de animación (por fases) ──
+const TANK = { x: 86, top: 100, bottom: 248, w: 128 };
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const mats = PROCESO.materiales;
+const cum = mats.map((m, i) => mats.slice(0, i + 1).reduce((a, x) => a + x.pct, 0));
+const totalPct = cum[cum.length - 1];
+
+const LOAD_MS = 1300, MIX_MS = 3400, DIS_MS = 2600;
+const segs = mats.map((m, i) => ({ type: 'load', i })).concat([{ type: 'mix' }, { type: 'discharge' }]);
+const durs = mats.map(() => LOAD_MS).concat([MIX_MS, DIS_MS]);
+const cumDur = durs.reduce((acc, d) => (acc.push((acc[acc.length - 1] || 0) + d), acc), []);
+const totalMs = cumDur[cumDur.length - 1];
+
+let pxState = { playing: false, t0: 0, elapsed: 0, raf: null };
+
+function levelToY(levelPct) { const frac = Math.max(0, Math.min(1, levelPct / totalPct)); const h = (TANK.bottom - TANK.top) * frac; return { y: TANK.bottom - h, h }; }
+function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function mixColorUpTo(step, prog) {
+  let r = 0, g = 0, b = 0, w = 0;
+  for (let i = 0; i <= step; i++) { const m = mats[i]; let wgt = m.pct; if (i === step) wgt *= prog; const c = hex2rgb(m.color); r += c[0] * wgt; g += c[1] * wgt; b += c[2] * wgt; w += wgt; }
+  if (w === 0) return '#9fd0ff';
+  return `rgb(${Math.round(r / w)},${Math.round(g / w)},${Math.round(b / w)})`;
+}
+const FINAL_COLOR = mixColorUpTo(mats.length - 1, 1);
+
+function segAt(t) { for (let k = 0; k < segs.length; k++) if (t < cumDur[k]) return { k, local: t - (cumDur[k - 1] || 0), dur: durs[k] }; return { k: segs.length - 1, local: durs[durs.length - 1], dur: durs[durs.length - 1] }; }
+
+function setActiveStep(idx) {
+  PROCESO.pasos.forEach((_, i) => document.getElementById('step-' + i)?.classList.toggle('active', i === idx));
+}
+
+function pxFrame(nowMs) {
+  const t = Math.min(totalMs, pxState.elapsed + (pxState.playing ? nowMs - pxState.t0 : 0));
+  const { k, local, dur } = segAt(t);
+  const seg = segs[k];
+  const prog = Math.min(1, local / dur);
+  const fill = document.getElementById('pxFill');
+  const wave = document.getElementById('pxWave');
+  const stream = document.getElementById('pxStream');
+  const drain = document.getElementById('pxDrain');
+  let level, color = FINAL_COLOR, activeMat = -1, activeStep = 1, clockTxt = '';
+
+  if (seg.type === 'load') {
+    const pourP = Math.min(1, prog / 0.7);
+    const prevCum = seg.i === 0 ? 0 : cum[seg.i - 1];
+    level = prevCum + (cum[seg.i] - prevCum) * pourP;
+    color = mixColorUpTo(seg.i, pourP);
+    activeMat = seg.i; activeStep = (seg.i === 2) ? 2 : 1;
+    clockTxt = `Carga · ${seg.i + 1}/4`;
+    const { y } = levelToY(level);
+    if (prog < 0.7) { stream.setAttribute('opacity', '0.9'); const rr = stream.firstElementChild; rr.setAttribute('height', Math.max(0, y - 72)); rr.setAttribute('fill', mats[seg.i].color); }
+    else stream.setAttribute('opacity', '0');
+    drain.setAttribute('opacity', '0');
+  } else if (seg.type === 'mix') {
+    level = totalPct; activeStep = 3; stream.setAttribute('opacity', '0'); drain.setAttribute('opacity', '0');
+    clockTxt = 'Mezcla · ≈ 14–16 h';
+  } else { // discharge
+    level = totalPct * (1 - prog); activeStep = 4; stream.setAttribute('opacity', '0');
+    const bk = document.getElementById('pxBucket'); const bh = 46 * Math.min(1, prog); bk.setAttribute('y', 305 - bh); bk.setAttribute('height', bh); bk.setAttribute('fill', FINAL_COLOR);
+    const { y } = levelToY(level);
+    if (prog < 0.96 && level > 0.5) { drain.setAttribute('opacity', '0.9'); const dr = drain.firstElementChild; dr.setAttribute('height', 10); dr.setAttribute('fill', FINAL_COLOR); }
+    else drain.setAttribute('opacity', '0');
+    clockTxt = 'Descarga';
+  }
+  if (t >= totalMs) clockTxt = 'Completo';
+
+  const { y, h } = levelToY(level);
+  fill.setAttribute('y', y); fill.setAttribute('height', h); fill.setAttribute('fill', color);
+  // ola
+  if (h > 1) { const amp = 2.5, ph = t / 230; let d = `M${TANK.x} ${y} `; for (let x = 0; x <= TANK.w; x += 10) d += `L${TANK.x + x} ${(y + Math.sin(x / 20 + ph) * amp).toFixed(1)} `; d += `L${TANK.x + TANK.w} ${y + 8} L${TANK.x} ${y + 8} Z`; wave.setAttribute('d', d); wave.setAttribute('fill', color); wave.setAttribute('opacity', '0.9'); }
+  else wave.setAttribute('opacity', '0');
+  pxBubbles(t, y, h);
+
+  mats.forEach((m, i) => { const el = document.getElementById('mat-' + m.orden); if (!el) return; const done = (seg.type !== 'load') || i < seg.i || (i === seg.i && prog >= 1); el.classList.toggle('active', i === activeMat && t < totalMs); el.classList.toggle('done', done); });
+  setActiveStep(t >= totalMs ? -1 : activeStep);
+  document.getElementById('pxClock').textContent = clockTxt;
+
+  if (pxState.playing) {
+    if (t >= totalMs) { pxState.playing = false; pxState.elapsed = totalMs; pxSetBtn(false); return; }
+    pxState.raf = requestAnimationFrame(pxFrame);
+  }
+}
+
+let bubbleSeed = [];
+function pxBubbles(t, surfaceY, h) {
+  const g = document.getElementById('pxBubbles'); if (reduceMotion || h < 6) { g.innerHTML = ''; return; }
+  if (bubbleSeed.length === 0) bubbleSeed = Array.from({ length: 8 }, () => ({ x: TANK.x + 12 + Math.random() * (TANK.w - 24), off: Math.random() * 1000, sp: 0.03 + Math.random() * 0.04, r: 1.1 + Math.random() * 1.7 }));
+  let html = '';
+  for (const b of bubbleSeed) { const range = TANK.bottom - surfaceY - 6; if (range <= 4) continue; const yy = TANK.bottom - ((t * b.sp + b.off) % range); html += `<circle cx="${b.x.toFixed(1)}" cy="${yy.toFixed(1)}" r="${b.r.toFixed(1)}" fill="#fff" opacity="0.30"/>`; }
+  g.innerHTML = html;
+}
+
+function pxSetBtn(playing) {
+  document.getElementById('pxPlayTxt').textContent = playing ? 'Pausar' : (pxState.elapsed >= totalMs ? 'Reproducir' : 'Reanudar');
+  document.getElementById('pxPlayIco').innerHTML = playing ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+}
+function pxToggle() {
+  if (pxState.elapsed >= totalMs) pxState.elapsed = 0;
+  pxState.playing = !pxState.playing;
+  if (pxState.playing) { pxState.t0 = performance.now(); pxState.raf = requestAnimationFrame(pxFrame); }
+  else { cancelAnimationFrame(pxState.raf); pxState.elapsed += performance.now() - pxState.t0; }
+  pxSetBtn(pxState.playing);
+}
+function pxRestart() { cancelAnimationFrame(pxState.raf); pxState = { playing: true, t0: performance.now(), elapsed: 0, raf: null }; pxSetBtn(true); pxState.raf = requestAnimationFrame(pxFrame); }
+
+pxRenderStatic();
+if (reduceMotion) { pxState.elapsed = totalMs; requestAnimationFrame(pxFrame); pxSetBtn(false); }
+else { requestAnimationFrame(pxFrame); pxSetBtn(false); }
+</script>
+</body>
+</html>
