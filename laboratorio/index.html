@@ -89,6 +89,14 @@
     </div>
   </a>
 
+  <div class="card" style="margin: 4px 0 8px;">
+    <div style="margin-bottom:8px;">
+      <strong style="font-size:14px;">Materias primas por categoría</strong>
+      <div class="muted" style="font-size:12px;margin-top:2px;">Las principales familias de insumos de fórmula</div>
+    </div>
+    <div id="lab-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
+  </div>
+
   <h2 style="font-size:15px; font-weight:600; margin: 20px 0 12px;">Base maestra</h2>
 
   <div class="grid-tools">
@@ -133,13 +141,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 (async () => {
   try {
-    const [items, formulas] = await Promise.all([
-      sb.from('items').select('tipo, estado'),
+    const [items, formulas, cats] = await Promise.all([
+      sb.from('items').select('tipo, estado, categoria_id'),
       sb.from('formulas').select('estado'),
+      sb.from('categorias').select('id, nombre'),
     ]);
     const rows = items.data || [];
     document.getElementById('cnt-mp').textContent = rows.filter(r => r.tipo==='MP' && r.estado==='vigente').length;
@@ -147,7 +157,18 @@
     document.getElementById('cnt-se').textContent = rows.filter(r => r.tipo==='SE' && r.estado==='vigente').length;
     document.getElementById('cnt-te').textContent = rows.filter(r => r.tipo==='TE' && r.estado==='vigente').length;
     document.getElementById('cnt-dev').textContent = (formulas.data || []).filter(f => f.estado==='desarrollo').length;
-  } catch (e) { console.warn(e); }
+
+    // Gráfico: MP vigentes por categoría (top 8)
+    const catName = {}; (cats.data || []).forEach(c => catName[c.id] = c.nombre);
+    const cont = {};
+    rows.filter(r => r.tipo === 'MP' && r.estado === 'vigente').forEach(r => { const n = catName[r.categoria_id] || '(Sin categoría)'; cont[n] = (cont[n] || 0) + 1; });
+    const entries = Object.entries(cont).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const corto = (s) => s.length > 13 ? s.slice(0, 12) + '…' : s;
+    const el = document.getElementById('lab-chart');
+    if (window.Charts && entries.length) {
+      Charts.trend(el, { labels: entries.map(e => corto(e[0])), fmt: v => Math.round(v), series: [{ name: 'MP', type: 'bar', values: entries.map(e => e[1]), color: 'var(--accent)' }] });
+    } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
+  } catch (e) { console.warn(e); const el = document.getElementById('lab-chart'); if (el) el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar</div>'; }
 })();
 </script>
 </body>

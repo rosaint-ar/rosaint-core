@@ -53,6 +53,14 @@
     <span><span class="k">Packs x4:</span> <span class="v" id="cnt-pack">—</span></span>
   </div>
 
+  <div class="card" style="margin-bottom:20px;">
+    <div style="margin-bottom:8px;">
+      <strong style="font-size:14px;">SKUs por línea comercial</strong>
+      <div class="muted" style="font-size:12px;margin-top:2px;">Productos terminados vigentes en cada línea</div>
+    </div>
+    <div id="cat-chart"><div class="muted" style="font-size:13px;padding:16px 4px;">Cargando…</div></div>
+  </div>
+
   <h2 style="font-size:16px; font-weight:600; margin-bottom:12px;">Herramientas del catálogo</h2>
 
   <div class="grid-tools">
@@ -85,20 +93,34 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
 <script>
 (async () => {
   try {
-    const { data } = await sb.from('items').select('tipo').eq('estado', 'vigente');
-    const rows = data || [];
-    const skus = rows.filter(r => r.tipo === 'SKU').length;
-    const combos = rows.filter(r => r.tipo === 'COMBO').length;
-    const packs = rows.filter(r => r.tipo === 'PACK').length;
-    document.getElementById('cnt-sku').textContent = skus;
-    document.getElementById('cnt-combo').textContent = combos;
-    document.getElementById('cnt-pack').textContent = packs;
+    const [itemsR, lineasR] = await Promise.all([
+      sb.from('items').select('tipo, estado, linea_id'),
+      sb.from('lineas').select('id, nombre, orden').order('orden'),
+    ]);
+    const vig = (itemsR.data || []).filter(r => r.estado === 'vigente');
+    document.getElementById('cnt-sku').textContent = vig.filter(r => r.tipo === 'SKU').length;
+    document.getElementById('cnt-combo').textContent = vig.filter(r => r.tipo === 'COMBO').length;
+    document.getElementById('cnt-pack').textContent = vig.filter(r => r.tipo === 'PACK').length;
+
+    // Gráfico: SKUs vigentes por línea comercial
+    const lineas = lineasR.data || [];
+    const nombreLinea = {}; lineas.forEach(l => nombreLinea[l.id] = l.nombre);
+    const cont = {};
+    vig.filter(r => r.tipo === 'SKU').forEach(r => { const n = nombreLinea[r.linea_id] || '(Sin línea)'; cont[n] = (cont[n] || 0) + 1; });
+    const entries = lineas.map(l => [l.nombre, cont[l.nombre] || 0]).filter(e => e[1] > 0);
+    if (cont['(Sin línea)']) entries.push(['(Sin línea)', cont['(Sin línea)']]);
+    const el = document.getElementById('cat-chart');
+    if (window.Charts && entries.length) {
+      Charts.trend(el, { labels: entries.map(e => e[0]), fmt: v => Math.round(v), series: [{ name: 'SKUs', type: 'bar', values: entries.map(e => e[1]), color: 'var(--accent)' }] });
+    } else { el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos</div>'; }
   } catch (e) {
     console.warn('No se pudo cargar el resumen:', e);
+    const el = document.getElementById('cat-chart'); if (el) el.innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar</div>';
   }
 })();
 </script>
