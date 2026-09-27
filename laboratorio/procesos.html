@@ -15,19 +15,11 @@
     .px-title { font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: var(--text); }
     .px-cod { font-family: var(--font-mono); color: var(--accent); font-size: 13px; }
 
-    .px-etapa { display: flex; align-items: center; gap: 10px; margin: 26px 2px 12px; }
-    .px-etapa .n { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #000));
-      color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; flex: none; }
-    .px-etapa .t { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -.01em; }
-    .px-etapa .s { font-size: 12px; color: var(--muted); margin-left: auto; text-align: right; }
+    .px-stage { position: relative; display: flex; flex-direction: column; align-items: center; padding: 14px 0 10px;
+      background: radial-gradient(120% 80% at 50% 10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%); border-radius: var(--radius); margin: 16px 0; }
+    .px-svg { width: 100%; max-width: 620px; height: auto; display: block; }
 
-    .px-scene { display: grid; grid-template-columns: 340px 1fr; gap: 22px; align-items: start; }
-    @media (max-width: 780px) { .px-scene { grid-template-columns: 1fr; } }
-    .px-stage { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 0;
-      background: radial-gradient(120% 90% at 50% 12%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%); border-radius: var(--radius); }
-    .px-svg { width: 100%; max-width: 290px; height: auto; display: block; }
-
-    .px-controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; width: 100%; padding: 0 6px; }
+    .px-controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; width: 100%; max-width: 620px; padding: 0 6px; }
     .px-btn { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; border: 1px solid var(--border);
       background: var(--surface); color: var(--text); padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
       transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
@@ -36,6 +28,8 @@
     .px-btn.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #000)); color: #fff; border: none; }
     .px-clock { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: right; }
 
+    .px-two { display: grid; grid-template-columns: 1fr 1.25fr; gap: 22px; align-items: start; }
+    @media (max-width: 780px) { .px-two { grid-template-columns: 1fr; } }
     .px-panel-h { font-size: 13px; font-weight: 700; color: var(--text); margin: 2px 0 12px; display: flex; align-items: center; gap: 8px; }
     .px-panel-h .hint { font-weight: 500; color: var(--muted); font-size: 11.5px; margin-left: auto; }
 
@@ -43,39 +37,27 @@
     .px-eq .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
       color: var(--text); background: var(--surface-2); border: 1px solid var(--border); padding: 6px 11px; border-radius: 999px; }
     .px-eq .chip svg { width: 14px; height: 14px; fill: none; stroke: var(--accent); stroke-width: 2; }
+    .pp-note { font-size: 11.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
 
-    /* Pesadas (pre-pesaje) */
-    .pp-note { font-size: 11.5px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
     .pp-g { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; transition: border-color .2s ease, box-shadow .2s ease; }
-    .pp-g.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent); }
+    .pp-g.active { border-color: var(--m-color, var(--accent)); box-shadow: 0 0 0 1px var(--m-color, var(--accent)), 0 0 16px color-mix(in srgb, var(--m-color, var(--accent)) 28%, transparent); }
     .pp-g-h { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-2); font-size: 12.5px; font-weight: 700; color: var(--text); }
+    .pp-g-h .step { width: 20px; height: 20px; border-radius: 50%; background: var(--m-color, var(--accent)); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 800; flex: none; }
     .pp-g-h .tara { font-size: 9px; font-weight: 800; letter-spacing: .08em; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); padding: 1px 6px; border-radius: 999px; }
     .pp-g-h .tot { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+    .pp-g-h .tm { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); padding: 1px 8px; border-radius: 999px; }
     .pp-i { display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 12.5px; border-top: 1px solid var(--border); }
     .pp-i .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
     .pp-i .nm { color: var(--text); }
     .pp-i .kg { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
-    .pp-i.active { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+    .pp-i.active { background: color-mix(in srgb, var(--accent) 8%, transparent); }
     .pp-foot { display: flex; justify-content: space-between; padding: 10px 12px; font-weight: 800; font-size: 13.5px; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); margin-top: 4px; }
 
-    /* Pasos timeline (reactor) */
-    .px-steps { position: relative; }
-    .px-step { position: relative; padding: 0 0 18px 30px; }
-    .px-step::before { content: ''; position: absolute; left: 9px; top: 3px; bottom: -3px; width: 2px; background: var(--border); }
-    .px-step:last-child::before { display: none; }
-    .px-step.active::before { background: var(--m-color); }
-    .px-step .dot { position: absolute; left: 3px; top: 2px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--m-color); background: var(--surface); z-index: 1; transition: box-shadow .2s ease; }
-    .px-step.active .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--m-color) 22%, transparent); }
-    .px-step .st { font-size: 13.5px; font-weight: 600; color: var(--text); }
-    .px-step .sd { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
-    .px-step .sd b { color: var(--text); }
-    .px-badge-t { display: inline-block; font-size: 10.5px; font-weight: 700; margin-top: 5px; padding: 1px 8px; border-radius: 999px; }
-    .px-badge-t.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-    .px-badge-t.pend { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
-
     @keyframes px-spin { to { transform: rotate(360deg); } }
-    .px-impeller { transform-box: view-box; transform-origin: 150px 214px; animation: px-spin .5s linear infinite; }
-    @media (prefers-reduced-motion: reduce) { .px-impeller { animation: none; } }
+    @keyframes xfer-dash { to { stroke-dashoffset: -24; } }
+    .px-impeller { transform-box: view-box; transform-origin: 348px 198px; animation: px-spin .5s linear infinite; }
+    #xfer { animation: xfer-dash .6s linear infinite; }
+    @media (prefers-reduced-motion: reduce) { .px-impeller, #xfer { animation: none; } }
   </style>
 </head>
 <body data-page="laboratorio" data-title="Procesos de elaboración" data-subtitle="Cómo se elabora cada fórmula · base de los manuales">
@@ -98,139 +80,106 @@
     <div class="stat"><div class="v" id="px-base">—</div><div class="l">Base de</div></div>
   </div>
 
-  <!-- ══ ETAPA 1 · PESAJE ══ -->
-  <div class="px-etapa"><span class="n">1</span><span class="t">Pesaje</span><span class="s">balanza Systel 31 kg · con TARA · cada cuñete se vuelca al reactor apenas se pesa</span></div>
+  <!-- ESCENA ÚNICA: balanza (pesaje) + reactor (carga), sincronizadas -->
+  <div class="card px-stage">
+    <svg class="px-svg" viewBox="0 0 470 330" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="pxSteel" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#c7ced6"/><stop offset="18%" stop-color="#eef2f6"/>
+          <stop offset="50%" stop-color="#aeb8c2"/><stop offset="82%" stop-color="#e2e7ec"/><stop offset="100%" stop-color="#9aa4af"/>
+        </linearGradient>
+        <clipPath id="cunClip"><rect x="80" y="155" width="68" height="102" rx="7"/></clipPath>
+        <clipPath id="balClip"><rect x="87" y="184" width="54" height="72" rx="6"/></clipPath>
+        <clipPath id="rxBodyClip"><rect x="300" y="120" width="96" height="116" rx="7"/></clipPath>
+      </defs>
 
-  <div class="px-scene">
-    <div class="card px-stage">
-      <svg class="px-svg" viewBox="0 0 300 340" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <linearGradient id="pxSteel" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#c7ced6"/><stop offset="18%" stop-color="#eef2f6"/>
-            <stop offset="50%" stop-color="#aeb8c2"/><stop offset="82%" stop-color="#e2e7ec"/><stop offset="100%" stop-color="#9aa4af"/>
-          </linearGradient>
-          <clipPath id="ppCunClip"><rect x="104" y="109" width="92" height="150" rx="8"/></clipPath>
-          <clipPath id="ppBalClip"><rect x="112" y="192" width="76" height="67" rx="6"/></clipPath>
-        </defs>
+      <!-- rótulos -->
+      <text x="114" y="20" text-anchor="middle" font-size="11" font-weight="800" fill="var(--muted)" font-family="sans-serif" letter-spacing=".5">PESAJE</text>
+      <text x="348" y="20" text-anchor="middle" font-size="11" font-weight="800" fill="var(--muted)" font-family="sans-serif" letter-spacing=".5">REACTOR</text>
 
-        <g id="pp-stream" opacity="0"><rect x="147" y="86" width="6" height="0" rx="3" fill="#49B6FF"/></g>
+      <!-- Transferencia balanza → reactor -->
+      <path id="xfer" d="M150 168 Q 232 118 298 128" fill="none" stroke="#49B6FF" stroke-width="4" stroke-linecap="round" stroke-dasharray="3 9" opacity="0"/>
 
-        <!-- Cuñete 30 L (33×53 cm) -->
-        <g id="pp-cunete">
-          <rect x="101" y="103" width="98" height="159" rx="11" fill="#2f6fb0" stroke="#24578a" stroke-width="1.5"/>
-          <g clip-path="url(#ppCunClip)"><rect id="pp-cun-fill" x="104" y="259" width="92" height="0" fill="#49B6FF" opacity="0.9"/></g>
-          <rect x="95" y="95" width="110" height="14" rx="4" fill="#1c1c22"/>
-          <rect x="101" y="103" width="98" height="159" rx="11" fill="none" stroke="#24578a" stroke-width="1.5"/>
-        </g>
-        <!-- Balde 10 L -->
-        <g id="pp-balde" opacity="0">
-          <path d="M108 190 h84 l-6 69 a4 4 0 0 1 -4 4 h-64 a4 4 0 0 1 -4 -4 z" fill="#f4f6f8" stroke="var(--border)" stroke-width="2"/>
-          <g clip-path="url(#ppBalClip)"><rect id="pp-bal-fill" x="112" y="261" width="76" height="0" fill="#E23145" opacity="0.9"/></g>
-          <ellipse cx="150" cy="190" rx="42" ry="5" fill="#fff" stroke="var(--border)" stroke-width="2"/>
-          <path d="M112 190 q38 -22 76 0" fill="none" stroke="var(--border)" stroke-width="2"/>
-        </g>
+      <!-- ══════════ BALANZA (izq) ══════════ -->
+      <g id="bal-stream" opacity="0"><rect x="111" y="120" width="5" height="0" rx="2.5" fill="#49B6FF"/></g>
+      <g id="c-cun">
+        <rect x="78" y="150" width="72" height="109" rx="8" fill="#2f6fb0" stroke="#24578a" stroke-width="1.5"/>
+        <g clip-path="url(#cunClip)"><rect id="cun-fill" x="80" y="257" width="68" height="0" fill="#49B6FF" opacity="0.9"/></g>
+        <rect x="73" y="143" width="82" height="11" rx="3" fill="#1c1c22"/>
+        <rect x="78" y="150" width="72" height="109" rx="8" fill="none" stroke="#24578a" stroke-width="1.5"/>
+      </g>
+      <g id="c-bal" opacity="0">
+        <path d="M84 182 h60 l-5 73 a3 3 0 0 1 -3 3 h-49 a3 3 0 0 1 -3 -3 z" fill="#f4f6f8" stroke="var(--border)" stroke-width="2"/>
+        <g clip-path="url(#balClip)"><rect id="bal-fill" x="87" y="256" width="54" height="0" fill="#E23145" opacity="0.9"/></g>
+        <ellipse cx="114" cy="182" rx="30" ry="4" fill="#fff" stroke="var(--border)" stroke-width="2"/>
+      </g>
+      <rect x="70" y="259" width="88" height="7" rx="2" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1"/>
+      <rect x="60" y="266" width="108" height="34" rx="7" fill="#e9edf1" stroke="#b9c2cc" stroke-width="1.5"/>
+      <rect x="116" y="274" width="46" height="18" rx="3" fill="#08150f"/>
+      <text id="disp" x="158" y="287" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" font-weight="700" fill="#39ff9a">0,00 kg</text>
+      <text x="68" y="280" font-size="7" font-weight="800" fill="#5b6672" font-family="sans-serif">SYSTEL</text>
+      <rect x="68" y="284" width="12" height="9" rx="2" fill="#cfd6dd"/><rect x="84" y="284" width="12" height="9" rx="2" fill="#cfd6dd"/>
+      <rect x="34" y="300" width="170" height="7" rx="2" fill="var(--surface-2)"/>
 
-        <!-- Balanza Systel (38,7×13 cm; plato 36,7 cm) -->
-        <rect x="95" y="262" width="110" height="8" rx="2" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1"/>
-        <rect x="92" y="270" width="116" height="40" rx="8" fill="#e9edf1" stroke="#b9c2cc" stroke-width="1.5"/>
-        <rect x="146" y="280" width="58" height="20" rx="3" fill="#08150f"/>
-        <text id="pp-disp" x="200" y="294" text-anchor="end" font-family="ui-monospace,monospace" font-size="13" font-weight="700" fill="#39ff9a">0,00 kg</text>
-        <text x="100" y="285" font-size="8" font-weight="800" fill="#5b6672" font-family="sans-serif">SYSTEL</text>
-        <rect x="100" y="289" width="13" height="10" rx="2" fill="#cfd6dd"/><rect x="117" y="289" width="13" height="10" rx="2" fill="#cfd6dd"/>
-        <rect x="20" y="312" width="260" height="8" rx="2" fill="var(--surface-2)"/>
-      </svg>
+      <!-- ══════════ REACTOR (der) ══════════ -->
+      <path d="M312 236 L300 286" stroke="#9aa4af" stroke-width="5" stroke-linecap="round"/>
+      <path d="M384 236 L396 286" stroke="#9aa4af" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="298" cy="291" r="6" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="2.5"/>
+      <circle cx="398" cy="291" r="6" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="2.5"/>
 
-      <div class="px-controls">
-        <button class="px-btn primary" onclick="ppToggle()"><svg id="ppPlayIco" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span id="ppPlayTxt">Reproducir</span></button>
-        <button class="px-btn" onclick="ppRestart()"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 7l5 5V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>Reiniciar</button>
-        <span class="px-clock" id="ppClock">listo</span>
-      </div>
-    </div>
+      <rect x="300" y="120" width="96" height="116" rx="7" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+      <ellipse cx="348" cy="236" rx="48" ry="6" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+      <g clip-path="url(#rxBodyClip)">
+        <rect id="rx-fill" x="300" y="234" width="96" height="0" fill="#79b8e6"/>
+        <path id="rx-wave" d="" fill="#79b8e6"/>
+        <g id="rx-bubbles"></g>
+      </g>
 
-    <div class="card">
-      <div class="px-panel-h">Pesadas <span class="hint">se tara el envase antes de cada una</span></div>
-      <div id="pp-lista"></div>
-      <div class="pp-foot"><span>Total del lote</span><span>100 kg</span></div>
-      <div class="pp-note">El <b>agua</b> se carga por canilla (agua potable). La fórmula la nombra «agua purificada». El <b>Kathon</b> (0,1 %) se pesa en la misma balanza Systel.</div>
+      <rect x="336" y="218" width="14" height="8" rx="2" fill="#8b95a0"/>
+      <rect x="346" y="219" width="18" height="3" rx="1.5" fill="#6b7480"/>
+      <rect x="341" y="225" width="6" height="9" rx="2" fill="#8b95a0"/>
+
+      <g id="rx-stream" opacity="0"><rect x="345" y="104" width="5" height="0" rx="2.5" fill="#49B6FF"/></g>
+
+      <g id="rx-drain" opacity="0"><rect x="345" y="232" width="5" height="0" rx="2" fill="#79b8e6"/></g>
+
+      <rect x="294" y="112" width="108" height="9" rx="4" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
+      <rect x="326" y="66" width="36" height="26" rx="6" fill="#3b4046"/>
+      <ellipse cx="348" cy="66" rx="18" ry="5" fill="#4a5057"/>
+      <rect x="340" y="92" width="16" height="10" rx="3" fill="#5a616a"/>
+      <rect x="345" y="100" width="5" height="104" rx="2.5" fill="#8b95a0"/>
+      <g class="px-impeller">
+        <rect x="336" y="195.5" width="24" height="5" rx="2.5" fill="#6b7480"/>
+        <rect x="345.5" y="185" width="5" height="26" rx="2.5" fill="#6b7480" transform="rotate(60 348 198)"/>
+        <rect x="345.5" y="185" width="5" height="26" rx="2.5" fill="#6b7480" transform="rotate(120 348 198)"/>
+      </g>
+    </svg>
+
+    <div class="px-controls">
+      <button class="px-btn primary" onclick="fxToggle()"><svg id="fxPlayIco" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span id="fxPlayTxt">Reproducir</span></button>
+      <button class="px-btn" onclick="fxRestart()"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 7l5 5V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>Reiniciar</button>
+      <span class="px-clock" id="fxClock">listo</span>
     </div>
   </div>
 
-  <!-- ══ ETAPA 2 · EN EL REACTOR ══ -->
-  <div class="px-etapa"><span class="n">2</span><span class="t">En el reactor</span><span class="s">se carga tachada por tachada · mezcla ≈ 14–16 h · descarga</span></div>
-
-  <div class="px-scene">
-    <div class="card px-stage">
-      <svg class="px-svg" viewBox="0 0 300 380" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <clipPath id="pxBodyClip"><rect x="86" y="96" width="128" height="154" rx="8"/></clipPath>
-          <clipPath id="pxBucketClip"><path d="M124 256 h52 l-4 46 a3 3 0 0 1 -3 3 h-35 a3 3 0 0 1 -3 -3 z"/></clipPath>
-        </defs>
-
-        <path d="M100 250 L80 316" stroke="#9aa4af" stroke-width="6" stroke-linecap="round"/>
-        <path d="M200 250 L220 316" stroke="#9aa4af" stroke-width="6" stroke-linecap="round"/>
-        <circle cx="78" cy="322" r="8" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="3"/>
-        <circle cx="222" cy="322" r="8" fill="var(--surface-2)" stroke="#9aa4af" stroke-width="3"/>
-
-        <rect x="86" y="96" width="128" height="154" rx="8" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
-        <ellipse cx="150" cy="250" rx="64" ry="7" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
-
-        <g clip-path="url(#pxBodyClip)">
-          <rect id="pxFill" x="86" y="248" width="128" height="0" fill="#79b8e6"/>
-          <path id="pxWave" d="" fill="#79b8e6"/>
-          <g id="pxBubbles"></g>
-        </g>
-
-        <rect x="140" y="230" width="16" height="9" rx="2" fill="#8b95a0"/>
-        <rect x="150" y="231" width="24" height="4" rx="2" fill="#6b7480"/>
-        <rect x="146" y="238" width="8" height="11" rx="2" fill="#8b95a0"/>
-
-        <g id="pxStream" opacity="0"><rect x="147" y="70" width="6" height="0" rx="3" fill="#49B6FF"/></g>
-
-        <path d="M124 256 h52 l-4 46 a3 3 0 0 1 -3 3 h-35 a3 3 0 0 1 -3 -3 z" fill="#f4f6f8" stroke="var(--border)" stroke-width="2"/>
-        <g clip-path="url(#pxBucketClip)"><rect id="pxBucket" x="122" y="305" width="56" height="0" fill="#79b8e6" opacity="0.85"/></g>
-        <ellipse cx="150" cy="256" rx="26" ry="4" fill="#fff" stroke="var(--border)" stroke-width="2"/>
-        <path d="M128 256 q22 -18 44 0" fill="none" stroke="var(--border)" stroke-width="2"/>
-        <g id="pxDrain" opacity="0"><rect x="147" y="248" width="5" height="0" rx="2" fill="#79b8e6"/></g>
-
-        <rect x="80" y="88" width="140" height="12" rx="5" fill="url(#pxSteel)" stroke="#8b95a0" stroke-width="1.5"/>
-        <rect x="118" y="80" width="10" height="10" fill="#8b95a0"/><rect x="172" y="80" width="10" height="10" fill="#8b95a0"/>
-
-        <rect x="128" y="30" width="44" height="34" rx="8" fill="#3b4046"/>
-        <ellipse cx="150" cy="30" rx="22" ry="6" fill="#4a5057"/>
-        <rect x="140" y="64" width="20" height="12" rx="3" fill="#5a616a"/>
-
-        <rect x="147" y="74" width="6" height="140" rx="3" fill="#8b95a0"/>
-        <g class="px-impeller">
-          <rect x="136" y="211" width="28" height="5" rx="2.5" fill="#6b7480"/>
-          <rect x="147.5" y="200" width="5" height="28" rx="2.5" fill="#6b7480" transform="rotate(60 150 214)"/>
-          <rect x="147.5" y="200" width="5" height="28" rx="2.5" fill="#6b7480" transform="rotate(120 150 214)"/>
-        </g>
-      </svg>
-
-      <div class="px-controls">
-        <button class="px-btn primary" onclick="pxToggle()"><svg id="pxPlayIco" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span id="pxPlayTxt">Reproducir</span></button>
-        <button class="px-btn" onclick="pxRestart()"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 7l5 5V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>Reiniciar</button>
-        <span class="px-clock" id="pxClock">listo</span>
+  <div class="px-two">
+    <div class="card">
+      <div class="px-panel-h">Equipo <span class="hint">lo que usa este proceso</span></div>
+      <div class="px-eq">
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M6 4h12v3l-2 2v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9L6 7z"/></svg>Reactor inox. móvil</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M12 3v10M8 7l4-4 4 4M7 20h10"/></svg>Agitador hélice · alta velocidad</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M5 8h10v4a5 5 0 0 1-10 0zM15 9h3v3"/></svg>Válvula lateral de descarga</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="10" rx="2"/><path d="M9 9V6h6v3"/></svg>Balanza Systel 31 kg</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1z"/><path d="M6 4h12"/></svg>1 cuñete de 30 L</span>
+        <span class="chip"><svg viewBox="0 0 24 24"><path d="M8 5h8l-1 14a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/><path d="M7 5h10"/></svg>Baldes de 10 L (carbopol)</span>
       </div>
+      <div class="pp-note">El <b>agua</b> se carga por canilla (agua potable). La fórmula la nombra «agua purificada». El <b>Kathon</b> (0,1 %) se pesa en la misma balanza Systel. Cada cuñete <b>se vuelca al reactor apenas se pesa</b> (con TARA en cada pesada).</div>
     </div>
 
-    <div>
-      <div class="card" style="margin-bottom:16px;">
-        <div class="px-panel-h">Equipo <span class="hint">lo que usa este proceso</span></div>
-        <div class="px-eq">
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M6 4h12v3l-2 2v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9L6 7z"/></svg>Reactor inox. móvil</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M12 3v10M8 7l4-4 4 4M7 20h10"/></svg>Agitador hélice · alta velocidad</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M5 8h10v4a5 5 0 0 1-10 0zM15 9h3v3"/></svg>Válvula lateral de descarga</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="10" rx="2"/><path d="M9 9V6h6v3"/></svg>Balanza Systel 31 kg</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1z"/><path d="M6 4h12"/></svg>1 cuñete de 30 L</span>
-          <span class="chip"><svg viewBox="0 0 24 24"><path d="M8 5h8l-1 14a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/><path d="M7 5h10"/></svg>Baldes de 10 L (carbopol)</span>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="px-panel-h">Pasos de elaboración <span class="hint">flujo real · faltan tiempos</span></div>
-        <div class="px-steps" id="px-pasos"></div>
-      </div>
+    <div class="card">
+      <div class="px-panel-h">Flujo del proceso <span class="hint" id="fx-sub">pesaje → carga → mezcla → descarga</span></div>
+      <div id="fx-flujo"></div>
+      <div class="pp-foot"><span>Total del lote</span><span>100 kg</span></div>
     </div>
   </div>
 
@@ -239,26 +188,26 @@
 
 <script src="../shell/shell.js"></script>
 <script>
-// ══════════════ Datos del proceso (ingredientes reales; flujo confirmado por Diego) ══════════════
+// ══════════════ Datos (ingredientes reales; flujo confirmado por Diego) ══════════════
 const PROCESO = { codigo: '90302', nombre: 'Solución de Carbopol 2% c/ glicerina', tipo: 'Semielaborado', base_de: 6 };
 const AZUL = '#49B6FF', AMBAR = '#E0A93B', VIOLETA = '#6C5CE7', ROJO = '#E23145', VERDE = '#2F9E6E';
 
-// Las 5 tachadas, en el orden real de pesaje y carga
 const TACHADAS = [
   { id: 'c1', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 1 · premezcla',
-    desc: '<b>Kathon + Glicerina + Agua</b> (en ese orden), completando con agua hasta 25 kg.',
     items: [ { n: 'Kathon', kg: 0.1, col: VIOLETA }, { n: 'Glicerina', kg: 10, col: AMBAR }, { n: 'Agua (completar a 25)', kg: 14.9, col: AZUL } ] },
-  { id: 'c2', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 2 · agua', desc: 'Segunda tachada de agua.', items: [ { n: 'Agua', kg: 25, col: AZUL } ] },
-  { id: 'c3', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 3 · agua', desc: 'Tercera tachada de agua.', items: [ { n: 'Agua', kg: 25, col: AZUL } ] },
+  { id: 'c2', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 2 · agua', items: [ { n: 'Agua', kg: 25, col: AZUL } ] },
+  { id: 'c3', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 3 · agua', items: [ { n: 'Agua', kg: 25, col: AZUL } ] },
   { id: 'carb', cont: 'balde', capV: 2, col: ROJO, tit: 'Carbopol', baldes: 2, nota: '2 baldes de 1 kg',
-    desc: 'Se pesa y se agrega el <b>carbopol</b>: 2 baldes de 1 kg (cada kilo llega a media altura del balde de 10 L).',
     items: [ { n: 'Carbomer 940/980', kg: 1, col: ROJO } ] },
-  { id: 'c4', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 4 · completar', desc: 'Se completa con los <b>23 kg de agua</b> que faltan (arrastran el carbopol).', items: [ { n: 'Agua', kg: 23, col: AZUL } ] },
+  { id: 'c4', cont: 'cunete', capV: 30, col: AZUL, tit: 'Cuñete 4 · completar', items: [ { n: 'Agua', kg: 23, col: AZUL } ] },
 ];
 TACHADAS.forEach(t => t.kgReactor = t.items.reduce((a, i) => a + i.kg, 0) * (t.baldes || 1));
+const cumR = TACHADAS.map((t, i) => TACHADAS.slice(0, i + 1).reduce((a, x) => a + x.kgReactor, 0));
+const RTOTAL = cumR[cumR.length - 1];
+const N = TACHADAS.length;
 
-const ppKg = (n) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
-const ppDispTxt = (v) => v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+const fmt = (v) => v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg';
+const fmtK = (n) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 document.getElementById('px-tipo').textContent = PROCESO.tipo;
@@ -266,148 +215,124 @@ document.getElementById('px-nombre').textContent = PROCESO.nombre;
 document.getElementById('px-cod').textContent = '#' + PROCESO.codigo;
 document.getElementById('px-base').textContent = PROCESO.base_de + ' fórmulas';
 
-// ══════════════ ETAPA 1 · PRE-PESAJE (balanza) ══════════════
-function ppRenderStatic() {
-  document.getElementById('pp-lista').innerHTML = TACHADAS.map((g, gi) => {
-    const tot = g.items.reduce((a, it) => a + it.kg, 0) * (g.baldes || 1);
-    return `<div class="pp-g" id="ppg-${gi}">
-      <div class="pp-g-h"><span>${g.tit}</span><span class="tara">TARA</span><span class="tot">${ppKg(tot)} kg</span></div>
-      ${g.items.map((it, ii) => `<div class="pp-i" id="ppi-${gi}-${ii}"><span class="dot" style="background:${it.col}"></span><span class="nm">${it.n}${g.nota && ii === 0 ? ' · ' + g.nota : ''}</span><span class="kg">${ppKg(it.kg)} kg</span></div>`).join('')}
-    </div>`;
-  }).join('');
-}
-
-// duración por pesada, proporcional a los kg (más pausado)
-const ppItemDur = (kg) => Math.min(3200, Math.max(1100, 800 + kg * 100));
-const PP_TARA = 1000;
-const ppAct = [];
-TACHADAS.forEach((g, gi) => { ppAct.push({ t: 'tara', gi }); g.items.forEach((it, ii) => ppAct.push({ t: 'item', gi, ii })); });
-const ppDur = ppAct.map(a => a.t === 'tara' ? PP_TARA : ppItemDur(TACHADAS[a.gi].items[a.ii].kg));
-const ppCum = ppDur.reduce((acc, d) => (acc.push((acc[acc.length - 1] || 0) + d), acc), []);
-const ppTotalMs = ppCum[ppCum.length - 1];
-let ppState = { playing: false, t0: 0, elapsed: 0, raf: null };
-
-function ppActAt(t) { for (let k = 0; k < ppAct.length; k++) if (t < ppCum[k]) return { k, local: t - (ppCum[k - 1] || 0), dur: ppDur[k] }; return { k: ppAct.length - 1, local: ppDur[ppDur.length - 1], dur: ppDur[ppDur.length - 1] }; }
-
-function ppFrame(nowMs) {
-  const t = Math.min(ppTotalMs, ppState.elapsed + (ppState.playing ? nowMs - ppState.t0 : 0));
-  const { k, local, dur } = ppActAt(t);
-  const a = ppAct[k], g = TACHADAS[a.gi], prog = Math.min(1, local / dur);
-  document.getElementById('pp-cunete').setAttribute('opacity', g.cont === 'cunete' ? '1' : '0');
-  document.getElementById('pp-balde').setAttribute('opacity', g.cont === 'balde' ? '1' : '0');
-  const fillEl = document.getElementById(g.cont === 'cunete' ? 'pp-cun-fill' : 'pp-bal-fill');
-  document.getElementById(g.cont === 'cunete' ? 'pp-bal-fill' : 'pp-cun-fill').setAttribute('height', 0);
-  const baseY = g.cont === 'cunete' ? 259 : 261, maxH = g.cont === 'cunete' ? 150 : 67;
-  const stream = document.getElementById('pp-stream'), srect = stream.firstElementChild;
-  const prevSum = (upto) => g.items.slice(0, upto).reduce((s, it) => s + it.kg, 0);
-
-  let weight = 0, dispTxt = '', activeItem = -1, col = AZUL;
-  if (a.t === 'tara') { weight = 0; dispTxt = prog < 0.5 ? '· TARA ·' : '0,00 kg'; stream.setAttribute('opacity', '0'); }
-  else { const it = g.items[a.ii]; col = it.col; activeItem = a.ii; weight = prevSum(a.ii) + it.kg * prog; dispTxt = ppDispTxt(weight); stream.setAttribute('opacity', prog < 0.85 ? '0.9' : '0'); }
-
-  const h = maxH * Math.min(1, weight / g.capV);
-  fillEl.setAttribute('y', baseY - h); fillEl.setAttribute('height', h); fillEl.setAttribute('fill', col);
-  if (stream.getAttribute('opacity') !== '0') { srect.setAttribute('height', Math.max(0, (baseY - h) - 88)); srect.setAttribute('fill', col); }
-  document.getElementById('pp-disp').textContent = t >= ppTotalMs ? ppDispTxt(g.items.reduce((s, it) => s + it.kg, 0)) : dispTxt;
-
-  TACHADAS.forEach((gg, gi) => {
-    document.getElementById('ppg-' + gi)?.classList.toggle('active', gi === a.gi && t < ppTotalMs);
-    gg.items.forEach((_, ii) => document.getElementById(`ppi-${gi}-${ii}`)?.classList.toggle('active', gi === a.gi && ii === activeItem && t < ppTotalMs));
-  });
-  document.getElementById('ppClock').textContent = t >= ppTotalMs ? 'Completo · 100 kg' : (a.t === 'tara' ? 'Tara · ' + g.tit : g.tit + (g.baldes ? ' (×' + g.baldes + ')' : ''));
-
-  if (ppState.playing) { if (t >= ppTotalMs) { ppState.playing = false; ppState.elapsed = ppTotalMs; ppSetBtn(false); return; } ppState.raf = requestAnimationFrame(ppFrame); }
-}
-function ppSetBtn(p) { document.getElementById('ppPlayTxt').textContent = p ? 'Pausar' : (ppState.elapsed >= ppTotalMs ? 'Reproducir' : 'Reanudar'); document.getElementById('ppPlayIco').innerHTML = p ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; }
-function ppToggle() { if (ppState.elapsed >= ppTotalMs) ppState.elapsed = 0; ppState.playing = !ppState.playing; if (ppState.playing) { ppState.t0 = performance.now(); ppState.raf = requestAnimationFrame(ppFrame); } else { cancelAnimationFrame(ppState.raf); ppState.elapsed += performance.now() - ppState.t0; } ppSetBtn(ppState.playing); }
-function ppRestart() { cancelAnimationFrame(ppState.raf); ppState = { playing: true, t0: performance.now(), elapsed: 0, raf: null }; ppSetBtn(true); ppState.raf = requestAnimationFrame(ppFrame); }
-
-// ══════════════ ETAPA 2 · ELABORACIÓN (reactor) ══════════════
-const PASOS = TACHADAS.map((t, i) => ({ tit: t.tit, desc: 'Se pesa y se vuelca al reactor en el acto (<b>' + ppKg(t.kgReactor) + ' kg</b>). ' + t.desc, col: t.col, tiempo: null }))
-  .concat([
-    { tit: 'Mezclar a alta velocidad', desc: 'Agitador tipo hélice de bajo diámetro, a alta velocidad, hasta hidratar por completo el carbopol.', col: VERDE, tiempo: '≈ 14–16 h' },
-    { tit: 'Descargar', desc: 'Se descarga por la válvula lateral a baldes.', col: VIOLETA, tiempo: null },
-  ]);
-
-function pxRenderStatic() {
-  document.getElementById('px-pasos').innerHTML = PASOS.map((p, i) => `
-    <div class="px-step" id="step-${i}" style="--m-color:${p.col}">
-      <span class="dot"></span>
-      <div class="st">Paso ${i + 1} · ${p.tit}</div>
-      <div class="sd">${p.desc}</div>
-      <span class="px-badge-t ${p.tiempo ? 'ok' : 'pend'}">${p.tiempo ? p.tiempo : 'tiempo a definir'}</span>
+// Panel de flujo
+function fxRenderStatic() {
+  let html = TACHADAS.map((g, gi) => `
+    <div class="pp-g" id="fg-${gi}" style="--m-color:${g.col}">
+      <div class="pp-g-h"><span class="step">${gi + 1}</span><span>${g.tit}</span><span class="tara">TARA</span><span class="tot">${fmtK(g.kgReactor)} kg</span></div>
+      ${g.items.map((it, ii) => `<div class="pp-i" id="fi-${gi}-${ii}"><span class="dot" style="background:${it.col}"></span><span class="nm">${it.n}${g.nota && ii === 0 ? ' · ' + g.nota : ''}</span><span class="kg">${fmtK(it.kg)} kg</span></div>`).join('')}
     </div>`).join('');
+  html += `<div class="pp-g" id="fg-mix" style="--m-color:${VERDE}"><div class="pp-g-h"><span class="step">${N + 1}</span><span>Mezclar a alta velocidad</span><span class="tm">≈ 14–16 h</span></div></div>`;
+  html += `<div class="pp-g" id="fg-dis" style="--m-color:${VIOLETA}"><div class="pp-g-h"><span class="step">${N + 2}</span><span>Descargar por la válvula lateral</span></div></div>`;
+  document.getElementById('fx-flujo').innerHTML = html;
 }
 
-const TANK = { x: 86, top: 100, bottom: 248, w: 128 };
-const cumR = TACHADAS.map((t, i) => TACHADAS.slice(0, i + 1).reduce((a, x) => a + x.kgReactor, 0));
-const RTOTAL = cumR[cumR.length - 1]; // 100
-const MIX_MS = 3400, DIS_MS = 2600;
-const segsR = TACHADAS.map((t, i) => ({ type: 'charge', i })).concat([{ type: 'mix' }, { type: 'discharge' }]);
-const dursR = TACHADAS.map(t => Math.min(2200, 900 + t.kgReactor * 45)).concat([MIX_MS, DIS_MS]);
-const cumDurR = dursR.reduce((acc, d) => (acc.push((acc[acc.length - 1] || 0) + d), acc), []);
-const totalMsR = cumDurR[cumDurR.length - 1];
-let pxState = { playing: false, t0: 0, elapsed: 0, raf: null };
+// ══════════════ Timeline sincronizada ══════════════
+// Por tachada: tara → (pesar cada item) → carga (volcar al reactor). Luego: mezcla, descarga.
+const D_TARA = 1100, D_CARGA = 1600, D_MIX = 3600, D_DIS = 2800;
+const dItem = (kg) => Math.min(3400, Math.max(1700, 1300 + kg * 80));
+const ACT = [];
+TACHADAS.forEach((g, gi) => { ACT.push({ t: 'tara', gi }); g.items.forEach((it, ii) => ACT.push({ t: 'item', gi, ii })); ACT.push({ t: 'carga', gi }); });
+ACT.push({ t: 'mix' }); ACT.push({ t: 'discharge' });
+const DUR = ACT.map(a => a.t === 'tara' ? D_TARA : a.t === 'carga' ? D_CARGA : a.t === 'mix' ? D_MIX : a.t === 'discharge' ? D_DIS : dItem(TACHADAS[a.gi].items[a.ii].kg));
+const CUM = DUR.reduce((acc, d) => (acc.push((acc[acc.length - 1] || 0) + d), acc), []);
+const TOTAL = CUM[CUM.length - 1];
+let S = { playing: false, t0: 0, elapsed: 0, raf: null };
 
-function levelToY(levelKg) { const frac = Math.max(0, Math.min(1, levelKg / RTOTAL)); const h = (TANK.bottom - TANK.top) * frac; return { y: TANK.bottom - h, h }; }
-function segRAt(t) { for (let k = 0; k < segsR.length; k++) if (t < cumDurR[k]) return { k, local: t - (cumDurR[k - 1] || 0), dur: dursR[k] }; return { k: segsR.length - 1, local: dursR[dursR.length - 1], dur: dursR[dursR.length - 1] }; }
+function actAt(t) { for (let k = 0; k < ACT.length; k++) if (t < CUM[k]) return { k, local: t - (CUM[k - 1] || 0), dur: DUR[k] }; return { k: ACT.length - 1, local: DUR[DUR.length - 1], dur: DUR[DUR.length - 1] }; }
+
+// geometría
+const RTANK = { top: 126, bottom: 234 };
+const set = (id, at, v) => { const e = document.getElementById(id); if (e) e.setAttribute(at, v); };
 
 let bubbleSeed = [];
-function pxBubbles(t, surfaceY, h) {
-  const g = document.getElementById('pxBubbles'); if (reduceMotion || h < 6) { g.innerHTML = ''; return; }
-  if (bubbleSeed.length === 0) bubbleSeed = Array.from({ length: 8 }, () => ({ x: TANK.x + 12 + Math.random() * (TANK.w - 24), off: Math.random() * 1000, sp: 0.03 + Math.random() * 0.04, r: 1.1 + Math.random() * 1.7 }));
+function rxBubbles(t, surfaceY, h) {
+  const g = document.getElementById('rx-bubbles'); if (reduceMotion || h < 6) { g.innerHTML = ''; return; }
+  if (!bubbleSeed.length) bubbleSeed = Array.from({ length: 7 }, () => ({ x: 306 + Math.random() * 84, off: Math.random() * 1000, sp: 0.03 + Math.random() * 0.04, r: 1 + Math.random() * 1.6 }));
   let html = '';
-  for (const b of bubbleSeed) { const range = TANK.bottom - surfaceY - 6; if (range <= 4) continue; const yy = TANK.bottom - ((t * b.sp + b.off) % range); html += `<circle cx="${b.x.toFixed(1)}" cy="${yy.toFixed(1)}" r="${b.r.toFixed(1)}" fill="#fff" opacity="0.28"/>`; }
+  for (const b of bubbleSeed) { const range = 234 - surfaceY - 6; if (range <= 4) continue; const yy = 234 - ((t * b.sp + b.off) % range); html += `<circle cx="${b.x.toFixed(1)}" cy="${yy.toFixed(1)}" r="${b.r.toFixed(1)}" fill="#fff" opacity="0.28"/>`; }
   g.innerHTML = html;
 }
 
-function pxFrame(nowMs) {
-  const t = Math.min(totalMsR, pxState.elapsed + (pxState.playing ? nowMs - pxState.t0 : 0));
-  const { k, local, dur } = segRAt(t);
-  const seg = segsR[k], prog = Math.min(1, local / dur);
-  const fill = document.getElementById('pxFill'), wave = document.getElementById('pxWave');
-  const stream = document.getElementById('pxStream'), drain = document.getElementById('pxDrain');
-  let level, activeStep = 0, clockTxt = '';
+function frame(nowMs) {
+  const t = Math.min(TOTAL, S.elapsed + (S.playing ? nowMs - S.t0 : 0));
+  const { k, local, dur } = actAt(t);
+  const a = ACT[k], prog = Math.min(1, local / dur);
+  const g = a.gi != null ? TACHADAS[a.gi] : null;
 
-  if (seg.type === 'charge') {
-    const pourP = Math.min(1, prog / 0.75);
-    const prev = seg.i === 0 ? 0 : cumR[seg.i - 1];
-    level = prev + (cumR[seg.i] - prev) * pourP;
-    activeStep = seg.i; clockTxt = 'Carga · ' + TACHADAS[seg.i].tit;
-    const { y } = levelToY(level);
-    if (prog < 0.75) { stream.setAttribute('opacity', '0.9'); const rr = stream.firstElementChild; rr.setAttribute('height', Math.max(0, y - 72)); rr.setAttribute('fill', TACHADAS[seg.i].col); }
-    else stream.setAttribute('opacity', '0');
-    drain.setAttribute('opacity', '0');
-  } else if (seg.type === 'mix') {
-    level = RTOTAL; activeStep = TACHADAS.length; stream.setAttribute('opacity', '0'); drain.setAttribute('opacity', '0'); clockTxt = 'Mezcla · ≈ 14–16 h';
-  } else {
-    level = RTOTAL * (1 - prog); activeStep = TACHADAS.length + 1; stream.setAttribute('opacity', '0');
-    const bk = document.getElementById('pxBucket'); const bh = 46 * Math.min(1, prog); bk.setAttribute('y', 305 - bh); bk.setAttribute('height', bh);
-    const { y } = levelToY(level);
-    if (prog < 0.96 && level > 0.5) { drain.setAttribute('opacity', '0.9'); drain.firstElementChild.setAttribute('height', 10); } else drain.setAttribute('opacity', '0');
-    clockTxt = 'Descarga';
-  }
-  if (t >= totalMsR) clockTxt = 'Completo';
+  let disp = '—', cunKg = 0, cont = 'cunete', balStream = false, balCol = AZUL;
+  let reactorKg, showXfer = false, rxStreamCol = AZUL, activeGi = -1, activeItem = -1, activeStep = -1;
 
-  const { y, h } = levelToY(level);
-  fill.setAttribute('y', y); fill.setAttribute('height', h);
-  if (h > 1) { const amp = 2.5, ph = t / 230; let d = `M${TANK.x} ${y} `; for (let x = 0; x <= TANK.w; x += 10) d += `L${TANK.x + x} ${(y + Math.sin(x / 20 + ph) * amp).toFixed(1)} `; d += `L${TANK.x + TANK.w} ${y + 8} L${TANK.x} ${y + 8} Z`; wave.setAttribute('d', d); wave.setAttribute('opacity', '0.9'); }
+  if (g) { cont = g.cont; activeGi = a.gi; activeStep = a.gi; reactorKg = a.gi ? cumR[a.gi - 1] : 0; }
+  const prevSum = (u) => g.items.slice(0, u).reduce((s, it) => s + it.kg, 0);
+
+  if (a.t === 'tara') { disp = prog < 0.5 ? '· TARA ·' : '0,00 kg'; cunKg = 0; }
+  else if (a.t === 'item') { const it = g.items[a.ii]; activeItem = a.ii; balCol = it.col; const w = prevSum(a.ii) + it.kg * prog; disp = fmt(w); cunKg = w; balStream = prog < 0.85; }
+  else if (a.t === 'carga') { const gt = g.items.reduce((s, it) => s + it.kg, 0); disp = fmt(gt); cunKg = gt * (1 - prog); const prev = a.gi ? cumR[a.gi - 1] : 0; reactorKg = prev + (cumR[a.gi] - prev) * Math.min(1, prog / 0.9); showXfer = prog < 0.92; rxStreamCol = g.col; }
+  else if (a.t === 'mix') { reactorKg = RTOTAL; activeStep = N; }
+  else { reactorKg = RTOTAL * (1 - prog); activeStep = N + 1; }
+  if (t >= TOTAL) { activeStep = -1; disp = '—'; }
+
+  // balanza: contenedor + relleno
+  document.getElementById('c-cun').setAttribute('opacity', (g && cont === 'cunete') ? '1' : '0');
+  document.getElementById('c-bal').setAttribute('opacity', (g && cont === 'balde') ? '1' : '0');
+  if (g) {
+    const fillId = cont === 'cunete' ? 'cun-fill' : 'bal-fill', baseY = cont === 'cunete' ? 257 : 256, maxH = cont === 'cunete' ? 102 : 72;
+    const h = maxH * Math.min(1, cunKg / g.capV);
+    set(fillId, 'y', baseY - h); set(fillId, 'height', h); set(fillId, 'fill', balCol);
+    const bs = document.getElementById('bal-stream');
+    if (balStream) { bs.setAttribute('opacity', '0.9'); bs.firstElementChild.setAttribute('height', Math.max(0, (baseY - h) - 122)); bs.firstElementChild.setAttribute('fill', balCol); }
+    else bs.setAttribute('opacity', '0');
+  } else { document.getElementById('bal-stream').setAttribute('opacity', '0'); document.getElementById('disp').textContent = '—'; }
+  if (g) document.getElementById('disp').textContent = disp;
+
+  // transferencia
+  const xf = document.getElementById('xfer');
+  xf.setAttribute('opacity', showXfer ? '0.9' : '0'); if (showXfer) xf.setAttribute('stroke', rxStreamCol);
+  const rs = document.getElementById('rx-stream');
+  if (showXfer) { rs.setAttribute('opacity', '0.9'); const { y } = { y: RTANK.bottom - (RTANK.bottom - RTANK.top) * Math.min(1, reactorKg / RTOTAL) }; rs.firstElementChild.setAttribute('height', Math.max(0, y - 106)); rs.firstElementChild.setAttribute('fill', rxStreamCol); }
+  else rs.setAttribute('opacity', '0');
+
+  // reactor: nivel + ola + burbujas
+  const frac = Math.max(0, Math.min(1, reactorKg / RTOTAL)), h = (RTANK.bottom - RTANK.top) * frac, y = RTANK.bottom - h;
+  set('rx-fill', 'y', y); set('rx-fill', 'height', h);
+  const wave = document.getElementById('rx-wave');
+  if (h > 1) { const amp = 2.2, ph = t / 220; let d = `M300 ${y} `; for (let x = 0; x <= 96; x += 8) d += `L${300 + x} ${(y + Math.sin(x / 17 + ph) * amp).toFixed(1)} `; d += `L396 ${y + 8} L300 ${y + 8} Z`; wave.setAttribute('d', d); wave.setAttribute('opacity', '0.9'); }
   else wave.setAttribute('opacity', '0');
-  pxBubbles(t, y, h);
+  // drain
+  const drain = document.getElementById('rx-drain');
+  if (a.t === 'discharge' && prog < 0.96 && reactorKg > 0.5) { drain.setAttribute('opacity', '0.9'); drain.firstElementChild.setAttribute('height', 26); } else drain.setAttribute('opacity', '0');
+  rxBubbles(t, y, h);
 
-  PASOS.forEach((_, i) => document.getElementById('step-' + i)?.classList.toggle('active', i === activeStep && t < totalMsR));
-  document.getElementById('pxClock').textContent = clockTxt;
+  // panel highlight
+  TACHADAS.forEach((gg, gi) => {
+    document.getElementById('fg-' + gi)?.classList.toggle('active', gi === activeGi && t < TOTAL);
+    gg.items.forEach((_, ii) => document.getElementById(`fi-${gi}-${ii}`)?.classList.toggle('active', gi === activeGi && ii === activeItem && t < TOTAL));
+  });
+  document.getElementById('fg-mix')?.classList.toggle('active', activeStep === N && t < TOTAL);
+  document.getElementById('fg-dis')?.classList.toggle('active', activeStep === N + 1 && t < TOTAL);
 
-  if (pxState.playing) { if (t >= totalMsR) { pxState.playing = false; pxState.elapsed = totalMsR; pxSetBtn(false); return; } pxState.raf = requestAnimationFrame(pxFrame); }
+  // reloj
+  let clk = 'Completo · 100 kg';
+  if (t < TOTAL) {
+    if (a.t === 'tara') clk = 'Tara · ' + g.tit;
+    else if (a.t === 'item') clk = 'Pesando · ' + g.items[a.ii].n;
+    else if (a.t === 'carga') clk = 'Cargando al reactor · ' + g.tit + (g.baldes ? ' (×' + g.baldes + ')' : '');
+    else if (a.t === 'mix') clk = 'Mezcla · ≈ 14–16 h';
+    else clk = 'Descarga';
+  }
+  document.getElementById('fxClock').textContent = clk;
+
+  if (S.playing) { if (t >= TOTAL) { S.playing = false; S.elapsed = TOTAL; fxSetBtn(false); return; } S.raf = requestAnimationFrame(frame); }
 }
-function pxSetBtn(p) { document.getElementById('pxPlayTxt').textContent = p ? 'Pausar' : (pxState.elapsed >= totalMsR ? 'Reproducir' : 'Reanudar'); document.getElementById('pxPlayIco').innerHTML = p ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; }
-function pxToggle() { if (pxState.elapsed >= totalMsR) pxState.elapsed = 0; pxState.playing = !pxState.playing; if (pxState.playing) { pxState.t0 = performance.now(); pxState.raf = requestAnimationFrame(pxFrame); } else { cancelAnimationFrame(pxState.raf); pxState.elapsed += performance.now() - pxState.t0; } pxSetBtn(pxState.playing); }
-function pxRestart() { cancelAnimationFrame(pxState.raf); pxState = { playing: true, t0: performance.now(), elapsed: 0, raf: null }; pxSetBtn(true); pxState.raf = requestAnimationFrame(pxFrame); }
 
-// init
-ppRenderStatic(); pxRenderStatic();
-if (reduceMotion) { ppState.elapsed = ppTotalMs; pxState.elapsed = totalMsR; }
-requestAnimationFrame(ppFrame); requestAnimationFrame(pxFrame); ppSetBtn(false); pxSetBtn(false);
+function fxSetBtn(p) { document.getElementById('fxPlayTxt').textContent = p ? 'Pausar' : (S.elapsed >= TOTAL ? 'Reproducir' : 'Reanudar'); document.getElementById('fxPlayIco').innerHTML = p ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; }
+function fxToggle() { if (S.elapsed >= TOTAL) S.elapsed = 0; S.playing = !S.playing; if (S.playing) { S.t0 = performance.now(); S.raf = requestAnimationFrame(frame); } else { cancelAnimationFrame(S.raf); S.elapsed += performance.now() - S.t0; } fxSetBtn(S.playing); }
+function fxRestart() { cancelAnimationFrame(S.raf); S = { playing: true, t0: performance.now(), elapsed: 0, raf: null }; fxSetBtn(true); S.raf = requestAnimationFrame(frame); }
+
+fxRenderStatic();
+if (reduceMotion) { S.elapsed = TOTAL; }
+requestAnimationFrame(frame); fxSetBtn(false);
 </script>
 </body>
 </html>
