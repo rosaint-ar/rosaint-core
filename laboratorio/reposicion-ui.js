@@ -410,26 +410,25 @@
     return { items, reponer, sumar };
   }
 
+  const filaDe = c => FILAS.find(f => f.codigo === c);
+  // Todos los ítems comprables del proveedor, ordenados por urgencia (lo que hay
+  // que reponer primero, después por cobertura). Base para sugerir y para "completar".
+  function pedCandidatos(prov) {
+    return FILAS.filter(f => f.se_compra && !f.archivado && !f.excluido && f.proveedor === prov)
+      .sort((a, b) => (a.sugerido > 0 ? 0 : 1) - (b.sugerido > 0 ? 0 : 1) || (a.cobertura ?? 9999) - (b.cobertura ?? 9999));
+  }
+
   function seleccionarProv(prov) {
     PEDPROV = prov; PEDON.clear(); PEDQTY.clear();
     for (const f of pedItems(prov).reponer) PEDON.add(f.codigo); // lo urgente entra por defecto
     pintarPedido();
   }
+  function pedAdd(cod) { if (cod) { PEDON.add(cod); pintarPedido(); } }
+  function pedDel(cod) { PEDON.delete(cod); PEDQTY.delete(cod); pintarPedido(); }
 
-  function pedLineHTML(f) {
-    const q = pedQty(f), pu = precioUnit(f), tot = q * pu;
-    return `<div class="rp-fila" style="grid-template-columns:34px minmax(160px,1fr) 118px 130px 120px" data-cod="${esc(f.codigo)}">
-      <div><input type="checkbox" class="ped-inc" data-cod="${esc(f.codigo)}" ${PEDON.has(f.codigo) ? 'checked' : ''}></div>
-      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)} · ${coberturaTxt(f)}${f.comprometido > 0 ? ` · <span style="color:var(--warn)">−${num(f.comprometido)} en pedidos</span>` : ''}</div></div>
-      <div class="dato"><input type="number" class="input ped-qty" data-cod="${esc(f.codigo)}" value="${q}" min="0" step="any" style="width:78px;text-align:right"> <span style="font-size:11px;color:var(--muted)">${esc(f.unidad)}</span></div>
-      <div class="dato" style="text-align:right">${pu ? pesos(pu) : '—'}<span class="et">${precioEst(f) ? 'estimado' : 'últ. precio'} · x ${esc(uni(f.unidad))}</span></div>
-      <div class="dato" style="text-align:right"><b>${pu ? pesos(tot) : '<span class="chip">sin precio</span>'}</b></div>
-    </div>`;
-  }
-
-  function pedTotal(items) {
+  function pedTotal() {
     let total = 0, n = 0;
-    for (const f of items) if (PEDON.has(f.codigo)) { const q = pedQty(f); total += q * precioUnit(f); if (q > 0) n++; }
+    for (const c of PEDON) { const f = filaDe(c); if (!f) continue; const q = pedQty(f); total += q * precioUnit(f); if (q > 0) n++; }
     return { total, n };
   }
 
@@ -442,14 +441,54 @@
     sel.value = PEDPROV || '';
   }
 
+  // Una línea del carrito: stock a la vista, cantidad editable y botón de quitar.
+  function pedCartLine(f) {
+    const q = pedQty(f), pu = precioUnit(f), tot = q * pu;
+    return `<div class="rp-fila" style="grid-template-columns:minmax(150px,1fr) 96px 92px 128px 108px 30px" data-cod="${esc(f.codigo)}">
+      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)} · ${coberturaTxt(f)}${f.comprometido > 0 ? ` · <span style="color:var(--warn)">−${num(f.comprometido)} en pedidos</span>` : ''}</div></div>
+      <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
+      <div class="dato"><input type="number" class="input ped-qty" data-cod="${esc(f.codigo)}" value="${q}" min="0" step="any" style="width:76px;text-align:right"></div>
+      <div class="dato" style="text-align:right">${pu ? pesos(pu) : '—'}<span class="et">${precioEst(f) ? 'estimado' : 'últ.'} · x ${esc(uni(f.unidad))}</span></div>
+      <div class="dato" style="text-align:right"><b>${pu ? pesos(tot) : '<span class="chip">sin precio</span>'}</b></div>
+      <div style="text-align:center"><button class="ped-del" data-cod="${esc(f.codigo)}" title="Quitar" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1">×</button></div>
+    </div>`;
+  }
+  // Una línea de sugerencia (todavía no está en el pedido): botón + agregar.
+  function pedSugLine(f) {
+    return `<div class="rp-fila" style="grid-template-columns:minmax(150px,1fr) 96px 120px auto" data-cod="${esc(f.codigo)}">
+      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)} · ${coberturaTxt(f)}</div></div>
+      <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
+      <div class="dato" style="text-align:right">${f.sugerido > 0 ? `<span class="pedir">${num(f.sugerido)} ${esc(f.unidad)}</span><span class="et">sugerido</span>` : `${num(f.lote || 0)} ${esc(f.unidad)}<span class="et">lote habitual</span>`}</div>
+      <div style="text-align:right"><button class="btn secondary ped-add" data-cod="${esc(f.codigo)}">+ agregar</button></div>
+    </div>`;
+  }
+
+  // Resultados del buscador "agregar otro ítem" (cualquier insumo comprable).
+  function pedResultados() {
+    const box = $('#ped-result'); if (!box) return;
+    const q = norm($('#ped-buscar')?.value || '');
+    if (!q) { box.innerHTML = ''; return; }
+    const res = FILAS.filter(f => f.se_compra && !f.archivado && !PEDON.has(f.codigo) &&
+      norm(f.codigo + ' ' + f.nombre + ' ' + (f.proveedor || '')).includes(q)).slice(0, 8);
+    box.innerHTML = res.length ? res.map(f => `<div class="rp-fila" style="grid-template-columns:1fr auto auto;gap:10px">
+      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)} · stock ${num(f.stock)} ${esc(f.unidad)}${f.proveedor && f.proveedor !== PEDPROV ? ' · normalmente ' + esc(f.proveedor) : ''}</div></div>
+      <div class="dato" style="text-align:right">${precioUnit(f) ? pesos(precioUnit(f)) : '—'}</div>
+      <div><button class="btn secondary ped-add" data-cod="${esc(f.codigo)}">+ agregar</button></div>
+    </div>`).join('') : '<div class="vacio">Nada coincide.</div>';
+    $$('#ped-result .ped-add').forEach(b => b.addEventListener('click', () => pedAdd(b.dataset.cod)));
+  }
+
   function pintarPedido() {
     pintarPedidoSelect();
     const cont = $('#ped-cont'); if (!cont) return;
     if (!PEDPROV) { cont.innerHTML = '<div class="vacio">Elegí un proveedor para armar el pedido.</div>'; return; }
-    const { items, reponer, sumar } = pedItems(PEDPROV);
-    const { total, n } = pedTotal(items);
+    const { reponer, sumar } = pedItems(PEDPROV);
+    const cart = [...PEDON].map(filaDe).filter(Boolean)
+      .sort((a, b) => (a.sugerido > 0 ? 0 : 1) - (b.sugerido > 0 ? 0 : 1) || (a.cobertura ?? 9999) - (b.cobertura ?? 9999));
+    const { total, n } = pedTotal();
     const p = PLAZOS[PEDPROV];
     const plazo = p ? p.plazo_dias : CFG.plazo_default;
+    const sug = [...reponer, ...sumar].filter(f => !PEDON.has(f.codigo));
 
     let html = `<article class="rp-prov"><header>
         <div><h3>${esc(PEDPROV)}</h3>
@@ -457,55 +496,60 @@
         <div class="total">${pesos(total)}</div>
         <div class="meta">${n} ítem${n === 1 ? '' : 's'}</div>
       </header>`;
-    html += `<div class="rp-nota" style="margin:0;border:none;border-radius:0"><b>Hay que reponer</b> · ya descuenta lo comprometido en pedidos</div>`;
-    html += reponer.length ? reponer.map(pedLineHTML).join('') : '<div class="vacio">Nada urgente de este proveedor.</div>';
-    if (sumar.length) {
-      html += `<div class="rp-nota" style="margin:8px 0 0;border:none;border-radius:0"><b>Conviene sumar</b> · está por caer y ya aprovechás el envío</div>`;
-      html += sumar.map(pedLineHTML).join('');
-    }
+    html += `<div class="rp-nota" style="margin:0;border:none;border-radius:0"><b>Tu pedido</b> · ya descuenta lo comprometido en pedidos de venta · stock a la vista</div>`;
+    html += cart.length ? cart.map(pedCartLine).join('') : '<div class="vacio">Vacío. Agregá desde las sugerencias o el buscador de abajo.</div>';
     html += `<div class="rp-fila" style="grid-template-columns:1fr auto auto;gap:10px;background:var(--surface-2)">
-        <div class="dato"><b>Total del pedido: ${pesos(total)}</b></div>
+        <div class="dato"><b>Total: ${pesos(total)}</b></div>
         <button class="btn secondary" id="ped-copiar">Copiar pedido</button>
         <button class="btn primary" id="ped-odoo" disabled title="Etapa 3: crea el borrador de compra en Odoo (próximamente)">Crear borrador en Odoo</button>
       </div></article>`;
+
+    if (sug.length) {
+      html += `<h3 class="rp-h4" style="margin-top:20px">Sugerencias para ${esc(PEDPROV)}</h3><article class="rp-prov">` +
+        sug.map(pedSugLine).join('') + `</article>`;
+    }
+    html += `<h3 class="rp-h4" style="margin-top:20px">Agregar otro ítem</h3>
+      <div class="rp-toolbar"><input type="search" class="input" id="ped-buscar" placeholder="Buscar cualquier insumo por nombre o código…"></div>
+      <div id="ped-result"></div>`;
     cont.innerHTML = html;
 
-    $$('#ped-cont .ped-inc').forEach(c => c.addEventListener('change', () => {
-      c.checked ? PEDON.add(c.dataset.cod) : PEDON.delete(c.dataset.cod);
-      pintarPedido();
-    }));
     $$('#ped-cont .ped-qty').forEach(i => i.addEventListener('change', () => {
       const v = Number(i.value);
       PEDQTY.set(i.dataset.cod, isNaN(v) || v < 0 ? 0 : v);
       if (v > 0) PEDON.add(i.dataset.cod);
       pintarPedido();
     }));
-    const bc = $('#ped-copiar'); if (bc) bc.addEventListener('click', () => copiarPedidoProv(items));
+    $$('#ped-cont .ped-del').forEach(b => b.addEventListener('click', () => pedDel(b.dataset.cod)));
+    $$('#ped-cont .ped-add').forEach(b => b.addEventListener('click', () => pedAdd(b.dataset.cod)));
+    const bc = $('#ped-copiar'); if (bc) bc.addEventListener('click', copiarPedidoProv);
+    const bs = $('#ped-buscar'); if (bs) bs.addEventListener('input', pedResultados);
   }
 
   function completarHastaMonto() {
     if (!PEDPROV) return toast('Elegí un proveedor primero', 'err');
     const monto = Number($('#ped-monto').value) || 0;
     if (!monto) return toast('Poné un presupuesto', 'err');
-    const { reponer, sumar } = pedItems(PEDPROV);
+    const cand = pedCandidatos(PEDPROV);
     PEDON.clear();
     let total = 0;
-    for (const f of reponer) { PEDON.add(f.codigo); total += pedQty(f) * precioUnit(f); }
-    if (total > monto) { toast('Solo lo necesario ya supera el monto'); return pintarPedido(); }
-    for (const f of sumar) {
+    // Primero lo urgente (siempre entra, aunque supere).
+    for (const f of cand.filter(x => x.sugerido > 0)) { PEDON.add(f.codigo); total += pedQty(f) * precioUnit(f); }
+    if (total > monto) { toast('Solo lo urgente ya supera el monto'); return pintarPedido(); }
+    // Después el resto del proveedor por urgencia, hasta donde alcance el monto.
+    for (const f of cand.filter(x => !(x.sugerido > 0))) {
       const line = pedQty(f) * precioUnit(f);
       if (line <= 0) continue;
       if (total + line <= monto) { PEDON.add(f.codigo); total += line; }
     }
     pintarPedido();
-    toast('Completado hasta ' + pesos(monto));
+    toast('Completado: ' + pesos(total));
   }
 
-  function copiarPedidoProv(items) {
-    const lineas = items.filter(f => PEDON.has(f.codigo) && pedQty(f) > 0)
+  function copiarPedidoProv() {
+    const lineas = [...PEDON].map(filaDe).filter(f => f && pedQty(f) > 0)
       .map(f => `• ${f.nombre} — ${num(pedQty(f))} ${f.unidad}`);
     if (!lineas.length) return toast('No hay nada seleccionado', 'err');
-    const { total } = pedTotal(items);
+    const { total } = pedTotal();
     const txt = `Pedido para ${PEDPROV}\n\n${lineas.join('\n')}\n\nTotal aprox: ${pesos(total)}\n(Rosaint · ${new Date().toLocaleDateString('es-AR')})`;
     navigator.clipboard.writeText(txt)
       .then(() => toast('Pedido copiado — pegalo en el mail o WhatsApp'))
