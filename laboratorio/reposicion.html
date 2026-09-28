@@ -169,6 +169,7 @@
 
   <div class="rp-tabs" role="tablist">
     <button class="rp-tab" data-tab="reponer"  role="tab">Reponer ahora <span class="n" id="n-reponer">—</span></button>
+    <button class="rp-tab" data-tab="pedido"   role="tab">Armar pedido</button>
     <button class="rp-tab" data-tab="todas"    role="tab">Materias primas <span class="n" id="n-todas">—</span></button>
     <button class="rp-tab" data-tab="comprar"  role="tab">Comprar mejor <span class="n" id="n-comprar">—</span></button>
     <button class="rp-tab" data-tab="ajustes"  role="tab">Ajustes</button>
@@ -185,6 +186,21 @@
       <span class="rp-cuenta" id="cuenta-reponer"></span>
     </div>
     <div id="lista-reponer"></div>
+  </section>
+
+  <!-- ============ ARMAR PEDIDO ============ -->
+  <section id="tab-pedido" hidden>
+    <div class="rp-nota">Elegí un proveedor y armá el pedido: lo que <b>hay que reponer</b> + lo que
+      <b>conviene sumar</b> (lo que le comprás habitualmente y está por caer), con los lotes de siempre.
+      Podés fijar un <b>presupuesto</b> y el sistema completa hasta ahí. Los importes son al último precio pagado.</div>
+    <div class="rp-toolbar">
+      <select id="ped-prov"><option value="">Elegí un proveedor…</option></select>
+      <label class="rp-check">Presupuesto&nbsp;$
+        <input type="number" id="ped-monto" class="input" placeholder="opcional" style="max-width:150px;min-width:120px">
+      </label>
+      <button class="btn secondary" id="ped-completar">Completar hasta el monto</button>
+    </div>
+    <div id="ped-cont"></div>
   </section>
 
   <!-- ============ TODAS ============ -->

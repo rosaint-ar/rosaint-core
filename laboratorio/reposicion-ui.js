@@ -17,6 +17,10 @@
   let COMPROMETIDO = {};    // codigo insumo -> cantidad reservada por pedidos de venta
   let SIN_FICHA = [];       // pedidos de productos que no se pueden explotar (SKU sin ficha)
   let orden = { campo: 'cobertura', asc: true };
+  // Simulador de pedido a proveedor
+  let PEDPROV = '';                  // proveedor elegido
+  const PEDON = new Set();           // códigos incluidos en el pedido
+  const PEDQTY = new Map();          // códigos con cantidad editada a mano
 
   // ---- Carga --------------------------------------------------------------
   async function cargarTablas() {
@@ -384,6 +388,130 @@
     FICHA.enlazar('#lista-colgadas tr[data-insumo]');
   }
 
+  // ---- Pestaña: armar pedido ---------------------------------------------
+  const precioUnit = f => (f.moneda === 'ARS' && f.ultimoPrecio > 0) ? f.ultimoPrecio : (f.costo || 0);
+  const precioEst = f => !(f.moneda === 'ARS' && f.ultimoPrecio > 0);
+  const coberturaTxt = f => f.cobertura == null ? 'sin ritmo' : (f.cobertura > 999 ? 'alcanza 999+ d' : 'alcanza ' + f.cobertura + ' d');
+  // Cantidad por defecto: lo sugerido si hay que reponer; si no, el lote habitual.
+  function pedDefaultQty(f) {
+    if (f.sugerido > 0) return f.sugerido;
+    return f.lote || Math.max(1, Math.round(f.mensual || 0));
+  }
+  const pedQty = f => PEDQTY.has(f.codigo) ? PEDQTY.get(f.codigo) : pedDefaultQty(f);
+
+  // Ítems del proveedor elegido, separados en "hay que reponer" y "conviene sumar".
+  function pedItems(prov) {
+    const items = FILAS.filter(f => f.se_compra && !f.archivado && !f.excluido && f.proveedor === prov);
+    const reponer = items.filter(f => f.sugerido > 0).sort((a, b) => (a.cobertura ?? 999) - (b.cobertura ?? 999));
+    // "Se viene": todavía no urgente pero caería antes del próximo ciclo de compra.
+    const horizonte = f => (f.diasObjetivo || 0) + (CFG.ciclo_dias || 30);
+    const sumar = items.filter(f => f.sugerido <= 0 && f.cobertura != null && f.cobertura <= horizonte(f))
+      .sort((a, b) => a.cobertura - b.cobertura);
+    return { items, reponer, sumar };
+  }
+
+  function seleccionarProv(prov) {
+    PEDPROV = prov; PEDON.clear(); PEDQTY.clear();
+    for (const f of pedItems(prov).reponer) PEDON.add(f.codigo); // lo urgente entra por defecto
+    pintarPedido();
+  }
+
+  function pedLineHTML(f) {
+    const q = pedQty(f), pu = precioUnit(f), tot = q * pu;
+    return `<div class="rp-fila" style="grid-template-columns:34px minmax(160px,1fr) 118px 130px 120px" data-cod="${esc(f.codigo)}">
+      <div><input type="checkbox" class="ped-inc" data-cod="${esc(f.codigo)}" ${PEDON.has(f.codigo) ? 'checked' : ''}></div>
+      <div><div class="nom">${esc(f.nombre)}</div><div class="cod">${esc(f.codigo)} · ${coberturaTxt(f)}${f.comprometido > 0 ? ` · <span style="color:var(--warn)">−${num(f.comprometido)} en pedidos</span>` : ''}</div></div>
+      <div class="dato"><input type="number" class="input ped-qty" data-cod="${esc(f.codigo)}" value="${q}" min="0" step="any" style="width:78px;text-align:right"> <span style="font-size:11px;color:var(--muted)">${esc(f.unidad)}</span></div>
+      <div class="dato" style="text-align:right">${pu ? pesos(pu) : '—'}<span class="et">${precioEst(f) ? 'estimado' : 'últ. precio'} · x ${esc(uni(f.unidad))}</span></div>
+      <div class="dato" style="text-align:right"><b>${pu ? pesos(tot) : '<span class="chip">sin precio</span>'}</b></div>
+    </div>`;
+  }
+
+  function pedTotal(items) {
+    let total = 0, n = 0;
+    for (const f of items) if (PEDON.has(f.codigo)) { const q = pedQty(f); total += q * precioUnit(f); if (q > 0) n++; }
+    return { total, n };
+  }
+
+  function pintarPedidoSelect() {
+    const sel = $('#ped-prov'); if (!sel) return;
+    const provs = [...new Set(FILAS.filter(f => f.se_compra && !f.archivado && f.proveedor).map(f => f.proveedor))]
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    sel.innerHTML = '<option value="">Elegí un proveedor…</option>' +
+      provs.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    sel.value = PEDPROV || '';
+  }
+
+  function pintarPedido() {
+    pintarPedidoSelect();
+    const cont = $('#ped-cont'); if (!cont) return;
+    if (!PEDPROV) { cont.innerHTML = '<div class="vacio">Elegí un proveedor para armar el pedido.</div>'; return; }
+    const { items, reponer, sumar } = pedItems(PEDPROV);
+    const { total, n } = pedTotal(items);
+    const p = PLAZOS[PEDPROV];
+    const plazo = p ? p.plazo_dias : CFG.plazo_default;
+
+    let html = `<article class="rp-prov"><header>
+        <div><h3>${esc(PEDPROV)}</h3>
+          <div class="meta">Entrega ${plazo} día${plazo === 1 ? '' : 's'}${p?.condicion_pago ? ' · paga a ' + esc(p.condicion_pago) : ''}</div></div>
+        <div class="total">${pesos(total)}</div>
+        <div class="meta">${n} ítem${n === 1 ? '' : 's'}</div>
+      </header>`;
+    html += `<div class="rp-nota" style="margin:0;border:none;border-radius:0"><b>Hay que reponer</b> · ya descuenta lo comprometido en pedidos</div>`;
+    html += reponer.length ? reponer.map(pedLineHTML).join('') : '<div class="vacio">Nada urgente de este proveedor.</div>';
+    if (sumar.length) {
+      html += `<div class="rp-nota" style="margin:8px 0 0;border:none;border-radius:0"><b>Conviene sumar</b> · está por caer y ya aprovechás el envío</div>`;
+      html += sumar.map(pedLineHTML).join('');
+    }
+    html += `<div class="rp-fila" style="grid-template-columns:1fr auto auto;gap:10px;background:var(--surface-2)">
+        <div class="dato"><b>Total del pedido: ${pesos(total)}</b></div>
+        <button class="btn secondary" id="ped-copiar">Copiar pedido</button>
+        <button class="btn primary" id="ped-odoo" disabled title="Etapa 3: crea el borrador de compra en Odoo (próximamente)">Crear borrador en Odoo</button>
+      </div></article>`;
+    cont.innerHTML = html;
+
+    $$('#ped-cont .ped-inc').forEach(c => c.addEventListener('change', () => {
+      c.checked ? PEDON.add(c.dataset.cod) : PEDON.delete(c.dataset.cod);
+      pintarPedido();
+    }));
+    $$('#ped-cont .ped-qty').forEach(i => i.addEventListener('change', () => {
+      const v = Number(i.value);
+      PEDQTY.set(i.dataset.cod, isNaN(v) || v < 0 ? 0 : v);
+      if (v > 0) PEDON.add(i.dataset.cod);
+      pintarPedido();
+    }));
+    const bc = $('#ped-copiar'); if (bc) bc.addEventListener('click', () => copiarPedidoProv(items));
+  }
+
+  function completarHastaMonto() {
+    if (!PEDPROV) return toast('Elegí un proveedor primero', 'err');
+    const monto = Number($('#ped-monto').value) || 0;
+    if (!monto) return toast('Poné un presupuesto', 'err');
+    const { reponer, sumar } = pedItems(PEDPROV);
+    PEDON.clear();
+    let total = 0;
+    for (const f of reponer) { PEDON.add(f.codigo); total += pedQty(f) * precioUnit(f); }
+    if (total > monto) { toast('Solo lo necesario ya supera el monto'); return pintarPedido(); }
+    for (const f of sumar) {
+      const line = pedQty(f) * precioUnit(f);
+      if (line <= 0) continue;
+      if (total + line <= monto) { PEDON.add(f.codigo); total += line; }
+    }
+    pintarPedido();
+    toast('Completado hasta ' + pesos(monto));
+  }
+
+  function copiarPedidoProv(items) {
+    const lineas = items.filter(f => PEDON.has(f.codigo) && pedQty(f) > 0)
+      .map(f => `• ${f.nombre} — ${num(pedQty(f))} ${f.unidad}`);
+    if (!lineas.length) return toast('No hay nada seleccionado', 'err');
+    const { total } = pedTotal(items);
+    const txt = `Pedido para ${PEDPROV}\n\n${lineas.join('\n')}\n\nTotal aprox: ${pesos(total)}\n(Rosaint · ${new Date().toLocaleDateString('es-AR')})`;
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('Pedido copiado — pegalo en el mail o WhatsApp'))
+      .catch(() => toast('No se pudo copiar', 'err'));
+  }
+
   // ---- Pestaña: ajustes ---------------------------------------------------
   function pintarAjustes() {
     $('#c-seg').value = CFG.dias_seguridad;
@@ -474,6 +602,7 @@
   function pintarTodo() {
     pintarKpis();
     pintarReponer();
+    pintarPedido();
     pintarSelectProv();
     pintarTabla();
     pintarComprar();
@@ -501,6 +630,8 @@
     $('#q-reponer').addEventListener('input', pintarReponer);
     $('#f-pedidos').addEventListener('change', pintarReponer);
     $('#q-comprar').addEventListener('input', pintarComprar);
+    $('#ped-prov').addEventListener('change', e => seleccionarProv(e.target.value));
+    $('#ped-completar').addEventListener('click', completarHastaMonto);
 
     // La ficha del insumo es la misma que usa Proveedores: se abre desde
     // cualquier lista donde aparezca una materia prima.
@@ -520,7 +651,7 @@
       pintarTabla();
     }));
 
-    irA(['reponer', 'todas', 'comprar', 'ajustes'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'reponer');
+    irA(['reponer', 'pedido', 'todas', 'comprar', 'ajustes'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'reponer');
 
     try {
       await cargarTablas();
