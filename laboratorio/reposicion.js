@@ -83,7 +83,7 @@ const REPO = (() => {
   /* ---- El cálculo completo -------------------------------------------------
      Junta la foto de Odoo con los ajustes guardados y devuelve una fila por
      materia prima, lista para pintar. */
-  function calcular({ datos, cfg, plazos, ajustes, maestro }) {
+  function calcular({ datos, cfg, plazos, ajustes, maestro, comprometido = {} }) {
     const desde = new Date((datos.historia_desde || '2026-01-01') + 'T00:00:00');
     const hasta = hoy();
 
@@ -162,12 +162,17 @@ const REPO = (() => {
       const pedidoDemorado = pedidos.some(x => x.demorado);
 
       const disponible = p.stock + enCamino;
+      // Demanda comprometida: lo que se van a comer los pedidos de venta ya
+      // confirmados (explotados a materia prima). Reduce lo realmente disponible.
+      const comp = Number(comprometido[p.codigo] || 0);
+      const dispEfectivo = disponible - comp;
       const puntoPedido = diario * (plazo + cfg.dias_seguridad);
       const diasObjetivo = aj.dias_objetivo != null ? Number(aj.dias_objetivo) : plazo + cfg.dias_seguridad + cfg.ciclo_dias;
       const objetivo = diario * diasObjetivo;
-      // Lo ya pedido se descuenta de la sugerencia para no comprar dos veces lo
-      // mismo, pero NO se suma al stock: hasta que no llega, no está.
-      let sugerido = Math.max(0, objetivo - disponible - yaPedido);
+      // Lo ya pedido a proveedores se descuenta de la sugerencia para no comprar
+      // dos veces lo mismo, pero NO se suma al stock: hasta que no llega, no está.
+      // Lo comprometido en pedidos de venta ya está restado vía dispEfectivo.
+      let sugerido = Math.max(0, objetivo - dispEfectivo - yaPedido);
       if (lote && sugerido > 0) sugerido = Math.ceil(sugerido / lote) * lote;
 
       // Intervalo entre compras: cuánto tarda hoy en volver a comprarse.
@@ -194,9 +199,11 @@ const REPO = (() => {
         enCamino, colgadas,
         pedidos, yaPedido, pedidoDemorado,
         tienePedido: pedidos.length > 0,
+        comprometido: comp, dispEfectivo,
         disponible, puntoPedido, diasObjetivo, sugerido,
-        cobertura: diario > 0 ? Math.round(disponible / diario) : null,
-        alerta: !archivado && !aj.excluido && diario > 0 && p.se_compra && disponible <= puntoPedido,
+        cobertura: diario > 0 ? Math.round(dispEfectivo / diario) : null,
+        alerta: !archivado && !aj.excluido && p.se_compra &&
+          ((diario > 0 && dispEfectivo <= puntoPedido) || (comp > 0 && sugerido > 0)),
         compras,
         nCompras: compras.length,
         ultimaCompra: ultimo ? ultimo.fecha : null,

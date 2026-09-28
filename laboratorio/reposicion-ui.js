@@ -9,9 +9,13 @@
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
   const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-reposicion';
+  const FN_DEM = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-demanda';
 
   let CFG = null, PLAZOS = {}, AJUSTES = {}, MAESTRO = {}, DATOS = null, FILAS = [], GENERADO = null;
   let PROVEEDORES = [];
+  let SKU_INSUMO = {};      // sku -> [{ insumo, cant_por_unidad }]  (vista v_sku_insumo)
+  let COMPROMETIDO = {};    // codigo insumo -> cantidad reservada por pedidos de venta
+  let SIN_FICHA = [];       // pedidos de productos que no se pueden explotar (SKU sin ficha)
   let orden = { campo: 'cobertura', asc: true };
 
   // ---- Carga --------------------------------------------------------------
@@ -41,6 +45,43 @@
     const catNom = {}; for (const c of cats.data || []) catNom[c.id] = c.nombre;
     MAESTRO = {};
     for (const i of items.data || []) MAESTRO[i.codigo] = { ...i, categoria: catNom[i.categoria_id] || null };
+
+    // Explosión SKU → insumo (materia prima en kg + envase/etiqueta por unidad).
+    // Puede superar el límite de 1000 de PostgREST, así que se pagina.
+    SKU_INSUMO = {};
+    for (let desde = 0; ; desde += 1000) {
+      const { data, error } = await sb.from('v_sku_insumo')
+        .select('sku,insumo_codigo,cant_por_unidad').range(desde, desde + 999);
+      if (error) { console.warn('v_sku_insumo:', error.message); break; }
+      for (const r of data) (SKU_INSUMO[r.sku] = SKU_INSUMO[r.sku] || []).push({ insumo: r.insumo_codigo, cant: Number(r.cant_por_unidad) });
+      if (data.length < 1000) break;
+    }
+  }
+
+  // Demanda comprometida: pedidos de venta CONFIRMADOS sin entregar, explotados
+  // a insumo con la vista. Se descuenta de lo disponible en el cálculo.
+  async function cargarDemanda() {
+    try {
+      const { data: s } = await sb.auth.getSession();
+      const token = s?.session?.access_token || window.SUPABASE_KEY;
+      const r = await fetch(FN_DEM, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estados: ['sale', 'done'] }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'sin demanda');
+      const comp = {}, sinFicha = [];
+      for (const d of j.demanda || []) {
+        const receta = SKU_INSUMO[d.codigo];
+        if (!receta) { if (/^1[0-3]\d{3}$/.test(d.codigo)) sinFicha.push(d); continue; }
+        for (const it of receta) comp[it.insumo] = (comp[it.insumo] || 0) + d.pendiente * it.cant;
+      }
+      COMPROMETIDO = comp; SIN_FICHA = sinFicha;
+    } catch (e) {
+      console.warn('demanda comprometida:', e.message);
+      COMPROMETIDO = {}; SIN_FICHA = [];
+    }
   }
 
   async function cargarFoto() {
@@ -66,6 +107,7 @@
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'Odoo no respondió');
       DATOS = j.datos; GENERADO = j.generado_en;
+      await cargarDemanda();
       recalcular(); pintarTodo();
       toast('Actualizado desde Odoo');
     } catch (e) {
@@ -76,7 +118,7 @@
   }
 
   function recalcular() {
-    FILAS = DATOS ? REPO.calcular({ datos: DATOS, cfg: CFG, plazos: PLAZOS, ajustes: AJUSTES, maestro: MAESTRO }) : [];
+    FILAS = DATOS ? REPO.calcular({ datos: DATOS, cfg: CFG, plazos: PLAZOS, ajustes: AJUSTES, maestro: MAESTRO, comprometido: COMPROMETIDO }) : [];
   }
 
   // ---- Encabezado ---------------------------------------------------------
@@ -121,10 +163,13 @@
   }
 
   function filaHTML(f) {
+    const chipComp = f.comprometido > 0
+      ? ` <span class="chip est" title="Reservado por pedidos de venta confirmados sin entregar">−${num(f.comprometido)} ${esc(f.unidad)} en pedidos</span>`
+      : '';
     return `<div class="rp-fila" data-insumo="${esc(f.codigo)}">
       <div>${celdaCobertura(f)}</div>
-      <div><div class="nom">${esc(f.nombre)}${chipPedido(f)}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
-      <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}</div>
+      <div><div class="nom">${esc(f.nombre)}${chipPedido(f)}${chipComp}</div><div class="cod">${esc(f.codigo)}${f.familia ? ' · ' + esc(f.familia) : ''}</div></div>
+      <div class="dato"><span class="et">Stock</span>${num(f.stock)} ${esc(f.unidad)}${f.comprometido > 0 ? `<span class="et" style="color:var(--warn)">libre ${num(f.dispEfectivo)} ${esc(f.unidad)}</span>` : ''}</div>
       <div class="dato"><span class="et">Uso por mes</span>${num(f.mensual)} ${esc(f.unidad)}</div>
       <div class="pedirCel"><span class="et" style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase">Pedir</span>
         ${f.sugerido > 0
@@ -166,9 +211,13 @@
 
     const conProv = alertas.filter(f => f.proveedor);
     const sinProv = alertas.filter(f => !f.proveedor);
+    const avisoSinFicha = SIN_FICHA.length
+      ? `<br><b style="color:var(--hot)">Ojo:</b> ${SIN_FICHA.length} producto${SIN_FICHA.length === 1 ? '' : 's'} con pedidos no ${SIN_FICHA.length === 1 ? 'tiene' : 'tienen'} ficha en el Core y no se ${SIN_FICHA.length === 1 ? 'pudo' : 'pudieron'} explotar (${SIN_FICHA.slice(0, 4).map(d => esc(d.codigo)).join(', ')}${SIN_FICHA.length > 4 ? '…' : ''}). Cargalos en Presentaciones para que cuenten su consumo.`
+      : '';
     nota.innerHTML = `Agrupado por proveedor para que salga <b>un pedido por proveedor</b> en vez de
       una compra suelta por cada faltante. La cantidad ya viene redondeada al lote con el que
-      solés comprar cada cosa, y cubre ${CFG.dias_seguridad + CFG.ciclo_dias} días más el plazo de entrega.`;
+      solés comprar cada cosa, y cubre ${CFG.dias_seguridad + CFG.ciclo_dias} días más el plazo de entrega.
+      Ya descuenta lo <b>comprometido en pedidos de venta confirmados</b>.${avisoSinFicha}`;
 
     const grupos = new Map();
     for (const f of conProv) {
@@ -481,6 +530,7 @@
         await actualizar();
         return;
       }
+      await cargarDemanda();
       recalcular();
       pintarTodo();
     } catch (e) {
