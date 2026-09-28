@@ -10,6 +10,7 @@
   const $$ = s => [...document.querySelectorAll(s)];
   const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-reposicion';
   const FN_DEM = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-demanda';
+  const FN_OC = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-oc-crear';
 
   let CFG = null, PLAZOS = {}, AJUSTES = {}, MAESTRO = {}, DATOS = null, FILAS = [], GENERADO = null;
   let PROVEEDORES = [];
@@ -41,6 +42,7 @@
       const clave = p.odoo_nombre || p.nombre;
       PLAZOS[clave] = {
         id: p.id, nombre: clave, nombre_core: p.nombre,
+        odoo_partner_id: p.odoo_partner_id,
         plazo_dias: p.plazo_entrega_dias, confirmado: p.plazo_confirmado,
         condicion_pago: p.condicion_pago, notas: p.notas,
       };
@@ -501,7 +503,7 @@
     html += `<div class="rp-fila" style="grid-template-columns:1fr auto auto;gap:10px;background:var(--surface-2)">
         <div class="dato"><b>Total: ${pesos(total)}</b></div>
         <button class="btn secondary" id="ped-copiar">Copiar pedido</button>
-        <button class="btn primary" id="ped-odoo" disabled title="Etapa 3: crea el borrador de compra en Odoo (próximamente)">Crear borrador en Odoo</button>
+        <button class="btn primary" id="ped-odoo">Crear borrador en Odoo</button>
       </div></article>`;
 
     if (sug.length) {
@@ -522,7 +524,39 @@
     $$('#ped-cont .ped-del').forEach(b => b.addEventListener('click', () => pedDel(b.dataset.cod)));
     $$('#ped-cont .ped-add').forEach(b => b.addEventListener('click', () => pedAdd(b.dataset.cod)));
     const bc = $('#ped-copiar'); if (bc) bc.addEventListener('click', copiarPedidoProv);
+    const bo = $('#ped-odoo'); if (bo) bo.addEventListener('click', crearBorradorOdoo);
     const bs = $('#ped-buscar'); if (bs) bs.addEventListener('input', pedResultados);
+  }
+
+  // Etapa 3: pasa el pedido a un borrador de compra en Odoo (no confirma nada).
+  async function crearBorradorOdoo() {
+    const lineas = [...PEDON].map(filaDe).filter(f => f && pedQty(f) > 0).map(f => ({
+      codigo: f.codigo,
+      cantidad: pedQty(f),
+      precio: (f.moneda === 'ARS' && f.ultimoPrecio > 0) ? f.ultimoPrecio : undefined,
+    }));
+    if (!lineas.length) return toast('El pedido está vacío', 'err');
+    const { total } = pedTotal();
+    if (!confirm(`Crear un borrador de compra en Odoo para ${PEDPROV}\n${lineas.length} ítem${lineas.length === 1 ? '' : 's'} · total aprox ${pesos(total)}\n\nQueda en BORRADOR para revisar y confirmar en Odoo.`)) return;
+    const btn = $('#ped-odoo'); if (btn) { btn.disabled = true; btn.textContent = 'Creando en Odoo…'; }
+    try {
+      const { data: s } = await sb.auth.getSession();
+      const token = s?.session?.access_token || window.SUPABASE_KEY;
+      const r = await fetch(FN_OC, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partner_id: PLAZOS[PEDPROV]?.odoo_partner_id || null, proveedor_nombre: PEDPROV, lineas }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'No se pudo crear');
+      let msg = `Borrador creado en Odoo: ${j.name}`;
+      if (j.faltantes && j.faltantes.length) msg += ` · quedaron afuera (no están en Odoo): ${j.faltantes.join(', ')}`;
+      toast(msg);
+    } catch (e) {
+      toast('No se pudo crear: ' + e.message, 'err');
+    } finally {
+      const b = $('#ped-odoo'); if (b) { b.disabled = false; b.textContent = 'Crear borrador en Odoo'; }
+    }
   }
 
   function completarHastaMonto() {
