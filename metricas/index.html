@@ -54,9 +54,10 @@
     .tip .t { font-weight: 750; margin-bottom: 4px; }
     .tip .r { display: flex; justify-content: space-between; gap: 16px; }
 
-    .donut-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-    .dleg { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
-    .dleg .it { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px; align-items: center; }
+    .donut-wrap { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+    .donut-wrap > div:first-child { align-self: center; }
+    .dleg { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+    .dleg .it { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; line-height: 1.25; }
     .dleg .it i { width: 10px; height: 10px; border-radius: 3px; }
     .dleg .it .n { font-weight: 700; font-variant-numeric: tabular-nums; }
     .dleg .it .p { color: var(--muted); font-variant-numeric: tabular-nums; width: 44px; text-align: right; }
@@ -73,6 +74,10 @@
     .tbl th.sort:hover { color: var(--text); }
     .tbl td .barcell { display: block; height: 4px; border-radius: 3px; background: var(--accent); opacity: .55; margin-top: 4px; }
     .tbl-max { max-height: 460px; overflow: auto; }
+    .tbl-max .tbl td, .tbl-max .tbl th { padding: 9px 10px; }
+    #ctl-tbl { font-size: 12.5px; }
+    #ctl-tbl th { white-space: normal; line-height: 1.3; padding: 9px 10px; }
+    #ctl-tbl td { padding: 8px 10px; white-space: nowrap; }
     .tbl-max thead th { position: sticky; top: 0; z-index: 1; }
     .neg { color: var(--hot); }
     .pos { color: var(--ok); }
@@ -478,7 +483,7 @@
     const top3 = Object.keys(val).sort((x, y) => val[y] - val[x]).slice(0, 3).reduce((s, k) => s + val[k], 0);
     $('prov-nota').innerHTML = `Vendiste en <b>${nProv} de 24</b> jurisdicciones. Las 3 primeras concentran el <b>${fmtP(totAll ? top3 / totAll : 0)}</b>.` + (fuera.length ? ` Fuera del mapa: ${esc(fuera.join(' · '))}.` : '') + ' Provincia = la del contacto facturado (mismo criterio que el informe de IIBB).';
     // ajuste de ancho de la columna de valores del ranking
-    $('prov-rank').querySelectorAll('span[style*="width:66px"]').forEach(s => s.style.width = '120px');
+    etiquetasCompletas('prov-rank', '30%', '120px');
   }
 
   // ---------- donas ----------
@@ -486,7 +491,7 @@
     const tot = items.reduce((s, x) => s + Math.max(0, x.value), 0);
     const segs = items.filter(x => x.value > 0).map((x, i) => ({ label: x.label, value: x.value, color: colorDe ? colorDe(x.label, i) : PALETA[i % PALETA.length] }));
     Charts.donut(elD, { segments: segs, size: 164, centerBig: corto(tot), centerSmall: centro || 'total' });
-    elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(tot ? s.value / tot : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
+    elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(tot ? s.value / tot : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
   }
   function renderDonas(a, b) {
     dona($('d-canal'), $('l-canal'), D.canales.map(c => ({ label: c.canal, value: sum(c.valores, a, b) })).sort((x, y) => y.value - x.value), l => COL_CANAL[l] || 'var(--muted)');
@@ -542,8 +547,7 @@
     const totN = rows.reduce((s, p) => s + p.n, 0);
     const k = st.prodModo === 'neto' ? 'n' : 'u';
     Charts.barsH($('prod-top'), { items: [...rows].sort((x, y) => y[k] - x[k]).slice(0, 15).map(p => ({ label: p.nombre, value: p[k] })), fmt: v => k === 'n' ? corto(v) : fmtN(v) + ' u', color: k === 'n' ? 'var(--accent)' : 'var(--cyan)' });
-    $('prod-top').querySelectorAll('span[style*="max-width:190px"]').forEach(s => { s.style.maxWidth = '340px'; s.style.width = '42%'; });
-    $('prod-top').querySelectorAll('span[style*="width:66px"]').forEach(s => s.style.width = '80px');
+    etiquetasCompletas('prod-top', '40%', '80px');
     const q = norm(st.prodQ);
     const lista = rows.filter(p => !q || norm(p.codigo + ' ' + p.nombre).includes(q));
     const key = { neto: 'n', u: 'u', cod: 'codigo', prom: 'prom' }[st.prodSort] || 'n';
@@ -557,6 +561,13 @@
     $('prod-tbl').querySelectorAll('th.sort').forEach(h => h.onclick = () => { if (st.prodSort === h.dataset.s) st.prodDir *= -1; else { st.prodSort = h.dataset.s; st.prodDir = h.dataset.s === 'cod' ? 1 : -1; } renderProductos(st.a, st.b); });
   }
 
+  // Las barras de charts.js cortan la etiqueta con "…": acá se deja bajar de renglón.
+  function etiquetasCompletas(id, ancho, anchoValor) {
+    const el = $(id); if (!el) return;
+    el.querySelectorAll('span[title]').forEach(sp => { Object.assign(sp.style, { whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', width: ancho, maxWidth: 'none', lineHeight: '1.25' }); });
+    if (anchoValor) el.querySelectorAll('span[style*="width:66px"]').forEach(sp => { sp.style.width = anchoValor; sp.style.whiteSpace = 'nowrap'; });
+  }
+
   // ---------- rankings ----------
   function renderTops(a, b) {
     const top = (arr, lbl, k) => arr.map(x => ({ label: x[lbl], value: sum(x.valores, a, b) })).filter(x => x.value > 0).sort((x, y) => y.value - x.value).slice(0, k);
@@ -566,12 +577,12 @@
     $('desc-nota').innerHTML = `Total descontado <b>${fmt$(dTot)}</b> = <b>${fmtP(prodB ? dTot / prodB : 0)}</b> de lo facturado en productos. Son los renglones de descuento de las facturas (por volumen, cupones, envío gratis).`;
     const tk = D.canales.map(c => { const f = sum(c.n, a, b); return { label: c.canal, value: f ? sum(c.valores, a, b) / f : 0, f }; }).filter(x => x.f).sort((x, y) => y.value - x.value);
     Charts.barsH($('tk-canal'), { items: tk.map(x => ({ label: x.label + ' (' + fmtN(x.f) + ' fact.)', value: x.value })), fmt: v => fmt$(v), color: 'var(--cyan)' });
-    $('tk-canal').querySelectorAll('span[style*="width:66px"]').forEach(x => x.style.width = '90px');
     Charts.barsH($('cli-top'), { items: top(D.clientes, 'nombre', 12), fmt: corto, color: 'var(--accent)' });
     Charts.barsH($('prov2-top'), { items: top(D.proveedores, 'nombre', 12), fmt: corto, color: 'var(--structure)' });
     const ctas = D.compras_cuentas.filter(c => st.compras === 'todas' || !NO_OPER.includes(c.grupo)).map(c => ({ ...c, cuenta: c.cuenta.replace(/^[\d.]+\s+/, '') }));
     Charts.barsH($('cta-top'), { items: top(ctas, 'cuenta', 14), fmt: corto, color: 'var(--structure)' });
-    ['cli-top', 'prov2-top', 'cta-top', 'desc-top', 'tk-canal'].forEach(id => $(id).querySelectorAll('span[style*="max-width:190px"]').forEach(s => { s.style.maxWidth = '260px'; s.style.width = '44%'; }));
+    ['cli-top', 'prov2-top', 'cta-top', 'desc-top'].forEach(id => etiquetasCompletas(id, '44%'));
+    etiquetasCompletas('tk-canal', '44%', '90px');
   }
 
   // ---------- control ----------
