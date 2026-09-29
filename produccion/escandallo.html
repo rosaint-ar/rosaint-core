@@ -307,7 +307,7 @@ async function cargar(){
       sb.from('v_escandallo').select('*'),
       fetch(FN, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY,'apikey':KEY}, body: '{}' }).then(r=>r.json()),
       sb.from('items').select('codigo,nombre,exclusivo').in('tipo', ['TE','SE']),
-      sb.from('items_lista_precio').select('codigo_vendible').eq('lista_id', 2).is('desvinculado_en', null),
+      sb.from('items_lista_precio').select('codigo_vendible').eq('lista_id', 2).is('desvinculado_en', null).not('precio_iva_excl', 'is', null),
     ]);
     if (esc1.error) throw new Error('recetas: ' + esc1.error.message);
     if (!prod.ok) throw new Error('producción: ' + (prod.error||'?'));
