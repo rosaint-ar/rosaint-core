@@ -115,6 +115,8 @@ const LS = 'rosaint_escandallo_periodo';
 
 const state = { rows: [], windows: null, meses: [], info: null, sort: { col: 'codigo', dir: 1 }, filtro: 'all', q: '' };
 const granelMap = {};  // codigo_granel -> nombre del granel (para agrupar como en el editor de fórmulas)
+const enL2 = new Set();        // SKUs con precio vigente en la Lista 2 (Profesional)
+const granelExcl = new Set();  // graneles marcados como exclusivos (van a Otros)
 
 // Agrupación de referencia (misma que el editor de fórmulas): Bases → graneles
 // terminados por familia (Cremas/Geles/Aceites/Óleos) → Packs → Otros.
@@ -134,6 +136,9 @@ function esBase(nombre, familia) {
 }
 function grupoDe(r) {
   if (r.clase === 'PACK') return GRUPOS.packs;
+  // Exclusivos: no están en la Lista 2, o el granel está marcado exclusivo
+  // (productos para ciertos clientes). Van a "Otros", no en su familia.
+  if (!enL2.has(r.codigo) || granelExcl.has(r.codigo_granel)) return GRUPOS.otros;
   const gn = granelMap[r.codigo_granel];
   if (!gn) return GRUPOS.otros;  // sin granel mapeado → Otros, no clasificar por el nombre del SKU
   const fam = gn.trim().split(/\s+/)[0].toUpperCase();
@@ -298,15 +303,18 @@ function renderCharts(){
 async function cargar(){
   const msg = document.getElementById('msg');
   try {
-    const [esc1, prod, graneles] = await Promise.all([
+    const [esc1, prod, graneles, l2] = await Promise.all([
       sb.from('v_escandallo').select('*'),
       fetch(FN, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY,'apikey':KEY}, body: '{}' }).then(r=>r.json()),
-      sb.from('items').select('codigo,nombre').in('tipo', ['TE','SE']),
+      sb.from('items').select('codigo,nombre,exclusivo').in('tipo', ['TE','SE']),
+      sb.from('items_lista_precio').select('codigo_vendible').eq('lista_id', 2).is('desvinculado_en', null),
     ]);
     if (esc1.error) throw new Error('recetas: ' + esc1.error.message);
     if (!prod.ok) throw new Error('producción: ' + (prod.error||'?'));
     if (graneles.error) throw new Error('maestro de graneles: ' + graneles.error.message);
-    for (const g of (graneles.data || [])) granelMap[g.codigo] = g.nombre;
+    if (l2.error) throw new Error('Lista 2: ' + l2.error.message);
+    for (const g of (graneles.data || [])) { granelMap[g.codigo] = g.nombre; if (g.exclusivo) granelExcl.add(g.codigo); }
+    for (const x of (l2.data || [])) enL2.add(x.codigo_vendible);
     state.rows = esc1.data || [];
     state.windows = prod.windows || null;
     state.meses = prod.meses || [];
