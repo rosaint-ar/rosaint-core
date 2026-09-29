@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Métricas · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .bar-top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .bar-top .sp { flex: 1; }
+    .sel { font: inherit; font-size: 12.5px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); }
+    .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 650; }
+    .status { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; margin-bottom: 16px; min-height: 18px; flex-wrap: wrap; }
+    .status.err { color: var(--hot); }
+    .status .ok { color: var(--ok); font-weight: 700; }
+    .status .bad { color: var(--hot); font-weight: 700; }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } }
+    .kpi .v { font-size: 23px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kpi .spark { height: 26px; margin-top: 2px; }
+    .kpi.main .v { color: var(--accent); }
+
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: 16px 18px; margin-bottom: 16px; min-width: 0; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .panel-head h2 { font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 0; }
+    .panel-head .hint { font-size: 12px; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-map { display: grid; grid-template-columns: minmax(240px, 360px) 1fr; gap: 22px; align-items: start; }
+    @media (max-width: 1100px) { .grid3 { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 820px) { .grid2, .grid3, .grid-map { grid-template-columns: 1fr; } }
+    .grid2 > .panel, .grid3 > .panel { margin-bottom: 0; }
+    .row-gap { margin-bottom: 16px; }
+
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+    .legend button { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: inherit; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; }
+    .legend button.off { opacity: .4; }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+    .chart { position: relative; }
+    .tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-size: 12px; padding: 8px 11px; border-radius: 9px; opacity: 0; transition: opacity .12s; white-space: nowrap; box-shadow: var(--shadow); z-index: 5; }
+    .tip b { font-variant-numeric: tabular-nums; }
+    .tip .t { font-weight: 750; margin-bottom: 4px; }
+    .tip .r { display: flex; justify-content: space-between; gap: 16px; }
+
+    .donut-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .dleg { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+    .dleg .it { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px; align-items: center; }
+    .dleg .it i { width: 10px; height: 10px; border-radius: 3px; }
+    .dleg .it .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .dleg .it .p { color: var(--muted); font-variant-numeric: tabular-nums; width: 44px; text-align: right; }
+
+    .map svg { width: 100%; height: auto; display: block; max-height: 620px; }
+    .map path.prov { stroke: var(--surface); stroke-width: .7; transition: opacity .15s, filter .15s; cursor: pointer; }
+    .map path.prov:hover { filter: drop-shadow(0 0 5px var(--accent-glow)); stroke: var(--text); stroke-width: 1; }
+    .map-scale { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+    .map-scale .g { flex: 1; height: 8px; border-radius: 5px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, var(--surface-2)), var(--accent)); }
+
+    .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .search { font: inherit; font-size: 12.5px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); min-width: 200px; }
+    .tbl th.sort { cursor: pointer; user-select: none; }
+    .tbl th.sort:hover { color: var(--text); }
+    .tbl td .barcell { display: block; height: 4px; border-radius: 3px; background: var(--accent); opacity: .55; margin-top: 4px; }
+    .tbl-max { max-height: 460px; overflow: auto; }
+    .tbl-max thead th { position: sticky; top: 0; z-index: 1; }
+    .neg { color: var(--hot); }
+    .pos { color: var(--ok); }
+    .compo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-2); margin-top: 12px; }
+    .compo .c { background: var(--surface-2); border-radius: 8px; padding: 6px 10px; }
+    .compo .c b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .nota { font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+    .nota b { color: var(--text-2); }
+    .loading { padding: 60px 20px; text-align: center; color: var(--muted); }
+    details.ctl summary { cursor: pointer; font-weight: 650; color: var(--text-2); font-size: 13px; }
+  </style>
+</head>
+<body data-page="metricas" data-title="Métricas" data-subtitle="Ventas, compras y margen desde marzo 2026 · datos de Odoo (VELAZQUEZ)">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="bar-top">
+    <div class="seg" id="seg-periodo">
+      <button data-p="todo" class="on">Todo</button>
+      <button data-p="3">Últ. 3 meses</button>
+      <button data-p="1">Último mes</button>
+    </div>
+    <span class="lbl">Desde</span><select class="sel" id="sel-desde"></select>
+    <span class="lbl">Hasta</span><select class="sel" id="sel-hasta"></select>
+    <span class="sp"></span>
+    <span class="lbl">Compras</span>
+    <div class="seg" id="seg-compras">
+      <button data-c="todas" class="on" title="Todas las facturas de proveedor, igual que Odoo">Todas</button>
+      <button data-c="oper" title="Sin gastos no operativos ni bienes de uso (equipos)">Operativas</button>
+    </div>
+  </div>
+  <div class="status" id="status">Cargando datos de Odoo…</div>
+
+  <div id="root"><div class="loading">Leyendo facturas de Odoo…</div></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
+<script src="../shared/ar-provincias.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+(function () {
+  const FN = window.SUPABASE_URL + '/functions/v1/odoo-metricas';
+  const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const COL = { ventas: 'var(--accent)', compras: 'var(--structure)', margen: 'var(--ok)' };
+  const PALETA = ['var(--accent)', 'var(--cyan)', 'var(--warn)', 'var(--ok)', 'var(--structure)', 'var(--hot)', 'color-mix(in srgb, var(--cyan) 55%, var(--ok))', 'color-mix(in srgb, var(--warn) 55%, var(--accent))', 'var(--muted)'];
+  const COL_CANAL = { 'Venta directa': 'var(--accent)', 'Mercado Libre': 'var(--warn)', 'Tienda Nube': 'var(--cyan)', 'Portal web': 'var(--ok)' };
+  const COL_GRUPO = { 'Producción': 'var(--structure)', 'Comerciales': 'var(--warn)', 'Administrativos': 'var(--cyan)', 'No operativos': 'var(--muted)', 'Bienes de uso': 'var(--ok)', 'Otros': 'var(--hot)' };
+  const NO_OPER = ['No operativos', 'Bienes de uso'];
+
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const $ = id => document.getElementById(id);
+  const fmt$ = v => (v < 0 ? '−$ ' : '$ ') + Math.abs(Math.round(v)).toLocaleString('es-AR');
+  const fmt$c = v => (v < 0 ? '−$ ' : '$ ') + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtN = v => Math.round(v).toLocaleString('es-AR');
+  const fmtP = v => isFinite(v) ? (v * 100).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : '—';
+  const corto = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; if (a >= 1e6) return s + '$' + (a / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + 'M'; if (a >= 1e3) return s + '$' + Math.round(a / 1e3) + 'k'; return s + '$' + Math.round(a); };
+  const lblMes = m => { const [y, mm] = m.split('-'); return MES_TXT[+mm - 1] + ' ' + y.slice(2); };
+  const lblMesLargo = m => { const [y, mm] = m.split('-'); return MES_LARGO[+mm - 1] + ' ' + y; };
+  const sum = (arr, a, b) => { let s = 0; for (let i = a; i <= b; i++) s += (arr[i] || 0); return s; };
+  const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+  let D = null;                          // respuesta de la función
+  const st = { a: 0, b: 0, compras: 'todas', prodModo: 'neto', prodSort: 'neto', prodDir: -1, prodQ: '', off: {} };
+  const MES_ACTUAL = new Date().toISOString().slice(0, 7);
+
+  // ---------- carga ----------
+  async function cargar() {
+    try {
+      const { data } = await window.sb.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) throw new Error('Sesión vencida: volvé a ingresar.');
+      const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'apikey': window.SUPABASE_KEY }, body: '{}' });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Error al leer Odoo');
+      D = j;
+      st.a = 0; st.b = D.meses.length - 1;
+      armarSelects();
+      render();
+    } catch (e) {
+      $('status').className = 'status err';
+      $('status').textContent = 'No se pudieron leer los datos: ' + e.message;
+      $('root').innerHTML = '';
+    }
+  }
+
+  function armarSelects() {
+    const opts = D.meses.map((m, i) => `<option value="${i}">${lblMes(m)}${m === MES_ACTUAL ? ' (en curso)' : ''}</option>`).join('');
+    $('sel-desde').innerHTML = opts; $('sel-hasta').innerHTML = opts;
+    syncSelects();
+  }
+  function syncSelects() { $('sel-desde').value = st.a; $('sel-hasta').value = st.b; }
+
+  // compras de un mes según el modo
+  function comprasMes(i) {
+    const s = D.serie[i];
+    if (st.compras === 'todas') return s.compras_netas;
+    let excl = 0; D.compras_grupos.forEach(g => { if (NO_OPER.includes(g.grupo)) excl += g.valores[i]; });
+    return s.compras_netas - excl;
+  }
+
+  // ---------- estado general + control ----------
+  function renderStatus() {
+    const cv = D.control.ventas.every(c => Math.abs(c.dif) < 0.01);
+    const cc = D.control.compras.every(c => Math.abs(c.dif) < 0.01);
+    const ok = cv && cc && composicionOk();
+    const h = new Date(D.generado);
+    $('status').className = 'status';
+    $('status').innerHTML = `Odoo · VELAZQUEZ · leído ${h.toLocaleDateString('es-AR')} ${h.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} · ${fmtN(D.control.comprobantes_venta)} comprobantes de venta y ${fmtN(D.control.comprobantes_compra)} de compra · ` +
+      (ok ? '<span class="ok">✔ Cuadra al centavo</span>' : '<span class="bad">✖ Hay una diferencia de cuadre — ver el control al pie</span>');
+  }
+  function composicionOk() {
+    return D.serie.every((s, i) => {
+      const prod = D.productos.reduce((a, p) => a + p.neto[i], 0);
+      return Math.abs(prod + s.ingresos_envio + s.descuentos - s.ventas_netas) < 0.05;
+    });
+  }
+
+  // ---------- render ----------
+  function render() {
+    renderStatus();
+    const a = st.a, b = st.b, n = b - a + 1;
+    const pa = a - n, pb = a - 1;                      // período anterior de igual largo
+    const hayPrev = pa >= 0;
+    const S = D.serie;
+    const tot = (k, x = a, y = b) => sum(S.map(s => s[k]), x, y);
+    const comp = (x, y) => { let s = 0; for (let i = x; i <= y; i++) s += comprasMes(i); return s; };
+    const V = tot('ventas_netas'), Cm = comp(a, b), M = V - Cm;
+    const U = tot('unidades'), F = tot('n_facturas'), VB = tot('ventas_brutas');
+    const prev = hayPrev ? { V: tot('ventas_netas', pa, pb), C: comp(pa, pb), U: tot('unidades', pa, pb), F: tot('n_facturas', pa, pb), VB: tot('ventas_brutas', pa, pb) } : null;
+    if (prev) prev.M = prev.V - prev.C;
+    // clientes únicos del período: sumando por cliente
+    let cliPer = 0, cliNuevos = 0;
+    D.clientes.forEach(c => { if (sum(c.n, a, b) > 0) cliPer++; });
+    cliNuevos = tot('clientes_nuevos');
+    const periodoTxt = n === D.meses.length ? 'desde marzo 2026' : (n === 1 ? lblMesLargo(D.meses[a]) : lblMes(D.meses[a]) + ' – ' + lblMes(D.meses[b]));
+    const enCurso = D.meses[b] === MES_ACTUAL;
+
+    const delta = (cur, old, inv) => {
+      if (!prev || !old) return `<span class="d">${hayPrev ? '' : 'sin período anterior'}</span>`;
+      const p = (cur - old) / Math.abs(old); const up = p >= 0; const good = inv ? !up : up;
+      return `<span class="d"><span class="chip ${good ? 'up' : 'down'}">${up ? '▲' : '▼'} ${fmtP(Math.abs(p))}</span> vs ${n === 1 ? 'mes' : n + ' meses'} anterior${n === 1 ? '' : 'es'}${enCurso ? ' · mes en curso' : ''}</span>`;
+    };
+    const kpi = (l, v, d, cls, title, spark) => `<div class="kpi ${cls || ''}" title="${esc(title || '')}"><span class="l">${l}</span><span class="v">${v}</span>${d}${spark ? `<div class="spark" data-spark="${spark}"></div>` : ''}</div>`;
+
+    const root = $('root');
+    root.innerHTML = `
+      <div class="kpis">
+        ${kpi('Ventas netas', fmt$(V), delta(V, prev?.V), 'main', fmt$c(V) + ' · sin IVA, neto de notas de crédito', 'ventas')}
+        ${kpi('Compras netas', fmt$(Cm), delta(Cm, prev?.C, true), '', fmt$c(Cm) + (st.compras === 'oper' ? ' · operativas' : ' · todas las facturas de proveedor') + ', sin IVA', 'compras')}
+        ${kpi('Margen', `<span class="${M < 0 ? 'neg' : ''}">${fmt$(M)}</span>`, `<span class="d">${fmtP(V ? M / V : NaN)} de las ventas ${prev && prev.V ? '· antes ' + fmtP(prev.M / prev.V) : ''}</span>`, '', 'Ventas netas − compras netas · ' + fmt$c(M), 'margen')}
+        ${kpi('Unidades', fmtN(U), delta(U, prev?.U), '', 'Unidades de producto facturadas (combos cuentan 1), menos devueltas', 'unidades')}
+        ${kpi('Facturas', fmtN(F), delta(F, prev?.F), '', 'Facturas y notas de débito emitidas', 'n_facturas')}
+        ${kpi('Ticket promedio', fmt$(F ? VB / F : 0), delta(F ? VB / F : 0, prev && prev.F ? prev.VB / prev.F : 0), '', 'Venta neta promedio por factura (sin IVA)', 'ticket')}
+        ${kpi('Clientes', fmtN(cliPer), `<span class="d">distintos que compraron en el período</span>`, '', 'Clientes distintos con al menos una factura en el período', 'clientes')}
+        ${kpi('Clientes nuevos', fmtN(cliNuevos), `<span class="d">${fmtP(cliPer ? cliNuevos / cliPer : 0)} de los clientes del período</span>`, '', 'Compraron por primera vez en VELAZQUEZ (desde marzo 2026)', 'nuevos')}
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Evolución mensual · ventas, compras y margen</h2>
+          <div class="legend" id="leg-main">
+            <button data-s="ventas"><i style="background:${COL.ventas}"></i>Ventas netas</button>
+            <button data-s="compras"><i style="background:${COL.compras}"></i>Compras netas${st.compras === 'oper' ? ' (operativas)' : ''}</button>
+            <button data-s="margen"><i style="background:${COL.margen}"></i>Margen</button>
+          </div></div>
+        <div class="chart" id="ch-main"></div>
+        <div class="compo" id="compo"></div>
+        <div class="nota">Todo sin IVA. <b>Ventas netas</b> = facturas + notas de débito − notas de crédito. <b>Compras netas</b> = facturas de proveedor − sus notas de crédito (incluye materia prima, envases, gastos y servicios; no incluye percepciones). <b>Margen</b> = ventas netas − compras netas del mes. Mes por fecha de factura.${enCurso ? ' El mes actual está en curso.' : ''} Lo que está fuera del período elegido se ve atenuado.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Ventas por provincia · ${esc(periodoTxt)}</h2><span class="hint">Pasá el mouse por el mapa</span></div>
+        <div class="grid-map">
+          <div><div class="map chart" id="map"></div><div class="map-scale"><span>menos</span><span class="g"></span><span>más</span></div></div>
+          <div><div id="prov-rank"></div><div class="nota" id="prov-nota"></div></div>
+        </div>
+      </div>
+
+      <div class="grid3 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Canales</h2></div><div class="donut-wrap"><div id="d-canal"></div><div class="dleg" id="l-canal"></div></div></div>
+        <div class="panel"><div class="panel-head"><h2>Líneas de producto</h2></div><div class="donut-wrap"><div id="d-linea"></div><div class="dleg" id="l-linea"></div></div></div>
+        <div class="panel"><div class="panel-head"><h2>Tipo de cliente</h2></div><div class="donut-wrap"><div id="d-tipo"></div><div class="dleg" id="l-tipo"></div></div>
+          <div class="nota">Comprobante A = responsables inscriptos (profesionales, empresas). B = consumidor final y monotributo.</div></div>
+      </div>
+
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Canales mes a mes</h2><div class="legend" id="leg-canal"></div></div><div class="chart" id="ch-canal"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Clientes mes a mes</h2><div class="legend"><span><i style="background:var(--accent)"></i> nuevos</span><span><i style="background:var(--cyan)"></i> ya compraban</span></div></div><div class="chart" id="ch-cli"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Productos · ${esc(periodoTxt)}</h2>
+          <div class="tools"><div class="seg" id="seg-prod"><button data-m="neto" class="${st.prodModo === 'neto' ? 'on' : ''}">$ ventas</button><button data-m="unidades" class="${st.prodModo === 'unidades' ? 'on' : ''}">Unidades</button></div></div></div>
+        <div id="prod-top"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Detalle por producto</h2><input class="search" id="prod-q" placeholder="Buscar código o nombre…" value="${esc(st.prodQ)}"></div>
+        <div class="table-wrap tbl-max"><table class="tbl" id="prod-tbl"></table></div>
+      </div>
+
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Descuentos otorgados · ${esc(periodoTxt)}</h2></div><div id="desc-top"></div>
+          <div class="nota" id="desc-nota"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Ticket promedio por canal · ${esc(periodoTxt)}</h2></div><div id="tk-canal"></div>
+          <div class="nota">Venta neta promedio por factura, sin IVA.</div></div>
+      </div>
+
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Top clientes · ${esc(periodoTxt)}</h2></div><div id="cli-top"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Top proveedores · ${esc(periodoTxt)}</h2></div><div id="prov2-top"></div></div>
+      </div>
+
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Compras por destino</h2></div><div class="donut-wrap"><div id="d-grupo"></div><div class="dleg" id="l-grupo"></div></div>
+          <div class="nota"><b>Producción</b> = materia prima, envases, fletes de compra. <b>Comerciales</b> = comisiones ML/TN/medios de pago, envíos, publicidad, viáticos. <b>No operativos</b> = gastos varios no operativos y alquileres varios. <b>Bienes de uso</b> = equipos.</div></div>
+        <div class="panel"><div class="panel-head"><h2>Compras por cuenta contable</h2></div><div id="cta-top"></div></div>
+      </div>
+
+      <div class="panel">
+        <details class="ctl"><summary>Control de cuadre (cómo se comprueban los números)</summary>
+          <div class="nota">Cada total se calcula dos veces por caminos distintos: una sumando las <b>cabeceras</b> de los comprobantes (el neto que muestra Odoo en cada factura) y otra sumando <b>renglón por renglón</b>. Si no coinciden al centavo, arriba aparece en rojo. Además, productos + envíos cobrados + descuentos tiene que dar exactamente las ventas netas.</div>
+          <div class="table-wrap table-scroll" style="margin-top:10px"><table class="tbl" id="ctl-tbl"></table></div>
+        </details>
+      </div>`;
+
+    // sparklines de los KPIs (historia completa)
+    const sparkVals = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)), margen: S.map((s, i) => s.ventas_netas - comprasMes(i)), unidades: S.map(s => s.unidades), n_facturas: S.map(s => s.n_facturas), ticket: S.map(s => s.ticket), clientes: S.map(s => s.clientes), nuevos: S.map(s => s.clientes_nuevos) };
+    root.querySelectorAll('[data-spark]').forEach(el => Charts.sparkline(el, sparkVals[el.dataset.spark], { color: el.dataset.spark === 'compras' ? COL.compras : el.dataset.spark === 'margen' ? COL.margen : 'var(--accent)' }));
+
+    renderMain();
+    renderCompo(a, b);
+    renderMapa(a, b);
+    renderDonas(a, b);
+    renderCanalMes();
+    renderCliMes();
+    renderProductos(a, b);
+    renderTops(a, b);
+    renderControl();
+    bindLocal();
+  }
+
+  // ---------- gráfico principal (barras + línea, admite margen negativo) ----------
+  function renderMain() {
+    const el = $('ch-main'); const S = D.serie; const n = S.length;
+    const ser = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)) };
+    ser.margen = ser.ventas.map((v, i) => v - ser.compras[i]);
+    const vis = k => !st.off[k];
+    const all = [].concat(vis('ventas') ? ser.ventas : [], vis('compras') ? ser.compras : [], vis('margen') ? ser.margen : [], [0]);
+    let mx = Math.max(...all), mn = Math.min(...all);
+    const paso = (() => { const r = (mx - mn) || 1; const p = Math.pow(10, Math.floor(Math.log10(r / 4))); const m = r / 4 / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; })();
+    mx = Math.ceil(mx / paso) * paso; mn = Math.floor(mn / paso) * paso;
+    const draw = () => {
+      const W = Math.max(320, el.clientWidth || 700), H = 300, mL = 52, mR = 12, mT = 14, mB = 28, iw = W - mL - mR, ih = H - mT - mB;
+      const y = v => mT + ih * (mx - v) / ((mx - mn) || 1);
+      const slot = iw / n, xc = i => mL + slot * (i + .5);
+      const nb = (vis('ventas') ? 1 : 0) + (vis('compras') ? 1 : 0), bw = Math.min(34, slot * .32);
+      let g = '';
+      for (let v = mn; v <= mx + 1e-6; v += paso) g += `<line x1="${mL}" x2="${W - mR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-opacity="${Math.abs(v) < 1e-6 ? 1 : .55}"${Math.abs(v) < 1e-6 ? ' stroke-width="1.4"' : ''}/><text x="${mL - 7}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${corto(v)}</text>`;
+      let body = '';
+      for (let i = 0; i < n; i++) {
+        const dim = i < st.a || i > st.b;
+        if (!dim) body += `<rect x="${mL + slot * i + 2}" y="${mT}" width="${slot - 4}" height="${ih}" rx="8" fill="var(--accent)" opacity=".04"/>`;
+        let k = 0;
+        [['ventas', COL.ventas], ['compras', COL.compras]].forEach(([s, c]) => {
+          if (!vis(s)) return;
+          const off = nb === 2 ? (k === 0 ? -bw / 2 - 1.5 : bw / 2 + 1.5) : 0; k++;
+          const v = ser[s][i], y0 = y(0), yv = y(v);
+          body += `<rect x="${xc(i) + off - bw / 2}" y="${Math.min(y0, yv)}" width="${bw}" height="${Math.max(1, Math.abs(y0 - yv))}" rx="4" fill="${c}" opacity="${dim ? .28 : .92}" style="filter:drop-shadow(0 3px 8px color-mix(in srgb, ${c} 30%, transparent))"/>`;
+        });
+        body += `<text x="${xc(i)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="${dim ? 'var(--muted)' : 'var(--text-2)'}" font-weight="${dim ? 400 : 650}">${lblMes(S[i].mes)}${S[i].mes === MES_ACTUAL ? '*' : ''}</text>`;
+      }
+      if (vis('margen')) {
+        const pts = ser.margen.map((v, i) => [xc(i), y(v)]);
+        body += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join('')}" fill="none" stroke="${COL.margen}" stroke-width="2.6" stroke-linejoin="round" style="filter:drop-shadow(0 0 6px color-mix(in srgb, ${COL.margen} 50%, transparent))"/>`;
+        pts.forEach((p, i) => { const neg = ser.margen[i] < 0; body += `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="var(--surface)" stroke="${neg ? 'var(--hot)' : COL.margen}" stroke-width="2.4"/>`; });
+      }
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block">${g}${body}<rect class="hov" x="0" y="0" width="0" height="0"/></svg><div class="tip"></div>`;
+      const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
+      svg.addEventListener('mousemove', e => {
+        const r = svg.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W;
+        const i = Math.max(0, Math.min(n - 1, Math.floor((x - mL) / slot)));
+        const s = S[i], m = ser.margen[i];
+        tip.innerHTML = `<div class="t">${lblMesLargo(s.mes)}${s.mes === MES_ACTUAL ? ' (en curso)' : ''}</div>
+          <div class="r"><span>Ventas netas</span><b>${fmt$(ser.ventas[i])}</b></div>
+          <div class="r"><span>Compras netas</span><b>${fmt$(ser.compras[i])}</b></div>
+          <div class="r"><span>Margen</span><b class="${m < 0 ? 'neg' : 'pos'}">${fmt$(m)} · ${fmtP(ser.ventas[i] ? m / ser.ventas[i] : NaN)}</b></div>
+          <div class="r"><span>Facturas · unidades</span><b>${fmtN(s.n_facturas)} · ${fmtN(s.unidades)}</b></div>`;
+        tip.style.opacity = 1;
+        const left = xc(i) / W * r.width; tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, left + 14)) + 'px'; tip.style.top = '6px';
+      });
+      svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
+      svg.addEventListener('click', e => {   // clic en un mes = ver solo ese mes
+        const r = svg.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W;
+        const i = Math.max(0, Math.min(n - 1, Math.floor((x - mL) / slot)));
+        st.a = st.b = i; syncSelects(); marcarSeg(); render();
+      });
+    };
+    draw();
+    observar(el, draw);
+    document.querySelectorAll('#leg-main button').forEach(bt => { bt.classList.toggle('off', !!st.off[bt.dataset.s]); bt.onclick = () => { st.off[bt.dataset.s] = !st.off[bt.dataset.s]; renderMain(); document.querySelectorAll('#leg-main button').forEach(x => x.classList.toggle('off', !!st.off[x.dataset.s])); }; });
+  }
+
+  function renderCompo(a, b) {
+    const S = D.serie;
+    const prod = D.productos.reduce((s, p) => s + sum(p.neto, a, b), 0);
+    const env = sum(S.map(s => s.ingresos_envio), a, b), desc = sum(S.map(s => s.descuentos), a, b), nc = sum(S.map(s => s.nc), a, b);
+    const vn = sum(S.map(s => s.ventas_netas), a, b);
+    $('compo').innerHTML = `<span class="c">Productos <b>${fmt$(prod)}</b></span> + <span class="c">Envíos cobrados <b>${fmt$(env)}</b></span> + <span class="c">Descuentos <b>${fmt$(desc)}</b></span> = <span class="c">Ventas netas <b>${fmt$(vn)}</b></span> <span class="c" title="Ya descontadas dentro de productos y envíos">de las cuales notas de crédito <b>${fmt$(nc)}</b></span>`;
+  }
+
+  // ---------- mapa ----------
+  function provKey(nombre) {
+    const k = norm(nombre);
+    if (k.startsWith('ciudad autonoma') || k === 'caba' || k.includes('capital federal')) return 'caba';
+    if (k.startsWith('tierra del fuego')) return 'tierra del fuego';
+    return k;
+  }
+  function renderMapa(a, b) {
+    const el = $('map');
+    const val = {}, cnt = {}, nombre = {};
+    let totAR = 0, fuera = [];
+    D.provincias.forEach(p => {
+      const v = sum(p.valores, a, b), c = sum(p.n, a, b);
+      if (/\([A-Z]{2}\)$/.test(p.provincia) || p.provincia === '(Sin provincia)') { if (v) fuera.push(p.provincia + ' ' + fmt$(v)); return; }
+      const k = provKey(p.provincia); val[k] = (val[k] || 0) + v; cnt[k] = (cnt[k] || 0) + c; nombre[k] = p.provincia; totAR += v;
+    });
+    const totAll = D.provincias.reduce((s, p) => s + sum(p.valores, a, b), 0);
+    const mx = Math.max(1, ...Object.values(val));
+    const AR = window.AR_PROVINCIAS;
+    let paths = '';
+    AR.provincias.forEach(p => {
+      const k = provKey(p.name); const v = val[k] || 0;
+      const t = v > 0 ? Math.sqrt(v / mx) : 0;
+      const fill = v > 0 ? `color-mix(in srgb, var(--accent) ${Math.round(10 + t * 90)}%, var(--surface-2))` : 'var(--surface-2)';
+      paths += `<path class="prov" data-k="${esc(k)}" data-n="${esc(p.name)}" d="${p.d}" fill="${fill}"/>`;
+    });
+    el.innerHTML = `<svg viewBox="${AR.viewBox}">${paths}<g id="caba-dot"></g></svg><div class="tip"></div>`;
+    // CABA es muy chica: un punto encima para que se vea
+    const cabaP = el.querySelector('path[data-k="caba"]');
+    if (cabaP) { const bb = cabaP.getBBox(); const v = val.caba || 0; el.querySelector('#caba-dot').innerHTML = `<circle class="prov" data-k="caba" data-n="Ciudad Autónoma de Buenos Aires" cx="${bb.x + bb.width / 2}" cy="${bb.y + bb.height / 2}" r="${3 + 5 * Math.sqrt(v / mx)}" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.2"/>`; }
+    const tip = el.querySelector('.tip'), svg = el.querySelector('svg');
+    el.querySelectorAll('.prov').forEach(pth => {
+      pth.addEventListener('mousemove', e => {
+        const k = pth.dataset.k, v = val[k] || 0, r = el.getBoundingClientRect();
+        tip.innerHTML = `<div class="t">${esc(pth.dataset.n)}</div><div class="r"><span>Ventas netas</span><b>${fmt$(v)}</b></div><div class="r"><span>Participación</span><b>${fmtP(totAll ? v / totAll : 0)}</b></div><div class="r"><span>Facturas</span><b>${fmtN(cnt[k] || 0)}</b></div>`;
+        tip.style.opacity = 1; tip.style.left = Math.min(r.width - 170, e.clientX - r.left + 12) + 'px'; tip.style.top = (e.clientY - r.top + 12) + 'px';
+      });
+      pth.addEventListener('mouseleave', () => tip.style.opacity = 0);
+    });
+    const items = Object.keys(val).filter(k => val[k]).sort((x, y) => val[y] - val[x]).slice(0, 12).map(k => ({ label: nombre[k] === 'Ciudad Autónoma de Buenos Aires' ? 'CABA' : nombre[k], value: val[k] }));
+    Charts.barsH($('prov-rank'), { items, fmt: v => corto(v) + ' · ' + fmtP(totAll ? v / totAll : 0), color: 'var(--accent)' });
+    const nProv = Object.keys(val).filter(k => val[k] > 0).length;
+    const top3 = Object.keys(val).sort((x, y) => val[y] - val[x]).slice(0, 3).reduce((s, k) => s + val[k], 0);
+    $('prov-nota').innerHTML = `Vendiste en <b>${nProv} de 24</b> jurisdicciones. Las 3 primeras concentran el <b>${fmtP(totAll ? top3 / totAll : 0)}</b>.` + (fuera.length ? ` Fuera del mapa: ${esc(fuera.join(' · '))}.` : '') + ' Provincia = la del contacto facturado (mismo criterio que el informe de IIBB).';
+    // ajuste de ancho de la columna de valores del ranking
+    $('prov-rank').querySelectorAll('span[style*="width:66px"]').forEach(s => s.style.width = '120px');
+  }
+
+  // ---------- donas ----------
+  function dona(elD, elL, items, colorDe) {
+    const tot = items.reduce((s, x) => s + Math.max(0, x.value), 0);
+    const segs = items.filter(x => x.value > 0).map((x, i) => ({ label: x.label, value: x.value, color: colorDe ? colorDe(x.label, i) : PALETA[i % PALETA.length] }));
+    Charts.donut(elD, { segments: segs, size: 164, centerBig: corto(tot), centerSmall: 'total' });
+    elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(tot ? s.value / tot : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
+  }
+  function renderDonas(a, b) {
+    dona($('d-canal'), $('l-canal'), D.canales.map(c => ({ label: c.canal, value: sum(c.valores, a, b) })).sort((x, y) => y.value - x.value), l => COL_CANAL[l] || 'var(--muted)');
+    const lin = {}; D.productos.forEach(p => { const k = (p.categoria || 'Sin categoría').replace(/^FP\s*\/\s*/i, '').replace(/^LÍNEA\s+/i, 'Línea '); lin[k] = (lin[k] || 0) + sum(p.neto, a, b); });
+    dona($('d-linea'), $('l-linea'), Object.entries(lin).map(([label, value]) => ({ label: cap(label), value })).sort((x, y) => y.value - x.value));
+    dona($('d-tipo'), $('l-tipo'), D.tipos.map(t => ({ label: t.tipo, value: sum(t.valores, a, b) })).sort((x, y) => y.value - x.value), l => l.endsWith('A') ? 'var(--structure)' : l.endsWith('B') ? 'var(--accent)' : 'var(--muted)');
+    const gr = D.compras_grupos.filter(g => st.compras === 'todas' || !NO_OPER.includes(g.grupo)).map(g => ({ label: g.grupo, value: sum(g.valores, a, b) })).sort((x, y) => y.value - x.value);
+    dona($('d-grupo'), $('l-grupo'), gr, l => COL_GRUPO[l] || 'var(--muted)');
+  }
+  const cap = s => s.toLowerCase().replace(/(^|\s)(\p{L})/gu, (m, sp, c) => sp + c.toUpperCase());
+
+  // ---------- barras apiladas por mes ----------
+  function apiladas(el, series) {  // series: [{name,color,values}]
+    const S = D.serie, n = S.length;
+    const draw = () => {
+      const W = Math.max(300, el.clientWidth || 500), H = 230, mL = 46, mR = 8, mT = 10, mB = 24, iw = W - mL - mR, ih = H - mT - mB;
+      const totals = S.map((_, i) => series.reduce((s, x) => s + Math.max(0, x.values[i]), 0));
+      const mx = Math.max(1, ...totals); const slot = iw / n, bw = Math.min(40, slot * .58);
+      let g = '';
+      [0, .5, 1].forEach(f => { const yy = mT + ih * (1 - f); g += `<line x1="${mL}" x2="${W - mR}" y1="${yy}" y2="${yy}" stroke="var(--border)" stroke-opacity="${f ? .55 : 1}"/><text x="${mL - 6}" y="${yy + 3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${series.money === false ? fmtN(mx * f) : corto(mx * f)}</text>`; });
+      let body = '';
+      for (let i = 0; i < n; i++) {
+        const dim = i < st.a || i > st.b; let acc = 0; const x = mL + slot * i + (slot - bw) / 2;
+        series.forEach(sr => { const v = Math.max(0, sr.values[i]); const h = ih * v / mx; const yy = mT + ih - acc - h; acc += h; if (h > 0) body += `<rect x="${x}" y="${yy}" width="${bw}" height="${h}" fill="${sr.color}" opacity="${dim ? .3 : .92}"/>`; });
+        body += `<text x="${x + bw / 2}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--muted)">${lblMes(S[i].mes)}</text>`;
+      }
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block">${g}${body}</svg><div class="tip"></div>`;
+      const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
+      svg.addEventListener('mousemove', e => {
+        const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width * W - mL) / slot)));
+        const tt = totals[i];
+        tip.innerHTML = `<div class="t">${lblMesLargo(S[i].mes)}</div>` + series.map(sr => `<div class="r"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${sr.color};margin-right:5px"></i>${esc(sr.name)}</span><b>${series.money === false ? fmtN(sr.values[i]) : fmt$(sr.values[i])} · ${fmtP(tt ? sr.values[i] / tt : 0)}</b></div>`).join('');
+        tip.style.opacity = 1; tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, (e.clientX - r.left) + 12)) + 'px'; tip.style.top = '4px';
+      });
+      svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
+    };
+    draw(); observar(el, draw);
+  }
+  function renderCanalMes() {
+    const series = D.canales.map(c => ({ name: c.canal, color: COL_CANAL[c.canal] || 'var(--muted)', values: c.valores }));
+    $('leg-canal').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i> ${esc(s.name)}</span>`).join('');
+    apiladas($('ch-canal'), series);
+  }
+  function renderCliMes() {
+    const series = [{ name: 'Nuevos', color: 'var(--accent)', values: D.serie.map(s => s.clientes_nuevos) }, { name: 'Ya compraban', color: 'var(--cyan)', values: D.serie.map(s => s.clientes - s.clientes_nuevos) }];
+    series.money = false;
+    apiladas($('ch-cli'), series);
+  }
+
+  // ---------- productos ----------
+  function renderProductos(a, b) {
+    const rows = D.productos.map(p => ({ ...p, n: sum(p.neto, a, b), u: sum(p.unidades, a, b) })).filter(p => p.n || p.u);
+    const totN = rows.reduce((s, p) => s + p.n, 0);
+    const k = st.prodModo === 'neto' ? 'n' : 'u';
+    Charts.barsH($('prod-top'), { items: [...rows].sort((x, y) => y[k] - x[k]).slice(0, 15).map(p => ({ label: p.nombre, value: p[k] })), fmt: v => k === 'n' ? corto(v) : fmtN(v) + ' u', color: k === 'n' ? 'var(--accent)' : 'var(--cyan)' });
+    $('prod-top').querySelectorAll('span[style*="max-width:190px"]').forEach(s => { s.style.maxWidth = '340px'; s.style.width = '42%'; });
+    $('prod-top').querySelectorAll('span[style*="width:66px"]').forEach(s => s.style.width = '80px');
+    const q = norm(st.prodQ);
+    const lista = rows.filter(p => !q || norm(p.codigo + ' ' + p.nombre).includes(q));
+    const key = { neto: 'n', u: 'u', cod: 'codigo', prom: 'prom' }[st.prodSort] || 'n';
+    lista.forEach(p => p.prom = p.u ? p.n / p.u : 0);
+    lista.sort((x, y) => { const A = x[key], B = y[key]; return (typeof A === 'string' ? A.localeCompare(B) : A - B) * st.prodDir; });
+    const mx = Math.max(1, ...lista.map(p => p.n));
+    const th = (id, t, cls) => `<th class="sort ${cls || ''}" data-s="${id}">${t}${st.prodSort === id ? (st.prodDir < 0 ? ' ▾' : ' ▴') : ''}</th>`;
+    $('prod-tbl').innerHTML = `<thead><tr>${th('cod', 'Código')}<th>Producto</th><th>Línea</th>${th('u', 'Unidades', 'num')}${th('neto', 'Ventas netas', 'num')}<th class="num">% total</th>${th('prom', 'Precio prom. neto', 'num')}</tr></thead><tbody>` +
+      lista.map(p => `<tr><td class="code">${esc(p.codigo)}</td><td>${esc(p.nombre)}<span class="barcell" style="width:${Math.max(1, p.n / mx * 100)}%"></span></td><td class="muted" style="font-size:12px">${esc(cap((p.categoria || '').replace(/^FP\s*\/\s*/i, '')))}</td><td class="num">${fmtN(p.u)}</td><td class="num" title="${fmt$c(p.n)}">${fmt$(p.n)}</td><td class="num muted">${fmtP(totN ? p.n / totN : 0)}</td><td class="num">${p.u ? fmt$(p.prom) : '—'}</td></tr>`).join('') +
+      `</tbody><tfoot><tr><td></td><td><b>${lista.length} productos</b></td><td></td><td class="num"><b>${fmtN(lista.reduce((s, p) => s + p.u, 0))}</b></td><td class="num"><b>${fmt$(lista.reduce((s, p) => s + p.n, 0))}</b></td><td></td><td></td></tr></tfoot>`;
+    $('prod-tbl').querySelectorAll('th.sort').forEach(h => h.onclick = () => { if (st.prodSort === h.dataset.s) st.prodDir *= -1; else { st.prodSort = h.dataset.s; st.prodDir = h.dataset.s === 'cod' ? 1 : -1; } renderProductos(st.a, st.b); });
+  }
+
+  // ---------- rankings ----------
+  function renderTops(a, b) {
+    const top = (arr, lbl, k) => arr.map(x => ({ label: x[lbl], value: sum(x.valores, a, b) })).filter(x => x.value > 0).sort((x, y) => y.value - x.value).slice(0, k);
+    const desc = D.descuentos.map(x => ({ label: x.concepto, value: -sum(x.valores, a, b) })).filter(x => x.value > 0.5).sort((x, y) => y.value - x.value);
+    Charts.barsH($('desc-top'), { items: desc.slice(0, 12), fmt: corto, color: 'var(--warn)' });
+    const dTot = desc.reduce((s, x) => s + x.value, 0), prodB = D.productos.reduce((s, p) => s + sum(p.neto, a, b), 0);
+    $('desc-nota').innerHTML = `Total descontado <b>${fmt$(dTot)}</b> = <b>${fmtP(prodB ? dTot / prodB : 0)}</b> de lo facturado en productos. Son los renglones de descuento de las facturas (por volumen, cupones, envío gratis).`;
+    const tk = D.canales.map(c => { const f = sum(c.n, a, b); return { label: c.canal, value: f ? sum(c.valores, a, b) / f : 0, f }; }).filter(x => x.f).sort((x, y) => y.value - x.value);
+    Charts.barsH($('tk-canal'), { items: tk.map(x => ({ label: x.label + ' (' + fmtN(x.f) + ' fact.)', value: x.value })), fmt: v => fmt$(v), color: 'var(--cyan)' });
+    $('tk-canal').querySelectorAll('span[style*="width:66px"]').forEach(x => x.style.width = '90px');
+    Charts.barsH($('cli-top'), { items: top(D.clientes, 'nombre', 12), fmt: corto, color: 'var(--accent)' });
+    Charts.barsH($('prov2-top'), { items: top(D.proveedores, 'nombre', 12), fmt: corto, color: 'var(--structure)' });
+    const ctas = D.compras_cuentas.filter(c => st.compras === 'todas' || !NO_OPER.includes(c.grupo)).map(c => ({ ...c, cuenta: c.cuenta.replace(/^[\d.]+\s+/, '') }));
+    Charts.barsH($('cta-top'), { items: top(ctas, 'cuenta', 14), fmt: corto, color: 'var(--structure)' });
+    ['cli-top', 'prov2-top', 'cta-top', 'desc-top', 'tk-canal'].forEach(id => $(id).querySelectorAll('span[style*="max-width:190px"]').forEach(s => { s.style.maxWidth = '260px'; s.style.width = '44%'; }));
+  }
+
+  // ---------- control ----------
+  function renderControl() {
+    const rows = D.serie.map((s, i) => {
+      const cv = D.control.ventas[i], cc = D.control.compras[i];
+      const prod = D.productos.reduce((x, p) => x + p.neto[i], 0);
+      const dc = prod + s.ingresos_envio + s.descuentos - s.ventas_netas;
+      const ok = v => Math.abs(v) < 0.05 ? '<span class="pos">✔ 0,00</span>' : `<span class="neg">${fmt$c(v)}</span>`;
+      return `<tr><td>${lblMesLargo(s.mes)}</td><td class="num">${fmt$c(cv.cabecera)}</td><td class="num">${fmt$c(cv.renglones)}</td><td class="num">${ok(cv.dif)}</td><td class="num">${ok(dc)}</td><td class="num">${fmt$c(cc.cabecera)}</td><td class="num">${fmt$c(cc.renglones)}</td><td class="num">${ok(cc.dif)}</td></tr>`;
+    }).join('');
+    $('ctl-tbl').innerHTML = `<thead><tr><th>Mes</th><th class="num">Ventas (cabeceras)</th><th class="num">Ventas (renglones)</th><th class="num">Diferencia</th><th class="num">Composición</th><th class="num">Compras (cabeceras)</th><th class="num">Compras (renglones)</th><th class="num">Diferencia</th></tr></thead><tbody>${rows}</tbody>`;
+  }
+
+  // ---------- eventos ----------
+  function observar(el, draw) {
+    if (!window.ResizeObserver) return;
+    if (el._ro) el._ro.disconnect();
+    let lw = el.clientWidth, t = 0;
+    el._ro = new ResizeObserver(() => { const w = el.clientWidth; if (Math.abs(w - lw) < 6) return; lw = w; clearTimeout(t); t = setTimeout(draw, 90); });
+    el._ro.observe(el);
+  }
+  function marcarSeg() {
+    const N = D.meses.length, last = N - 1;
+    const p = st.b !== last ? '' : st.a === 0 ? 'todo' : st.a === last - 2 ? '3' : st.a === last ? '1' : '';
+    document.querySelectorAll('#seg-periodo button').forEach(x => x.classList.toggle('on', x.dataset.p === p));
+  }
+  function bindLocal() {
+    document.querySelectorAll('#seg-prod button').forEach(bt => bt.onclick = () => { st.prodModo = bt.dataset.m; document.querySelectorAll('#seg-prod button').forEach(x => x.classList.toggle('on', x === bt)); renderProductos(st.a, st.b); });
+    const q = $('prod-q'); q.oninput = () => { st.prodQ = q.value; renderProductos(st.a, st.b); };
+  }
+  document.querySelectorAll('#seg-periodo button').forEach(bt => bt.addEventListener('click', () => {
+    if (!D) return; const last = D.meses.length - 1;
+    st.b = last; st.a = bt.dataset.p === 'todo' ? 0 : Math.max(0, last - (+bt.dataset.p) + 1);
+    syncSelects(); marcarSeg(); render();
+  }));
+  document.querySelectorAll('#seg-compras button').forEach(bt => bt.addEventListener('click', () => {
+    if (!D) return; st.compras = bt.dataset.c;
+    document.querySelectorAll('#seg-compras button').forEach(x => x.classList.toggle('on', x === bt)); render();
+  }));
+  $('sel-desde').addEventListener('change', e => { st.a = +e.target.value; if (st.a > st.b) st.b = st.a; syncSelects(); marcarSeg(); render(); });
+  $('sel-hasta').addEventListener('change', e => { st.b = +e.target.value; if (st.b < st.a) st.a = st.b; syncSelects(); marcarSeg(); render(); });
+
+  cargar();
+})();
+</script>
+</body>
+</html>

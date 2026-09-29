@@ -12,6 +12,7 @@
 const MENU = [
   { type: 'group', label: 'General' },
   { type: 'item', id: 'dashboard', label: 'Inicio',    href: 'index.html', status: 'ready' },
+  { type: 'item', id: 'metricas',  label: 'Métricas',  href: 'metricas/index.html', status: 'ready' },
   { type: 'item', id: 'asistente', label: 'Asistente', href: 'asistente/agente.html', status: 'ready' },
   { type: 'item', id: 'manuales',  label: 'Manuales',  href: 'manuales/index.html', status: 'ready' },
 
@@ -115,6 +116,7 @@ const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // La CSS (.nav-item .nav-icon svg) fija fill/stroke/grosor; acá solo el trazado.
 const MODULE_ICONS = {
   dashboard:      '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  metricas:       '<svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/><circle cx="19" cy="8" r="1.3"/></svg>',
   asistente:      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><ellipse cx="12" cy="12" rx="9" ry="4"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(75 12 12)"/></svg>',
   laboratorio:    '<svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>',
   reposicion:     '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/><path d="M7 14.5v-3"/></svg>',
