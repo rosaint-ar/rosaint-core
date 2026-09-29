@@ -132,9 +132,10 @@
   const sum = (arr, a, b) => { let s = 0; for (let i = a; i <= b; i++) s += (arr[i] || 0); return s; };
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-  let D = null;                          // respuesta de la función
+  let D = null;
+  const OBS = [];                        // ResizeObservers vivos (se cortan en cada render)                          // respuesta de la función
   const st = { a: 0, b: 0, compras: 'todas', prodModo: 'neto', prodSort: 'neto', prodDir: -1, prodQ: '', off: {} };
-  const MES_ACTUAL = new Date().toISOString().slice(0, 7);
+  const MES_ACTUAL = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7);   // hora de Argentina
 
   // ---------- carga ----------
   async function cargar() {
@@ -184,12 +185,13 @@
   function composicionOk() {
     return D.serie.every((s, i) => {
       const prod = D.productos.reduce((a, p) => a + p.neto[i], 0);
-      return Math.abs(prod + s.ingresos_envio + s.descuentos - s.ventas_netas) < 0.05;
+      return Math.abs(prod + s.ingresos_envio + s.descuentos + (s.otros_servicios || 0) - s.ventas_netas) < 0.05;
     });
   }
 
   // ---------- render ----------
   function render() {
+    OBS.splice(0).forEach(o => o.disconnect());
     renderStatus();
     const a = st.a, b = st.b, n = b - a + 1;
     const pa = a - n, pb = a - 1;                      // período anterior de igual largo
@@ -223,7 +225,7 @@
         ${kpi('Margen', `<span class="${M < 0 ? 'neg' : ''}">${fmt$(M)}</span>`, `<span class="d">${fmtP(V ? M / V : NaN)} de las ventas ${prev && prev.V ? '· antes ' + fmtP(prev.M / prev.V) : ''}</span>`, '', 'Ventas netas − compras netas · ' + fmt$c(M), 'margen')}
         ${kpi('Unidades', fmtN(U), delta(U, prev?.U), '', 'Unidades de producto facturadas (combos cuentan 1), menos devueltas', 'unidades')}
         ${kpi('Facturas', fmtN(F), delta(F, prev?.F), '', 'Facturas y notas de débito emitidas', 'n_facturas')}
-        ${kpi('Ticket promedio', fmt$(F ? VB / F : 0), delta(F ? VB / F : 0, prev && prev.F ? prev.VB / prev.F : 0), '', 'Venta neta promedio por factura (sin IVA)', 'ticket')}
+        ${kpi('Ticket promedio', fmt$(F ? V / F : 0), delta(F ? V / F : 0, prev && prev.F ? prev.V / prev.F : 0), '', 'Ventas netas (ya restadas las notas de crédito) divididas por la cantidad de facturas, sin IVA', 'ticket')}
         ${kpi('Clientes', fmtN(cliPer), `<span class="d">distintos que compraron en el período</span>`, '', 'Clientes distintos con al menos una factura en el período', 'clientes')}
         ${kpi('Clientes nuevos', fmtN(cliNuevos), `<span class="d">${fmtP(cliPer ? cliNuevos / cliPer : 0)} de los clientes del período</span>`, '', 'Compraron por primera vez en VELAZQUEZ (desde marzo 2026)', 'nuevos')}
       </div>
@@ -237,7 +239,7 @@
           </div></div>
         <div class="chart" id="ch-main"></div>
         <div class="compo" id="compo"></div>
-        <div class="nota">Todo sin IVA. <b>Ventas netas</b> = facturas + notas de débito − notas de crédito. <b>Compras netas</b> = facturas de proveedor − sus notas de crédito (incluye materia prima, envases, gastos y servicios; no incluye percepciones). <b>Margen</b> = ventas netas − compras netas del mes. Mes por fecha de factura.${enCurso ? ' El mes actual está en curso.' : ''} Lo que está fuera del período elegido se ve atenuado.</div>
+        <div class="nota">Todo sin IVA. <b>Ventas netas</b> = facturas + notas de débito − notas de crédito. <b>Compras netas</b> = facturas de proveedor − sus notas de crédito (incluye materia prima, envases, gastos y servicios; no incluye percepciones). <b>Margen</b> = ventas netas − compras netas del mes. Mes por fecha de factura.${enCurso ? ' El mes actual está en curso.' : ''} Lo que está fuera del período elegido se ve atenuado. Tocá un mes del gráfico para ver solo ese mes.</div>
       </div>
 
       <div class="panel">
@@ -275,7 +277,7 @@
         <div class="panel"><div class="panel-head"><h2>Descuentos otorgados · ${esc(periodoTxt)}</h2></div><div id="desc-top"></div>
           <div class="nota" id="desc-nota"></div></div>
         <div class="panel"><div class="panel-head"><h2>Ticket promedio por canal · ${esc(periodoTxt)}</h2></div><div id="tk-canal"></div>
-          <div class="nota">Venta neta promedio por factura, sin IVA.</div></div>
+          <div class="nota">Ventas netas del canal (ya restadas las notas de crédito) divididas por sus facturas, sin IVA. Mismo cálculo que la tarjeta de arriba.</div></div>
       </div>
 
       <div class="grid2 row-gap">
@@ -291,13 +293,13 @@
 
       <div class="panel">
         <details class="ctl"><summary>Control de cuadre (cómo se comprueban los números)</summary>
-          <div class="nota">Cada total se calcula dos veces por caminos distintos: una sumando las <b>cabeceras</b> de los comprobantes (el neto que muestra Odoo en cada factura) y otra sumando <b>renglón por renglón</b>. Si no coinciden al centavo, arriba aparece en rojo. Además, productos + envíos cobrados + descuentos tiene que dar exactamente las ventas netas.</div>
+          <div class="nota">Cada total se calcula dos veces por caminos distintos: una sumando las <b>cabeceras</b> de los comprobantes (el neto que muestra Odoo en cada factura) y otra sumando <b>renglón por renglón</b>. Si no coinciden al centavo, arriba aparece en rojo. Además, productos + envíos cobrados + descuentos (+ otros servicios, si hay) tiene que dar exactamente las ventas netas.</div>
           <div class="table-wrap table-scroll" style="margin-top:10px"><table class="tbl" id="ctl-tbl"></table></div>
         </details>
       </div>`;
 
     // sparklines de los KPIs (historia completa)
-    const sparkVals = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)), margen: S.map((s, i) => s.ventas_netas - comprasMes(i)), unidades: S.map(s => s.unidades), n_facturas: S.map(s => s.n_facturas), ticket: S.map(s => s.ticket), clientes: S.map(s => s.clientes), nuevos: S.map(s => s.clientes_nuevos) };
+    const sparkVals = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)), margen: S.map((s, i) => s.ventas_netas - comprasMes(i)), unidades: S.map(s => s.unidades), n_facturas: S.map(s => s.n_facturas), ticket: S.map(s => s.n_facturas ? s.ventas_netas / s.n_facturas : 0), clientes: S.map(s => s.clientes), nuevos: S.map(s => s.clientes_nuevos) };
     root.querySelectorAll('[data-spark]').forEach(el => Charts.sparkline(el, sparkVals[el.dataset.spark], { color: el.dataset.spark === 'compras' ? COL.compras : el.dataset.spark === 'margen' ? COL.margen : 'var(--accent)' }));
 
     renderMain();
@@ -377,8 +379,8 @@
     const S = D.serie;
     const prod = D.productos.reduce((s, p) => s + sum(p.neto, a, b), 0);
     const env = sum(S.map(s => s.ingresos_envio), a, b), desc = sum(S.map(s => s.descuentos), a, b), nc = sum(S.map(s => s.nc), a, b);
-    const vn = sum(S.map(s => s.ventas_netas), a, b);
-    $('compo').innerHTML = `<span class="c">Productos <b>${fmt$(prod)}</b></span> + <span class="c">Envíos cobrados <b>${fmt$(env)}</b></span> + <span class="c">Descuentos <b>${fmt$(desc)}</b></span> = <span class="c">Ventas netas <b>${fmt$(vn)}</b></span> <span class="c" title="Ya descontadas dentro de productos y envíos">de las cuales notas de crédito <b>${fmt$(nc)}</b></span>`;
+    const vn = sum(S.map(s => s.ventas_netas), a, b), otros = sum(S.map(s => s.otros_servicios || 0), a, b);
+    $('compo').innerHTML = `<span class="c">Productos <b>${fmt$(prod)}</b></span> + <span class="c">Envíos cobrados <b>${fmt$(env)}</b></span> + <span class="c">Descuentos <b>${fmt$(desc)}</b></span>${Math.abs(otros) >= 0.01 ? ` + <span class="c">Otros servicios <b>${fmt$(otros)}</b></span>` : ''} = <span class="c">Ventas netas <b>${fmt$(vn)}</b></span> <span class="c" title="Ya descontadas dentro de productos y envíos">de las cuales notas de crédito <b>${fmt$(nc)}</b></span>`;
   }
 
   // ---------- mapa ----------
@@ -430,16 +432,16 @@
   }
 
   // ---------- donas ----------
-  function dona(elD, elL, items, colorDe) {
+  function dona(elD, elL, items, colorDe, centro) {
     const tot = items.reduce((s, x) => s + Math.max(0, x.value), 0);
     const segs = items.filter(x => x.value > 0).map((x, i) => ({ label: x.label, value: x.value, color: colorDe ? colorDe(x.label, i) : PALETA[i % PALETA.length] }));
-    Charts.donut(elD, { segments: segs, size: 164, centerBig: corto(tot), centerSmall: 'total' });
+    Charts.donut(elD, { segments: segs, size: 164, centerBig: corto(tot), centerSmall: centro || 'total' });
     elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(tot ? s.value / tot : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
   }
   function renderDonas(a, b) {
     dona($('d-canal'), $('l-canal'), D.canales.map(c => ({ label: c.canal, value: sum(c.valores, a, b) })).sort((x, y) => y.value - x.value), l => COL_CANAL[l] || 'var(--muted)');
     const lin = {}; D.productos.forEach(p => { const k = (p.categoria || 'Sin categoría').replace(/^FP\s*\/\s*/i, '').replace(/^LÍNEA\s+/i, 'Línea '); lin[k] = (lin[k] || 0) + sum(p.neto, a, b); });
-    dona($('d-linea'), $('l-linea'), Object.entries(lin).map(([label, value]) => ({ label: cap(label), value })).sort((x, y) => y.value - x.value));
+    dona($('d-linea'), $('l-linea'), Object.entries(lin).map(([label, value]) => ({ label: cap(label), value })).sort((x, y) => y.value - x.value), null, 'en productos');
     dona($('d-tipo'), $('l-tipo'), D.tipos.map(t => ({ label: t.tipo, value: sum(t.valores, a, b) })).sort((x, y) => y.value - x.value), l => l.endsWith('A') ? 'var(--structure)' : l.endsWith('B') ? 'var(--accent)' : 'var(--muted)');
     const gr = D.compras_grupos.filter(g => st.compras === 'todas' || !NO_OPER.includes(g.grupo)).map(g => ({ label: g.grupo, value: sum(g.valores, a, b) })).sort((x, y) => y.value - x.value);
     dona($('d-grupo'), $('l-grupo'), gr, l => COL_GRUPO[l] || 'var(--muted)');
@@ -527,7 +529,7 @@
     const rows = D.serie.map((s, i) => {
       const cv = D.control.ventas[i], cc = D.control.compras[i];
       const prod = D.productos.reduce((x, p) => x + p.neto[i], 0);
-      const dc = prod + s.ingresos_envio + s.descuentos - s.ventas_netas;
+      const dc = prod + s.ingresos_envio + s.descuentos + (s.otros_servicios || 0) - s.ventas_netas;
       const ok = v => Math.abs(v) < 0.05 ? '<span class="pos">✔ 0,00</span>' : `<span class="neg">${fmt$c(v)}</span>`;
       return `<tr><td>${lblMesLargo(s.mes)}</td><td class="num">${fmt$c(cv.cabecera)}</td><td class="num">${fmt$c(cv.renglones)}</td><td class="num">${ok(cv.dif)}</td><td class="num">${ok(dc)}</td><td class="num">${fmt$c(cc.cabecera)}</td><td class="num">${fmt$c(cc.renglones)}</td><td class="num">${ok(cc.dif)}</td></tr>`;
     }).join('');
@@ -540,7 +542,7 @@
     if (el._ro) el._ro.disconnect();
     let lw = el.clientWidth, t = 0;
     el._ro = new ResizeObserver(() => { const w = el.clientWidth; if (Math.abs(w - lw) < 6) return; lw = w; clearTimeout(t); t = setTimeout(draw, 90); });
-    el._ro.observe(el);
+    el._ro.observe(el); OBS.push(el._ro);
   }
   function marcarSeg() {
     const N = D.meses.length, last = N - 1;
