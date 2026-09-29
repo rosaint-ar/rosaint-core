@@ -17,7 +17,8 @@
     .status .ok { color: var(--ok); font-weight: 700; }
     .status .bad { color: var(--hot); font-weight: 700; }
 
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+    @media (max-width: 1250px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } }
     .kpi .v { font-size: 23px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .kpi .spark { height: 26px; margin-top: 2px; }
@@ -33,6 +34,13 @@
     @media (max-width: 1100px) { .grid3 { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 820px) { .grid2, .grid3, .grid-map { grid-template-columns: 1fr; } }
     .grid2 > .panel, .grid3 > .panel { margin-bottom: 0; }
+    .grid2 > *, .grid3 > *, .grid-map > * { min-width: 0; }
+    .ped-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+    @media (max-width: 820px) { .ped-grid { grid-template-columns: 1fr; } }
+    #ped-tbl { font-size: 12.5px; }
+    #ped-tbl td, #ped-tbl th { padding: 7px 8px; }
+    #ped-tbl td.num, #ped-tbl td.code { white-space: nowrap; }
+    #ped-tbl .sub { display: block; font-size: 11px; color: var(--muted); }
     .row-gap { margin-bottom: 16px; }
 
     .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
@@ -114,7 +122,7 @@
   const FN = window.SUPABASE_URL + '/functions/v1/odoo-metricas';
   const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const COL = { ventas: 'var(--accent)', compras: 'var(--structure)', margen: 'var(--ok)' };
+  const COL = { ventas: 'var(--accent)', compras: 'var(--structure)', margen: 'var(--ok)', pedidos: 'var(--cyan)' };
   const PALETA = ['var(--accent)', 'var(--cyan)', 'var(--warn)', 'var(--ok)', 'var(--structure)', 'var(--hot)', 'color-mix(in srgb, var(--cyan) 55%, var(--ok))', 'color-mix(in srgb, var(--warn) 55%, var(--accent))', 'var(--muted)'];
   const COL_CANAL = { 'Venta directa': 'var(--accent)', 'Mercado Libre': 'var(--warn)', 'Tienda Nube': 'var(--cyan)', 'Portal web': 'var(--ok)' };
   const COL_GRUPO = { 'Producción': 'var(--structure)', 'Comerciales': 'var(--warn)', 'Administrativos': 'var(--cyan)', 'No operativos': 'var(--muted)', 'Bienes de uso': 'var(--ok)', 'Otros': 'var(--hot)' };
@@ -176,7 +184,8 @@
   function renderStatus() {
     const cv = D.control.ventas.every(c => Math.abs(c.dif) < 0.01);
     const cc = D.control.compras.every(c => Math.abs(c.dif) < 0.01);
-    const ok = cv && cc && composicionOk();
+    const cpOk = !((D.control.pedidos && D.control.pedidos.desvios) || []).some(d => d.en_listado);
+    const ok = cv && cc && cpOk && composicionOk();
     const h = new Date(D.generado);
     $('status').className = 'status';
     $('status').innerHTML = `Odoo · VELAZQUEZ · leído ${h.toLocaleDateString('es-AR')} ${h.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} · ${fmtN(D.control.comprobantes_venta)} comprobantes de venta y ${fmtN(D.control.comprobantes_compra)} de compra · ` +
@@ -209,6 +218,12 @@
     cliNuevos = tot('clientes_nuevos');
     const periodoTxt = n === D.meses.length ? 'desde marzo 2026' : (n === 1 ? lblMesLargo(D.meses[a]) : lblMes(D.meses[a]) + ' – ' + lblMes(D.meses[b]));
     const enCurso = D.meses[b] === MES_ACTUAL;
+    const PS_ = D.pedidos.serie;
+    const PC = sum(PS_.map(x => x.confirmado), a, b), PF = sum(PS_.map(x => x.facturado), a, b), PN = sum(PS_.map(x => x.n), a, b);
+    const PSF = PC - PF;
+    const pendPer = D.pedidos.pendientes.filter(p => { const i = D.meses.indexOf(p.mes); return i >= a && i <= b; });
+    const nPend = pendPer.filter(p => p.sin_facturar > 0).length;
+    const prevPC = hayPrev ? sum(PS_.map(x => x.confirmado), pa, pb) : 0;
 
     const delta = (cur, old, inv) => {
       if (!prev || !old) return `<span class="d">${hayPrev ? '' : 'sin período anterior'}</span>`;
@@ -221,6 +236,8 @@
     root.innerHTML = `
       <div class="kpis">
         ${kpi('Ventas netas', fmt$(V), delta(V, prev?.V), 'main', fmt$c(V) + ' · sin IVA, neto de notas de crédito', 'ventas')}
+        ${kpi('Pedidos confirmados', fmt$(PC), `<span class="d">${fmtN(PN)} pedidos · <b>${fmtP(PC ? PF / PC : NaN)}</b> ya facturado</span>`, '', fmt$c(PC) + ' · pedidos de venta confirmados en el período, sin IVA', 'pedidos')}
+        ${kpi('Sin facturar', `<span class="${PSF > 0.5 ? '' : 'pos'}">${fmt$(PSF)}</span>`, `<span class="d">${nPend ? fmtN(nPend) + ' pedido' + (nPend === 1 ? '' : 's') + ' con saldo' : 'todo facturado'}</span>`, '', 'Confirmado menos lo ya facturado de esos mismos pedidos · ' + fmt$c(PSF), 'sinfac')}
         ${kpi('Compras netas', fmt$(Cm), delta(Cm, prev?.C, true), '', fmt$c(Cm) + (st.compras === 'oper' ? ' · operativas' : ' · todas las facturas de proveedor') + ', sin IVA', 'compras')}
         ${kpi('Margen', `<span class="${M < 0 ? 'neg' : ''}">${fmt$(M)}</span>`, `<span class="d">${fmtP(V ? M / V : NaN)} de las ventas ${prev && prev.V ? '· antes ' + fmtP(prev.M / prev.V) : ''}</span>`, '', 'Ventas netas − compras netas · ' + fmt$c(M), 'margen')}
         ${kpi('Unidades', fmtN(U), delta(U, prev?.U), '', 'Unidades de producto facturadas (combos cuentan 1), menos devueltas', 'unidades')}
@@ -236,10 +253,22 @@
             <button data-s="ventas"><i style="background:${COL.ventas}"></i>Ventas netas</button>
             <button data-s="compras"><i style="background:${COL.compras}"></i>Compras netas${st.compras === 'oper' ? ' (operativas)' : ''}</button>
             <button data-s="margen"><i style="background:${COL.margen}"></i>Margen</button>
+            <button data-s="pedidos"><i style="background:${COL.pedidos}"></i>Pedidos confirmados</button>
           </div></div>
         <div class="chart" id="ch-main"></div>
         <div class="compo" id="compo"></div>
-        <div class="nota">Todo sin IVA. <b>Ventas netas</b> = facturas + notas de débito − notas de crédito. <b>Compras netas</b> = facturas de proveedor − sus notas de crédito (incluye materia prima, envases, gastos y servicios; no incluye percepciones). <b>Margen</b> = ventas netas − compras netas del mes. Mes por fecha de factura.${enCurso ? ' El mes actual está en curso.' : ''} Lo que está fuera del período elegido se ve atenuado. Tocá un mes del gráfico para ver solo ese mes.</div>
+        <div class="nota">Todo sin IVA. <b>Ventas netas</b> = facturas + notas de débito − notas de crédito. <b>Compras netas</b> = facturas de proveedor − sus notas de crédito (incluye materia prima, envases, gastos y servicios; no incluye percepciones). <b>Margen</b> = ventas netas − compras netas del mes. <b>Pedidos confirmados</b> (línea punteada) = pedidos de venta confirmados, por fecha del pedido. Mes por fecha de factura.${enCurso ? ' El mes actual está en curso.' : ''} Lo que está fuera del período elegido se ve atenuado. Tocá un mes del gráfico para ver solo ese mes.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Pedidos confirmados vs facturado · ${esc(periodoTxt)}</h2>
+          <div class="legend"><span><i style="background:var(--accent)"></i> facturado</span><span><i style="background:var(--warn)"></i> sin facturar</span></div></div>
+        <div class="grid2 ped-grid">
+          <div><div class="chart" id="ch-ped"></div>
+            <div class="nota">Cada barra es lo confirmado en pedidos ese mes: la parte roja ya se facturó (facturas publicadas, menos notas de crédito), la amarilla falta. El mes es la fecha del pedido, por eso no coincide con las ventas netas del mes (que van por fecha de factura e incluyen facturas sin pedido).</div></div>
+          <div><div class="compo" id="ped-resumen" style="margin-top:0"></div>
+            <div class="table-wrap tbl-max" style="margin-top:12px;max-height:330px"><table class="tbl" id="ped-tbl"></table></div></div>
+        </div>
       </div>
 
       <div class="panel">
@@ -295,15 +324,17 @@
         <details class="ctl"><summary>Control de cuadre (cómo se comprueban los números)</summary>
           <div class="nota">Cada total se calcula dos veces por caminos distintos: una sumando las <b>cabeceras</b> de los comprobantes (el neto que muestra Odoo en cada factura) y otra sumando <b>renglón por renglón</b>. Si no coinciden al centavo, arriba aparece en rojo. Además, productos + envíos cobrados + descuentos (+ otros servicios, si hay) tiene que dar exactamente las ventas netas.</div>
           <div class="table-wrap table-scroll" style="margin-top:10px"><table class="tbl" id="ctl-tbl"></table></div>
+          <div class="nota" id="ctl-ped"></div>
         </details>
       </div>`;
 
     // sparklines de los KPIs (historia completa)
-    const sparkVals = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)), margen: S.map((s, i) => s.ventas_netas - comprasMes(i)), unidades: S.map(s => s.unidades), n_facturas: S.map(s => s.n_facturas), ticket: S.map(s => s.n_facturas ? s.ventas_netas / s.n_facturas : 0), clientes: S.map(s => s.clientes), nuevos: S.map(s => s.clientes_nuevos) };
-    root.querySelectorAll('[data-spark]').forEach(el => Charts.sparkline(el, sparkVals[el.dataset.spark], { color: el.dataset.spark === 'compras' ? COL.compras : el.dataset.spark === 'margen' ? COL.margen : 'var(--accent)' }));
+    const sparkVals = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)), margen: S.map((s, i) => s.ventas_netas - comprasMes(i)), unidades: S.map(s => s.unidades), n_facturas: S.map(s => s.n_facturas), ticket: S.map(s => s.n_facturas ? s.ventas_netas / s.n_facturas : 0), clientes: S.map(s => s.clientes), nuevos: S.map(s => s.clientes_nuevos), pedidos: D.pedidos.serie.map(x => x.confirmado), sinfac: D.pedidos.serie.map(x => x.sin_facturar) };
+    root.querySelectorAll('[data-spark]').forEach(el => Charts.sparkline(el, sparkVals[el.dataset.spark], { color: COL[el.dataset.spark] || (el.dataset.spark === 'sinfac' ? 'var(--warn)' : 'var(--accent)') }));
 
     renderMain();
     renderCompo(a, b);
+    renderPedidos(a, b, { PC, PF, PSF, PN, pendPer });
     renderMapa(a, b);
     renderDonas(a, b);
     renderCanalMes();
@@ -319,8 +350,9 @@
     const el = $('ch-main'); const S = D.serie; const n = S.length;
     const ser = { ventas: S.map(s => s.ventas_netas), compras: S.map((s, i) => comprasMes(i)) };
     ser.margen = ser.ventas.map((v, i) => v - ser.compras[i]);
+    ser.pedidos = D.pedidos.serie.map(x => x.confirmado);
     const vis = k => !st.off[k];
-    const all = [].concat(vis('ventas') ? ser.ventas : [], vis('compras') ? ser.compras : [], vis('margen') ? ser.margen : [], [0]);
+    const all = [].concat(vis('ventas') ? ser.ventas : [], vis('compras') ? ser.compras : [], vis('margen') ? ser.margen : [], vis('pedidos') ? ser.pedidos : [], [0]);
     let mx = Math.max(...all), mn = Math.min(...all);
     const paso = (() => { const r = (mx - mn) || 1; const p = Math.pow(10, Math.floor(Math.log10(r / 4))); const m = r / 4 / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; })();
     mx = Math.ceil(mx / paso) * paso; mn = Math.floor(mn / paso) * paso;
@@ -349,6 +381,11 @@
         body += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join('')}" fill="none" stroke="${COL.margen}" stroke-width="2.6" stroke-linejoin="round" style="filter:drop-shadow(0 0 6px color-mix(in srgb, ${COL.margen} 50%, transparent))"/>`;
         pts.forEach((p, i) => { const neg = ser.margen[i] < 0; body += `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="var(--surface)" stroke="${neg ? 'var(--hot)' : COL.margen}" stroke-width="2.4"/>`; });
       }
+      if (vis('pedidos')) {
+        const pp = ser.pedidos.map((v, i) => [xc(i), y(v)]);
+        body += `<path d="${pp.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join('')}" fill="none" stroke="${COL.pedidos}" stroke-width="2.2" stroke-dasharray="6 5" stroke-linejoin="round"/>`;
+        pp.forEach(p => { body += `<rect x="${p[0] - 3.5}" y="${p[1] - 3.5}" width="7" height="7" rx="1.5" transform="rotate(45 ${p[0]} ${p[1]})" fill="${COL.pedidos}"/>`; });
+      }
       el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block">${g}${body}<rect class="hov" x="0" y="0" width="0" height="0"/></svg><div class="tip"></div>`;
       const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
       svg.addEventListener('mousemove', e => {
@@ -359,6 +396,7 @@
           <div class="r"><span>Ventas netas</span><b>${fmt$(ser.ventas[i])}</b></div>
           <div class="r"><span>Compras netas</span><b>${fmt$(ser.compras[i])}</b></div>
           <div class="r"><span>Margen</span><b class="${m < 0 ? 'neg' : 'pos'}">${fmt$(m)} · ${fmtP(ser.ventas[i] ? m / ser.ventas[i] : NaN)}</b></div>
+          <div class="r"><span>Pedidos confirmados</span><b>${fmt$(ser.pedidos[i])} · ${fmtP(ser.pedidos[i] ? D.pedidos.serie[i].facturado / ser.pedidos[i] : NaN)} facturado</b></div>
           <div class="r"><span>Facturas · unidades</span><b>${fmtN(s.n_facturas)} · ${fmtN(s.unidades)}</b></div>`;
         tip.style.opacity = 1;
         const left = xc(i) / W * r.width; tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, left + 14)) + 'px'; tip.style.top = '6px';
@@ -374,6 +412,18 @@
     observar(el, draw);
     document.querySelectorAll('#leg-main button').forEach(bt => { bt.classList.toggle('off', !!st.off[bt.dataset.s]); bt.onclick = () => { st.off[bt.dataset.s] = !st.off[bt.dataset.s]; renderMain(); document.querySelectorAll('#leg-main button').forEach(x => x.classList.toggle('off', !!st.off[x.dataset.s])); }; });
   }
+
+  function renderPedidos(a, b, t) {
+    const PS_ = D.pedidos.serie;
+    const series = [{ name: 'Facturado', color: 'var(--accent)', values: PS_.map(x => x.facturado) }, { name: 'Sin facturar', color: 'var(--warn)', values: PS_.map(x => x.sin_facturar) }];
+    apiladas($('ch-ped'), series);
+    $('ped-resumen').innerHTML = `<span class="c">Confirmado <b>${fmt$(t.PC)}</b> en ${fmtN(t.PN)} pedidos</span> <span class="c">Facturado <b>${fmt$(t.PF)}</b> · ${fmtP(t.PC ? t.PF / t.PC : NaN)}</span> <span class="c">Sin facturar <b>${fmt$(t.PSF)}</b></span>`;
+    const rows = t.pendPer;
+    $('ped-tbl').innerHTML = rows.length ? `<thead><tr><th>Pedido</th><th>Cliente</th><th class="num">Confirmado</th><th class="num">Facturado</th><th class="num">Sin facturar</th></tr></thead><tbody>` +
+      rows.map(p => `<tr><td class="code">${esc(p.pedido)}<span class="sub">${esc(fechaAR(p.fecha))}</span></td><td>${esc(p.cliente)}<span class="sub">${esc(p.canal)}</span></td><td class="num">${fmt$(p.confirmado)}</td><td class="num">${fmt$(p.facturado)}</td><td class="num ${p.sin_facturar < 0 ? 'neg' : ''}" title="${p.sin_facturar < 0 ? 'Se facturó más de lo confirmado en el pedido' : ''}">${p.sin_facturar < 0 ? 'de más ' + fmt$(-p.sin_facturar) : fmt$(p.sin_facturar)}</td></tr>`).join('') + '</tbody>'
+      : '<tbody><tr><td class="muted" style="padding:18px">Todos los pedidos del período están facturados completos.</td></tr></tbody>';
+  }
+  const fechaAR = dt => { const d = new Date(String(dt).replace(' ', 'T') + 'Z'); return d.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }); };
 
   function renderCompo(a, b) {
     const S = D.serie;
@@ -461,7 +511,7 @@
       for (let i = 0; i < n; i++) {
         const dim = i < st.a || i > st.b; let acc = 0; const x = mL + slot * i + (slot - bw) / 2;
         series.forEach(sr => { const v = Math.max(0, sr.values[i]); const h = ih * v / mx; const yy = mT + ih - acc - h; acc += h; if (h > 0) body += `<rect x="${x}" y="${yy}" width="${bw}" height="${h}" fill="${sr.color}" opacity="${dim ? .3 : .92}"/>`; });
-        body += `<text x="${x + bw / 2}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--muted)">${lblMes(S[i].mes)}</text>`;
+        body += `<text x="${x + bw / 2}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--muted)">${slot < 52 ? MES_TXT[+S[i].mes.slice(5) - 1] : lblMes(S[i].mes)}</text>`;
       }
       el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block">${g}${body}</svg><div class="tip"></div>`;
       const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
@@ -533,6 +583,11 @@
       const ok = v => Math.abs(v) < 0.05 ? '<span class="pos">✔ 0,00</span>' : `<span class="neg">${fmt$c(v)}</span>`;
       return `<tr><td>${lblMesLargo(s.mes)}</td><td class="num">${fmt$c(cv.cabecera)}</td><td class="num">${fmt$c(cv.renglones)}</td><td class="num">${ok(cv.dif)}</td><td class="num">${ok(dc)}</td><td class="num">${fmt$c(cc.cabecera)}</td><td class="num">${fmt$c(cc.renglones)}</td><td class="num">${ok(cc.dif)}</td></tr>`;
     }).join('');
+    const cp = D.control.pedidos;
+    const fuera = (cp.desvios || []).filter(d => !d.en_listado), dentro = (cp.desvios || []).filter(d => d.en_listado);
+    $('ctl-ped').innerHTML = `<b>Pedidos:</b> lo facturado de los ${fmtN(cp.n_pedidos)} pedidos confirmados según Odoo es ${fmt$c(cp.facturado_segun_pedidos)}; sumando las facturas vinculadas a pedidos da ${fmt$c(cp.facturado_segun_facturas)}. ` +
+      (dentro.length ? `<span class="neg">Hay ${dentro.length} pedido(s) confirmados que no coinciden: ${esc(dentro.map(d => d.pedido + ' ' + fmt$c(d.dif)).join(' · '))}.</span> ` : '<span class="pos">✔ Todos los pedidos confirmados coinciden al centavo con sus facturas.</span> ') +
+      (fuera.length ? `La diferencia (${fmt$c(cp.dif)}) son facturas vinculadas a pedidos que no figuran como confirmados: ${esc(fuera.map(d => d.pedido + (d.estado ? ' (' + d.estado + ')' : '') + ' ' + fmt$c(d.segun_facturas)).join(' · '))}. Esas facturas sí cuentan en ventas netas.` : '');
     $('ctl-tbl').innerHTML = `<thead><tr><th>Mes</th><th class="num">Ventas (cabeceras)</th><th class="num">Ventas (renglones)</th><th class="num">Diferencia</th><th class="num">Composición</th><th class="num">Compras (cabeceras)</th><th class="num">Compras (renglones)</th><th class="num">Diferencia</th></tr></thead><tbody>${rows}</tbody>`;
   }
 
