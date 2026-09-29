@@ -33,6 +33,8 @@
     table.data td.sku { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--muted); }
     table.data tr.row-main { cursor: pointer; }
     table.data tr.row-main:hover { background: var(--surface-2); }
+    table.data tr.grp td { background: var(--surface-2); font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); padding: 9px 10px; border-bottom: 1px solid var(--border); cursor: default; }
+    table.data tr.grp td .cnt { color: var(--muted); font-weight: 600; }
     .tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; letter-spacing: .03em; }
     .tag.sku { background: var(--accent-tint); color: var(--accent); }
     .tag.pack { background: rgba(255,140,0,.15); color: var(--warn); }
@@ -111,7 +113,32 @@ const FN = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co')
 const KEY = window.SUPABASE_KEY;
 const LS = 'rosaint_escandallo_periodo';
 
-const state = { rows: [], windows: null, meses: [], info: null, sort: { col: 'total', dir: -1 }, filtro: 'all', q: '' };
+const state = { rows: [], windows: null, meses: [], info: null, sort: { col: 'codigo', dir: 1 }, filtro: 'all', q: '' };
+const granelMap = {};  // codigo_granel -> nombre del granel (para agrupar como en el editor de fórmulas)
+
+// Agrupación de referencia (misma que el editor de fórmulas): Bases → graneles
+// terminados por familia (Cremas/Geles/Aceites/Óleos) → Packs → Otros.
+const GRUPOS = {
+  bases:  { label: 'Bases', ord: 0 },
+  CREMA:  { label: 'Cremas', ord: 1 },
+  GEL:    { label: 'Geles', ord: 2 },
+  ACEITE: { label: 'Aceites de masaje', ord: 3 },
+  OLEO:   { label: 'Óleos faciales', ord: 4 },
+  packs:  { label: 'Packs', ord: 5 },
+  otros:  { label: 'Otros', ord: 6 },
+};
+// Base = arranque de otras fórmulas: nombre con "BASE", o "NEUTRO" salvo aceites.
+function esBase(nombre, familia) {
+  const n = (nombre || '').toUpperCase();
+  return /\bBASE\b/.test(n) || (/NEUTR/.test(n) && familia !== 'ACEITE');
+}
+function grupoDe(r) {
+  if (r.clase === 'PACK') return GRUPOS.packs;
+  const gn = granelMap[r.codigo_granel] || r.nombre || '';
+  const fam = gn.trim().split(/\s+/)[0].toUpperCase();
+  if (esBase(gn, fam)) return GRUPOS.bases;
+  return GRUPOS[fam] || GRUPOS.otros;
+}
 
 function fmt(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 function fmt2(n){ const x=Number(n); return isNaN(x)?'—':x.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -153,7 +180,17 @@ function render(){
   if (state.filtro !== 'all') rows = rows.filter(r => r.clase === state.filtro);
   if (state.q) { const q = state.q.toLowerCase(); rows = rows.filter(r => (r.codigo||'').toLowerCase().includes(q) || (r.nombre||'').toLowerCase().includes(q)); }
   const { col, dir } = state.sort;
-  rows.sort((a,b)=>{ let va=a[col], vb=b[col]; if (typeof va==='string'){ va=va||''; vb=vb||''; return dir*va.localeCompare(vb); } return dir*((va||0)-(vb||0)); });
+  // Orden: primero el grupo (Bases → familias → Packs), después la columna elegida
+  // (por defecto el SKU). Así el grupo manda y adentro se ordena por código.
+  for (const r of rows) r._g = grupoDe(r);
+  rows.sort((a,b)=>{
+    if (a._g.ord !== b._g.ord) return a._g.ord - b._g.ord;
+    let va=a[col], vb=b[col];
+    if (typeof va==='string' || typeof vb==='string'){ va=va||''; vb=vb||''; return dir*String(va).localeCompare(String(vb)); }
+    return dir*((va||0)-(vb||0));
+  });
+  const conteo = {};
+  for (const r of rows) conteo[r._g.label] = (conteo[r._g.label]||0) + 1;
 
   const maxTot = Math.max(1, ...rows.map(r=>r.total));
   let h = '<table class="data"><thead><tr>' +
@@ -161,7 +198,12 @@ function render(){
     '<th class="num" data-s="mat">Materia prima<br>+ envase</th><th class="num" data-s="labor">Mano de obra</th>' +
     '<th class="num" data-s="total">Costo total</th><th class="num" data-s="pctMO">% MO</th></tr></thead><tbody>';
   if (!rows.length) h += '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  let grupoActual = null;
   for (const r of rows) {
+    if (r._g.label !== grupoActual) {
+      grupoActual = r._g.label;
+      h += '<tr class="grp"><td colspan="7">'+esc(grupoActual)+' <span class="cnt">· '+conteo[grupoActual]+'</span></td></tr>';
+    }
     const barW = Math.round(r.total/maxTot*60);
     h += '<tr class="row-main" data-cod="'+esc(r.codigo)+'">';
     h += '<td class="sku">'+esc(r.codigo)+'</td>';
@@ -255,12 +297,14 @@ function renderCharts(){
 async function cargar(){
   const msg = document.getElementById('msg');
   try {
-    const [esc1, prod] = await Promise.all([
+    const [esc1, prod, graneles] = await Promise.all([
       sb.from('v_escandallo').select('*'),
       fetch(FN, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY,'apikey':KEY}, body: '{}' }).then(r=>r.json()),
+      sb.from('items').select('codigo,nombre').in('tipo', ['TE','SE']),
     ]);
     if (esc1.error) throw new Error('recetas: ' + esc1.error.message);
     if (!prod.ok) throw new Error('producción: ' + (prod.error||'?'));
+    for (const g of (graneles.data || [])) granelMap[g.codigo] = g.nombre;
     state.rows = esc1.data || [];
     state.windows = prod.windows || null;
     state.meses = prod.meses || [];
