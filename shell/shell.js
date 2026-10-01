@@ -20,6 +20,7 @@ const MENU = [
   { type: 'item', id: 'crm',          label: 'Clientes',     href: 'comercial/crm.html',          status: 'ready' },
   { type: 'item', id: 'cotizador',    label: 'Cotizador',    href: 'comercial/cotizador.html',    status: 'ready' },
   { type: 'item', id: 'seguimientos', label: 'Seguimientos', href: 'comercial/seguimientos.html', status: 'ready' },
+  { type: 'item', id: 'whatsapp',     label: 'WhatsApp',     href: 'comercial/whatsapp.html',     status: 'ready' },
 
   { type: 'group', label: 'Ventas online' },
   { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',   status: 'ready' },
@@ -127,6 +128,7 @@ const MODULE_ICONS = {
   cotizador:      '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5z"/><path d="M8 13h8M8 17h5"/></svg>',
   crm:            '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.5M21 20a5.6 5.6 0 0 0-4-5.4"/></svg>',
   seguimientos:   '<svg viewBox="0 0 24 24"><path d="M1 3h13v11H1z"/><path d="M14 7h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></svg>',
+  whatsapp:       '<svg viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/></svg>',
   canales:        '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.8l7.4-3.6M8.3 13.2l7.4 3.6"/></svg>',
   oportunidades:  '<svg viewBox="0 0 24 24"><path d="M9 21h6M10 21v-3M14 21v-3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2h6c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg>',
   manuales:       '<svg viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v13h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-13h-3c-2.5 0-4.5.5-6 2z"/><path d="M12 6.5v12"/></svg>',

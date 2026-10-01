@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .wa-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .wa-tab { padding: 9px 14px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: 0; border-left: 0; border-right: 0; }
+    .wa-tab.sel { color: var(--text); border-bottom-color: var(--accent); }
+    .wa-tab .n { background: var(--accent); color: var(--on-accent); border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 6px; }
+
+    .wa-resumen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .wa-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 13px; min-width: 120px; display: flex; flex-direction: column; gap: 1px; }
+    .wa-chip .n { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+    .wa-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .wa-chip.hot { border-left: 3px solid var(--hot); } .wa-chip.hot .n { color: var(--hot); }
+    .wa-chip.warn { border-left: 3px solid var(--warn); }
+    .wa-chip.ok { border-left: 3px solid var(--ok); }
+
+    .wa-lista { display: grid; gap: 8px; }
+    .wa-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: start; }
+    .wa-item.hot { border-left: 3px solid var(--hot); }
+    .wa-item.warn { border-left: 3px solid var(--warn); }
+    .wa-nombre { font-weight: 700; font-size: 14px; }
+    .wa-tel { color: var(--muted); font-size: 12px; font-family: var(--font-mono); margin-left: 6px; }
+    .wa-texto { grid-column: 1 / -1; font-size: 13px; color: var(--text); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .wa-meta { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+    .wa-meta b { color: var(--text); }
+    .wa-acciones { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+    .wa-cat { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--muted); margin-left: 6px; }
+    .wa-vacio { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+
+    .wa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+    .wa-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
+    .wa-card h3 { margin: 0; font-size: 15px; }
+    .wa-card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+    .wa-card textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+    .wa-res { font-size: 12.5px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); display: none; white-space: pre-wrap; }
+    .wa-res.ok { display: block; color: var(--ok); }
+    .wa-res.err { display: block; color: var(--hot); }
+    .wa-tpl { font-size: 12.5px; display: grid; gap: 4px; max-height: 220px; overflow: auto; }
+    .wa-tpl div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .wa-tpl span.st { font-weight: 700; font-size: 11px; }
+    .st-APPROVED { color: var(--ok); } .st-PENDING { color: var(--warn); } .st-REJECTED { color: var(--hot); }
+  </style>
+</head>
+<body data-page="whatsapp" data-title="WhatsApp" data-subtitle="Consultas que quedaron sin responder">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="wa-tabs">
+    <button class="wa-tab sel" data-tab="pendientes" onclick="setTab('pendientes')">Sin responder<span class="n" id="t-pend" hidden>0</span></button>
+    <button class="wa-tab" data-tab="conector" onclick="setTab('conector')">Conector</button>
+  </div>
+
+  <!-- ===================== SIN RESPONDER ===================== -->
+  <section id="tab-pendientes">
+    <div class="wa-resumen">
+      <div class="wa-chip hot"><span class="n" id="r-viejos">—</span><span class="l">Más de 24 h</span></div>
+      <div class="wa-chip warn"><span class="n" id="r-hoy">—</span><span class="l">Menos de 24 h</span></div>
+      <div class="wa-chip ok"><span class="n" id="r-total">—</span><span class="l">Chats sin responder</span></div>
+    </div>
+    <div class="wa-lista" id="lista"><div class="wa-vacio">Cargando…</div></div>
+  </section>
+
+  <!-- ===================== CONECTOR ===================== -->
+  <section id="tab-conector" hidden>
+    <div class="wa-grid">
+      <div class="wa-card">
+        <h3>Número conectado</h3>
+        <p id="c-numero">Consultando a Meta…</p>
+        <button class="btn secondary" onclick="estado()">Actualizar</button>
+      </div>
+
+      <div class="wa-card">
+        <h3>Enviar mensaje</h3>
+        <p>Manda una plantilla aprobada de WhatsApp a un teléfono.</p>
+        <label class="label" for="e-to">Teléfono</label>
+        <input class="input" id="e-to" placeholder="341 555-1234">
+        <label class="label" for="e-tpl">Plantilla</label>
+        <select class="input" id="e-tpl"><option value="hello_world|en_US">hello_world (en_US)</option></select>
+        <button class="btn primary" id="e-btn" onclick="enviar()">Enviar por WhatsApp</button>
+        <div class="wa-res" id="e-res"></div>
+      </div>
+
+      <div class="wa-card">
+        <h3>Crear plantilla</h3>
+        <p>Se manda a Meta para su aprobación. Usá {{1}}, {{2}}… para los datos que cambian.</p>
+        <label class="label" for="p-nombre">Nombre</label>
+        <input class="input" id="p-nombre" placeholder="aviso_pedido_listo">
+        <label class="label" for="p-cat">Categoría</label>
+        <select class="input" id="p-cat">
+          <option value="UTILITY">Servicio (pedidos, envíos)</option>
+          <option value="MARKETING">Marketing (promociones)</option>
+        </select>
+        <label class="label" for="p-cuerpo">Texto</label>
+        <textarea id="p-cuerpo" placeholder="Hola {{1}}, tu pedido de Rosaint ya está listo para retirar."></textarea>
+        <button class="btn primary" id="p-btn" onclick="crearPlantilla()">Crear plantilla</button>
+        <div class="wa-res" id="p-res"></div>
+      </div>
+
+      <div class="wa-card">
+        <h3>Plantillas de la cuenta</h3>
+        <div class="wa-tpl" id="c-tpl"><p>—</p></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+const FN = window.SUPABASE_URL + '/functions/v1/wsp-webhook';
+
+function setTab(t){
+  document.querySelectorAll('.wa-tab').forEach(b => b.classList.toggle('sel', b.dataset.tab === t));
+  document.getElementById('tab-pendientes').hidden = t !== 'pendientes';
+  document.getElementById('tab-conector').hidden = t !== 'conector';
+  if (t === 'conector') estado();
+}
+
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function hace(h){
+  if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min';
+  if (h < 48) return Math.round(h) + ' h';
+  return Math.round(h / 24) + ' días';
+}
+
+// Teléfono 549XXXXXXXXXX → 341 555-1234 para mostrar
+function telLindo(t){
+  const d = String(t || '').replace(/^549/, '');
+  return d.length === 10 ? d.slice(0,3) + ' ' + d.slice(3,6) + '-' + d.slice(6) : t;
+}
+
+async function api(body){
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess && sess.session && sess.session.access_token;
+  const r = await fetch(FN, {
+    method: 'POST',
+    headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+// ---------------- Sin responder
+async function cargarPendientes(){
+  const lista = document.getElementById('lista');
+  const { data, error } = await sb.from('wsp_pendientes').select('*').order('ultimo_mensaje', { ascending: true });
+  if (error){ lista.innerHTML = '<div class="wa-vacio">No se pudo leer: ' + esc(error.message) + '</div>'; return; }
+  const filas = (data || []).filter(f => f.categoria !== 'no_requiere');
+  const viejos = filas.filter(f => f.horas_esperando >= 24).length;
+  document.getElementById('r-viejos').textContent = viejos;
+  document.getElementById('r-hoy').textContent = filas.length - viejos;
+  document.getElementById('r-total').textContent = filas.length;
+  const tp = document.getElementById('t-pend');
+  tp.textContent = filas.length; tp.hidden = !filas.length;
+
+  if (!filas.length){
+    lista.innerHTML = '<div class="wa-vacio">No hay consultas sin responder. 🎉<br><small>Cuando WhatsApp esté conectado, acá aparece cada chat donde el último mensaje es del cliente.</small></div>';
+    return;
+  }
+  lista.innerHTML = filas.map(f => {
+    const cls = f.horas_esperando >= 24 ? 'hot' : 'warn';
+    const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(f.telefono);
+    return `<div class="wa-item ${cls}">
+      <div><span class="wa-nombre">${esc(f.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${f.categoria ? `<span class="wa-cat">${esc(f.categoria)}</span>` : ''}</div>
+      <div class="wa-meta">esperando <b>${hace(f.horas_esperando)}</b>${f.sin_responder > 1 ? ' · ' + f.sin_responder + ' mensajes' : ''}</div>
+      <div class="wa-texto">${esc(f.resumen || f.ultimo_texto || '[' + (f.ultimo_tipo || 'mensaje') + ']')}</div>
+      <div class="wa-acciones">
+        <a class="btn primary" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
+        <button class="btn secondary" onclick="atendido('${esc(f.telefono)}')">Ya lo atendimos</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function atendido(tel){
+  const { error } = await sb.from('wsp_chat_estado').upsert({ telefono: tel, atendido_hasta: new Date().toISOString(), actualizado: new Date().toISOString() }, { onConflict: 'telefono' });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  cargarPendientes();
+}
+
+// ---------------- Conector
+async function estado(){
+  const n = document.getElementById('c-numero');
+  n.textContent = 'Consultando a Meta…';
+  try {
+    const r = await api({ accion: 'estado' });
+    if (!r.ok) throw new Error(r.error);
+    const num = r.numero || {};
+    n.innerHTML = `<b>${esc(num.display_phone_number || '—')}</b> · ${esc(num.verified_name || '')}${num.quality_rating ? ' · calidad ' + esc(num.quality_rating) : ''}`;
+    const tpls = r.plantillas || [];
+    document.getElementById('c-tpl').innerHTML = tpls.length
+      ? tpls.map(t => `<div><span>${esc(t.name)} <small>(${esc(t.language)})</small></span><span class="st st-${esc(t.status)}">${esc(t.status)}</span></div>`).join('')
+      : '<p>Sin plantillas.</p>';
+    const sel = document.getElementById('e-tpl');
+    const aprobadas = tpls.filter(t => t.status === 'APPROVED');
+    if (aprobadas.length) sel.innerHTML = aprobadas.map(t => `<option value="${esc(t.name)}|${esc(t.language)}">${esc(t.name)} (${esc(t.language)})</option>`).join('');
+  } catch (e) {
+    n.textContent = 'No se pudo consultar: ' + e.message;
+  }
+}
+
+function resultado(id, ok, txt){
+  const el = document.getElementById(id);
+  el.className = 'wa-res ' + (ok ? 'ok' : 'err');
+  el.textContent = txt;
+}
+
+async function enviar(){
+  const to = document.getElementById('e-to').value.trim();
+  const [plantilla, idioma] = document.getElementById('e-tpl').value.split('|');
+  if (!to) return resultado('e-res', false, 'Falta el teléfono.');
+  const b = document.getElementById('e-btn'); b.disabled = true;
+  try {
+    const r = await api({ accion: 'enviar', to, plantilla, idioma });
+    if (!r.ok) throw new Error(r.error);
+    resultado('e-res', true, '✓ Enviado a ' + telLindo(r.to) + '\nID de WhatsApp: ' + r.id);
+  } catch (e) { resultado('e-res', false, e.message); }
+  b.disabled = false;
+}
+
+async function crearPlantilla(){
+  const nombre = document.getElementById('p-nombre').value.trim();
+  const cuerpo = document.getElementById('p-cuerpo').value.trim();
+  const categoria = document.getElementById('p-cat').value;
+  if (!nombre || !cuerpo) return resultado('p-res', false, 'Completá el nombre y el texto.');
+  const b = document.getElementById('p-btn'); b.disabled = true;
+  try {
+    const r = await api({ accion: 'crear_plantilla', nombre, cuerpo, categoria });
+    if (!r.ok) throw new Error(r.error);
+    resultado('p-res', true, '✓ Plantilla "' + r.nombre + '" creada · estado: ' + r.estado + '\nID: ' + r.id);
+    estado();
+  } catch (e) { resultado('p-res', false, e.message); }
+  b.disabled = false;
+}
+
+cargarPendientes();
+</script>
+</body>
+</html>
