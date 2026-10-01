@@ -42,6 +42,7 @@ const MENU = [
   { type: 'group', label: 'Precios' },
   { type: 'item', id: 'precios',      label: 'Precios',      href: 'precios/index.html',        status: 'ready' },
   { type: 'item', id: 'rentabilidad', label: 'Rentabilidad', href: 'precios/rentabilidad.html', status: 'ready' },
+  { type: 'item', id: 'actualizar-canales', label: 'Actualizar canales', href: 'precios/actualizar-canales.html', status: 'ready' },
 
   { type: 'group', label: 'Contabilidad' },
   { type: 'item', id: 'cierre',           label: 'Cierre mensual',        href: 'contabilidad/cierre.html',            status: 'ready' },
@@ -135,6 +136,7 @@ const MODULE_ICONS = {
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
   escandallo:     '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>',
   rentabilidad:   '<svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  'actualizar-canales': '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M21 4v5h-5M3 20v-5h5"/></svg>',
   conciliador:    '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2.4"/></svg>',
   percepciones:   '<svg viewBox="0 0 24 24"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
   percepcionesarca: '<svg viewBox="0 0 24 24"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>',

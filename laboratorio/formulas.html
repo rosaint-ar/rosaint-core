@@ -1892,14 +1892,15 @@ function renderPrecios() {
     const l1Real  = calcularMargenReal(l1Sin, p.costo_unitario);
 
     let l2Con = pr.l2.publicado;
-    if (l2Con == null && l1Con != null) l2Con = Math.round((l1Con * 0.70) / 100) * 100;
+    // Mismo redondeo que la base (propagar_precio_ancla y v_lista_publica): hacia arriba a $100
+    if (l2Con == null && l1Con != null) l2Con = Math.ceil((l1Con * 0.70) / 100) * 100;
     const l2Sin  = conIvaASin(l2Con);
     const l2Gan  = calcularGanancia(l2Sin, p.costo_unitario);
     const l2Real = calcularMargenReal(l2Sin, p.costo_unitario);
 
-    const esc20Con = l2Con != null ? l2Con * 0.80 : null;
-    const esc30Con = l2Con != null ? l2Con * 0.70 : null;
-    const esc35Con = l2Con != null ? l2Con * 0.65 : null;
+    const esc20Con = l2Con != null ? Math.ceil(l2Con * 0.80 / 100) * 100 : null;
+    const esc30Con = l2Con != null ? Math.ceil(l2Con * 0.70 / 100) * 100 : null;
+    const esc35Con = l2Con != null ? Math.ceil(l2Con * 0.65 / 100) * 100 : null;
     const esc20Real = calcularMargenReal(conIvaASin(esc20Con), p.costo_unitario);
     const esc30Real = calcularMargenReal(conIvaASin(esc30Con), p.costo_unitario);
     const esc35Real = calcularMargenReal(conIvaASin(esc35Con), p.costo_unitario);

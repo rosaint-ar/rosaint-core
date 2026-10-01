@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Actualizar canales · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .intro { color: var(--muted); font-size: 13.5px; max-width: 760px; margin: 0 0 16px; line-height: 1.55; }
+    .barra { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    .canal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+    .canal-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .canal-h h2 { font-size: 15px; margin: 0; font-weight: 700; }
+    .canal-h .nota { color: var(--muted); font-size: 12.5px; }
+    .tarea { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--border); }
+    .tarea:last-child { border-bottom: 0; }
+    .tarea .nom { font-weight: 600; font-size: 13.5px; }
+    .tarea .desc { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .estado { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 999px; white-space: nowrap; background: var(--surface-2, var(--bg)); color: var(--muted); }
+    .estado.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+    .estado.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+    .estado.hot { background: color-mix(in srgb, var(--hot) 15%, transparent); color: var(--hot); }
+    .acciones { display: flex; gap: 6px; }
+    .acciones .btn { padding: 6px 12px; font-size: 12.5px; }
+    .detalle { grid-column: 1 / -1; display: none; }
+    .detalle.abierto { display: block; }
+    .detalle .tbl { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .detalle table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+    .detalle th, .detalle td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .detalle th { position: sticky; top: 0; background: var(--surface); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .detalle td.n, .detalle th.n { text-align: right; }
+    .confirmar { display: none; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 13px; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .confirmar.abierto { display: flex; }
+    .msg { font-size: 12.5px; margin-top: 8px; color: var(--muted); }
+    .msg.err { color: var(--hot); }
+    .sub { color: var(--muted); font-size: 11.5px; }
+    @media (max-width: 640px) { .tarea { grid-template-columns: 1fr; } .acciones { justify-content: flex-start; } }
+  </style>
+</head>
+<body data-page="actualizar-canales" data-title="Actualizar canales" data-subtitle="Lleva los precios del Core a Odoo y Tienda Nube">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <p class="intro">
+    El Core es la fuente de los precios. Cuando cambies las listas (por ejemplo, un aumento en las anclas),
+    usá esta pantalla para pasar los precios a cada canal. <b>Revisar</b> solo compara y muestra qué cambiaría.
+    <b>Aplicar</b> escribe en el canal y después vuelve a leerlo para confirmar que quedó igual al Core.
+  </p>
+  <div class="barra">
+    <button class="btn primary" id="btn-revisar-todo">Revisar todos los canales</button>
+    <span class="sub" id="ult-revision"></span>
+  </div>
+  <div id="canales"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+(function () {
+  const FN = (n) => `${window.SUPABASE_URL}/functions/v1/${n}`;
+  const fmt = (v) => (v === null || v === undefined || v === '') ? '—' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  async function llamar(fn, body) {
+    const r = await fetch(FN(fn), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${window.SUPABASE_KEY}`, apikey: window.SUPABASE_KEY },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({ ok: false, error: `Respuesta inválida (${r.status})` }));
+    if (d.ok === false && d.error) throw new Error(d.error);
+    return d;
+  }
+
+  // Cada tarea sabe revisar (solo lectura), aplicar, y convertir la respuesta en filas {codigo, antes, nuevo}.
+  // Los combos de Odoo copian el precio final de Tienda Nube, por eso se calculan desde el ensayo de TN.
+  let combosTN = null;
+  async function preciosCombosTN() {
+    if (!combosTN) {
+      const d = await llamar('odoo-packs-precioventa', { tienda_nube: 'ensayo' });
+      combosTN = {};
+      for (const f of d.filas) if (f.tipo === 'combo') combosTN[f.sku] = f.promo_nuevo ?? f.price_nuevo;
+    }
+    return combosTN;
+  }
+
+  const CANALES = [
+    { id: 'odoo', nombre: 'Odoo', nota: 'Empresa VELAZQUEZ · precios con IVA', tareas: [
+      { id: 'l1', nombre: 'Lista 1 Público y Precio de Venta', desc: 'Igual a la Lista 1 del Core',
+        revisar: () => llamar('odoo-precios-aplicar', { objetivo: 'publico', dry_run: true }),
+        aplicar: () => llamar('odoo-precios-aplicar', { objetivo: 'publico', dry_run: false }),
+        filas: (d) => (d.cambios || []).map((c) => ({ codigo: c.codigo, nombre: c.nombre, antes: c.tarifa_antes ?? c.list_price_antes, nuevo: c.precio_nuevo })),
+        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0 },
+      { id: 'l2', nombre: 'Lista 2 Profesional', desc: 'Igual a la Lista 2 del Core',
+        revisar: () => llamar('odoo-precios-aplicar', { objetivo: 'profesional', dry_run: true }),
+        aplicar: () => llamar('odoo-precios-aplicar', { objetivo: 'profesional', dry_run: false }),
+        filas: (d) => (d.cambios || []).map((c) => ({ codigo: c.codigo, nombre: c.nombre, antes: c.tarifa_antes, nuevo: c.precio_nuevo })),
+        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0 },
+      { id: 'packs', nombre: 'Packs x4', desc: 'Precio de Venta y Lista 2 = precio del pack en el Core',
+        revisar: () => llamar('odoo-packs-precioventa', { dry_run: true }),
+        aplicar: () => llamar('odoo-packs-precioventa', { dry_run: false }),
+        filas: (d) => (d.plan || []).filter((p) => p.list_price !== 'ya OK' || p.l2 !== 'ya OK').map((p) => ({ codigo: p.code, antes: p.l2_antes ?? p.list_price_antes, nuevo: p.objetivo })),
+        pendientes: (d) => (d.plan || []).filter((p) => p.list_price !== 'ya OK' || p.l2 !== 'ya OK').length },
+      { id: 'l5', nombre: 'Lista 5 Tienda Online', desc: 'Igual a lo que paga el cliente en Tienda Nube (con la promo del producto)',
+        revisar: () => llamar('odoo-packs-precioventa', { lista5: true, dry_run: true }),
+        aplicar: () => llamar('odoo-packs-precioventa', { lista5: true, dry_run: false }),
+        filas: (d) => (d.plan || []).filter((p) => p.accion !== 'ya OK').map((p) => ({ codigo: p.code, antes: p.antes, nuevo: p.objetivo })),
+        pendientes: (d) => d.cambios ?? 0 },
+      { id: 'combos', nombre: 'Combos', desc: 'Igual al precio final de Tienda Nube (10% menos que los sueltos)',
+        revisar: async () => llamar('odoo-packs-precioventa', { combos: await preciosCombosTN(), dry_run: true }),
+        aplicar: async () => llamar('odoo-packs-precioventa', { combos: await preciosCombosTN(), dry_run: false }),
+        filas: (d) => {
+          const out = []; let base = {};
+          for (const p of d.plan || []) {
+            if (p.que === 'list_price') { base[p.tmpl_id] = { antes: p.antes, ahora: p.ahora }; continue; }
+            const b = base[p.tmpl_id] || { antes: 0, ahora: 0 };
+            const antes = b.antes + (p.antes || 0), nuevo = p.precio_final;
+            if (Math.abs(antes - nuevo) > 0.005) out.push({ codigo: p.code, antes, nuevo });
+          }
+          return out;
+        },
+        pendientes: (d) => CANALES[0].tareas[4].filas(d).length },
+    ]},
+    { id: 'tn', nombre: 'Tienda Nube', nota: 'Tienda Rosaint · Lista 1 × factor del canal, con promos y combos', tareas: [
+      { id: 'tn', nombre: 'Precios y promos de la tienda', desc: 'Productos sueltos, promos de 4 y 10 Kg y combos',
+        revisar: () => llamar('odoo-packs-precioventa', { tienda_nube: 'ensayo' }),
+        aplicar: () => { combosTN = null; return llamar('odoo-packs-precioventa', { tienda_nube: 'aplicar' }); },
+        filas: (d) => (d.filas || []).filter((f) => f.cambia).map((f) => ({ codigo: f.sku, nombre: f.nombre,
+          antes: f.promo ?? f.price, nuevo: f.promo_nuevo ?? f.price_nuevo, extra: f.promo_nuevo != null ? `lista ${fmt(f.price_nuevo)}` : '' })),
+        pendientes: (d) => d.resumen?.a_cambiar ?? 0 },
+    ]},
+    { id: 'ml', nombre: 'Mercado Libre', nota: 'Pendiente: tiene su propia lógica de cálculo (precio de lista, campañas y cortes de envío)', tareas: [] },
+  ];
+
+  function render() {
+    const cont = document.getElementById('canales');
+    cont.innerHTML = CANALES.map((c) => `
+      <section class="canal">
+        <div class="canal-h"><h2>${esc(c.nombre)}</h2><span class="nota">${esc(c.nota)}</span></div>
+        ${c.tareas.length ? c.tareas.map((t) => `
+          <div class="tarea" id="t-${c.id}-${t.id}">
+            <div><div class="nom">${esc(t.nombre)}</div><div class="desc">${esc(t.desc)}</div></div>
+            <span class="estado" data-estado>Sin revisar</span>
+            <div class="acciones">
+              <button class="btn" data-revisar>Revisar</button>
+              <button class="btn primary" data-aplicar disabled>Aplicar</button>
+            </div>
+            <div class="detalle" data-detalle>
+              <div class="tbl"><table><thead><tr><th>Código</th><th>Producto</th><th class="n">Hoy</th><th class="n">Nuevo</th><th></th></tr></thead><tbody></tbody></table></div>
+              <div class="confirmar" data-confirmar>
+                <span data-texto></span>
+                <button class="btn primary" data-si>Sí, aplicar</button>
+                <button class="btn" data-no>Cancelar</button>
+              </div>
+              <div class="msg" data-msg></div>
+            </div>
+          </div>`).join('') : '<div class="tarea"><div class="desc">Todavía no se actualiza desde acá.</div></div>'}
+      </section>`).join('');
+    for (const c of CANALES) for (const t of c.tareas) conectar(c, t);
+  }
+
+  function conectar(c, t) {
+    const el = document.getElementById(`t-${c.id}-${t.id}`);
+    const estado = el.querySelector('[data-estado]');
+    const bRev = el.querySelector('[data-revisar]'), bApl = el.querySelector('[data-aplicar]');
+    const det = el.querySelector('[data-detalle]'), tbody = el.querySelector('tbody');
+    const conf = el.querySelector('[data-confirmar]'), msg = el.querySelector('[data-msg]');
+    let n = 0;
+
+    function pintar(d) {
+      const filas = t.filas(d); n = t.pendientes(d);
+      estado.className = 'estado ' + (n ? 'warn' : 'ok');
+      estado.textContent = n ? `${n} para actualizar` : 'Al día';
+      bApl.disabled = !n;
+      tbody.innerHTML = filas.length ? filas.map((f) => `<tr><td>${esc(f.codigo)}</td><td>${esc(f.nombre || '')}</td><td class="n">${fmt(f.antes)}</td><td class="n"><b>${fmt(f.nuevo)}</b></td><td class="sub">${esc(f.extra || '')}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="sub">No hay diferencias: el canal está igual al Core.</td></tr>';
+      el.querySelector('.tbl').hidden = !filas.length;
+      det.classList.toggle('abierto', filas.length > 0 || !!msg.textContent);
+    }
+    t.revisarYPintar = async () => {
+      estado.className = 'estado'; estado.textContent = 'Revisando…'; bRev.disabled = true; msg.textContent = ''; msg.className = 'msg';
+      try { pintar(await t.revisar()); }
+      catch (e) { estado.className = 'estado hot'; estado.textContent = 'Error'; det.classList.add('abierto'); msg.className = 'msg err'; msg.textContent = 'No se pudo revisar: ' + e.message; }
+      finally { bRev.disabled = false; }
+    };
+    bRev.addEventListener('click', t.revisarYPintar);
+    bApl.addEventListener('click', () => {
+      el.querySelector('[data-texto]').textContent = `Se van a escribir ${n} precio(s) en ${c.nombre}.`;
+      conf.classList.add('abierto');
+    });
+    el.querySelector('[data-no]').addEventListener('click', () => conf.classList.remove('abierto'));
+    el.querySelector('[data-si]').addEventListener('click', async () => {
+      conf.classList.remove('abierto'); bApl.disabled = true; bRev.disabled = true;
+      estado.className = 'estado'; estado.textContent = 'Aplicando…'; msg.className = 'msg'; msg.textContent = 'Escribiendo en el canal, puede tardar un minuto.';
+      try {
+        await t.aplicar();
+        if (c.id === 'tn') combosTN = null;
+        await t.revisarYPintar();
+        msg.className = 'msg'; msg.textContent = n ? `Quedaron ${n} diferencias después de aplicar. Revisalas en la tabla.` : 'Listo: aplicado y verificado contra el Core.';
+        det.classList.add('abierto');
+        if (window.toast) toast(n ? 'Aplicado con diferencias' : 'Precios actualizados', n ? 'err' : 'ok');
+      } catch (e) {
+        estado.className = 'estado hot'; estado.textContent = 'Error'; msg.className = 'msg err'; msg.textContent = 'No se pudo aplicar: ' + e.message;
+      } finally { bRev.disabled = false; }
+    });
+  }
+
+  document.getElementById('btn-revisar-todo').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget; b.disabled = true; combosTN = null;
+    const tareas = CANALES.flatMap((c) => c.tareas);
+    // De a una: Odoo y Tienda Nube no aceptan muchas consultas juntas.
+    for (const t of tareas) await t.revisarYPintar();
+    document.getElementById('ult-revision').textContent = 'Revisado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    b.disabled = false;
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

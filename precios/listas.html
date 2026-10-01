@@ -612,12 +612,13 @@ function renderFila(s, enCascada) {
 
   // Precio L1 c/IVA a mostrar
   const l1 = precioL1Efectivo(cod);
-  // L2 = L1 × 0.7 redondeado al múltiplo más cercano de $100
-  const l2 = l1 != null ? Math.round((l1 * 0.70) / 100) * 100 : null;
-  // Escalones L2
-  const l2_20 = l2 != null ? l2 * 0.80 : null;
-  const l2_30 = l2 != null ? l2 * 0.70 : null;
-  const l2_35 = l2 != null ? l2 * 0.65 : null;
+  // L2 = L1 × 0,70 redondeado HACIA ARRIBA a $100, igual que propagar_precio_ancla en la base
+  // (antes redondeaba al más cercano y 46 de 110 productos se veían $100 por debajo de lo guardado).
+  const l2 = l1 != null ? Math.ceil((l1 * 0.70) / 100) * 100 : null;
+  // Escalones L2: mismo redondeo que v_lista_publica (la lista que se publica)
+  const l2_20 = l2 != null ? Math.ceil(l2 * 0.80 / 100) * 100 : null;
+  const l2_30 = l2 != null ? Math.ceil(l2 * 0.70 / 100) * 100 : null;
+  const l2_35 = l2 != null ? Math.ceil(l2 * 0.65 / 100) * 100 : null;
 
   // Rentabilidades
   const rL1 = rent(l1, costo);
