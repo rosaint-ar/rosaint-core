@@ -72,6 +72,13 @@
   <section id="tab-conector" hidden>
     <div class="wa-grid">
       <div class="wa-card">
+        <h3>Conectar el número de Rosaint</h3>
+        <p>Abre la ventana de Meta para vincular el WhatsApp Business existente (coexistencia): se sigue usando la app en el celular. Al terminar, Meta desvincula las computadoras; después se vuelven a vincular.</p>
+        <button class="btn primary" id="cx-btn" onclick="conectarNumero()">Conectar con Meta</button>
+        <div class="wa-res" id="cx-res"></div>
+      </div>
+
+      <div class="wa-card">
         <h3>Número conectado</h3>
         <p id="c-numero">Consultando a Meta…</p>
         <button class="btn secondary" onclick="estado()">Actualizar</button>
@@ -244,7 +251,41 @@ async function crearPlantilla(){
   b.disabled = false;
 }
 
+// ---------------- Conexión del número (registro insertado de Meta, modo coexistencia)
+const META_APP_ID = '1634017348240006';
+const META_CONFIG_ID = '1105694595478836'; // "ES Config" de la app Rosaint Conector
+
+window.fbAsyncInit = function(){
+  FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: false, version: 'v26.0' });
+};
+
+// Meta informa por postMessage cómo terminó la ventana (ids de la cuenta y del número, o en qué paso se cortó)
+window.addEventListener('message', (ev) => {
+  if (!/(^|\.)facebook\.com$/.test(new URL(ev.origin).hostname)) return;
+  let d; try { d = JSON.parse(ev.data); } catch { return; }
+  if (d.type !== 'WA_EMBEDDED_SIGNUP') return;
+  const ok = /^FINISH/.test(d.event);
+  resultado('cx-res', ok, (ok ? '✓ ' : '') + 'Meta: ' + d.event + '\n' + JSON.stringify(d.data || {}, null, 1));
+});
+
+function conectarNumero(){
+  if (!window.FB) return resultado('cx-res', false, 'Todavía no cargó el conector de Meta. Probá de nuevo en unos segundos.');
+  resultado('cx-res', true, 'Ventana de Meta abierta…');
+  FB.login((resp) => {
+    if (!resp.authResponse) {
+      const el = document.getElementById('cx-res');
+      if (!/FINISH/.test(el.textContent)) resultado('cx-res', false, 'La ventana se cerró sin terminar la conexión.');
+    }
+  }, {
+    config_id: META_CONFIG_ID,
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
+  });
+}
+
 cargarPendientes();
 </script>
+<script async defer crossorigin="anonymous" src="https://connect.facebook.net/es_LA/sdk.js"></script>
 </body>
 </html>
