@@ -149,6 +149,15 @@
     </div>
   </div>
 
+  <!-- Transferencias de Tienda Nube que siguen sin confirmarse -->
+  <div class="card" id="transferencias" style="margin-bottom:14px">
+    <div class="panel-head">
+      <h2>💸 Transferencias por confirmar <span id="transf-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+      <div class="despacho-actions"><a href="javascript:cargarTransferencias()" class="link">↻</a></div>
+    </div>
+    <div class="lista-mini" id="transf-lista"><div class="empty-mini">Cargando…</div></div>
+  </div>
+
   <!-- A despachar hoy (Mercado Libre) -->
   <div class="card" style="margin-bottom:14px">
     <div class="panel-head">
@@ -331,6 +340,60 @@ async function cargarGraficoProduccion() {
   }
 }
 
+// TRANSFERENCIAS SIN CONFIRMAR (Tienda Nube). El cliente eligio transferencia y la orden sigue sin
+// marcarse como paga en la tienda. Mientras no se marque, la venta NO entra a Odoo: si la plata ya
+// cayo al banco y nadie la confirma, queda en el aire y nada avisa. Por eso este panel.
+// Se consulta solo al abrir el Inicio y con el boton de refrescar (NO en el refresco de cada
+// minuto): cada consulta pega a la API de Tienda Nube.
+const TRANSF_DIAS = 1;      // las del dia no molestan: puede estar por pagar
+const TRANSF_CRITICO = 7;   // de aca en adelante pasa a rojo
+let transfPendientes = 0, transfViejas = 0;
+
+// WhatsApp quiere 549 + area + numero. Tienda Nube manda con o sin el 9, asi que se normaliza.
+function waNumero(tel) {
+  let d = String(tel || '').replace(/[^0-9]/g, '');
+  if (!d) return '';
+  if (d.startsWith('54')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('9')) d = d.slice(1);
+  return d.length === 10 ? '549' + d : '';
+}
+
+async function cargarTransferencias() {
+  const cont = document.getElementById('transf-lista'), sub = document.getElementById('transf-sub');
+  cont.innerHTML = '<div class="empty-mini">Cargando…</div>';
+  try {
+    const { data: j, error } = await sb.functions.invoke('tn-odoo-cargar', { body: { modo: 'transferencias', dias: TRANSF_DIAS } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    const lista = j.transferencias || [];
+    transfPendientes = lista.length;
+    transfViejas = lista.filter(t => t.dias >= TRANSF_CRITICO).length;
+    if (!lista.length) {
+      cont.innerHTML = '<div class="empty-mini">✓ Ninguna transferencia sin confirmar</div>'; sub.textContent = '';
+    } else {
+      const total = lista.reduce((a, t) => a + Number(t.total || 0), 0);
+      sub.textContent = '· $' + fmt(total) + ' sin confirmar';
+      cont.innerHTML = lista.map(t => {
+        const wa = waNumero(t.telefono);
+        // Para el saludo: el primer pedazo del nombre que SEA un nombre. Hay clientes que escriben
+        // su mail en el campo del nombre (ej. "marilinaquiroz78@Gmail.com Marilina Quiroz").
+        const pedazos = String(t.cliente || '').trim().split(' ').filter(p => p.length > 1 && p.indexOf('@') < 0 && /[a-zA-Z]/.test(p));
+        const nombre = pedazos.length ? pedazos[0].charAt(0).toUpperCase() + pedazos[0].slice(1) : '';
+        const msg = '¡Hola' + (nombre ? ' ' + nombre : '') + '! Te escribo de Rosaint por tu pedido #' + t.numero +
+          ' de $' + fmt(t.total) + '. Nos figura con la transferencia pendiente. Si ya la hiciste, pasanos el comprobante y lo despachamos. ¡Gracias!';
+        return '<div class="item"><span class="item__nombre">' + escapeHTML(t.cliente || '(sin nombre)') +
+          ' <span style="color:var(--muted)">· #' + escapeHTML(t.numero) + ' · $' + fmt(t.total) + '</span>' +
+          '<span class="despacho-atrasado-tag">' + tiempoRelativo(t.dias) + '</span></span>' +
+          (wa ? '<a class="despacho-btn wpp" target="_blank" rel="noopener" style="text-decoration:none" href="https://api.whatsapp.com/send?phone=' + wa +
+            '&text=' + encodeURIComponent(msg) + '">WhatsApp</a>' : '<span class="item__qty">sin tel.</span>') + '</div>';
+      }).join('');
+    }
+    cargarAlertas();   // para que el conteo de "Pendientes" los incluya ya en la primera carga
+  } catch (err) {
+    cont.innerHTML = '<div class="empty-mini">No se pudieron leer las transferencias (' + escapeHTML(err.message) + ')</div>';
+  }
+}
+
 async function cargarAlertas() {
   const alertas = [];
   const { data: mpsSinInci } = await sb.from('v_mps_sin_inci_en_uso').select('codigo');
@@ -345,6 +408,7 @@ async function cargarAlertas() {
   const { data: pedVenc } = await sb.from('prod_pedidos').select('id').lt('fecha_compromiso', HOY);
   if (pedVenc && pedVenc.length) alertas.push({ cls: 'critico', texto: '<strong>' + pedVenc.length + ' pedido' + (pedVenc.length === 1 ? '' : 's') + '</strong> con fecha de compromiso vencida', cnt: pedVenc.length, href: 'produccion/index.html' });
 
+  if (transfPendientes) alertas.push({ cls: transfViejas ? 'critico' : 'warn', texto: '<strong>' + transfPendientes + ' transferencia' + (transfPendientes === 1 ? '' : 's') + '</strong> sin confirmar en Tienda Nube', cnt: transfPendientes, href: '#transferencias' });
   document.getElementById('alertas-count').textContent = alertas.length ? '(' + alertas.length + ')' : '';
   const cont = document.getElementById('alertas-list');
   if (!alertas.length) { cont.innerHTML = '<div class="pend-ok">✓ Sin pendientes. Todo en orden.</div>'; return; }
@@ -402,6 +466,7 @@ async function cargarDespacho() {
 
 cargarTodo();
 cargarDespacho();
+cargarTransferencias();
 setInterval(() => cargarTodo(), 60000);
 </script>
 </body>
