@@ -358,6 +358,32 @@ function waNumero(tel) {
   return d.length === 10 ? '549' + d : '';
 }
 
+// Cancela la orden en Tienda Nube (y al desaparecer de las pendientes se va del panel sola).
+// Decidido con Diego: NO se le manda mail a la clienta y el stock vuelve. La function se niega
+// a cancelar una orden paga, y pide sesion para escribir.
+async function cancelarTransferencia(btn, t) {
+  if (!t) return;
+  const NL = String.fromCharCode(10);
+  const aviso = [
+    'Cancelar el pedido #' + t.numero + ' de ' + (t.cliente || 'sin nombre') + ' por $' + fmt(t.total) + ' en Tienda Nube.',
+    '',
+    'No se le avisa por mail y el stock vuelve al depósito.',
+    'No se puede deshacer.',
+  ].join(NL);
+  if (!confirm(aviso)) return;
+  const textoPrevio = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Cancelando…';
+  try {
+    const { data: j, error } = await sb.functions.invoke('tn-odoo-cargar', { body: { modo: 'cancelar', tn_id: t.tn_id, numero: t.numero, confirmar: true } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    await cargarTransferencias();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = textoPrevio;
+    alert('No se pudo cancelar el pedido #' + t.numero + ':' + NL + NL + err.message);
+  }
+}
+
 async function cargarTransferencias() {
   const cont = document.getElementById('transf-lista'), sub = document.getElementById('transf-sub');
   cont.innerHTML = '<div class="empty-mini">Cargando…</div>';
@@ -384,9 +410,15 @@ async function cargarTransferencias() {
         return '<div class="item"><span class="item__nombre">' + escapeHTML(t.cliente || '(sin nombre)') +
           ' <span style="color:var(--muted)">· #' + escapeHTML(t.numero) + ' · $' + fmt(t.total) + '</span>' +
           '<span class="despacho-atrasado-tag">' + tiempoRelativo(t.dias) + '</span></span>' +
+          '<span style="display:flex;gap:6px;align-items:center">' +
           (wa ? '<a class="despacho-btn wpp" target="_blank" rel="noopener" style="text-decoration:none" href="https://api.whatsapp.com/send?phone=' + wa +
-            '&text=' + encodeURIComponent(msg) + '">WhatsApp</a>' : '<span class="item__qty">sin tel.</span>') + '</div>';
+            '&text=' + encodeURIComponent(msg) + '">WhatsApp</a>' : '') +
+          '<button class="despacho-btn transf-cancel" data-id="' + escapeHTML(t.tn_id || t.numero) + '">Cancelar</button>' +
+          '</span></div>';
       }).join('');
+      for (const btn of cont.querySelectorAll('.transf-cancel')) {
+        btn.onclick = () => cancelarTransferencia(btn, lista.find(t => String(t.tn_id) === btn.dataset.id || String(t.numero) === btn.dataset.id));
+      }
     }
     cargarAlertas();   // para que el conteo de "Pendientes" los incluya ya en la primera carga
   } catch (err) {
