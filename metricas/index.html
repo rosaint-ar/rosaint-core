@@ -20,6 +20,8 @@
     .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
     @media (max-width: 1250px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 760px) { .kpis { grid-template-columns: 1fr 1fr; } }
+    .kpis.combo-kpis { grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+    @media (max-width: 760px) { .kpis.combo-kpis { grid-template-columns: 1fr 1fr; } }
     .kpi .v { font-size: 23px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .kpi .spark { height: 26px; margin-top: 2px; }
     .kpi.main .v { color: var(--accent); }
@@ -147,7 +149,7 @@
 
   let D = null;
   const OBS = [];                        // ResizeObservers vivos (se cortan en cada render)                          // respuesta de la función
-  const st = { a: 0, b: 0, compras: 'todas', prodModo: 'neto', prodSort: 'neto', prodDir: -1, prodQ: '', off: {} };
+  const st = { a: 0, b: 0, compras: 'todas', prodModo: 'neto', prodSort: 'neto', prodDir: -1, prodQ: '', comboModo: 'unidades', off: {} };
   const MES_ACTUAL = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7);   // hora de Argentina
 
   // ---------- carga ----------
@@ -307,6 +309,17 @@
         <div class="table-wrap tbl-max"><table class="tbl" id="prod-tbl"></table></div>
       </div>
 
+      <div class="panel" id="combos-panel">
+        <div class="panel-head"><h2>Combos · ${esc(periodoTxt)}</h2>
+          <div class="tools"><div class="seg" id="seg-combo"><button data-m="unidades" class="${st.comboModo === 'unidades' ? 'on' : ''}">Unidades</button><button data-m="neto" class="${st.comboModo === 'neto' ? 'on' : ''}">$ ventas</button></div></div></div>
+        <div class="kpis combo-kpis" id="combo-kpis"></div>
+        <div class="grid2 row-gap" style="margin-top:4px">
+          <div><div class="legend" id="leg-combo"></div><div class="chart" id="ch-combo"></div></div>
+          <div class="table-wrap tbl-max"><table class="tbl" id="combo-tbl"></table></div>
+        </div>
+        <div class="nota">Combos facturados (Tienda Nube, Mercado Libre y venta directa), sin IVA y netos de notas de crédito; cada combo cuenta 1 unidad. Sirve para ver si los precios nuevos mueven el volumen: <b>Tienda Nube y Odoo cambiaron el 1/10</b> (combo = 10% menos que los sueltos) y <b>Mercado Libre el 5/10</b> (combos de crema con descuento 30/35). Compará octubre contra julio–septiembre. El % es sobre las ventas netas de todo el período.</div>
+      </div>
+
       <div class="grid2 row-gap">
         <div class="panel"><div class="panel-head"><h2>Descuentos otorgados · ${esc(periodoTxt)}</h2></div><div id="desc-top"></div>
           <div class="nota" id="desc-nota"></div></div>
@@ -345,6 +358,7 @@
     renderCanalMes();
     renderCliMes();
     renderProductos(a, b);
+    renderCombos(a, b);
     renderTops(a, b);
     renderControl();
     bindLocal();
@@ -561,6 +575,54 @@
     $('prod-tbl').querySelectorAll('th.sort').forEach(h => h.onclick = () => { if (st.prodSort === h.dataset.s) st.prodDir *= -1; else { st.prodSort = h.dataset.s; st.prodDir = h.dataset.s === 'cod' ? 1 : -1; } renderProductos(st.a, st.b); });
   }
 
+  // ---------- combos ----------
+  function renderCombos(a, b) {
+    const C = D.combos || [];
+    const panel = $('combos-panel'); if (!panel) return;
+    if (!C.length) { $('combo-kpis').innerHTML = '<span class="muted">Todavía no hay combos facturados.</span>'; $('ch-combo').innerHTML = ''; $('combo-tbl').innerHTML = ''; return; }
+    const n = b - a + 1, pa = a - n, pb = a - 1, hayPrev = pa >= 0;
+    const tot = (k, x, y) => C.reduce((s, c) => s + sum(c[k], x, y), 0);
+    const U = tot('unidades', a, b), V = tot('neto', a, b);
+    const Up = hayPrev ? tot('unidades', pa, pb) : 0, Vp = hayPrev ? tot('neto', pa, pb) : 0;
+    const ventas = sum(D.serie.map(s => s.ventas_netas), a, b);
+    const ventasP = hayPrev ? sum(D.serie.map(s => s.ventas_netas), pa, pb) : 0;
+    const dlt = (cur, old) => {
+      if (!hayPrev || !old) return `<span class="d">${hayPrev ? 'sin ventas en el período anterior' : 'sin período anterior'}</span>`;
+      const p = (cur - old) / Math.abs(old), up = p >= 0;
+      return `<span class="d"><span class="chip ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${fmtP(Math.abs(p))}</span> vs ${n === 1 ? 'mes' : n + ' meses'} anterior${n === 1 ? '' : 'es'}${D.meses[b] === MES_ACTUAL ? ' · mes en curso' : ''}</span>`;
+    };
+    const kpi = (l, v, d, title) => `<div class="kpi" title="${esc(title || '')}"><span class="l">${l}</span><span class="v">${v}</span>${d}</div>`;
+    $('combo-kpis').innerHTML =
+      kpi('Combos vendidos', fmtN(U), dlt(U, Up), 'Unidades de combos facturadas, menos devueltas') +
+      kpi('Facturado en combos', fmt$(V), dlt(V, Vp), fmt$c(V) + ' · sin IVA') +
+      kpi('% de las ventas', fmtP(ventas ? V / ventas : NaN), `<span class="d">${hayPrev && ventasP ? 'antes ' + fmtP(Vp / ventasP) : 'de las ventas netas del período'}</span>`, 'Facturado en combos sobre las ventas netas totales') +
+      kpi('Precio promedio', U ? fmt$(V / U) : '—', `<span class="d">${hayPrev && Up ? 'antes ' + fmt$(Vp / Up) : 'por combo, sin IVA'}</span>`, 'Facturado en combos dividido por las unidades');
+
+    // gráfico: por mes, apilado por canal
+    const k = st.comboModo === 'neto' ? 'neto' : 'unidades';
+    const canales = [...new Set(C.map(c => c.canal))].sort((x, y) => tot2(y) - tot2(x));
+    function tot2(cn) { return C.filter(c => c.canal === cn).reduce((s, c) => s + sum(c.unidades, 0, D.meses.length - 1), 0); }
+    const series = canales.map(cn => ({ name: cn, color: COL_CANAL[cn] || 'var(--muted)', values: D.meses.map((_, i) => C.filter(c => c.canal === cn).reduce((s, c) => s + c[k][i], 0)) }));
+    if (k === 'unidades') series.money = false;
+    $('leg-combo').innerHTML = series.map(s => `<span><i style="background:${s.color}"></i> ${esc(s.name)}</span>`).join('');
+    apiladas($('ch-combo'), series);
+
+    // tabla: un renglón por combo con el detalle por canal
+    const porCombo = {};
+    C.forEach(c => {
+      const r = (porCombo[c.codigo || c.nombre] ||= { codigo: c.codigo, nombre: c.nombre, u: 0, n: 0, can: {} });
+      const u = sum(c.unidades, a, b), v = sum(c.neto, a, b);
+      r.u += u; r.n += v; r.can[c.canal] = (r.can[c.canal] || 0) + u;
+    });
+    const filas = Object.values(porCombo).filter(r => r.u || r.n).sort((x, y) => y.u - x.u || y.n - x.n);
+    const cols = canales.filter(cn => filas.some(r => r.can[cn]));
+    const corta = { 'Tienda Nube': 'TN', 'Mercado Libre': 'ML', 'Venta directa': 'Directa', 'Portal web': 'Portal' };
+    $('combo-tbl').innerHTML = `<thead><tr><th>Combo</th>${cols.map(cn => `<th class="num" title="${esc(cn)} · unidades">${esc(corta[cn] || cn)}</th>`).join('')}<th class="num">Unid.</th><th class="num">Ventas netas</th><th class="num">Precio prom.</th></tr></thead><tbody>` +
+      (filas.length ? filas.map(r => `<tr><td><span class="code">${esc(r.codigo)}</span> ${esc(r.nombre)}</td>${cols.map(cn => `<td class="num">${r.can[cn] ? fmtN(r.can[cn]) : '<span class="muted">—</span>'}</td>`).join('')}<td class="num"><b>${fmtN(r.u)}</b></td><td class="num" title="${fmt$c(r.n)}">${fmt$(r.n)}</td><td class="num">${r.u ? fmt$(r.n / r.u) : '—'}</td></tr>`).join('')
+        : `<tr><td colspan="${cols.length + 4}" class="muted">Sin combos vendidos en el período.</td></tr>`) +
+      `</tbody><tfoot><tr><td><b>Total</b></td>${cols.map(cn => `<td class="num"><b>${fmtN(filas.reduce((s, r) => s + (r.can[cn] || 0), 0))}</b></td>`).join('')}<td class="num"><b>${fmtN(U)}</b></td><td class="num"><b>${fmt$(V)}</b></td><td class="num"><b>${U ? fmt$(V / U) : '—'}</b></td></tr></tfoot>`;
+  }
+
   // Las barras de charts.js cortan la etiqueta con "…": acá se deja bajar de renglón.
   function etiquetasCompletas(id, ancho, anchoValor) {
     const el = $(id); if (!el) return;
@@ -618,6 +680,7 @@
   function bindLocal() {
     document.querySelectorAll('#seg-prod button').forEach(bt => bt.onclick = () => { st.prodModo = bt.dataset.m; document.querySelectorAll('#seg-prod button').forEach(x => x.classList.toggle('on', x === bt)); renderProductos(st.a, st.b); });
     const q = $('prod-q'); q.oninput = () => { st.prodQ = q.value; renderProductos(st.a, st.b); };
+    document.querySelectorAll('#seg-combo button').forEach(bt => bt.onclick = () => { st.comboModo = bt.dataset.m; document.querySelectorAll('#seg-combo button').forEach(x => x.classList.toggle('on', x === bt)); renderCombos(st.a, st.b); });
   }
   document.querySelectorAll('#seg-periodo button').forEach(bt => bt.addEventListener('click', () => {
     if (!D) return; const last = D.meses.length - 1;
