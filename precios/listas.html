@@ -721,6 +721,23 @@ async function aplicarCambio(cod) {
     }, { onConflict: 'lista_id,codigo_vendible' });
     if (error) throw error;
     ESTADO_L1[cod] = { ...(ESTADO_L1[cod] || {}), precio_iva_incl: precio };
+    // L2 = L1 × 0,70 ↑$100, igual que propagar_precio_ancla. Antes esta rama solo guardaba L1 y la
+    // pantalla mostraba un L2 que no quedaba grabado (auditoría Codex 06-10). Si el L2 existente
+    // tiene precio_publicado NULL (oculto a propósito, p. ej. 10231), se respeta.
+    const l2 = Math.ceil((precio * 0.70) / 100) * 100;
+    const l2SinIva = Math.round((l2 / IVA) * 100) / 100;
+    const { data: l2Act, error: e2 } = await sb.from('items_lista_precio').select('id, precio_publicado')
+      .eq('lista_id', LISTA_L2).eq('codigo_vendible', cod).maybeSingle();
+    if (e2) throw e2;
+    const filaL2 = { lista_id: LISTA_L2, codigo_vendible: cod, precio_iva_incl: l2, precio_iva_excl: l2SinIva };
+    if (!l2Act || l2Act.precio_publicado != null) filaL2.precio_publicado = l2;
+    const { error: e3 } = await sb.from('items_lista_precio').upsert(filaL2, { onConflict: 'lista_id,codigo_vendible' });
+    if (e3) throw e3;
+    // si es un 250 g con pack x4 (1xxxx → 4xxxx), el pack se recalcula como lo hace la cascada
+    if (/^1\d{4}$/.test(cod)) {
+      const { data: pk } = await sb.from('items').select('codigo').eq('codigo', '4' + cod.slice(1)).eq('tipo', 'PACK').maybeSingle();
+      if (pk) { const { error: e4 } = await sb.rpc('propagar_precio_pack', { p_codigo_pack: pk.codigo }); if (e4) throw e4; }
+    }
   }
   delete CAMBIOS[cod];
 }

@@ -72,20 +72,28 @@
       body: JSON.stringify(body),
     });
     const d = await r.json().catch(() => ({ ok: false, error: `Respuesta inválida (${r.status})` }));
-    if (d.ok === false && d.error) throw new Error(d.error);
+    // Solo cuenta como bueno un HTTP 2xx con ok:true. Antes un 401 ({message:"Invalid JWT"})
+    // pasaba como datos vacíos y la fila decía "Al día" (hallazgo de la auditoría Codex 06-10).
+    if (!r.ok || d.ok !== true) {
+      const extra = (Array.isArray(d.problemas) && d.problemas.length ? ': ' + d.problemas.join(' · ') : '')
+        + (d.verificacion?.distintas ? ` (al releer quedaron ${d.verificacion.distintas} diferencias)` : '')
+        + (Array.isArray(d.errores) && d.errores.length ? ` (${d.errores.length} no se pudieron escribir)` : '');
+      throw new Error((d.error || d.message || `El canal respondió ${r.status}`) + extra);
+    }
     return d;
   }
 
   // Cada tarea sabe revisar (solo lectura), aplicar, y convertir la respuesta en filas {codigo, antes, nuevo}.
-  // Los combos de Odoo copian el precio final de Tienda Nube, por eso se calculan desde el ensayo de TN.
-  let combosTN = null;
+  // Los combos de Odoo copian el precio final que Tienda Nube tiene HOY (no el proyectado), y se leen
+  // cada vez, sin guardar. Si Tienda Nube tiene combos pendientes, primero hay que aplicar Tienda Nube.
   async function preciosCombosTN() {
-    if (!combosTN) {
-      const d = await llamar('odoo-packs-precioventa', { tienda_nube: 'ensayo' });
-      combosTN = {};
-      for (const f of d.filas) if (f.tipo === 'combo') combosTN[f.sku] = f.promo_nuevo ?? f.price_nuevo;
-    }
-    return combosTN;
+    const d = await llamar('odoo-packs-precioventa', { tienda_nube: 'ensayo' });
+    const combos = (d.filas || []).filter((f) => f.tipo === 'combo');
+    const pendientes = combos.filter((f) => f.cambia).map((f) => f.sku);
+    if (pendientes.length) throw new Error(`Tienda Nube tiene combos sin actualizar (${pendientes.join(', ')}). Aplicá primero Tienda Nube.`);
+    const out = {};
+    for (const f of combos) out[f.sku] = f.promo ?? f.price;
+    return out;
   }
 
   const CANALES = [
@@ -94,22 +102,26 @@
         revisar: () => llamar('odoo-precios-aplicar', { objetivo: 'publico', dry_run: true }),
         aplicar: () => llamar('odoo-precios-aplicar', { objetivo: 'publico', dry_run: false }),
         filas: (d) => (d.cambios || []).map((c) => ({ codigo: c.codigo, nombre: c.nombre, antes: c.tarifa_antes ?? c.list_price_antes, nuevo: c.precio_nuevo })),
-        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0 },
+        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0,
+        aviso: (d) => d.resumen?.odoo_sin_precio_core ? `${d.resumen.odoo_sin_precio_core} producto(s) de Odoo sin precio en el Core: no se tocan.` : '' },
       { id: 'l2', nombre: 'Lista 2 Profesional', desc: 'Igual a la Lista 2 del Core',
         revisar: () => llamar('odoo-precios-aplicar', { objetivo: 'profesional', dry_run: true }),
         aplicar: () => llamar('odoo-precios-aplicar', { objetivo: 'profesional', dry_run: false }),
         filas: (d) => (d.cambios || []).map((c) => ({ codigo: c.codigo, nombre: c.nombre, antes: c.tarifa_antes, nuevo: c.precio_nuevo })),
-        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0 },
+        pendientes: (d) => d.resumen?.productos_a_cambiar ?? 0,
+        aviso: (d) => d.resumen?.odoo_sin_precio_core ? `${d.resumen.odoo_sin_precio_core} producto(s) de Odoo sin precio en el Core: no se tocan.` : '' },
       { id: 'packs', nombre: 'Packs x4', desc: 'Precio de Venta y Lista 2 = precio del pack en el Core',
         revisar: () => llamar('odoo-packs-precioventa', { dry_run: true }),
         aplicar: () => llamar('odoo-packs-precioventa', { dry_run: false }),
         filas: (d) => (d.plan || []).filter((p) => p.list_price !== 'ya OK' || p.l2 !== 'ya OK').map((p) => ({ codigo: p.code, antes: p.l2_antes ?? p.list_price_antes, nuevo: p.objetivo })),
-        pendientes: (d) => (d.plan || []).filter((p) => p.list_price !== 'ya OK' || p.l2 !== 'ya OK').length },
+        pendientes: (d) => (d.plan || []).filter((p) => p.list_price !== 'ya OK' || p.l2 !== 'ya OK').length,
+        aviso: (d) => (d.sin_odoo || []).length ? `Packs del Core que no están en Odoo: ${d.sin_odoo.join(', ')}.` : '' },
       { id: 'l5', nombre: 'Lista 5 Tienda Online', desc: 'Igual a lo que paga el cliente en Tienda Nube (con la promo del producto)',
         revisar: () => llamar('odoo-packs-precioventa', { lista5: true, dry_run: true }),
         aplicar: () => llamar('odoo-packs-precioventa', { lista5: true, dry_run: false }),
         filas: (d) => (d.plan || []).filter((p) => p.accion !== 'ya OK').map((p) => ({ codigo: p.code, antes: p.antes, nuevo: p.objetivo })),
-        pendientes: (d) => d.cambios ?? 0 },
+        pendientes: (d) => d.cambios ?? 0,
+        aviso: (d) => (d.reglas_sin_precio_core || []).length ? `Reglas de Lista 5 sin precio en el Core: ${d.reglas_sin_precio_core.join(', ')}.` : '' },
       { id: 'combos', nombre: 'Combos', desc: 'Igual al precio final de Tienda Nube (10% menos que los sueltos)',
         revisar: async () => llamar('odoo-packs-precioventa', { combos: await preciosCombosTN(), dry_run: true }),
         aplicar: async () => llamar('odoo-packs-precioventa', { combos: await preciosCombosTN(), dry_run: false }),
@@ -123,15 +135,17 @@
           }
           return out;
         },
-        pendientes: (d) => CANALES[0].tareas[4].filas(d).length },
+        pendientes: (d) => CANALES[0].tareas[4].filas(d).length,
+        aviso: (d) => (d.sin_odoo || []).length ? `Combos de Tienda Nube que no están en Odoo: ${d.sin_odoo.join(', ')}.` : '' },
     ]},
     { id: 'tn', nombre: 'Tienda Nube', nota: 'Tienda Rosaint · Lista 1 × factor del canal, con promos y combos', tareas: [
       { id: 'tn', nombre: 'Precios y promos de la tienda', desc: 'Productos sueltos, promos de 4 y 10 Kg y combos',
         revisar: () => llamar('odoo-packs-precioventa', { tienda_nube: 'ensayo' }),
-        aplicar: () => { combosTN = null; return llamar('odoo-packs-precioventa', { tienda_nube: 'aplicar' }); },
+        aplicar: () => llamar('odoo-packs-precioventa', { tienda_nube: 'aplicar' }),
         filas: (d) => (d.filas || []).filter((f) => f.cambia).map((f) => ({ codigo: f.sku, nombre: f.nombre,
           antes: f.promo ?? f.price, nuevo: f.promo_nuevo ?? f.price_nuevo, extra: f.promo_nuevo != null ? `lista ${fmt(f.price_nuevo)}` : '' })),
-        pendientes: (d) => d.resumen?.a_cambiar ?? 0 },
+        pendientes: (d) => d.resumen?.a_cambiar ?? 0,
+        aviso: (d) => (d.sinCore || []).length ? `Variantes de la tienda sin precio en el Core: ${d.sinCore.map((x) => x.sku || x.nombre).join(', ')}.` : '' },
     ]},
     { id: 'ml', nombre: 'Mercado Libre', nota: 'Pendiente: tiene su propia lógica de cálculo (precio de lista, campañas y cortes de envío)', tareas: [] },
   ];
@@ -179,12 +193,16 @@
       tbody.innerHTML = filas.length ? filas.map((f) => `<tr><td>${esc(f.codigo)}</td><td>${esc(f.nombre || '')}</td><td class="n">${fmt(f.antes)}</td><td class="n"><b>${fmt(f.nuevo)}</b></td><td class="sub">${esc(f.extra || '')}</td></tr>`).join('')
         : '<tr><td colspan="5" class="sub">No hay diferencias: el canal está igual al Core.</td></tr>';
       el.querySelector('.tbl').hidden = !filas.length;
-      det.classList.toggle('abierto', filas.length > 0 || !!msg.textContent);
+      // aviso de cobertura: productos que el canal tiene y el Core no (no se tocan, pero se informan)
+      const aviso = t.aviso ? t.aviso(d) : '';
+      msg.className = 'msg'; msg.textContent = aviso;
+      det.classList.toggle('abierto', filas.length > 0 || !!aviso);
     }
+    // Devuelve true solo si la lectura salió bien; si falla deja la fila en "Error".
     t.revisarYPintar = async () => {
       estado.className = 'estado'; estado.textContent = 'Revisando…'; bRev.disabled = true; msg.textContent = ''; msg.className = 'msg';
-      try { pintar(await t.revisar()); }
-      catch (e) { estado.className = 'estado hot'; estado.textContent = 'Error'; det.classList.add('abierto'); msg.className = 'msg err'; msg.textContent = 'No se pudo revisar: ' + e.message; }
+      try { pintar(await t.revisar()); return true; }
+      catch (e) { estado.className = 'estado hot'; estado.textContent = 'Error'; bApl.disabled = true; det.classList.add('abierto'); msg.className = 'msg err'; msg.textContent = 'No se pudo revisar: ' + e.message; return false; }
       finally { bRev.disabled = false; }
     };
     bRev.addEventListener('click', t.revisarYPintar);
@@ -198,9 +216,14 @@
       estado.className = 'estado'; estado.textContent = 'Aplicando…'; msg.className = 'msg'; msg.textContent = 'Escribiendo en el canal, puede tardar un minuto.';
       try {
         await t.aplicar();
-        if (c.id === 'tn') combosTN = null;
-        await t.revisarYPintar();
-        msg.className = 'msg'; msg.textContent = n ? `Quedaron ${n} diferencias después de aplicar. Revisalas en la tabla.` : 'Listo: aplicado y verificado contra el Core.';
+        // la verificación es una relectura real: si falla, no se informa "verificado"
+        if (!(await t.revisarYPintar())) {
+          msg.className = 'msg err'; msg.textContent = 'Se aplicó, pero no se pudo volver a leer el canal para verificarlo. Tocá Revisar.';
+          if (window.toast) toast('Aplicado sin verificar', 'err');
+          return;
+        }
+        const aviso = msg.textContent;
+        msg.className = 'msg'; msg.textContent = (n ? `Quedaron ${n} diferencias después de aplicar. Revisalas en la tabla.` : 'Listo: aplicado y verificado contra el Core.') + (aviso ? ' ' + aviso : '');
         det.classList.add('abierto');
         if (window.toast) toast(n ? 'Aplicado con diferencias' : 'Precios actualizados', n ? 'err' : 'ok');
       } catch (e) {
@@ -210,7 +233,7 @@
   }
 
   document.getElementById('btn-revisar-todo').addEventListener('click', async (ev) => {
-    const b = ev.currentTarget; b.disabled = true; combosTN = null;
+    const b = ev.currentTarget; b.disabled = true;
     const tareas = CANALES.flatMap((c) => c.tareas);
     // De a una: Odoo y Tienda Nube no aceptan muchas consultas juntas.
     for (const t of tareas) await t.revisarYPintar();

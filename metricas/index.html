@@ -523,6 +523,11 @@
     const draw = () => {
       const W = Math.max(300, el.clientWidth || 500), H = 230, mL = 46, mR = 8, mT = 10, mB = 24, iw = W - mL - mR, ih = H - mT - mB;
       const totals = S.map((_, i) => series.reduce((s, x) => s + Math.max(0, x.values[i]), 0));
+      // Las barras apiladas solo pueden dibujar lo positivo. Si un mes tiene un valor negativo
+      // (más devoluciones que ventas), el total y los % del cartel usan el neto real y el mes
+      // se marca con un punto rojo, para que el gráfico no contradiga a la tabla.
+      const reales = S.map((_, i) => series.reduce((s, x) => s + x.values[i], 0));
+      const conNeg = S.map((_, i) => series.some(x => x.values[i] < 0));
       const mx = Math.max(1, ...totals); const slot = iw / n, bw = Math.min(40, slot * .58);
       let g = '';
       [0, .5, 1].forEach(f => { const yy = mT + ih * (1 - f); g += `<line x1="${mL}" x2="${W - mR}" y1="${yy}" y2="${yy}" stroke="var(--border)" stroke-opacity="${f ? .55 : 1}"/><text x="${mL - 6}" y="${yy + 3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${series.money === false ? fmtN(mx * f) : corto(mx * f)}</text>`; });
@@ -531,13 +536,16 @@
         const dim = i < st.a || i > st.b; let acc = 0; const x = mL + slot * i + (slot - bw) / 2;
         series.forEach(sr => { const v = Math.max(0, sr.values[i]); const h = ih * v / mx; const yy = mT + ih - acc - h; acc += h; if (h > 0) body += `<rect x="${x}" y="${yy}" width="${bw}" height="${h}" fill="${sr.color}" opacity="${dim ? .3 : .92}"/>`; });
         body += `<text x="${x + bw / 2}" y="${H - 7}" text-anchor="middle" font-size="10" fill="var(--muted)">${slot < 52 ? MES_TXT[+S[i].mes.slice(5) - 1] : lblMes(S[i].mes)}</text>`;
+        if (conNeg[i]) body += `<circle cx="${x + bw / 2}" cy="${mT + ih - acc - 6}" r="3.2" fill="var(--hot)"><title>Incluye devoluciones mayores a las ventas</title></circle>`;
       }
       el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block">${g}${body}</svg><div class="tip"></div>`;
       const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
       svg.addEventListener('mousemove', e => {
         const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width * W - mL) / slot)));
-        const tt = totals[i];
-        tip.innerHTML = `<div class="t">${lblMesLargo(S[i].mes)}</div>` + series.map(sr => `<div class="r"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${sr.color};margin-right:5px"></i>${esc(sr.name)}</span><b>${series.money === false ? fmtN(sr.values[i]) : fmt$(sr.values[i])} · ${fmtP(tt ? sr.values[i] / tt : 0)}</b></div>`).join('');
+        const tt = reales[i];
+        const fv = v => series.money === false ? fmtN(v) : fmt$(v);
+        tip.innerHTML = `<div class="t">${lblMesLargo(S[i].mes)}</div>` + series.map(sr => `<div class="r"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${sr.color};margin-right:5px"></i>${esc(sr.name)}</span><b>${fv(sr.values[i])} · ${fmtP(tt ? sr.values[i] / tt : 0)}</b></div>`).join('')
+          + (conNeg[i] ? `<div class="r"><span>Total neto (con devoluciones)</span><b>${fv(tt)}</b></div>` : '');
         tip.style.opacity = 1; tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, (e.clientX - r.left) + 12)) + 'px'; tip.style.top = '4px';
       });
       svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
