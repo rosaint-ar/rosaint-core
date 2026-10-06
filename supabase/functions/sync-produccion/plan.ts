@@ -173,6 +173,60 @@ export async function modoControl() {
   return { ok: true, duracion_ms: Date.now() - t0, desde, hoja: (hoja || []).length, ordenes: mos.length, alertas: cuenta, resueltas: resueltas.length, unidades_odoo: [...new Set(mos.map((m) => m2oName(m.product_uom_id)))] };
 }
 
+// ====== Conteo de inventario: sincronizar con Odoo ======
+// Para cada producto del conteo trae los movimientos hechos en Odoo DESDE la foto (entregas, fabricaciones,
+// consumos, recepciones) y calcula lo ESPERADO al momento en que se contó:
+//   esperado = stock de la foto + movimientos anteriores a `contado_en`
+// Así una entrega hecha antes de contar no aparece como faltante, y una hecha después no se descuenta
+// (cuando se contó, la mercadería todavía estaba). Solo lee Odoo; escribe en Core.
+export async function modoConteoSync(body: Row) {
+  const id = Number(body.conteo_id);
+  if (!id) throw new Error("Falta conteo_id");
+  const sb = createClient(SB_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const { data: c, error: ec } = await sb.from("inv_conteos").select("*").eq("id", id).single();
+  if (ec || !c) throw new Error("Conteo no encontrado");
+  if (c.estado !== "abierto") throw new Error("El conteo ya está cerrado");
+  const { data: lineas, error: el } = await sb.from("inv_conteo_lineas").select("codigo,odoo_qty,contado,contado_en,mov_override").eq("conteo_id", id).range(0, 4999);
+  if (el) throw new Error(el.message);
+  const foto = new Date(c.foto_odoo).getTime();
+  const codigos = lineas!.map((l) => l.codigo);
+  const prods = await ex("product.product", "search_read", [[["default_code", "in", codigos], ["active", "in", [true, false]]]], { fields: ["id", "default_code", "qty_available"] }) as Row[];
+  const porId = new Map(prods.map((p) => [p.id, p]));
+  const desde = new Date(foto - 60e3).toISOString().replace("T", " ").slice(0, 19);
+  const movs = prods.length ? await ex("stock.move", "search_read", [[["product_id", "in", prods.map((p) => p.id)], ["state", "=", "done"], ["date", ">=", desde]]],
+    { fields: ["product_id", "product_qty", "date", "location_id", "location_dest_id", "reference", "origin"] }) as Row[] : [];
+  const locIds = [...new Set(movs.flatMap((m) => [m2o(m.location_id), m2o(m.location_dest_id)]).filter(Boolean))] as number[];
+  const locs = locIds.length ? await ex("stock.location", "read", [locIds], { fields: ["id", "usage"] }) as Row[] : [];
+  const interna = new Map(locs.map((l) => [l.id, l.usage === "internal"]));
+  const porCod: Record<string, Row[]> = {};
+  for (const m of movs) {
+    const t = new Date(String(m.date).replace(" ", "T") + "Z").getTime();
+    if (t <= foto) continue;                                     // ya estaba en la foto
+    const entra = interna.get(m2o(m.location_dest_id)), sale = interna.get(m2o(m.location_id));
+    if (entra === sale) continue;                                // movimiento interno: no cambia el total
+    const cod = String(porId.get(m2o(m.product_id))?.default_code || "").trim();
+    (porCod[cod] = porCod[cod] || []).push({ ref: m.reference || m.origin || "", q: (entra ? 1 : -1) * Number(m.product_qty), t, fecha: new Date(t).toISOString() });
+  }
+  const ahora = new Date().toISOString();
+  const filas = lineas!.map((l) => {
+    const ms = (porCod[l.codigo] || []).sort((a, b) => a.t - b.t);
+    const corte = l.contado != null && l.contado_en ? new Date(l.contado_en).getTime() : Infinity;
+    const ov = (l.mov_override || {}) as Record<string, boolean>;   // corrección a mano: "ya había salido/entrado cuando contaron"
+    const incluye = (m: Row) => (m.ref in ov ? !!ov[m.ref] : m.t <= corte);
+    const antes = ms.filter(incluye).reduce((a, m) => a + m.q, 0);
+    const p = prods.find((x) => String(x.default_code).trim() === l.codigo);
+    return { conteo_id: id, codigo: l.codigo, esperado: Math.round((Number(l.odoo_qty || 0) + antes) * 10000) / 10000,
+      odoo_actual: p ? Number(p.qty_available) : null,
+      movimientos: ms.map((m) => ({ ref: m.ref, q: Math.round(m.q * 10000) / 10000, fecha: m.fecha, antes_de_contar: m.t <= corte })) };
+  });
+  for (let i = 0; i < filas.length; i += 200) {
+    const { error } = await sb.from("inv_conteo_lineas").upsert(filas.slice(i, i + 200), { onConflict: "conteo_id,codigo" });
+    if (error) throw new Error("guardar: " + error.message);
+  }
+  await sb.from("inv_conteos").update({ ultima_sync: ahora }).eq("id", id);
+  return { ok: true, sincronizado: ahora, productos_con_movimientos: Object.keys(porCod).length, movimientos: movs.length };
+}
+
 // "Entrega de hoy": lo que un cliente retira/recibe un día puntual (ej. José pasa al mediodía).
 // En Odoo marca sus entregas pendientes con la estrella (Urgente) y la fecha programada a esa hora;
 // en Core guarda qué se lleva, y el programador lo pone como Hoy. quitar:true lo deshace.
