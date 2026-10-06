@@ -36,6 +36,15 @@
     return { valor: best, parte: a.length ? cnt / a.length : 0 };
   }
   const r2 = (x) => Math.round(x * 100) / 100;
+  // cantidad a su unidad base según cómo se cargó: kg (peso), L (volumen), u (unidades)
+  function aBase(q, unidad) {
+    const n = String(unidad || '').toLowerCase().trim();
+    if (['g', 'gr', 'gramo', 'gramos'].includes(n)) return { q: q / 1000, u: 'kg' };
+    if (['cc', 'ml', 'mililitro', 'mililitros'].includes(n)) return { q: q / 1000, u: 'L' };
+    if (['l', 'lt', 'lts', 'litro', 'litros'].includes(n)) return { q, u: 'L' };
+    if (n === 'un' || n === 'u' || n.startsWith('unidad')) return { q, u: 'u' };
+    return { q, u: 'kg' };
+  }
   const masDias = (f, n) => { const d = d0(f); d.setDate(d.getDate() + Math.round(n)); return d; };
   function proximoHabil(f) { const d = d0(f); do d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6); return d; }
 
@@ -232,7 +241,7 @@
     const hechoPor = {};
     for (const h of hoja) {
       let q = Number(h.cantidad) || 0;
-      if (h.unidad === 'g' && q >= 5) q = q / 1000;   // cargado en gramos
+      q = aBase(q, h.unidad).q;   // 500 g = 0,5 kg; 0,6 g = 0,0006 kg (si no coincide con Odoo, lo marca el control)
       const c = String(h.producto_sku || '').trim(); if (!c || q <= 0) continue;
       const x = (hechoPor[c] = hechoPor[c] || { c, q: 0, tipo: h.tipo, cargas: [] });
       x.q += q; x.cargas.push({ hora: String(h.hora || '').slice(0, 5), q, quien: h.iniciales || '' });
@@ -413,6 +422,41 @@
     };
   }
 
-  const API = { programar, diasHabiles, RANGO, ETIQUETA };
+  // ====== ¿Alcanzan las materias primas y los envases? ======
+  // elaborar: [{c: granel, kg}] · fraccionar: [{c: sku, q}] · hechoHoy: lo cargado hoy en la hoja que
+  // todavía no está en Odoo (ya se consumió, pero el stock de Odoo todavía no lo descontó).
+  // Solo cuenta lo que tiene stock en Odoo (el agua y la hoja de etiquetas no se stockean).
+  function necesidadMateriales({ snap, formulas = [], pres = [], elaborar = [], fraccionar = [], hechoHoy = [] }) {
+    const stock = {}; for (const x of snap.stock) stock[x.c] = x;
+    const comp = {}; for (const r of formulas) (comp[r.g] = comp[r.g] || []).push({ c: r.c, pct: Number(r.pct) });
+    const presDe = {}; for (const p of pres) presDe[p.c] = p;
+    const nec = {}, motivo = {};
+    const sumar = (c, q, para, ya) => {
+      if (!(q > 0)) return;
+      const x = (nec[c] = nec[c] || { c, plan: 0, hecho: 0, para: new Set() });
+      if (ya) x.hecho += q; else { x.plan += q; x.para.add(para); }
+    };
+    // MP directa de un granel (los sub-graneles se cuentan aparte: o hay stock o están en la lista de elaborar)
+    const explotar = (g, kg, ya) => { for (const k of comp[g] || []) if (!k.c.startsWith('9')) sumar(k.c, kg * k.pct / 100, g, ya); };
+    for (const e of elaborar) explotar(e.c, Number(e.kg), false);
+    for (const f of fraccionar) { const p = presDe[f.c]; if (p && p.env) sumar(p.env, Number(f.q), f.c, false); }
+    for (const h of hechoHoy) {
+      const extra = Number(h.q) - Number(h.en_odoo || 0); if (!(extra > 0)) continue;
+      if (h.c.startsWith('9')) explotar(h.c, extra, true);
+      else { const p = presDe[h.c]; if (p && p.env) sumar(p.env, extra, h.c, true); }
+    }
+    const lista = [], sinStock = [];
+    for (const x of Object.values(nec)) {
+      const st = stock[x.c];
+      if (!st) { if (x.plan > 0) sinStock.push(x.c); continue; }
+      const hay = Math.max(0, Number(st.libre)) - x.hecho;     // lo hecho hoy sin pasar a Odoo ya se usó
+      const falta = x.plan - hay;
+      lista.push({ c: x.c, nombre: st.n, uom: st.uom, necesita: r2(x.plan), hay: r2(Math.max(0, hay)), falta: falta > 1e-6 ? Math.round(falta * 1000) / 1000 : 0, usado_hoy: r2(x.hecho), para: [...x.para], envase: x.c.startsWith('3') });
+    }
+    lista.sort((a, b) => (b.falta > 0) - (a.falta > 0) || b.falta - a.falta || a.c.localeCompare(b.c));
+    return { lista, faltan: lista.filter((x) => x.falta > 0), sin_stock_en_odoo: sinStock };
+  }
+
+  const API = { programar, necesidadMateriales, aBase, diasHabiles, RANGO, ETIQUETA };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PROGRAMADOR = API;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -51,6 +51,128 @@ export async function usuarioValido(req: Request): Promise<Row | null> {
   try { const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey, Authorization: a } }); return r.ok ? await r.json() : null; } catch { return null; }
 }
 
+// Lleva una cantidad a su unidad base según la unidad con que se cargó: kg (peso), L (volumen), u (unidades).
+// Nunca se adivina por el número: 500 g son 0,5 kg; "0,6 g" son 0,0006 kg (y si Odoo dice 0,6 kg, es una inconsistencia).
+export function aBase(q: number, unidad: string): { q: number; u: string } {
+  const n = String(unidad || "").toLowerCase().trim();
+  if (["g", "gr", "gramo", "gramos"].includes(n)) return { q: q / 1000, u: "kg" };
+  if (["kg", "kgs", "kilo", "kilos", "kilogramo", "kilogramos"].includes(n)) return { q, u: "kg" };
+  if (["cc", "ml", "mililitro", "mililitros"].includes(n)) return { q: q / 1000, u: "L" };
+  if (["l", "lt", "lts", "litro", "litros"].includes(n)) return { q, u: "L" };
+  if (n === "un" || n === "u" || n.startsWith("unidad")) return { q, u: "u" };
+  return { q, u: n || "?" };
+}
+const fechaAR = (utc: any) => utc ? new Date(new Date(String(utc).replace(" ", "T") + "Z").getTime() - 3 * 3600e3).toISOString().slice(0, 10) : null;
+
+// ====== Control Hoja de Producción (Core) ↔ Fabricación (Odoo) ======
+// La planta carga en la hoja y después pasa eso a Odoo a mano (asignando lotes de MP).
+// Tienen que coincidir siempre, día por día y producto por producto. Deja los hallazgos en
+// control_alertas (Inicio los muestra). Corre por cron cada 15 min y desde "Programar el día".
+export async function modoControl() {
+  const t0 = Date.now();
+  const sb = createClient(SB_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const desde = new Date(Date.now() - 21 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+
+  const { data: hoja, error: eh } = await sb.from("prod_hoja_diaria").select("id,fecha,hora,producto_sku,producto_nombre,cantidad,unidad,tipo,iniciales").gte("fecha", desde).range(0, 9999);
+  if (eh) throw new Error("hoja: " + eh.message);
+  const mos = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "!=", "cancel"], ["date_start", ">=", desde + " 00:00:00"]]],
+    { fields: ["name", "product_id", "product_qty", "product_uom_id", "state", "date_start"] }) as Row[];
+  const prodM = await productos([...new Set(mos.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
+
+  type Lado = { fecha: string; c: string; nombre: string; q: number; u: string; det: Row[] };
+  const H: Record<string, Lado> = {}, OD: Record<string, Lado & { abiertas: Row[] }> = {};
+  for (const h of hoja || []) {
+    const c = String(h.producto_sku || "").trim(); if (!c) continue;
+    const b = aBase(Number(h.cantidad) || 0, h.unidad);
+    const k = h.fecha + "|" + c;
+    const x = (H[k] = H[k] || { fecha: h.fecha, c, nombre: h.producto_nombre || c, q: 0, u: b.u, det: [] });
+    x.q += b.q; x.det.push({ hora: String(h.hora || "").slice(0, 5), cantidad: Number(h.cantidad), unidad: h.unidad, quien: h.iniciales || "" });
+  }
+  for (const m of mos) {
+    const c = String(prodM.get(m2o(m.product_id))?.default_code || "").trim(); if (!c) continue;
+    const fecha = fechaAR(m.date_start)!; if (fecha < desde) continue;
+    const b = aBase(Number(m.product_qty) || 0, m2oName(m.product_uom_id));
+    const k = fecha + "|" + c;
+    const x = (OD[k] = OD[k] || { fecha, c, nombre: prodM.get(m2o(m.product_id))?.name || c, q: 0, u: b.u, det: [], abiertas: [] });
+    if (m.state === "done") { x.q += b.q; x.det.push({ mo: m.name, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id) }); }
+    else x.abiertas.push({ mo: m.name, estado: m.state, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id) });
+  }
+
+  const habiles = (a: string, b: string) => { let n = 0; const d = new Date(a + "T12:00:00"); const f = new Date(b + "T12:00:00"); while (d < f) { d.setDate(d.getDate() + 1); if (d.getDay() % 6 !== 0) n++; } return n; };
+  const fc = (f: string) => f.split("-").reverse().slice(0, 2).join("/");
+  const n2 = (x: number) => Math.round(x * 1000) / 1000;
+  const alertas: Row[] = [];
+  const pendHoy: Row[] = [];
+  // 1) Hoy: solo se informa lo que falta pasar (lo van pasando durante el día)
+  const pasados: string[] = [];
+  for (const k of new Set([...Object.keys(H), ...Object.keys(OD)])) {
+    const h = H[k], o = OD[k];
+    const fecha = (h || o).fecha;
+    if (fecha >= hoyAR) { if (h && !(o && (o.q > 0 || o.abiertas.length))) pendHoy.push({ c: h.c, nombre: h.nombre, q: n2(h.q), u: h.u }); continue; }
+    pasados.push(k);
+    if (o && o.abiertas.length) {
+      const atraso = habiles(fecha, hoyAR);
+      alertas.push({ fecha_ref: fecha, codigo: o.c, datos: { hoja: h || null, odoo: o }, clave: `sin_validar|${fecha}|${o.c}`, tipo: "sin_validar", severidad: atraso >= 2 ? "critico" : "warn",
+        titulo: `Orden de fabricación sin validar: ${o.nombre} (${fc(fecha)})`, detalle: o.abiertas.map((a) => `${a.mo} · ${a.cantidad} ${a.unidad} · ${a.estado}`).join(" · ") });
+    }
+  }
+  // 2) Días anteriores: diferencia hoja − Odoo por producto y día
+  type Dif = { k: string; fecha: string; c: string; nombre: string; dq: number; h?: Lado; o?: Lado & { abiertas: Row[] }; usado?: boolean };
+  const difs: Dif[] = [];
+  for (const k of pasados) {
+    const h = H[k], o = OD[k];
+    if (o && o.abiertas.length && !(o.q > 0) && !h) continue;          // solo orden abierta: ya avisado
+    const hq = h ? h.q : 0, oq = o ? o.q : 0;
+    const tol = Math.max(0.005, 0.01 * Math.max(hq, oq));
+    if (h && o && h.u !== o.u && oq > 0) { difs.push({ k, fecha: (h || o).fecha, c: (h || o).c, nombre: (h || o).nombre, dq: hq - oq, h, o }); continue; }
+    if (Math.abs(hq - oq) <= tol) continue;
+    if (h && !(oq > 0) && o && o.abiertas.length) continue;              // está, pero sin validar: ya avisado
+    difs.push({ k, fecha: (h || o).fecha, c: (h || o).c, nombre: (h || o).nombre, dq: hq - oq, h, o });
+  }
+  // 3) Misma cantidad anotada en días distintos (±3 días hábiles) → un solo aviso "fecha distinta"
+  for (const a of difs) {
+    if (a.usado || a.dq <= 0) continue;
+    const b = difs.find((x) => !x.usado && x !== a && x.c === a.c && x.dq < 0 && Math.abs(a.dq + x.dq) <= Math.max(0.005, 0.01 * a.dq)
+      && Math.abs(habiles(a.fecha < x.fecha ? a.fecha : x.fecha, a.fecha < x.fecha ? x.fecha : a.fecha)) <= 3);
+    if (!b) continue;
+    a.usado = b.usado = true;
+    alertas.push({ fecha_ref: a.fecha, codigo: a.c, datos: { hoja: a.h || null, odoo: b.o || null }, clave: `fecha_distinta|${a.fecha}|${b.fecha}|${a.c}`, tipo: "fecha_distinta", severidad: "info",
+      titulo: `Fecha distinta: ${a.nombre} ${n2(a.dq)} ${a.h?.u || ""} — en la Hoja el ${fc(a.fecha)}, en Odoo el ${fc(b.fecha)}`,
+      detalle: `Es la misma cantidad cargada en días distintos. Conviene corregir la fecha de la orden en Odoo (${(b.o?.det || []).map((d) => d.mo).join(", ")}) para que el día coincida con lo que se hizo.` });
+  }
+  // 4) Lo que queda: pendiente de cargar / solo en Odoo / cantidad distinta
+  for (const d of difs) {
+    if (d.usado) continue;
+    const h = d.h, o = d.o, fecha = d.fecha, c = d.c, nombre = d.nombre;
+    const base = { fecha_ref: fecha, codigo: c, datos: { hoja: h || null, odoo: o || null } };
+    const atraso = habiles(fecha, hoyAR);
+    if (h && !(o && o.q > 0)) alertas.push({ ...base, clave: `pendiente_odoo|${fecha}|${c}`, tipo: "pendiente_odoo", severidad: atraso >= 2 ? "critico" : "warn",
+      titulo: `Pendiente de cargar en Odoo: ${nombre} ${n2(h.q)} ${h.u} (${fc(fecha)})`, detalle: `Está en la Hoja de Producción y no hay orden de fabricación en Odoo. Cargado: ${h.det.map((x) => `${x.hora} ${x.cantidad} ${x.unidad} ${x.quien}`).join(" · ")}` });
+    else if (!h && o) alertas.push({ ...base, clave: `solo_odoo|${fecha}|${c}`, tipo: "solo_odoo", severidad: "warn",
+      titulo: `En Odoo pero no en la Hoja: ${nombre} ${n2(o.q)} ${o.u} (${fc(fecha)})`, detalle: `Orden(es) ${o.det.map((x) => `${x.mo} ${x.cantidad} ${x.unidad}`).join(" · ")}. No hay nada cargado en la Hoja de Producción ese día.` });
+    else if (h && o) {
+      const factor = Math.max(h.q, o.q) / Math.max(1e-9, Math.min(h.q, o.q));
+      alertas.push({ ...base, clave: `distinto|${fecha}|${c}`, tipo: "distinto", severidad: factor >= 10 ? "critico" : "warn",
+        titulo: `Cantidad distinta: ${nombre} (${fc(fecha)}) — Hoja ${n2(h.q)} ${h.u} · Odoo ${n2(o.q)} ${o.u}`,
+        detalle: `Hoja: ${h.det.map((x) => `${x.hora} ${x.cantidad} ${x.unidad} ${x.quien}`).join(" · ")}. Odoo: ${o.det.map((x) => `${x.mo} ${x.cantidad} ${x.unidad}`).join(" · ")}.${factor >= 10 ? " La diferencia es de 10 veces o más: probablemente una unidad mal cargada (g / kg)." : ""}${h.u !== o.u ? " Las unidades no coinciden." : ""}` });
+    }
+  }
+  if (pendHoy.length) alertas.push({ clave: `pendiente_hoy|${hoyAR}`, tipo: "pendiente_hoy", severidad: "info", fecha_ref: hoyAR, codigo: null,
+    titulo: `Hoy: ${pendHoy.length} producto${pendHoy.length === 1 ? "" : "s"} de la Hoja todavía sin pasar a Odoo`, detalle: pendHoy.map((p) => `${p.nombre} ${p.q} ${p.u}`).join(" · "), datos: { items: pendHoy } });
+
+  const ahora = new Date().toISOString();
+  const filas = alertas.map((a) => ({ ...a, area: "produccion", estado: "abierta", ultima_vez: ahora, resuelta_en: null, href: "produccion/control.html" }));
+  if (filas.length) { const { error } = await sb.from("control_alertas").upsert(filas, { onConflict: "clave" }); if (error) throw new Error("alertas: " + error.message); }
+  // lo que estaba abierto y ya no aparece, se da por resuelto
+  const { data: abiertas } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "abierta");
+  const vivas = new Set(filas.map((f) => f.clave));
+  const resueltas = (abiertas || []).map((a) => a.clave).filter((k) => !vivas.has(k));
+  if (resueltas.length) await sb.from("control_alertas").update({ estado: "resuelta", resuelta_en: ahora }).in("clave", resueltas);
+  const cuenta: Record<string, number> = {}; for (const a of alertas) cuenta[a.tipo] = (cuenta[a.tipo] || 0) + 1;
+  return { ok: true, duracion_ms: Date.now() - t0, desde, hoja: (hoja || []).length, ordenes: mos.length, alertas: cuenta, resueltas: resueltas.length, unidades_odoo: [...new Set(mos.map((m) => m2oName(m.product_uom_id)))] };
+}
+
 // "Entrega de hoy": lo que un cliente retira/recibe un día puntual (ej. José pasa al mediodía).
 // En Odoo marca sus entregas pendientes con la estrella (Urgente) y la fecha programada a esa hora;
 // en Core guarda qué se lleva, y el programador lo pone como Hoy. quitar:true lo deshace.
@@ -228,9 +350,9 @@ export async function modoPlan() {
 
   // 5b) Cada orden de fabricación hecha (para aprender lotes de elaboración y tandas de fraccionado)
   const moHechas = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "=", "done"], ["date_start", ">=", desde]]],
-    { fields: ["product_id", "product_qty", "date_start"] }) as Row[];
+    { fields: ["product_id", "product_qty", "product_uom_id", "date_start"] }) as Row[];
   const moHP = await productos([...new Set(moHechas.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
-  const mo = moHechas.map((m) => ({ c: String(moHP.get(m2o(m.product_id))?.default_code || "").trim(), q: Number(m.product_qty), f: dia(m.date_start) })).filter((m) => m.c);
+  const mo = moHechas.map((m) => { const b = aBase(Number(m.product_qty), m2oName(m.product_uom_id)); return { c: String(moHP.get(m2o(m.product_id))?.default_code || "").trim(), q: b.q, u: b.u, f: fechaAR(m.date_start) }; }).filter((m) => m.c);
 
   // 5c) Historial de entregas (180 días): de a cuánto y cada cuánto se le entrega a cada cliente
   const desdeEnt = new Date(Date.now() - 180 * 864e5).toISOString().slice(0, 10);

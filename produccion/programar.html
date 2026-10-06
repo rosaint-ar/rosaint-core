@@ -131,6 +131,11 @@
     dialog.pg-dlg.ancho { width:min(620px, calc(100vw - 32px)); }
     dialog.pg-dlg .pg-tabla td { padding:6px 8px; }
     dialog.pg-dlg .pg-tabla input { width:80px; }
+    .mat.conFaltas { border-color:color-mix(in srgb, var(--hot) 45%, var(--border)); }
+    .mat tr.falta td { background:color-mix(in srgb, var(--hot) 6%, transparent); }
+    .mat .rojo { color:var(--hot); }
+    .mat details.todos { border-top:1px solid var(--border); }
+    .mat details.todos summary { padding:10px 16px; font-size:12.5px; color:var(--muted); cursor:pointer; }
     .hecho { border-color:color-mix(in srgb, var(--ok) 40%, var(--border)); }
     .entregas { border-color:color-mix(in srgb, var(--hot) 40%, var(--border)); }
     .ped .hora { font-family:var(--font-mono); font-weight:800; font-size:14px; }
@@ -224,7 +229,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shell/shell.js"></script>
-<script src="programador.js?v=202610061108"></script>
-<script src="programar-ui.js?v=202610061108"></script>
+<script src="programador.js?v=202610061131"></script>
+<script src="programar-ui.js?v=202610061131"></script>
 </body>
 </html>

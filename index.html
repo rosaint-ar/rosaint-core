@@ -440,6 +440,16 @@ async function cargarAlertas() {
   const { data: pedVenc } = await sb.from('prod_pedidos').select('id').lt('fecha_compromiso', HOY);
   if (pedVenc && pedVenc.length) alertas.push({ cls: 'critico', texto: '<strong>' + pedVenc.length + ' pedido' + (pedVenc.length === 1 ? '' : 's') + '</strong> con fecha de compromiso vencida', cnt: pedVenc.length, href: 'produccion/index.html' });
 
+  // Control Hoja de Producción ↔ Fabricación en Odoo + materiales del plan del día (control_alertas)
+  const { data: ctrl } = await sb.from('control_alertas').select('tipo, severidad').eq('estado', 'abierta');
+  if (ctrl && ctrl.length) {
+    const de = (tipos) => ctrl.filter(a => tipos.includes(a.tipo));
+    const pend = de(['pendiente_odoo', 'sin_validar']), inc = de(['distinto', 'solo_odoo', 'fecha_distinta']), mat = de(['falta_mp']);
+    const s = (n) => n === 1 ? '' : 's';
+    if (pend.length) alertas.push({ cls: pend.some(a => a.severidad === 'critico') ? 'critico' : 'warn', texto: '<strong>' + pend.length + ' carga' + s(pend.length) + ' de producción</strong> pendiente' + s(pend.length) + ' en Odoo', cnt: pend.length, href: 'produccion/control.html' });
+    if (inc.length) alertas.push({ cls: inc.some(a => a.severidad === 'critico') ? 'critico' : 'warn', texto: '<strong>' + inc.length + ' inconsistencia' + s(inc.length) + '</strong> entre la Hoja de Producción y Odoo', cnt: inc.length, href: 'produccion/control.html' });
+    if (mat.length) alertas.push({ cls: 'critico', texto: '<strong>Faltan ' + mat.length + ' material' + (mat.length === 1 ? '' : 'es') + '</strong> para el plan de producción de hoy', cnt: mat.length, href: 'produccion/programar.html' });
+  }
   if (transfPendientes) alertas.push({ cls: transfViejas ? 'critico' : 'warn', texto: '<strong>' + transfPendientes + ' transferencia' + (transfPendientes === 1 ? '' : 's') + '</strong> sin confirmar en Tienda Nube', cnt: transfPendientes, href: '#transferencias' });
   document.getElementById('alertas-count').textContent = alertas.length ? '(' + alertas.length + ')' : '';
   const cont = document.getElementById('alertas-list');

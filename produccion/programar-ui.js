@@ -67,14 +67,15 @@
   }
   async function cargarRecetas() {
     const [pr, fo, fc] = await Promise.all([
-      sb.from('presentaciones').select('codigo_sku,codigo_granel,tamanio_kg'),
+      sb.from('presentaciones').select('codigo_sku,codigo_granel,tamanio_kg,codigo_envase'),
       sb.from('formulas').select('id,codigo_granel').eq('estado', 'vigente'),
-      sb.from('formula_componentes').select('formula_id,codigo_componente,composicion_pct').like('codigo_componente', '9%'),
+      sb.from('formula_componentes').select('formula_id,codigo_componente,composicion_pct').range(0, 4999),
     ]);
     for (const r of [pr, fo, fc]) if (r.error) throw new Error(r.error.message);
-    S.pres = pr.data.map((p) => ({ c: p.codigo_sku, g: p.codigo_granel, kg: p.tamanio_kg }));
+    S.pres = pr.data.map((p) => ({ c: p.codigo_sku, g: p.codigo_granel, kg: p.tamanio_kg, env: p.codigo_envase }));
     const gDe = {}; for (const f of fo.data) gDe[f.id] = f.codigo_granel;
-    S.subg = fc.data.filter((x) => gDe[x.formula_id]).map((x) => ({ g: gDe[x.formula_id], c: x.codigo_componente, pct: x.composicion_pct }));
+    S.formulas = fc.data.filter((x) => gDe[x.formula_id]).map((x) => ({ g: gDe[x.formula_id], c: x.codigo_componente, pct: x.composicion_pct }));
+    S.subg = S.formulas.filter((x) => String(x.c).startsWith('9'));
   }
 
   async function actualizarOdoo() {
@@ -103,8 +104,35 @@
   const postergadoActivo = (so, sku) => S.postergados.find((x) => Number(x.so_id) === Number(so) && x.sku === sku && x.hasta > isoLocal(new Date()));
 
   // ---------------- pintar ----------------
+  function calcMateriales() {
+    const fl = filasDelDia().filter((x) => x.cantidad > 0);
+    S.mat = P.necesidadMateriales({ snap: S.snap, formulas: S.formulas, pres: S.pres,
+      elaborar: fl.filter((x) => x.tipo === 'elaborar' || x.tipo === 'preparar').map((x) => ({ c: x.codigo, kg: x.cantidad })),
+      fraccionar: fl.filter((x) => x.tipo === 'fraccionar').map((x) => ({ c: x.codigo, q: x.cantidad })),
+      hechoHoy: S.plan.hecho_hoy });
+    avisarMateriales();
+  }
+  // deja en Inicio un aviso por cada material que falta para el plan del día (y cierra los que ya no faltan)
+  async function avisarMateriales() {
+    const firma = JSON.stringify(S.mat.faltan.map((x) => [x.c, x.falta]));
+    if (firma === S._matFirma) return; S._matFirma = firma;
+    try {
+      const ahora = new Date().toISOString();
+      const filas = S.mat.faltan.map((x) => ({ clave: 'falta_mp|' + x.c, area: 'materiales', tipo: 'falta_mp', severidad: 'critico', codigo: x.c, fecha_ref: isoLocal(new Date()),
+        titulo: `Falta ${x.nombre} para el plan de hoy: faltan ${cantMat(x.falta, x.uom)}`, detalle: `Necesita ${cantMat(x.necesita, x.uom)} · hay ${cantMat(x.hay, x.uom)} en Odoo · para ${x.para.map(nombreDe).join(', ')}`,
+        href: 'produccion/programar.html', estado: 'abierta', ultima_vez: ahora, resuelta_en: null }));
+      if (filas.length) await sb.from('control_alertas').upsert(filas, { onConflict: 'clave' });
+      const { data: ab } = await sb.from('control_alertas').select('clave').eq('area', 'materiales').eq('estado', 'abierta');
+      const vivas = new Set(filas.map((x) => x.clave));
+      const cerrar = (ab || []).map((a) => a.clave).filter((k) => !vivas.has(k));
+      if (cerrar.length) await sb.from('control_alertas').update({ estado: 'resuelta', resuelta_en: ahora }).in('clave', cerrar);
+    } catch { /* el aviso en Inicio no frena la pantalla */ }
+  }
+  const cantMat = (q, uom) => (uom === 'kg' && q > 0 && q < 1) ? fmt(q * 1000, 0) + ' g' : fmt(q, q < 10 ? 2 : 0) + ' ' + (uom === 'Unidades' ? 'u' : uom || '');
+
   function pintar() {
     const pl = S.plan;
+    calcMateriales();
     // encabezado
     const mins = Math.round((Date.now() - S.snapCreado) / 60000);
     const c = $('cuando');
@@ -190,6 +218,20 @@
     for (const d of pl.postergado) if (d.so_id === so && d.entrega) add(d.c, 'falta', d.q);
     return Object.values(por);
   }
+  function bloqueMateriales() {
+    const m = S.mat; if (!m) return '';
+    const fila = (x) => `<tr class="${x.falta ? 'falta' : ''}"><td class="cod">${esc(x.c)}</td><td><b>${esc(x.nombre)}</b></td><td class="num">${cantMat(x.necesita, x.uom)}</td><td class="num">${cantMat(x.hay, x.uom)}${x.usado_hoy > 0 ? `<div class="muted" style="font-size:11px">ya se usaron ${cantMat(x.usado_hoy, x.uom)} hoy, sin pasar a Odoo</div>` : ""}</td>
+      <td class="num">${x.falta ? `<b class="rojo">${cantMat(x.falta, x.uom)}</b>` : '✓'}</td><td class="muted">${x.para.map((c) => esc(nombreDe(c))).join(', ')}</td></tr>`;
+    const cab = '<thead><tr><th>Código</th><th>Material</th><th class="num">Necesita</th><th class="num">Hay en Odoo</th><th class="num">Falta</th><th>Para</th></tr></thead>';
+    return `<div class="pg-bloque mat ${m.faltan.length ? 'conFaltas' : ''}"><header><h3>Materiales</h3>
+      <span class="meta">${m.faltan.length ? `Faltan ${m.faltan.length} para hacer este plan` : `Alcanzan las materias primas y envases (${m.lista.length} revisados)`}${m.sin_stock_en_odoo.length ? ` · sin stock en Odoo: ${m.sin_stock_en_odoo.join(', ')}` : ''}</span>
+      ${m.faltan.length ? '<span class="der"><a class="btn secondary" href="../laboratorio/reposicion.html">Ir a Stock y reposición</a></span>' : ''}</header>
+      ${m.faltan.length ? `<table class="pg-tabla">${cab}<tbody>${m.faltan.map(fila).join('')}</tbody></table>` : ''}
+      <details class="todos"><summary>Ver todos los materiales del plan (${m.lista.length})</summary><table class="pg-tabla">${cab}<tbody>${m.lista.map(fila).join('')}</tbody></table></details></div>`;
+  }
+  // ¿a esta tarea le falta algún material?
+  function faltaPara(cod) { return (S.mat?.faltan || []).filter((x) => x.para.includes(cod)); }
+  const chipFalta = (cod) => { const fx = faltaPara(cod); return fx.length ? ` <span class="prio hoy" title="${esc(fx.map((x) => x.nombre).join(', '))}">falta ${fx.length === 1 ? esc(fx[0].nombre.split(' ').slice(0, 3).join(' ')) : fx.length + ' materiales'}</span>` : ''; };
   function bloqueHecho() {
     const h = S.plan.hecho_hoy;
     if (!h.length) return '';
@@ -275,7 +317,7 @@
     const elab = `
       <div class="pg-bloque"><header><h3>Elaborar</h3><span class="meta">${fmt(kgTot, 0)} kg · tope ${fmt(pl.carga.cap_kg, 0)} kg</span></header>
       ${de('elaborar').map((f) => `<div class="fila elab${f.cantidad === 0 ? ' anulada' : ''}"><div class="cod">${esc(f.codigo)}</div>
-        <div><div class="nom">${esc(f.nombre)}</div>${f.x ? `<div class="m-nota">lote habitual ${fmt(f.x.lote)} kg${f.x.kg > f.x.lote ? ` (${fmt(f.x.kg / f.x.lote, 1)} lotes)` : ''} · para ${f.x.para.map((c) => esc(nombreDe(c))).join(', ')}</div>` : ''}</div>
+        <div><div class="nom">${esc(f.nombre)}${chipFalta(f.codigo)}</div>${f.x ? `<div class="m-nota">lote habitual ${fmt(f.x.lote)} kg${f.x.kg > f.x.lote ? ` (${fmt(f.x.kg / f.x.lote, 1)} lotes)` : ''} · para ${f.x.para.map((c) => esc(nombreDe(c))).join(', ')}</div>` : ''}</div>
         ${inputCant(f, 'kg')}</div>`).join('') || '<div class="pg-vacio">No hace falta elaborar granel hoy: alcanza con lo que hay.</div>'}
       ${formAgregar('elaborar')}</div>`;
 
@@ -293,7 +335,7 @@
         <div class="fila${f.cantidad === 0 ? ' anulada' : ''}">
           <div>${f.x ? pill(f.x.prio) : '<span class="prio sin">A mano</span>'}</div>
           <div class="cod">${esc(f.codigo)}</div>
-          <div><div class="nom">${esc(f.nombre)}</div>${f.x ? `<div class="motivos">${f.x.motivos.map((m) => motivoHtml(f, m)).join('')}</div>` : ''}</div>
+          <div><div class="nom">${esc(f.nombre)}${chipFalta(f.codigo)}</div>${f.x ? `<div class="motivos">${f.x.motivos.map((m) => motivoHtml(f, m)).join('')}</div>` : ''}</div>
           ${inputCant(f, 'u')}
         </div>`).join('') || '<div class="pg-vacio">Nada para fraccionar hoy.</div>'}
       ${formAgregar('fraccionar')}</div>`;
@@ -313,7 +355,7 @@
 
     $('tab-hoy').innerHTML = `
       <div class="pg-nota">Orden de la fila: <b>Mercado Libre y 🟥 Hoy</b> → <b>🟧 1 día</b> → <b>la entrega que le toca</b> a clientes que se entregan de a partes → <b>🟨 2-3 días</b> → <b>🔄 cuota de los parciales</b> → <b>sin etiqueta</b> → <b>próximas entregas</b> → <b>stock</b> con el lugar que sobra. Lo urgente entra siempre, aunque pase el tope.</div>
-      ${bloqueEntregas()}${alertas}${barraHoja}${bloqueHecho()}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
+      ${bloqueEntregas()}${alertas}${barraHoja}${bloqueHecho()}${bloqueMateriales()}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
   }
 
   function pintarPedidos() {
@@ -495,6 +537,7 @@
         <div class="der">Falta elaborar: <b>${fmt(de('elaborar').reduce((a, x) => a + x.cantidad, 0), 0)} kg</b><br>Falta fraccionar: <b>${fmt(de('fraccionar').reduce((a, x) => a + x.cantidad, 0), 0)} u</b><br>Impreso ${hoy.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div></header>
       ${tabla('Entregas de hoy', '<th></th><th>Hora</th><th>Cliente</th><th>Qué se lleva</th>', es.map((e) => `<tr>${caja}<td><b>${esc(e.hora || '')}</b></td><td><b>${esc(e.cliente || '')}</b><div class="det">${esc(e.numero)}</div></td>
         <td>${(e.items || []).map((i) => `${esc(i.n || nombreDe(i.c))} × <b>${fmt(i.q, 0)}</b>`).join('<br>')}${e.nota ? `<div class="det">${esc(e.nota)}</div>` : ''}</td></tr>`).join(''))}
+      ${S.mat && S.mat.faltan.length ? tabla('⚠ Faltan materiales para este plan', '<th>Material</th><th class="num">Necesita</th><th class="num">Hay</th><th class="num">Falta</th><th>Para</th>', S.mat.faltan.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> <b>${esc(x.nombre)}</b></td><td class="num">${cantMat(x.necesita, x.uom)}</td><td class="num">${cantMat(x.hay, x.uom)}</td><td class="num"><b>${cantMat(x.falta, x.uom)}</b></td><td class="det">${x.para.map((c) => esc(nombreDe(c))).join(', ')}</td></tr>`).join('')) : ''}
       ${S.plan.hecho_hoy.length ? tabla('Ya hecho hoy (según la Hoja de Producción)', '<th>Producto</th><th class="num">Cantidad</th><th>Cargado</th>', S.plan.hecho_hoy.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> ${esc(x.nombre)}</td><td class="num">${fmt(x.q)} ${x.unidad}</td><td class="det">${x.cargas.map((c) => `${esc(c.hora)} ${esc(c.quien)}`).join(' · ')}</td></tr>`).join('')) : ''}
       ${tabla('Preparar hoy para mañana', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Hecho por</th>', de('preparar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> ${esc(x.nombre)}</td><td class="cant">${fmt(x.cantidad)} kg</td><td class="firma"></td></tr>`).join(''))}
       ${tabla('Elaborar', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Para</th><th>Hecho por</th>', de('elaborar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> <b>${esc(x.nombre)}</b>${x.x ? `<div class="det">lote habitual ${fmt(x.x.lote)} kg</div>` : ''}</td>

@@ -38,6 +38,7 @@ const MENU = [
   { type: 'group', label: 'Producción' },
   { type: 'item', id: 'produccion', label: 'Producción', href: 'produccion/index.html',      status: 'ready' },
   { type: 'item', id: 'programar', label: 'Programar el día', href: 'produccion/programar.html', status: 'ready' },
+  { type: 'item', id: 'control', label: 'Control de carga', href: 'produccion/control.html', status: 'ready' },
   { type: 'item', id: 'escandallo', label: 'Escandallo', href: 'produccion/escandallo.html', status: 'ready' },
 
   { type: 'group', label: 'Precios' },
@@ -135,6 +136,7 @@ const MODULE_ICONS = {
   oportunidades:  '<svg viewBox="0 0 24 24"><path d="M9 21h6M10 21v-3M14 21v-3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2h6c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg>',
   manuales:       '<svg viewBox="0 0 24 24"><path d="M12 6.5C10.5 5 8.5 4.5 6 4.5H3v13h3c2.5 0 4.5.5 6 2 1.5-1.5 3.5-2 6-2h3v-13h-3c-2.5 0-4.5.5-6 2z"/><path d="M12 6.5v12"/></svg>',
   produccion:     '<svg viewBox="0 0 24 24"><path d="M4 20h16M4 20V10l4-3 4 3 4-3 4 3v10"/><path d="M9 20v-5h6v5"/></svg>',
+  control:        '<svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><path d="M12 3l8 3v6c0 4.5-3.4 8.4-8 9-4.6-.6-8-4.5-8-9V6z"/></svg>',
   programar:      '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M8 14h3M8 17h6"/></svg>',
   escandallo:     '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h4"/></svg>',
   rentabilidad:   '<svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { modoPlan, modoEtiquetar, modoPostergar, modoEntregaHoy, usuarioValido } from "./plan.ts";
+import { modoPlan, modoControl, modoEtiquetar, modoPostergar, modoEntregaHoy, usuarioValido } from "./plan.ts";
 
 const ODOO_URL = Deno.env.get("ODOO_URL")!;
 const ODOO_DB = Deno.env.get("ODOO_DB")!;
@@ -289,6 +289,7 @@ Deno.serve(async (req: Request) => {
 
     // Programador de producción (ver plan.ts)
     if (modo === "plan") return new Response(JSON.stringify(await modoPlan()), { headers: cors });
+    if (modo === "control") return new Response(JSON.stringify(await modoControl()), { headers: cors });
     if (modo === "etiquetar" || modo === "postergar" || modo === "entrega_hoy") {
       const usuario = await usuarioValido(req);
       if (!usuario) return new Response(JSON.stringify({ ok: false, error: "No autorizado" }), { headers: cors });

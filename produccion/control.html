@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de carga · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .ct-top { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; margin-bottom:18px; }
+    .ct-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; flex:1; min-width:280px; }
+    .ct-kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
+    .ct-kpi .k { font-size:11px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
+    .ct-kpi .v { font-size:23px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; }
+    .ct-kpi .sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+    .ct-sync { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; min-width:220px; display:flex; flex-direction:column; gap:8px; }
+    .ct-sync .cuando { font-size:11.5px; color:var(--muted); line-height:1.45; }
+    .ct-nota { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm);
+               padding:11px 14px; font-size:12.5px; color:var(--muted); line-height:1.55; margin-bottom:16px; }
+    .ct-nota b { color:var(--text); }
+    .ct-bloque { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:14px; overflow-x:auto; }
+    .ct-bloque > header { display:flex; align-items:baseline; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .ct-bloque h3 { font-size:14.5px; font-weight:700; }
+    .ct-bloque .meta { font-size:12px; color:var(--muted); }
+    .ct-vacio { padding:16px; font-size:13px; color:var(--muted); }
+    .al { display:grid; grid-template-columns:86px minmax(0,1fr) auto; gap:4px 12px; padding:11px 16px; border-bottom:1px solid var(--border); font-size:13px; align-items:start; }
+    .al:last-child { border-bottom:none; }
+    .al .tit { font-weight:600; line-height:1.35; }
+    .al .det { grid-column:2 / -1; font-size:12px; color:var(--muted); line-height:1.5; }
+    .al .cuando { font-size:11.5px; color:var(--muted); white-space:nowrap; text-align:right; }
+    .sev { display:inline-block; font-size:11px; font-weight:700; padding:2px 9px; border-radius:99px; white-space:nowrap; }
+    .sev.critico { color:var(--hot); background:color-mix(in srgb, var(--hot) 14%, transparent); }
+    .sev.warn { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent); }
+    .sev.info { color:var(--muted); background:var(--bg); }
+    details.res summary { padding:11px 16px; cursor:pointer; font-size:12.5px; color:var(--muted); }
+    .pg-msg { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface); padding:10px 16px; border-radius:var(--radius-sm); font-size:13px; z-index:50; display:none; }
+    @media (max-width: 640px) { .al { grid-template-columns:1fr; } .al .det { grid-column:1; } .al .cuando { text-align:left; } }
+  </style>
+</head>
+<body data-page="control" data-title="Control de carga" data-subtitle="Hoja de Producción (Core) contra Fabricación (Odoo) y materiales del plan">
+<div id="app-shell"></div>
+<main id="app-content">
+  <div class="ct-top">
+    <div class="ct-kpis" id="kpis"></div>
+    <div class="ct-sync">
+      <div class="cuando" id="cuando">Cargando…</div>
+      <button class="btn primary" id="btn-revisar">Revisar ahora</button>
+    </div>
+  </div>
+  <div class="ct-nota">Lo que se carga en la <b>Hoja de Producción</b> tiene que coincidir con lo que después se pasa a <b>Fabricación en Odoo</b>, día por día y producto por producto (con las unidades convertidas: 500 g = 0,5 kg). Esto se revisa solo cada 15 minutos en horario de trabajo. Cuando se corrige en la hoja o en Odoo, el aviso se cierra solo en la próxima revisión.</div>
+  <div id="lista"></div>
+  <div class="pg-msg" id="msg"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+(function () {
+  const FN = window.SUPABASE_URL + '/functions/v1/sync-produccion';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const cuando = (t) => { const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? 'recién' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} días`; };
+  const GRUPOS = [
+    { tipos: ['pendiente_odoo', 'sin_validar'], titulo: 'Pendiente de cargar o validar en Odoo', ayuda: 'Está en la Hoja de Producción y todavía no hay orden de fabricación terminada en Odoo.' },
+    { tipos: ['distinto'], titulo: 'Cantidades que no coinciden', ayuda: 'El mismo día y producto tienen cantidades distintas en la hoja y en Odoo. Si es 10 veces o más, casi seguro es una unidad mal cargada (g / kg).' },
+    { tipos: ['solo_odoo'], titulo: 'En Odoo pero no en la Hoja', ayuda: 'Hay una orden de fabricación en Odoo y nada cargado en la hoja ese día: se olvidaron de anotarlo en la hoja o la orden tiene otra fecha.' },
+    { tipos: ['fecha_distinta'], titulo: 'Misma cantidad, en otro día', ayuda: 'Se cargó lo mismo en la hoja y en Odoo pero con fechas distintas (dentro de 3 días hábiles). Conviene corregir la fecha de la orden en Odoo.' },
+    { tipos: ['falta_mp'], titulo: 'Faltan materiales para el plan de hoy', ayuda: 'Según el stock de Odoo, no alcanza para lo que propone "Programar el día".' },
+    { tipos: ['pendiente_hoy'], titulo: 'Hoy, todavía sin pasar a Odoo', ayuda: 'Es normal durante el día: se informa para no olvidarlo antes de cerrar.' },
+  ];
+  function msg(t) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(msg._t); msg._t = setTimeout(() => { m.style.display = 'none'; }, 3500); }
+
+  async function cargar() {
+    const desde = new Date(Date.now() - 7 * 864e5).toISOString();
+    const [ab, res] = await Promise.all([
+      sb.from('control_alertas').select('*').eq('estado', 'abierta').order('fecha_ref', { ascending: false }),
+      sb.from('control_alertas').select('*').eq('estado', 'resuelta').gte('resuelta_en', desde).order('resuelta_en', { ascending: false }).limit(60),
+    ]);
+    if (ab.error) { $('lista').innerHTML = `<div class="ct-bloque"><div class="ct-vacio">No se pudo leer: ${esc(ab.error.message)}</div></div>`; return; }
+    const A = ab.data, R = res.data || [];
+    const n = (tipos) => A.filter((a) => tipos.includes(a.tipo)).length;
+    const ultima = A.concat(R).reduce((m, a) => (a.ultima_vez > m ? a.ultima_vez : m), '');
+    $('cuando').textContent = ultima ? `Última revisión: ${cuando(ultima)}` : 'Sin revisiones todavía';
+    $('kpis').innerHTML = `
+      <div class="ct-kpi"><div class="k">Pendiente en Odoo</div><div class="v" style="color:${n(['pendiente_odoo', 'sin_validar']) ? 'var(--hot)' : 'var(--ok)'}">${n(['pendiente_odoo', 'sin_validar'])}</div><div class="sub">días anteriores</div></div>
+      <div class="ct-kpi"><div class="k">Inconsistencias</div><div class="v" style="color:${n(['distinto', 'solo_odoo', 'fecha_distinta']) ? 'var(--warn)' : 'var(--ok)'}">${n(['distinto', 'solo_odoo', 'fecha_distinta'])}</div><div class="sub">hoja ≠ Odoo</div></div>
+      <div class="ct-kpi"><div class="k">Faltan materiales</div><div class="v" style="color:${n(['falta_mp']) ? 'var(--hot)' : 'var(--ok)'}">${n(['falta_mp'])}</div><div class="sub">para el plan de hoy</div></div>
+      <div class="ct-kpi"><div class="k">Resueltas</div><div class="v">${R.length}</div><div class="sub">últimos 7 días</div></div>`;
+    const fila = (a) => `<div class="al"><div><span class="sev ${esc(a.severidad)}">${a.severidad === 'critico' ? 'Urgente' : a.severidad === 'warn' ? 'Revisar' : 'Info'}</span></div>
+      <div class="tit">${esc(a.titulo)}</div><div class="cuando">${a.estado === 'resuelta' ? 'resuelta ' + cuando(a.resuelta_en) : 'desde ' + cuando(a.primera_vez)}</div>
+      ${a.detalle ? `<div class="det">${esc(a.detalle)}</div>` : ''}</div>`;
+    $('lista').innerHTML = GRUPOS.map((g) => {
+      const xs = A.filter((a) => g.tipos.includes(a.tipo));
+      if (!xs.length) return '';
+      return `<div class="ct-bloque"><header><h3>${esc(g.titulo)}</h3><span class="meta">${xs.length} · ${esc(g.ayuda)}</span></header>${xs.map(fila).join('')}</div>`;
+    }).join('') + (A.length ? '' : '<div class="ct-bloque"><div class="ct-vacio">✓ Todo coincide: la Hoja de Producción y Fabricación en Odoo están iguales.</div></div>')
+      + (R.length ? `<div class="ct-bloque"><details class="res"><summary>Resueltas en los últimos 7 días (${R.length})</summary>${R.map(fila).join('')}</details></div>` : '');
+  }
+
+  $('btn-revisar').addEventListener('click', async () => {
+    const b = $('btn-revisar'); b.disabled = true; b.textContent = 'Revisando Odoo…';
+    try {
+      const { data: s } = await sb.auth.getSession();
+      const r = await fetch(FN, { method: 'POST', headers: { Authorization: 'Bearer ' + (s?.session?.access_token || window.SUPABASE_KEY), apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ modo: 'control' }) });
+      const j = await r.json(); if (!j.ok) throw new Error(j.error || 'error');
+      await cargar(); msg('Revisado' + (j.resueltas ? ` · ${j.resueltas} resueltas` : ''));
+    } catch (e) { msg('No se pudo revisar: ' + e.message); }
+    finally { b.disabled = false; b.textContent = 'Revisar ahora'; }
+  });
+  cargar();
+})();
+</script>
+</body>
+</html>
