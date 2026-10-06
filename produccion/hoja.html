@@ -583,7 +583,7 @@ function renderPendList(elId, list, unidadDefault) {
   for (const f of visible) {
     const qty = fmt(f.qty_faltante);
     const un = unidadDefault === 'kg' ? 'kg' : (f.qty_faltante == 1 ? 'un' : 'un');
-    html += '<div class="pend-item"' + (f.detalle ? ' title="' + escapeHTML(f.detalle) + '"' : '') + '>';
+    html += '<div class="pend-item">';
     html += '<span class="pend-item__name">' + escapeHTML(f.nombre_producto) + '</span>';
     html += '<span class="pend-item__qty">' + qty + ' ' + un + '</span>';
     html += '</div>';
@@ -606,20 +606,6 @@ function aplicarDescuentoLocal(pendientes, actividades) {
 }
 
 async function cargarPendientes() {
-  // 1) Si se armó el plan en "Programar el día" y se pasó a la hoja, manda ese plan
-  const hoy = new Date(); const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-  const { data: plan, error: ePlan } = await sb.from('prod_plan_dia').select('tipo,codigo,nombre,cantidad,detalle,orden')
-    .eq('fecha', hoyIso).eq('en_hoja', true).gt('cantidad', 0).order('orden');
-  if (!ePlan && plan && plan.length) {
-    const fila = (r) => ({ sku: r.codigo, nombre_producto: r.nombre + (r.tipo === 'preparar' ? ' (para mañana)' : ''), qty_faltante: Number(r.cantidad), detalle: r.detalle });
-    STATE.pendFab = plan.filter(r => r.tipo !== 'fraccionar').map(fila);
-    STATE.pendFrac = plan.filter(r => r.tipo === 'fraccionar').map(fila);
-    STATE.origenPend = 'plan';
-    renderPendientes();
-    return;
-  }
-  // 2) Si no, lo de siempre: faltantes de los pedidos de Odoo
-  STATE.origenPend = 'odoo';
   const [{ data: fabRaw }, { data: fracRaw }] = await Promise.all([
     sb.from('v_prod_a_fabricar').select('*').order('qty_faltante', { ascending: false }),
     sb.from('v_prod_a_fraccionar').select('*').order('qty_faltante', { ascending: false })
@@ -637,9 +623,9 @@ function renderPendientes() {
   const fracActivos = frac.filter(f => Number(f.qty_faltante) > 0);
 
   document.getElementById('pend-fab-count').textContent =
-    fabActivos.length + ' SKU' + (fabActivos.length === 1 ? '' : 's') + (STATE.origenPend === 'plan' ? ' · plan del día' : '');
+    fabActivos.length + ' SKU' + (fabActivos.length === 1 ? '' : 's');
   document.getElementById('pend-frac-count').textContent =
-    fracActivos.length + ' SKU' + (fracActivos.length === 1 ? '' : 's') + (STATE.origenPend === 'plan' ? ' · plan del día' : '');
+    fracActivos.length + ' SKU' + (fracActivos.length === 1 ? '' : 's');
 
   renderPendList('pend-fab-list', fab, 'kg');
   renderPendList('pend-frac-list', frac, 'un');

@@ -81,7 +81,7 @@
     return { lote, tanda, patrones, ultimaEntrega, entregasHechas };
   }
 
-  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [] }) {
+  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [], entregas = [] }) {
     const capU = Number(cfg.cap_u_dia), capKg = Number(cfg.cap_kg_dia);
     const umbral = Number(cfg.umbral_pedido_grande || 10);
     const diaAnterior = new Set(cfg.graneles_dia_anterior || []);
@@ -113,14 +113,17 @@
 
     // ---------- 1) pedidos → renglones de demanda ----------
     const aConfirmar = [], demanda = [], masAdelante = [];
+    // "Entrega de hoy" cargada en Core (ej. José retira al mediodía): esas cantidades son Hoy
+    const entregaDe = {}; for (const e of entregas) if (String(e.fecha).slice(0, 10) === iso(hoy)) entregaDe[e.so_id] = e;
     for (const p of snap.pedidos) {
       const presupuesto = (p.estado === 'draft' || p.estado === 'sent') && !p.ml;
-      if (presupuesto) { aConfirmar.push(p); continue; }
+      const eh = entregaDe[p.id];
+      if (presupuesto && !eh) { aConfirmar.push(p); continue; }
       const claves = (p.tag_ids || []).map((id) => claveTag[id]).filter(Boolean);
       let prio = p.ml ? 'hoy'
         : claves.includes('parcial') ? 'parcial'
         : claves.sort((a, b) => RANGO[a] - RANGO[b])[0] || 'sin';
-      if (prio === 'sin') alertas.push({ tipo: 'sin_etiqueta', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} (${p.cliente}) no tiene etiqueta: entra al final de la fila.` });
+      if (prio === 'sin' && !presupuesto) alertas.push({ tipo: 'sin_etiqueta', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} (${p.cliente}) no tiene etiqueta: entra al final de la fila.` });
       if (p.ml && p.estado === 'draft') alertas.push({ tipo: 'ml_borrador', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} es una venta de Mercado Libre todavía en borrador en Odoo: se programa igual como Hoy.` });
 
       // explotar kits (packs y combos) en sus productos reales
@@ -129,6 +132,28 @@
         const comps = snap.kits[l.c];
         if (comps) for (const k of comps) renglones.push({ c: k.c, pend: l.pend * k.q, kit: l.c });
         else renglones.push({ c: l.c, pend: l.pend });
+      }
+
+      if (eh) {
+        // lo que se lleva hoy (los kits se desarman igual que en el pedido)
+        const pide = {};
+        for (const it of eh.items || []) {
+          const comps = snap.kits[it.c];
+          if (comps) for (const k of comps) pide[k.c] = (pide[k.c] || 0) + it.q * k.q;
+          else pide[it.c] = (pide[it.c] || 0) + Number(it.q);
+        }
+        for (const r of renglones) {
+          const t = Math.min(r.pend, pide[r.c] || 0);
+          if (t <= 0) continue;
+          demanda.push({ c: r.c, prio: 'hoy', q: t, so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, kit: r.kit || null, entrega: true, nota: `entrega de hoy ${eh.hora || ''}`.trim() });
+          pide[r.c] -= t; r.pend -= t;
+        }
+        for (let i = renglones.length - 1; i >= 0; i--) if (renglones[i].pend <= 0) renglones.splice(i, 1);
+        if (presupuesto) {
+          alertas.push({ tipo: 'confirmar', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} (${p.cliente}) tiene una entrega cargada para hoy pero sigue como presupuesto: hay que confirmarlo en Odoo para que exista la entrega.` });
+          aConfirmar.push(p); continue;
+        }
+        if (!renglones.length) continue;
       }
 
       // Cliente que se entrega de a partes (aprendido del historial o cargado a mano):
@@ -237,7 +262,7 @@
 
     // ---------- 2) atender la demanda en orden ----------
     for (const d of demanda) {
-      const pz = postergadoA(d.so_id, d.c);
+      const pz = d.entrega ? null : postergadoA(d.so_id, d.c);
       if (pz) { postergado.push({ ...d, motivo: `postergado a mano hasta el ${fechaCorta(pz.hasta)}`, manual: true, hasta: pz.hasta }); continue; }
       // a) primero el producto terminado que ya está hecho
       const usa = Math.min(dispPT[d.c] || 0, d.q);
@@ -275,7 +300,7 @@
       }
       aplicar(est);
       for (const g of Object.keys(est.elab)) elaborar[g].para.add(d.c);
-      sumarFracc(d.c, q, { prio: d.prio, so_id: d.so_id, numero: d.numero, cliente: d.cliente, q, kit: d.kit, nota: d.nota });
+      sumarFracc(d.c, q, { prio: d.prio, so_id: d.so_id, numero: d.numero, cliente: d.cliente, q, kit: d.kit, nota: d.nota, entrega: !!d.entrega });
     }
 
     // ---------- 3) ritmo de venta (solo renglones chicos: los pedidos grandes se planifican como pedido) ----------
@@ -350,6 +375,7 @@
       a_confirmar: aConfirmar.map((p) => ({ so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, estado: p.estado, monto: p.monto, lineas: p.lineas })),
       ritmo, alertas,
       postergados: Object.values(posDe),
+      entregas_hoy: Object.values(entregaDe),
       aprendido: { lotes: ap.lote, tandas: ap.tanda, patrones },
     };
   }

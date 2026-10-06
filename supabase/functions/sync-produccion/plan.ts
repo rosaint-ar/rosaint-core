@@ -51,6 +51,46 @@ export async function usuarioValido(req: Request): Promise<Row | null> {
   try { const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey, Authorization: a } }); return r.ok ? await r.json() : null; } catch { return null; }
 }
 
+// "Entrega de hoy": lo que un cliente retira/recibe un día puntual (ej. José pasa al mediodía).
+// En Odoo marca sus entregas pendientes con la estrella (Urgente) y la fecha programada a esa hora;
+// en Core guarda qué se lleva, y el programador lo pone como Hoy. quitar:true lo deshace.
+export async function modoEntregaHoy(body: Row, usuario: Row) {
+  const soId = Number(body.so_id);
+  if (!soId) throw new Error("Falta so_id");
+  const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const fecha = String(body.fecha || hoyAR).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error("Fecha inválida");
+  const hora = String(body.hora || "12:00").slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(hora)) throw new Error("Hora inválida");
+  const sb = createClient(SB_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+
+  const [so] = await ex("sale.order", "read", [[soId]], { fields: ["name", "company_id", "state", "partner_id"] }) as Row[];
+  if (!so) throw new Error("Pedido no encontrado");
+  if (m2o(so.company_id) !== 2) throw new Error("El pedido no es de VELAZQUEZ");
+  const picks = await ex("stock.picking", "search_read", [[["sale_id", "=", soId], ["picking_type_code", "=", "outgoing"], ["state", "not in", ["done", "cancel"]]]], { fields: ["id", "name"] }) as Row[];
+
+  if (body.quitar) {
+    if (picks.length) await ex("stock.picking", "write", [picks.map((p) => p.id), { priority: "0" }]);
+    const { error } = await sb.from("prod_plan_entregas").delete().eq("so_id", soId).eq("fecha", fecha);
+    if (error) throw new Error("borrar: " + error.message);
+    return { ok: true, numero: so.name, quitada: true, entregas: picks.map((p) => p.name) };
+  }
+
+  const items = ((body.items as Row[]) || []).map((i) => ({ c: String(i.c), n: String(i.n || ""), q: Number(i.q) })).filter((i) => i.c && i.q > 0);
+  if (!items.length) throw new Error("No hay nada para entregar");
+  if (picks.length) {
+    // hora Argentina (UTC-3) → UTC, que es como guarda Odoo
+    const utc = new Date(`${fecha}T${hora}:00-03:00`).toISOString().replace("T", " ").slice(0, 19);
+    await ex("stock.picking", "write", [picks.map((p) => p.id), { priority: "1", scheduled_date: utc }]);
+  }
+  const { error } = await sb.from("prod_plan_entregas").upsert({
+    so_id: soId, fecha, numero: so.name, cliente: m2oName(so.partner_id), hora, items, nota: body.nota || null,
+    pickings: picks.map((p) => p.name).join(", ") || null, creado: new Date().toISOString(), creado_por: usuario?.email || null,
+  }, { onConflict: "so_id,fecha" });
+  if (error) throw new Error("guardar: " + error.message);
+  return { ok: true, numero: so.name, estado: so.state, entregas: picks.map((p) => p.name), sin_entrega_en_odoo: !picks.length };
+}
+
 // Postergar (o volver a programar) un pedido entero, un producto de un pedido, o algo para stock (so_id 0).
 // Pedido entero → además mueve la fecha prevista de sus entregas pendientes en Odoo.
 export async function modoPostergar(body: Row, usuario: Row) {

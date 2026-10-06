@@ -6,7 +6,7 @@
   'use strict';
   const FN = window.SUPABASE_URL + '/functions/v1/sync-produccion';
   const P = window.PROGRAMADOR;
-  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], plan: null };
+  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], entregas: [], plan: null };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const fmt = (n, d = 1) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: d });
@@ -42,6 +42,11 @@
     if (error) throw new Error('plan del día: ' + error.message);
     S.dia = data;
   }
+  async function cargarEntregas() {
+    const { data, error } = await sb.from('prod_plan_entregas').select('*').gte('fecha', isoLocal(new Date())).order('hora');
+    if (error) throw new Error('entregas: ' + error.message);
+    S.entregas = data;
+  }
   async function cargarConfig() {
     const [cfg, par, cli, pos] = await Promise.all([
       sb.from('prod_plan_config').select('*').eq('id', 1).single(),
@@ -72,7 +77,7 @@
   }
 
   function calcular() {
-    S.plan = P.programar({ snap: S.snap, cfg: S.cfg, parciales: S.parciales, clientes: S.clientes, postergados: S.postergados, pres: S.pres, subg: S.subg, hoy: new Date() });
+    S.plan = P.programar({ snap: S.snap, cfg: S.cfg, parciales: S.parciales, clientes: S.clientes, postergados: S.postergados, entregas: S.entregas, pres: S.pres, subg: S.subg, hoy: new Date() });
     pintar();
   }
 
@@ -138,13 +143,6 @@
       filas.push({ tipo: g.tipo, codigo: g.codigo, nombre: g.nombre || nombreDe(g.codigo), sugerido: g.agregado ? null : 0, cantidad: Number(g.cantidad), editado: true, agregado: !!g.agregado, en_hoja: !!g.en_hoja, guardada: g });
     return filas;
   }
-  function estadoHoja(filas) {
-    const enHoja = S.dia.filter((r) => r.en_hoja);
-    if (!enHoja.length) return { pasada: false };
-    const ultima = enHoja.reduce((a, r) => (r.actualizado > a ? r.actualizado : a), '');
-    const cambios = filas.some((f) => (f.cantidad > 0) !== f.en_hoja || (f.en_hoja && Number(f.guardada?.cantidad) !== f.cantidad));
-    return { pasada: true, ultima, cambios };
-  }
   async function guardarCantidad(tipo, codigo, nombre, cantidad, sugerido, agregado) {
     const { data: u } = await sb.auth.getUser();
     const fila = { fecha: hoyIso(), tipo, codigo, nombre, cantidad, sugerido, editado: true, agregado: !!agregado, actualizado: new Date().toISOString(), actualizado_por: u?.user?.email || null };
@@ -159,24 +157,6 @@
     if (error) return msg(error.message, true);
     await cargarDia(); pintar();
   }
-  async function pasarAHoja() {
-    const filas = filasDelDia();
-    const { data: u } = await sb.auth.getUser();
-    const ahora = new Date().toISOString(), quien = u?.user?.email || null;
-    const detalle = (f) => f.tipo === 'fraccionar' && f.x ? f.x.motivos.map((m) => m.numero ? `${m.numero} ${m.cliente} ${fmt(m.q, 0)}` : `stock ${fmt(m.q, 0)}`).join('; ')
-      : f.tipo === 'elaborar' && f.x ? 'para ' + f.x.para.map(nombreDe).join(', ') : null;
-    const rows = filas.map((f, i) => ({ fecha: hoyIso(), tipo: f.tipo, codigo: f.codigo, nombre: f.nombre, cantidad: f.cantidad, sugerido: f.sugerido, editado: f.editado, agregado: f.agregado,
-      en_hoja: f.cantidad > 0, detalle: detalle(f), orden: i, actualizado: ahora, actualizado_por: quien }));
-    const { error } = await sb.from('prod_plan_dia').upsert(rows);
-    if (error) return msg('No se pudo pasar a la hoja: ' + error.message, true);
-    // lo que estaba en la hoja y ya no está en la lista, sale de la hoja
-    const claves = new Set(rows.map((r) => r.tipo + '|' + r.codigo));
-    for (const r of S.dia.filter((r) => r.en_hoja && !claves.has(r.tipo + '|' + r.codigo)))
-      await sb.from('prod_plan_dia').update({ en_hoja: false }).eq('fecha', r.fecha).eq('tipo', r.tipo).eq('codigo', r.codigo);
-    await cargarDia(); pintar();
-    msg('Listo: la Hoja de Producción ya muestra este plan');
-  }
-
   function inputCant(f, unidad) {
     const dif = f.sugerido != null && f.cantidad !== f.sugerido;
     return `<div class="cant-edit">
@@ -193,13 +173,73 @@
       <span class="acc"><button data-acc="agregar" data-tipo="${tipo}">Agregar</button></span></div>`;
   }
 
+  // estado de cada producto de una entrega de hoy, según lo que armó el programador
+  function estadoEntrega(e) {
+    const pl = S.plan, so = Number(e.so_id), por = {};
+    const add = (c, k, q) => { por[c] = por[c] || { c, listo: 0, fracc: 0, falta: 0 }; por[c][k] += q; };
+    for (const d of pl.de_stock) if (d.so_id === so && d.entrega) add(d.c, 'listo', d.q);
+    for (const fr of pl.fraccionar) for (const m of fr.motivos) if (m.so_id === so && m.entrega) add(fr.c, 'fracc', m.q);
+    for (const d of pl.postergado) if (d.so_id === so && d.entrega) add(d.c, 'falta', d.q);
+    return Object.values(por);
+  }
+  function bloqueEntregas() {
+    const hoy = isoLocal(new Date());
+    const es = S.entregas.filter((e) => String(e.fecha).slice(0, 10) === hoy);
+    if (!es.length) return '';
+    return `<div class="pg-bloque entregas"><header><h3>Entregas de hoy</h3><span class="meta">Retiran o se despachan hoy · marcadas con la estrella en Odoo</span></header>
+      ${es.map((e) => {
+        const p = pedidoDe(Number(e.so_id));
+        const est = estadoEntrega(e);
+        const falta = est.reduce((a, x) => a + x.falta, 0), fracc = est.reduce((a, x) => a + x.fracc, 0);
+        const estado = falta ? `<span class="prio hoy">Falta ${fmt(falta, 0)} u</span>` : fracc ? `<span class="prio d23">Fraccionar ${fmt(fracc, 0)} u</span>` : '<span class="prio stock">Todo listo en stock</span>';
+        return `<div class="ped"><div class="cab"><span class="hora">${esc(e.hora || '')}</span><span class="num">${esc(e.numero)}</span><span class="cli">${esc(e.cliente || p?.cliente || '')}</span>${estado}
+          ${p && esPresupuesto(p) ? '<span class="prio sin">sin confirmar en Odoo</span>' : ''}
+          <span class="der"><span class="acc"><button data-acc="entrega" data-so="${e.so_id}">Editar</button><button data-acc="quitarentrega" data-so="${e.so_id}">Quitar</button></span></span></div>
+          <div class="detalle">${(e.items || []).map((i) => `${esc(i.n || nombreDe(i.c))} × <b>${fmt(i.q, 0)}</b>`).join(' · ')}${e.nota ? ` · <i>${esc(e.nota)}</i>` : ''}</div>
+          ${falta ? `<div class="detalle" style="color:var(--hot)">No alcanza: ${est.filter((x) => x.falta).map((x) => `${esc(nombreDe(x.c))} × ${fmt(x.falta, 0)}`).join(' · ')}</div>` : ''}</div>`;
+      }).join('')}</div>`;
+  }
+
+  // ---------------- diálogo "Entrega de hoy" ----------------
+  function abrirEntrega(soId) {
+    const p = pedidoDe(Number(soId)); if (!p) return;
+    const hoy = isoLocal(new Date());
+    const prev = S.entregas.find((e) => Number(e.so_id) === p.id && String(e.fecha).slice(0, 10) === hoy);
+    const q = {}; for (const i of prev?.items || []) q[i.c] = i.q;
+    $('ent-titulo').textContent = `Entrega de hoy · ${p.numero} ${p.cliente}`;
+    $('ent-texto').textContent = esPresupuesto(p) ? 'Ojo: este pedido sigue como presupuesto. Confirmalo en Odoo para que exista la entrega.' : 'Se marca la entrega en Odoo con la estrella (Urgente) y la fecha programada a esta hora.';
+    $('ent-hora').value = prev?.hora || '12:00';
+    $('ent-nota').value = prev?.nota || '';
+    $('ent-lineas').innerHTML = p.lineas.map((l) => `<tr><td>${esc(l.n)}</td><td class="num muted">${fmt(l.pend, 0)} pend.</td>
+      <td class="num"><input type="number" min="0" max="${l.pend}" class="inp corto" data-ent="${esc(l.c)}" data-n="${esc(l.n)}" value="${q[l.c] ?? ''}" placeholder="0"></td>
+      <td><span class="acc"><button type="button" data-todo="${esc(l.c)}" data-max="${l.pend}">todo</button></span></td></tr>`).join('');
+    $('ent-quitar').hidden = !prev;
+    const d = $('dlg-ent');
+    d.querySelector('form').onsubmit = async (ev) => {
+      const rv = ev.submitter?.value;
+      if (rv === 'quitar') return quitarEntrega(p.id);
+      if (rv !== 'ok') return;
+      const items = [...document.querySelectorAll('[data-ent]')].map((i) => ({ c: i.dataset.ent, n: i.dataset.n, q: Math.min(Number(i.max), Math.max(0, Number(i.value) || 0)) })).filter((i) => i.q > 0);
+      if (!items.length) return msg('No pusiste cantidades', true);
+      try {
+        const r = await fn('entrega_hoy', { so_id: p.id, fecha: hoy, hora: $('ent-hora').value || '12:00', items, nota: $('ent-nota').value.trim() || null });
+        await cargarEntregas(); calcular(); abrirTab('hoy');
+        msg(r.sin_entrega_en_odoo ? `${r.numero}: guardada en Core. Confirmá el pedido en Odoo para que exista la entrega.` : `${r.numero}: entrega de hoy marcada en Odoo (${r.entregas.join(', ')})`);
+      } catch (e) { msg('No se pudo guardar: ' + e.message, true); }
+    };
+    d.showModal();
+  }
+  async function quitarEntrega(soId) {
+    try { const r = await fn('entrega_hoy', { so_id: Number(soId), fecha: isoLocal(new Date()), quitar: true }); await cargarEntregas(); calcular(); msg(`${r.numero}: entrega de hoy quitada`); }
+    catch (e) { msg('No se pudo quitar: ' + e.message, true); }
+  }
+
   function pintarHoy() {
     const pl = S.plan;
     const filas = filasDelDia();
     const de = (tipo) => filas.filter((f) => f.tipo === tipo);
-    const hoja = estadoHoja(filas);
     const hora = (t) => new Date(t).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-    const ico = { sin_etiqueta: '🏷️', sugerir_parcial: '🔄', ml_borrador: '🟡', parcial_sin_ritmo: '🔄', parcial_vencido: '⏰', sin_ficha: '❓', mo_vieja: '🗂️', excede: '⚠️' };
+    const ico = { sin_etiqueta: '🏷️', sugerir_parcial: '🔄', ml_borrador: '🟡', parcial_sin_ritmo: '🔄', parcial_vencido: '⏰', sin_ficha: '❓', mo_vieja: '🗂️', excede: '⚠️', confirmar: '📝' };
     const alertas = pl.alertas.length ? `
       <div class="pg-bloque"><header><h3>Avisos</h3><span class="meta">${pl.alertas.length}</span></header>
       ${pl.alertas.map((a) => `<div class="alerta"><span class="ico">${ico[a.tipo] || '•'}</span><span class="txt">${esc(a.texto)}</span>
@@ -207,12 +247,9 @@
         ${a.tipo === 'parcial_sin_ritmo' ? `<span class="acc"><button data-acc="irpedido" data-so="${a.so_id}">Cargar ritmo</button></span>` : ''}</div>`).join('')}
       </div>` : '';
 
-    const barraHoja = `<div class="pg-hoja ${hoja.pasada ? (hoja.cambios ? 'cambios' : 'ok') : ''}">
-      <div class="txt">${!hoja.pasada ? '<b>Revisá y ajustá las cantidades</b>, y después pasalas a la Hoja de Producción: ahí las ven en planta y se van descontando a medida que se cargan.'
-        : hoja.cambios ? `<b>Hay cambios sin pasar a la hoja.</b> La hoja tiene lo que pasaste a las ${hora(hoja.ultima)}.`
-        : `<b>Este plan ya está en la Hoja de Producción</b> (pasado a las ${hora(hoja.ultima)}).`}</div>
-      <span class="der"><a class="btn secondary" href="hoja.html" target="_blank" rel="noopener">Abrir la hoja</a>
-      <button class="btn primary" data-acc="pasarhoja">${hoja.pasada ? 'Actualizar la hoja' : 'Pasar a la Hoja de Producción'}</button></span></div>`;
+    const barraHoja = `<div class="pg-hoja">
+      <div class="txt"><b>Revisá y ajustá las cantidades</b> (quedan guardadas) y después imprimí el plan del día para planta.</div>
+      <span class="der"><button class="btn primary" data-acc="imprimirplan">Imprimir el plan del día</button></span></div>`;
 
     const prep = de('preparar').length ? `
       <div class="pg-bloque"><header><h3>Preparar hoy para mañana</h3><span class="meta">Necesitan reposar o mezclar de un día para el otro</span></header>
@@ -260,7 +297,7 @@
 
     $('tab-hoy').innerHTML = `
       <div class="pg-nota">Orden de la fila: <b>Mercado Libre y 🟥 Hoy</b> → <b>🟧 1 día</b> → <b>la entrega que le toca</b> a clientes que se entregan de a partes → <b>🟨 2-3 días</b> → <b>🔄 cuota de los parciales</b> → <b>sin etiqueta</b> → <b>próximas entregas</b> → <b>stock</b> con el lugar que sobra. Lo urgente entra siempre, aunque pase el tope.</div>
-      ${alertas}${barraHoja}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
+      ${bloqueEntregas()}${alertas}${barraHoja}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
   }
 
   function pintarPedidos() {
@@ -286,6 +323,7 @@
           ${pz ? `<span class="prio sin">Postergado hasta el ${fCorta(pz.hasta)}</span>` : pill(p.prio)}
           <span class="der">
             ${p.ml ? '<span class="muted" style="font-size:12px">ML va siempre como Hoy</span>' : `<select class="sel" data-acc="etiqsel" data-so="${p.id}">${opciones.map(([k, t]) => `<option value="${k}" ${k === (actual === 'sin' ? '' : actual) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`}
+            <span class="acc"><button data-acc="entrega" data-so="${p.id}">Entrega de hoy</button></span>
             ${pz ? `<span class="acc"><button data-acc="volver" data-so="${p.id}" data-sku="*">Volver a programar</button></span>` : accPost(p.id, '*', p.numero, `${p.numero} · pedido entero`)}
           </span></div>
         <div class="detalle">${p.lineas.map((l) => `${esc(l.n)}: <b>${fmt(l.pend, 0)}</b> pend.${l.entregado ? ` (entregado ${fmt(l.entregado, 0)} de ${fmt(l.pedido, 0)})` : ''}`).join(' · ')}</div>
@@ -305,9 +343,9 @@
       <div class="pg-nota">Acá se cambia la <b>etiqueta</b> (se guarda en Odoo), se <b>posterga</b> un pedido entero (también mueve la fecha prevista de la entrega en Odoo) y se carga el <b>ritmo</b> de los pedidos 🔄 de entrega parcial.</div>
       <div class="pg-bloque"><header><h3>Pedidos confirmados</h3><span class="meta">${conf.length}</span></header>${filas || '<div class="pg-vacio">No hay pedidos abiertos.</div>'}</div>
       <div class="pg-bloque"><header><h3>Presupuestos a confirmar</h3><span class="meta">Se ven, no se programan hasta que se confirman en Odoo</span></header>
-        ${pres.length ? `<table class="pg-tabla"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th class="num">Monto</th><th>Productos</th></tr></thead><tbody>
+        ${pres.length ? `<table class="pg-tabla"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th class="num">Monto</th><th>Productos</th><th></th></tr></thead><tbody>
         ${pres.map((p) => `<tr class="${viejo(p.fecha) ? 'dim' : ''}"><td class="cod">${esc(p.numero)}</td><td>${esc(p.cliente)}</td><td>${fCorta(p.fecha)}${viejo(p.fecha) ? ' · viejo' : ''}</td>
-          <td class="num">$ ${fmt(p.monto, 0)}</td><td class="muted">${p.lineas.map((l) => `${esc(l.n)} × ${fmt(l.pend, 0)}`).join(' · ')}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">No hay presupuestos abiertos.</div>'}</div>`;
+          <td class="num">$ ${fmt(p.monto, 0)}</td><td class="muted">${p.lineas.map((l) => `${esc(l.n)} × ${fmt(l.pend, 0)}`).join(' · ')}</td><td><span class="acc"><button data-acc="entrega" data-so="${p.so_id}">Entrega de hoy</button></span></td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">No hay presupuestos abiertos.</div>'}</div>`;
   }
 
   function pintarPostergados() {
@@ -402,9 +440,59 @@
     $('dlg-texto').textContent = etiqueta + (sku === '*' && Number(so) ? '. Se mueve también la fecha prevista de la entrega en Odoo.' : '');
     const f = $('dlg-fecha'); f.min = isoLocal(proximoHabil()); f.value = isoLocal(proximoHabil());
     $('dlg-motivo').value = '';
-    d.onclose = () => { if (d.returnValue === 'ok' && f.value) postergar(so, sku, f.value, $('dlg-motivo').value.trim() || null); };
+    d.querySelector('form').onsubmit = (ev) => { if (ev.submitter?.value === 'ok' && f.value) postergar(so, sku, f.value, $('dlg-motivo').value.trim() || null); };
     d.showModal();
   }
+  // Plan del día para imprimir: hoja A4 limpia, con casillas para tachar y para firmar
+  function imprimirPlan() {
+    const fl = filasDelDia().filter((x) => x.cantidad > 0);
+    const de = (t) => fl.filter((x) => x.tipo === t);
+    const hoy = new Date(), hoyIso = isoLocal(hoy);
+    const fechaLarga = hoy.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const es = S.entregas.filter((e) => String(e.fecha).slice(0, 10) === hoyIso);
+    const caja = '<td class="caja"></td>';
+    const quien = (x) => x.x ? x.x.motivos.map((m) => m.numero ? `${esc(m.numero)} ${esc(m.cliente.split(/[ ,]/)[0])} ${fmt(m.q, 0)}${m.entrega ? ' (retira hoy)' : ''}` : `stock ${fmt(m.q, 0)}`).join(' · ') : 'agregado a mano';
+    const tabla = (titulo, cab, filas) => filas ? `<h2>${titulo}</h2><table><thead><tr>${cab}</tr></thead><tbody>${filas}</tbody></table>` : '';
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Plan de producción ${fCorta(hoyIso)}</title><style>
+      @page { size: A4; margin: 12mm; }
+      * { box-sizing: border-box; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; color: #111; margin: 0; }
+      header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 10px; }
+      header .marca { font-weight: 800; letter-spacing: .12em; font-size: 13px; }
+      header h1 { font-size: 18px; margin: 2px 0 0; }
+      header .der { text-align: right; font-size: 10.5px; color: #444; }
+      h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 5px; }
+      table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+      tr { page-break-inside: avoid; }
+      th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: #444; border-bottom: 1.5px solid #111; padding: 4px 6px; }
+      td { border-bottom: 1px solid #bbb; padding: 6px; vertical-align: top; }
+      td.num, th.num { text-align: right; white-space: nowrap; }
+      td.cant { font-size: 15px; font-weight: 800; text-align: right; white-space: nowrap; }
+      td.caja { width: 22px; } td.caja::before { content: ''; display: inline-block; width: 13px; height: 13px; border: 1.5px solid #111; }
+      td.firma { width: 70px; }
+      .cod { font-family: Consolas, monospace; color: #555; font-size: 10.5px; }
+      .det { color: #444; font-size: 10.5px; }
+      .obs { border: 1px solid #999; height: 70px; margin-top: 4px; }
+      footer { margin-top: 14px; display: flex; justify-content: space-between; font-size: 10.5px; color: #444; }
+    </style></head><body>
+      <header><div><div class="marca">ROSAINT</div><h1>Plan de producción</h1><div>${esc(fechaLarga.charAt(0).toUpperCase() + fechaLarga.slice(1))}</div></div>
+        <div class="der">Elaborar: <b>${fmt(de('elaborar').reduce((a, x) => a + x.cantidad, 0), 0)} kg</b><br>Fraccionar: <b>${fmt(de('fraccionar').reduce((a, x) => a + x.cantidad, 0), 0)} u</b><br>Impreso ${hoy.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div></header>
+      ${tabla('Entregas de hoy', '<th></th><th>Hora</th><th>Cliente</th><th>Qué se lleva</th>', es.map((e) => `<tr>${caja}<td><b>${esc(e.hora || '')}</b></td><td><b>${esc(e.cliente || '')}</b><div class="det">${esc(e.numero)}</div></td>
+        <td>${(e.items || []).map((i) => `${esc(i.n || nombreDe(i.c))} × <b>${fmt(i.q, 0)}</b>`).join('<br>')}${e.nota ? `<div class="det">${esc(e.nota)}</div>` : ''}</td></tr>`).join(''))}
+      ${tabla('Preparar hoy para mañana', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Hecho por</th>', de('preparar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> ${esc(x.nombre)}</td><td class="cant">${fmt(x.cantidad)} kg</td><td class="firma"></td></tr>`).join(''))}
+      ${tabla('Elaborar', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Para</th><th>Hecho por</th>', de('elaborar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> <b>${esc(x.nombre)}</b>${x.x ? `<div class="det">lote habitual ${fmt(x.x.lote)} kg</div>` : ''}</td>
+        <td class="cant">${fmt(x.cantidad)} kg</td><td class="det">${x.x ? x.x.para.map((c) => esc(nombreDe(c))).join(', ') : 'agregado a mano'}</td><td class="firma"></td></tr>`).join(''))}
+      ${tabla('Fraccionar', '<th></th><th>Producto</th><th class="num">Cantidad</th><th>Para</th><th>Hecho por</th>', de('fraccionar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> <b>${esc(x.nombre)}</b></td>
+        <td class="cant">${fmt(x.cantidad, 0)}</td><td class="det">${quien(x)}</td><td class="firma"></td></tr>`).join(''))}
+      <h2>Observaciones</h2><div class="obs"></div>
+      <footer><span>Controló: ______________________</span><span>Rosaint Core · Programar el día</span></footer>
+      <script>window.onload = () => { window.print(); };<\/script>
+    </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) return msg('El navegador bloqueó la ventana de impresión: permití ventanas emergentes para Core', true);
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
   function textoLista() {
     const fl = filasDelDia().filter((x) => x.cantidad > 0);
     const l = [`Producción del ${fCorta(S.plan.fecha)}`];
@@ -418,6 +506,8 @@
   }
 
   document.addEventListener('click', async (ev) => {
+    const todo = ev.target.closest('[data-todo]');
+    if (todo) { const i = document.querySelector(`[data-ent="${todo.dataset.todo}"]`); if (i) i.value = todo.dataset.max; return; }
     const t = ev.target.closest('[data-acc]'); if (!t || t.tagName === 'SELECT') return;
     const a = t.dataset.acc;
     if (a === 'post1') { t.disabled = true; await postergar(t.dataset.so, t.dataset.sku, isoLocal(proximoHabil()), null); }
@@ -425,8 +515,10 @@
     else if (a === 'volver') { t.disabled = true; await postergar(t.dataset.so, t.dataset.sku, null, null); }
     else if (a === 'etiq') { t.disabled = true; await etiquetar(t.dataset.so, t.dataset.prio); }
     else if (a === 'irpedido') { abrirTab('pedidos'); document.getElementById('ped-' + t.dataset.so)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    else if (a === 'entrega') abrirEntrega(t.dataset.so);
+    else if (a === 'quitarentrega') { t.disabled = true; await quitarEntrega(t.dataset.so); }
     else if (a === 'restaurar') { ev.preventDefault(); await restaurar(t.dataset.tipo, t.dataset.cod); }
-    else if (a === 'pasarhoja') { t.disabled = true; await pasarAHoja(); }
+    else if (a === 'imprimirplan') imprimirPlan();
     else if (a === 'agregar') {
       const tipo = t.dataset.tipo, txt = $('ag-' + tipo).value.trim(), q = Number($('ag-' + tipo + '-q').value);
       const cod = txt.split('·')[0].trim();
@@ -438,7 +530,7 @@
       msg(ya ? `Sumado a ${prod.n}` : `Agregado: ${prod.n}`);
     }
     else if (a === 'copiar') { await navigator.clipboard.writeText(textoLista()); msg('Lista copiada'); }
-    else if (a === 'imprimir') { abrirTab('hoy'); window.print(); }
+    else if (a === 'imprimir') imprimirPlan();
     else if (a === 'guardarritmo' || a === 'borrarritmo') {
       const so = Number(t.dataset.so);
       if (a === 'borrarritmo') { const { error } = await sb.from('prod_plan_parciales').delete().eq('so_id', so); if (error) return msg(error.message, true); }
@@ -501,7 +593,7 @@
   (async function inicio() {
     try {
       try { const t = localStorage.getItem('programar.tab'); if (t) abrirTab(t); } catch { /* */ }
-      await Promise.all([cargarConfig(), cargarRecetas(), cargarDia()]);
+      await Promise.all([cargarConfig(), cargarRecetas(), cargarDia(), cargarEntregas()]);
       const hay = await cargarSnap();
       if (!hay) { await actualizarOdoo(); return; }
       calcular();

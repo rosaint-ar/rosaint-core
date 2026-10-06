@@ -126,8 +126,13 @@
                             padding:5px 8px; font-size:12.5px; color:var(--text); font-family:inherit; }
     input.inp.corto { width:80px; }
     /* ---- Diálogo de postergar ------------------------------------------- */
-    dialog.pg-dlg { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--text);
+    dialog.pg-dlg { margin:auto; max-height:calc(100vh - 40px); overflow:auto; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--text);
                     padding:18px 20px; width:min(380px, calc(100vw - 32px)); box-shadow:var(--shadow); }
+    dialog.pg-dlg.ancho { width:min(620px, calc(100vw - 32px)); }
+    dialog.pg-dlg .pg-tabla td { padding:6px 8px; }
+    dialog.pg-dlg .pg-tabla input { width:80px; }
+    .entregas { border-color:color-mix(in srgb, var(--hot) 40%, var(--border)); }
+    .ped .hora { font-family:var(--font-mono); font-weight:800; font-size:14px; }
     dialog.pg-dlg::backdrop { background:rgba(0,0,0,.35); }
     dialog.pg-dlg h4 { font-size:15px; margin-bottom:4px; }
     dialog.pg-dlg p { font-size:12.5px; color:var(--muted); margin-bottom:12px; line-height:1.45; }
@@ -191,6 +196,23 @@
       <div class="bot">
         <button class="btn ghost" value="cancelar" formnovalidate>Cancelar</button>
         <button class="btn primary" value="ok">Postergar</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="pg-dlg ancho" id="dlg-ent">
+    <form method="dialog">
+      <h4 id="ent-titulo">Entrega de hoy</h4>
+      <p id="ent-texto"></p>
+      <label for="ent-hora">Hora en que retira o sale</label>
+      <input type="time" class="inp" id="ent-hora" value="12:00" style="width:130px">
+      <label>Qué se lleva hoy</label>
+      <table class="pg-tabla"><tbody id="ent-lineas"></tbody></table>
+      <label for="ent-nota">Nota (opcional)</label>
+      <input type="text" class="inp" id="ent-nota" maxlength="140" placeholder="Ej.: pasa a retirar él">
+      <div class="bot">
+        <button class="btn ghost" value="quitar" id="ent-quitar" formnovalidate style="margin-right:auto;color:var(--hot)">Quitar entrega</button>
+        <button class="btn ghost" value="cancelar" formnovalidate>Cancelar</button>
+        <button class="btn primary" value="ok">Guardar</button>
       </div>
     </form>
   </dialog>
