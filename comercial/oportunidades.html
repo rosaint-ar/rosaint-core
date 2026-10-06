@@ -116,7 +116,7 @@
 
   <div class="kpis" id="kpis">
     <div class="kpi"><div class="v" id="k-impulsar">—</div><div class="k">Productos para impulsar</div></div>
-    <div class="kpi"><div class="v" id="k-grupos">—</div><div class="k">Grupos que se llevan juntos</div></div>
+    <div class="kpi"><div class="v" id="k-grupos">—</div><div class="k">Grupos que compran los mismos clientes</div></div>
     <div class="kpi"><div class="v" id="k-combos">—</div><div class="k">Combos armados</div></div>
     <div class="kpi"><div class="v" id="k-profwa">—</div><div class="k">Profesionales con WhatsApp</div></div>
   </div>
@@ -124,7 +124,7 @@
   <div class="tabs-bar">
     <div class="tabs">
       <div class="tab active" data-view="impulsar" onclick="setView('impulsar')">🚀 Para impulsar <span class="cnt" id="c-impulsar">0</span></div>
-      <div class="tab"        data-view="grupos"   onclick="setView('grupos')">🧺 Grupos que se llevan juntos <span class="cnt" id="c-grupos">0</span></div>
+      <div class="tab"        data-view="grupos"   onclick="setView('grupos')">🧺 Grupos que compran los mismos clientes <span class="cnt" id="c-grupos">0</span></div>
       <div class="tab"        data-view="combos"   onclick="setView('combos')">🎁 Combos <span class="cnt" id="c-combos-tab">0</span></div>
     </div>
     <div class="tabs-actions">
@@ -187,7 +187,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061655"></script>
-<script src="../shell/shell.js"></script>
+<script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 //  Oportunidades — qué impulsar, qué grupos ofrecer, qué combos armar
@@ -260,12 +260,17 @@ function pickFirma(v, btn){ localStorage.setItem(FIRMA_KEY, v); document.querySe
 function toggle(id, el){ const box = document.getElementById(id); const open = box.classList.toggle('open'); el.textContent = (open ? 'Ocultar ' : 'Ver ') + el.dataset.base + (open ? ' ▲' : ' ▼'); }
 function waLink(tel, msg){ const n = (tel||'').replace(/\D/g,''); return `https://api.whatsapp.com/send?phone=${n}&text=${encodeURIComponent(msg)}`; }
 
+// Trae TODAS las filas de a 1.000: el servidor corta ahí y antes se analizaba solo una parte de las ventas.
 async function apiGet(path){
   const { data: sess } = await sb.auth.getSession();
   const token = (sess && sess.session && sess.session.access_token) || window.SUPABASE_KEY;
-  const r = await fetch(window.SUPABASE_URL + '/rest/v1/' + path, { headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token } });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
+  const out = [];
+  for (let desde = 0; ; desde += 1000) {
+    const r = await fetch(window.SUPABASE_URL + '/rest/v1/' + path, { headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, Range: desde + '-' + (desde + 999) } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const filas = await r.json(); out.push(...filas);
+    if (filas.length < 1000) return out;
+  }
 }
 
 
@@ -274,8 +279,8 @@ async function cargar(force){
   if (force) document.getElementById('salida').innerHTML = '<div class="op-loading">Analizando tus ventas…</div>';
   try {
     const [cp, m] = await Promise.all([
-      apiGet('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&limit=50000'),
-      apiGet('cliente_metricas?select=partner_id,nombre,telefono_wa,es_profesional,total_gastado&limit=8000'),
+      apiGet('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=partner_id,product_name'),
+      apiGet('cliente_metricas?select=partner_id,nombre,telefono_wa,es_profesional,total_gastado&order=partner_id'),
     ]);
     RAW_CP = (cp || []).filter(x => !x.es_servicio && x.product_name);
     META = {};
@@ -516,7 +521,7 @@ function renderImpulsar(list){
 
 function renderGrupos(list){
   if (!list.length) return '<div class="empty-view">Todavía no hay grupos con suficiente fuerza. Probá bajar la “Fuerza mínima” arriba.</div>';
-  return '<div class="sub-desc">Productos que tus profesionales suelen llevar juntos. Ofreceles el que les falta para completar (con un beneficio).</div><div class="op-grid">' + list.map((g, i) => {
+  return '<div class="sub-desc">Productos que suelen comprar los mismos profesionales (no necesariamente en el mismo pedido). Ofreceles el que les falta para completar (con un beneficio).</div><div class="op-grid">' + list.map((g, i) => {
     const id = 'g' + i;
     const famChips = g.fams.map(f => `<span class="grp-fam">${esc(MODEL.famDisp.get(f))}</span>`).join('');
     const faltantes = faltantesDeGrupo(g);
@@ -591,7 +596,7 @@ function renderCombos(q){
             <div class="op-met"><div class="v">${fmtNum(g.soporte)}</div><div class="k">Profesionales lo llevan junto</div></div>
             <div class="op-met"><div class="v">${fmtNum(g.fams.length)}</div><div class="k">Productos</div></div>
           </div>
-          <div class="grp-benefit">💡 Se llevan juntos seguido y todavía no es combo. Buen candidato para armarlo con un <b>beneficio</b> (precio especial).</div>
+          <div class="grp-benefit">💡 Los compran los mismos clientes y todavía no es combo. Buen candidato para armarlo con un <b>beneficio</b> (precio especial).</div>
           <div class="op-actions"><a class="btn primary" href="../catalogo/combos.html">Armar combo</a></div>
         </div>`;
       }).join('') + '</div>'
@@ -599,7 +604,7 @@ function renderCombos(q){
 
   return `<div class="sub-head">Combos armados · ${fmtNum(existentes.length)} <a href="../catalogo/combos.html" style="font-weight:600;font-size:12px;color:var(--accent);margin-left:8px">Gestionar en Catálogo →</a></div>${existHtml}
     <div class="sub-head" style="margin-top:28px">Combos sugeridos para armar · ${fmtNum(sugeridos.length)}</div>
-    <div class="sub-desc">Grupos que tus profesionales ya se llevan juntos y todavía no son un combo. Mismo criterio que los de arriba.</div>${sugHtml}`;
+    <div class="sub-desc">Grupos que compran los mismos profesionales y todavía no son un combo. Mismo criterio que los de arriba.</div>${sugHtml}`;
 }
 
 // Arranque

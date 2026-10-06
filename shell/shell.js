@@ -264,10 +264,21 @@ function renderTopbar(pageTitle, pageSub) {
     el('span', {}, pageTitle),
     pageSub ? el('span', { class: 'sub' }, pageSub) : null,
   ]);
+  // Buscador = ir a una pantalla: sugiere las secciones del menú y Enter abre la elegida
+  // (antes era un campo que no hacía nada).
+  const secciones = MENU.filter((m) => m.type === 'item' && m.status !== 'soon');
+  const buscador = el('input', { type: 'text', placeholder: 'Ir a…', 'aria-label': 'Ir a una pantalla', list: 'shell-secciones' });
+  const sugerencias = el('datalist', { id: 'shell-secciones' }, secciones.map((m) => el('option', { value: m.label })));
+  buscador.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = buscador.value.trim().toLowerCase(); if (!q) return;
+    const m = secciones.find((x) => x.label.toLowerCase() === q) || secciones.find((x) => x.label.toLowerCase().includes(q));
+    if (m) window.location.href = rootPath() + m.href;
+  });
   const actions = el('div', { class: 'topbar-actions' }, [
     el('div', { class: 'topbar-search' }, [
       el('span', { class: 'icon', html: SEARCH_ICON }),
-      el('input', { type: 'text', placeholder: 'Buscar…', 'aria-label': 'Buscar' }),
+      buscador, sugerencias,
     ]),
     el('div', { class: 'topbar-user', title: 'rosaint.ar@gmail.com' }, 'R'),
   ]);

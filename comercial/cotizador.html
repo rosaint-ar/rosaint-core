@@ -281,7 +281,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061655"></script>
-<script src="../shell/shell.js"></script>
+<script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Cotizador — dos modos de uso:
@@ -332,6 +332,7 @@ async function init() {
 
     if (precios.error) throw precios.error;
     if (escalones.error) throw escalones.error;
+    if (canalesCot.error) throw canalesCot.error; // sin esta lista no se sabe qué está oculto: mejor avisar que mostrar todo
 
     // SKUs ocultos del cotizador: los que tienen el canal 'cotizador' desactivado
     // (activo=false). Si no hay registro, el producto se muestra por defecto.
@@ -374,7 +375,7 @@ async function init() {
       .map(p => {
         const comp = compsPorPack[p.codigo];
         if (!comp) return null;
-        if (ocultosCotizador.has(comp.codigo_sku)) return null;
+        if (ocultosCotizador.has(comp.codigo_sku) || ocultosCotizador.has(p.codigo)) return null; // el pack también puede estar oculto
         const precioPack = precioPorPack[p.codigo];
         if (precioPack == null) return null;
         const sku = skusPorCodigo[comp.codigo_sku];
@@ -614,7 +615,9 @@ function render() {
   }).join('');
 
   body.querySelectorAll('input.qty').forEach(inp =>
-    inp.addEventListener('input', e => setCant(e.target.dataset.cod, e.target.value)));
+    // se aplica al terminar de escribir (Enter o salir del campo): con cada tecla se rearmaba la tabla,
+    // se perdía el foco y al borrar volvía a 1
+    inp.addEventListener('change', e => setCant(e.target.dataset.cod, e.target.value)));
   body.querySelectorAll('.btn-del').forEach(b =>
     b.addEventListener('click', e => quitar(e.target.dataset.cod)));
 

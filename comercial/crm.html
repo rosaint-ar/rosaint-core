@@ -678,7 +678,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061655"></script>
-<script src="../shell/shell.js"></script>
+<script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // CRM · Reactivación
@@ -741,16 +741,26 @@ async function api(path, opts) {
   });
   return r;
 }
-async function apiGet(path) { const r = await api(path); return r.json(); }
+async function apiGet(path) { const r = await api(path); if (!r.ok) throw new Error('HTTP ' + r.status + ' leyendo ' + path.split('?')[0]); return r.json(); }
+// Trae TODAS las filas de a 1.000 (el servidor corta ahí: antes se perdían productos de la mayoría de los clientes)
+async function apiGetTodo(path) {
+  const out = [];
+  for (let desde = 0; ; desde += 1000) {
+    const r = await api(path, { headers: { Range: desde + '-' + (desde + 999) } });
+    if (!r.ok && r.status !== 206) throw new Error('HTTP ' + r.status + ' leyendo ' + path.split('?')[0]);
+    const filas = await r.json(); out.push(...filas);
+    if (filas.length < 1000) return out;
+  }
+}
 
 async function load() {
   try {
-    const m = await apiGet('cliente_metricas?select=*&partner_id=neq.15&es_profesional=eq.true&limit=2000');
+    const m = await apiGetTodo('cliente_metricas?select=*&partner_id=neq.15&es_profesional=eq.true&order=partner_id');
     DATA = m || [];
-    const p = await apiGet('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=monto_total.desc&limit=20000');
+    const p = await apiGetTodo('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=monto_total.desc,partner_id,product_name');
     PRODS = {};
     (p || []).forEach(x => { if (x.es_servicio) return; (PRODS[x.partner_id] = PRODS[x.partner_id] || []).push(x); });
-    const e = await apiGet('cliente_estado?select=*&limit=5000');
+    const e = await apiGetTodo('cliente_estado?select=*&order=partner_id');
     ESTADO = {};
     (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
     await cargarLogros();
@@ -759,7 +769,7 @@ async function load() {
     celebrarNuevos();
     cargarFichas(); // trae las fichas de Odoo en segundo plano (completitud, editar)
   } catch(err) {
-    document.getElementById('view-cola').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + err.message + '</div>';
+    document.getElementById('list').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + esc(err.message) + '</div>';
   }
 }
 
@@ -772,9 +782,10 @@ function estaContactado(pid) {
 function estaArchivado(pid) { const e = ESTADO[pid]; return e && e.archivado; }
 
 async function setEstado(pid, campos) {
+  const previo = ESTADO[pid];
   ESTADO[pid] = { ...(ESTADO[pid] || { partner_id: pid }), ...campos, updated_at: new Date().toISOString() };
   const body = JSON.stringify({ partner_id: pid, ...ESTADO[pid] });
-  await api('cliente_estado?on_conflict=partner_id', {
+  const r = await api('cliente_estado?on_conflict=partner_id', {
     method: 'POST',
     headers: {
       apikey: window.SUPABASE_KEY,
@@ -784,6 +795,12 @@ async function setEstado(pid, campos) {
     },
     body,
   });
+  if (!r.ok) {
+    // no se guardó: se vuelve atrás para no mostrar algo que al recargar desaparece
+    if (previo) ESTADO[pid] = previo; else delete ESTADO[pid];
+    alert('No se pudo guardar el cambio del cliente (HTTP ' + r.status + '). Revisá la conexión o volvé a iniciar sesión.');
+    throw new Error('cliente_estado ' + r.status);
+  }
 }
 async function marcarContactado(pid) {
   const antes = statsGami().hoy;
@@ -1055,6 +1072,13 @@ function waAndConfirm(pid) {
   document.getElementById('confirmName').textContent = d.nombre;
   document.getElementById('confirm').classList.add('show');
 }
+// Abrir WhatsApp no es haber escrito: se pregunta, igual que en la cola (antes la ficha lo daba por contactado)
+function pedirConfirmacion(pid) {
+  const d = DATA.find(x => x.partner_id === pid); if (!d) return;
+  pendingContact = pid;
+  document.getElementById('confirmName').textContent = d.nombre;
+  document.getElementById('confirm').classList.add('show');
+}
 function confirmYes() { if (pendingContact) { marcarContactado(pendingContact); } closeConfirm(); }
 function confirmNo()  { closeConfirm(); }
 function closeConfirm() { document.getElementById('confirm').classList.remove('show'); pendingContact = null; }
@@ -1198,11 +1222,11 @@ async function abrirConfigMensajes() {
       </div>
       <div style="margin-bottom:16px;">
         <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Clientes que nunca compraron</label>
-        <textarea id="tpl-nunca" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${PLANTILLAS.nunca_compro}</textarea>
+        <textarea id="tpl-nunca" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${esc(PLANTILLAS.nunca_compro)}</textarea>
       </div>
       <div style="margin-bottom:16px;">
         <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Reactivación (dormidos / enfriándose / a reactivar)</label>
-        <textarea id="tpl-reactivacion" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${PLANTILLAS.reactivacion}</textarea>
+        <textarea id="tpl-reactivacion" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${esc(PLANTILLAS.reactivacion)}</textarea>
       </div>
       <div style="margin-bottom:16px; border:1px solid var(--accent); border-radius:8px; padding:12px 14px; background:var(--accent-tint);">
         <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:6px;">
@@ -1210,7 +1234,7 @@ async function abrirConfigMensajes() {
           <span style="font-size:13.5px; font-weight:700;">📣 Mensaje momentáneo — reemplaza a los de arriba para TODOS los contactos</span>
         </label>
         <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Para una campaña puntual. Prendelo cuando lo quieras usar y apagalo para volver a los mensajes por defecto.</div>
-        <textarea id="tpl-mom" rows="4" placeholder="Ej: Hola {nombre}! Esta semana 20% OFF en toda la línea corporal 🎉 {link}" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); resize:vertical;">${MOMENTANEO.texto || ''}</textarea>
+        <textarea id="tpl-mom" rows="4" placeholder="Ej: Hola {nombre}! Esta semana 20% OFF en toda la línea corporal 🎉 {link}" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); resize:vertical;">${esc(MOMENTANEO.texto || '')}</textarea>
       </div>
       <div id="tpl-preview" style="background:var(--surface-2); border-radius:6px; padding:12px; margin-bottom:14px; font-size:13px; line-height:1.5;">
         <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Previsualización con nombre "Georgina":</div>
@@ -1237,8 +1261,8 @@ async function abrirConfigMensajes() {
     const momOn = document.getElementById('tpl-mom-on').checked;
     const c = { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT, producto:'crema exfoliante corporal' };
     let h = '';
-    if (momOn && mom.trim()) h += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--border); color:var(--accent);"><b>📣 Momentáneo (ACTIVO, va a todos):</b> ${renderPlantilla(mom, c)}</div>`;
-    h += `<div style="margin-bottom:6px;${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Nunca compró:</b> ${renderPlantilla(nunca, c)}</div><div style="${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Reactivación:</b> ${renderPlantilla(react, c)}</div>`;
+    if (momOn && mom.trim()) h += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--border); color:var(--accent);"><b>📣 Momentáneo (ACTIVO, va a todos):</b> ${esc(renderPlantilla(mom, c))}</div>`;
+    h += `<div style="margin-bottom:6px;${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Nunca compró:</b> ${esc(renderPlantilla(nunca, c))}</div><div style="${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Reactivación:</b> ${esc(renderPlantilla(react, c))}</div>`;
     document.getElementById('tpl-preview-body').innerHTML = h;
   };
   document.getElementById('tpl-nunca').addEventListener('input', preview);
@@ -1362,6 +1386,7 @@ function fmtTel(raw) {
   let d = digs(raw); if (!d) return '';
   if (d.startsWith('0054')) d = d.slice(4);
   if (d.startsWith('54')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('9')) d = d.slice(1); // +54 9 341 …: el 9 es de celular, no del código de área
   d = d.replace(/^0/, '');
   if (d.length > 10) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, '$1$2');
   if (d.length < 8) return raw.trim();
@@ -1373,7 +1398,7 @@ function fmtTel(raw) {
   return '+54 ' + area + ' ' + ls;
 }
 function oracion(s) { s = (s || '').trim().replace(/\s+/g, ' '); if (!s) return ''; return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
-function waNum(tel) { let d = digs(tel); if (d.length < 8) return ''; if (d.startsWith('54')) d = d.slice(2); d = d.replace(/^0/, ''); if (d.length > 10) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, '$1$2'); return d.length >= 10 ? '549' + d : ''; }
+function waNum(tel) { let d = digs(tel); if (d.length < 8) return ''; if (d.startsWith('54')) d = d.slice(2); if (d.length === 11 && d.startsWith('9')) d = d.slice(1); d = d.replace(/^0/, ''); if (d.length > 10) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, '$1$2'); return d.length >= 10 ? '549' + d : ''; }
 
 function completar(c) {
   const has = {
@@ -1505,7 +1530,7 @@ function abrirDrawer(c, d, isNew) {
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Segmento: <b style="color:var(--text)">${seg.label}</b></div>
       ${tps.length ? ('<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:8px 0 4px">Lo que más compra</div>' + tps.map(p => `<div class="dprod"><span>${esc(cleanProd(p.product_name))}</span><span class="q">${fmtMoney(p.monto_total)}</span></div>`).join('')) : ''}
-      ${wa ? `<a class="wa-big" href="https://api.whatsapp.com/send?phone=${waNum(wa)}&text=${encodeURIComponent(buildMsg(d))}" target="_blank" onclick="marcarContactado(${d.partner_id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>Contactar por WhatsApp</a>` : `<div class="wa-big" data-off>Sin teléfono — cargalo abajo para poder contactar</div>`}
+      ${wa ? `<a class="wa-big" href="https://api.whatsapp.com/send?phone=${waNum(wa)}&text=${encodeURIComponent(buildMsg(d))}" target="_blank" onclick="pedirConfirmacion(${d.partner_id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>Contactar por WhatsApp</a>` : `<div class="wa-big" data-off>Sin teléfono — cargalo abajo para poder contactar</div>`}
       <div style="display:flex;gap:8px;margin-top:8px">
         ${cont ? `<button class="btn secondary" style="flex:1;justify-content:center" onclick="desmarcarDrawer(${d.partner_id})">✓ Contactado hoy</button>` : `<button class="btn secondary" style="flex:1;justify-content:center" onclick="marcarDrawer(${d.partner_id})">Marcar contactado</button>`}
         ${arch ? `<button class="btn secondary" style="flex:1;justify-content:center" onclick="recuperarDrawer(${d.partner_id})">↩ Recuperar</button>` : `<button class="btn ghost" style="flex:1;justify-content:center" onclick="archivarDrawer(${d.partner_id})">🗄 Archivar</button>`}
@@ -1566,7 +1591,7 @@ async function guardarFicha() {
   const idtype = num('ff_idtype');
   const vals = {
     company_type: val('ff_type'), name: val('ff_name'),
-    phone: val('ff_phone') ? fmtTel(val('ff_phone')) : false, mobile: false,
+    phone: val('ff_phone') ? fmtTel(val('ff_phone')) : false, // el celular no se toca (antes se borraba al guardar)
     email: val('ff_email') || false, street: val('ff_street') ? oracion(val('ff_street')) : false,
     zip: val('ff_zip') || false, city: val('ff_city') ? oracion(val('ff_city')) : false,
     state_id: num('ff_state'), l10n_latam_identification_type_id: idtype,

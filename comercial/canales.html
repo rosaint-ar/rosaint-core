@@ -459,7 +459,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061655"></script>
-<script src="../shell/shell.js"></script>
+<script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Canales — Venta Directa / Tienda Nube / Mercado Libre.
@@ -519,7 +519,8 @@ async function cargarComun() {
     sb.from('objetivos_margen').select('nivel, objetivo_pct, tolerancia_pts'),
     sb.from('lineas').select('id, nombre, orden').order('orden'),
   ]);
-  CANAL_TN = (canales.data || []).find(c => /tienda\s*nube/i.test(c.nombre)) || (canales.data || [])[0] || null;
+  // sin caer en "el primero": si no hay un canal Tienda Nube, no se edita otro por error
+  CANAL_TN = (canales.data || []).find(c => /tienda\s*nube/i.test(c.nombre)) || null;
   MEDIOS = medios.data || [];
   PLAZOS = plazos.data || [];
   OBJETIVOS = {};
@@ -907,11 +908,17 @@ async function cargarPreguntasML() {
   el.innerHTML = '<div class="empty-box">Cargando preguntas…</div>';
   const [est, preg, guia] = await Promise.all([
     sb.functions.invoke('ml-webhook', { body: { accion: 'estado' } }).then(r => r.data || { ok: false, error: r.error?.message }).catch(e => ({ ok: false, error: e.message })),
-    sb.from('ml_preguntas').select('*').order('fecha', { ascending: false }).limit(80),
+    // las pendientes se traen aparte del historial: con 80 preguntas nuevas, una vieja sin responder quedaba oculta
+    Promise.all([
+      sb.from('ml_preguntas').select('*').in('estado', ['escalada', 'error', 'nueva', 'procesando']).order('fecha', { ascending: false }),
+      sb.from('ml_preguntas').select('*').order('fecha', { ascending: false }).limit(80),
+    ]).then(([a, b]) => { const vistos = new Set(); const data = [...(a.data || []), ...(b.data || [])].filter((x) => !vistos.has(x.question_id) && vistos.add(x.question_id)); return { data, error: a.error || b.error }; }),
     sb.from('ml_respuestas_guia').select('*').order('orden'),
   ]);
   const P = preg.data || [], G = guia.data || [];
-  const revisar = P.filter(p => ['escalada', 'error', 'nueva'].includes(p.estado));
+  // 'procesando' hace más de 15 min = quedó trabada: también va a revisar
+  const trabada = (p) => p.estado === 'procesando' && (Date.now() - new Date(p.actualizado_en || p.fecha).getTime()) > 15 * 60000;
+  const revisar = P.filter(p => ['escalada', 'error', 'nueva'].includes(p.estado) || trabada(p));
   const sinPermiso = !!(est.ultimo_error && /403|UNAUTHORIZED/i.test(est.ultimo_error.error || ''));
   const fila = (k, v, ok) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>${k}</span><b style="color:${ok === false ? 'var(--hot)' : ok ? 'var(--ok)' : 'var(--text)'}">${v}</b></div>`;
 
@@ -1198,7 +1205,8 @@ function renderControlDescuentos() {
   const cont = $('#promo-control');
   if (!cont) return;
 
-  const enPromo = CTRL_PUBS.filter(p => p.activa && p.precio_con_descuento != null && Number(p.precio) > 0);
+  // también las que solo tienen descuento Meli+ (antes quedaban afuera del control)
+  const enPromo = CTRL_PUBS.filter(p => p.activa && (p.precio_con_descuento != null || p.precio_meli != null) && Number(p.precio) > 0);
 
   // Tipos de promo activa por item.
   const tiposPorItem = {};
@@ -1215,9 +1223,9 @@ function renderControlDescuentos() {
     const regla = tam ? CTRL_REGLAS[tam] : null;
     if (!regla) sinRegla++;
     const tope = regla ? Number(regla.desc_meli_pct) : null;
-    const gen = 100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio);
+    const gen = p.precio_con_descuento != null ? 100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio) : null;
     const meli = p.precio_meli != null ? 100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio) : null;
-    const genExc = tope != null && gen > tope + 0.001;
+    const genExc = tope != null && gen != null && gen > tope + 0.001;
     const meliExc = tope != null && meli != null && meli > tope + 0.001;
     if (genExc || meliExc) excede++;
     const tipos = tiposPorItem[p.item_id] ? Array.from(tiposPorItem[p.item_id]) : [];
