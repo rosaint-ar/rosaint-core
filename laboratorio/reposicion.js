@@ -158,7 +158,12 @@ const REPO = (() => {
         .sort((a, b) => String(b.fecha_pedido).localeCompare(String(a.fecha_pedido)));
       // Solo lo que todavía es razonable esperar cuenta como ya pedido. Si hace
       // más de un mes que no llega, hay que volver a comprarlo igual.
-      const yaPedido = pedidos.filter(x => !x.demorado).reduce((a, b) => a + (b.falta || 0), 0);
+      // Las compras CONFIRMADAS ya están dentro de `enCamino` (el previsto de
+      // Odoo suma sus recepciones pendientes): restarlas otra vez las contaría
+      // dos veces y sugeriría comprar de menos. Acá solo entran las cotizaciones
+      // (borrador / enviadas), que Odoo todavía no cuenta como entrante.
+      const pedidoTotal = pedidos.filter(x => !x.demorado).reduce((a, b) => a + (b.falta || 0), 0);
+      const yaPedido = pedidos.filter(x => !x.demorado && x.estado !== 'purchase').reduce((a, b) => a + (b.falta || 0), 0);
       const pedidoDemorado = pedidos.some(x => x.demorado);
 
       const disponible = p.stock + enCamino;
@@ -197,7 +202,7 @@ const REPO = (() => {
         proveedor, plazo, plazoEstimado, lote,
         loteManual: aj.lote_compra != null,
         enCamino, colgadas,
-        pedidos, yaPedido, pedidoDemorado,
+        pedidos, yaPedido, pedidoTotal, pedidoDemorado,
         tienePedido: pedidos.length > 0,
         comprometido: comp, dispEfectivo,
         disponible, puntoPedido, diasObjetivo, sugerido,
@@ -258,7 +263,7 @@ const REPO = (() => {
     if (!f.tienePedido) return null;
     const p = f.pedidos[0];
     const varios = f.pedidos.length > 1 ? ` (+${f.pedidos.length - 1})` : '';
-    const cuanto = `${num(f.yaPedido || p.falta)} ${f.unidad}`;
+    const cuanto = `${num(f.pedidoTotal || p.falta)} ${f.unidad}`;
     if (f.pedidoDemorado) {
       return { clase: 'hot', corto: 'pedido demorado', largo: `${p.oc}: ${cuanto} pedidos el ${fecha(p.fecha_pedido)} y todavía no llegaron${varios}` };
     }

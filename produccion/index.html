@@ -244,6 +244,11 @@
 <script src="../shell/shell.js"></script>
 <script>
 const SYNC_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
+// La función pide la sesión del usuario (escribe y borra tablas): sin sesión no se sincroniza.
+async function syncHeaders() {
+  const { data: s } = await sb.auth.getSession();
+  return { Authorization: 'Bearer ' + (s?.session?.access_token || ''), apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' };
+}
 
 function escapeHTML(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 function fmt(n) { const x = Number(n); return isNaN(x) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: 2 }); }
@@ -253,7 +258,7 @@ function showMsg(kind, html) {
   const box = document.getElementById('msg');
   box.className = 'msg msg--' + kind;
   box.style.display = 'block';
-  box.innerHTML = html;
+  box.textContent = html; // texto plano: los mensajes pueden traer errores de la API
   if (kind === 'ok') setTimeout(() => { box.style.display = 'none'; }, 6000);
 }
 function hideMsg() { document.getElementById('msg').style.display = 'none'; }
@@ -422,15 +427,15 @@ async function sincronizar() {
 
   try {
     btn.innerHTML = '⏳ Trayendo pedidos…';
-    const r1 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'pedidos' }) }).then(r => r.json());
+    const r1 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'pedidos' }) }).then(r => r.json());
     if (!r1.ok) throw new Error('pedidos: ' + (r1.error || 'desconocido'));
 
     btn.innerHTML = '⏳ Trayendo stock…';
-    const r2 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'productos', product_ids: r1.product_ids }) }).then(r => r.json());
+    const r2 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'productos', product_ids: r1.product_ids }) }).then(r => r.json());
     if (!r2.ok) throw new Error('productos: ' + (r2.error || 'desconocido'));
 
     btn.innerHTML = '⏳ Trayendo BOMs…';
-    const r3 = await fetch(SYNC_URL, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ modo: 'bom', tmpl_ids: r2.tmpl_ids }) }).then(r => r.json());
+    const r3 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'bom', tmpl_ids: r2.tmpl_ids }) }).then(r => r.json());
     if (!r3.ok) throw new Error('bom: ' + (r3.error || 'desconocido'));
 
     showMsg('ok', 'Sincronizado: ' + r1.pedidos + ' pedidos, ' + r1.lineas + ' líneas, ' + r2.stock + ' productos con stock, ' + r3.bom + ' relaciones BOM.');
@@ -457,7 +462,7 @@ async function sincronizarCatalogo() {
     while (true) {
       btn.innerHTML = '⏳ Catálogo… ' + procesados + (totalCatalogo != null ? '/' + totalCatalogo : '');
       const r = await fetch(SYNC_URL, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: await syncHeaders(),
         body: JSON.stringify({ modo: 'catalogo', offset, limit: 100 })
       }).then(r => r.json());
       if (!r.ok) throw new Error('catálogo: ' + (r.error || 'desconocido'));
@@ -476,7 +481,7 @@ async function sincronizarCatalogo() {
       btn.innerHTML = '⏳ BOMs… ' + Math.min(idx + chunkSize, tmplList.length) + '/' + tmplList.length;
       const chunk = tmplList.slice(idx, idx + chunkSize);
       const r = await fetch(SYNC_URL, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: await syncHeaders(),
         body: JSON.stringify({ modo: 'bom_completo', tmpl_ids: chunk, reset: resetFlag })
       }).then(r => r.json());
       if (!r.ok) throw new Error('bom_completo: ' + (r.error || 'desconocido'));
@@ -485,8 +490,8 @@ async function sincronizarCatalogo() {
       idx += chunkSize;
     }
 
-    showMsg('ok', 'Catálogo actualizado: <strong>' + totalCatalogo + ' productos</strong>, ' +
-      tmplList.length + ' templates, <strong>' + bomTotal + '</strong> relaciones BOM.');
+    showMsg('ok', 'Catálogo actualizado: ' + totalCatalogo + ' productos, ' +
+      tmplList.length + ' templates, ' + bomTotal + ' relaciones BOM.');
     await cargarDatos();
   } catch (e) {
     console.error(e);

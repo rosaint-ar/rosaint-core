@@ -287,13 +287,18 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { /* */ }
     const modo = String(body.modo ?? "contar");
 
+    // Todos los modos piden sesión de Core. La única excepción es el control que corre el cron,
+    // que se identifica con una clave propia (CONTROL_CRON_KEY) en vez de un usuario.
+    const cronKey = Deno.env.get("CONTROL_CRON_KEY") || "";
+    const esCron = modo === "control" && !!cronKey && req.headers.get("x-cron-key") === cronKey;
+    const usuario = esCron ? null : await usuarioValido(req);
+    if (!esCron && !usuario) return new Response(JSON.stringify({ ok: false, error: "No autorizado: iniciá sesión en Core" }), { headers: cors });
+
     // Programador de producción (ver plan.ts)
     if (modo === "plan") return new Response(JSON.stringify(await modoPlan()), { headers: cors });
     if (modo === "control") return new Response(JSON.stringify(await modoControl()), { headers: cors });
     if (modo === "etiquetar" || modo === "postergar" || modo === "entrega_hoy" || modo === "conteo_sync") {
-      const usuario = await usuarioValido(req);
-      if (!usuario) return new Response(JSON.stringify({ ok: false, error: "No autorizado" }), { headers: cors });
-      const r = modo === "etiquetar" ? await modoEtiquetar(body) : modo === "postergar" ? await modoPostergar(body, usuario) : modo === "conteo_sync" ? await modoConteoSync(body) : await modoEntregaHoy(body, usuario);
+      const r = modo === "etiquetar" ? await modoEtiquetar(body) : modo === "postergar" ? await modoPostergar(body, usuario!) : modo === "conteo_sync" ? await modoConteoSync(body) : await modoEntregaHoy(body, usuario!);
       return new Response(JSON.stringify(r), { headers: cors });
     }
 

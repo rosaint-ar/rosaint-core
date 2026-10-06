@@ -72,10 +72,23 @@ export async function modoControl() {
   const t0 = Date.now();
   const sb = createClient(SB_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
-  const desde = new Date(Date.now() - 21 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+  // Ventana normal: 21 días. Pero un aviso abierto más viejo se sigue revisando (hasta 60 días) para
+  // cerrarlo solo cuando de verdad se corrigió, no porque salió de la ventana.
+  const desde21 = new Date(Date.now() - 21 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+  const tope60 = new Date(Date.now() - 60 * 864e5 - 3 * 3600e3).toISOString().slice(0, 10);
+  const { data: abiertasAntes, error: ea } = await sb.from("control_alertas").select("clave,fecha_ref").eq("area", "produccion").eq("estado", "abierta");
+  if (ea) throw new Error("alertas abiertas: " + ea.message);
+  const masVieja = (abiertasAntes || []).map((a) => String(a.fecha_ref || "")).filter((f) => f >= tope60).sort()[0];
+  const desde = masVieja && masVieja < desde21 ? masVieja : desde21;
 
-  const { data: hoja, error: eh } = await sb.from("prod_hoja_diaria").select("id,fecha,hora,producto_sku,producto_nombre,cantidad,unidad,tipo,iniciales").gte("fecha", desde).range(0, 9999);
-  if (eh) throw new Error("hoja: " + eh.message);
+  // por páginas: la API devuelve como mucho 1.000 filas por consulta
+  const hoja: Row[] = [];
+  for (let de = 0; ; de += 1000) {
+    const { data, error: eh } = await sb.from("prod_hoja_diaria").select("id,fecha,hora,producto_sku,producto_nombre,cantidad,unidad,tipo,iniciales").gte("fecha", desde).order("id").range(de, de + 999);
+    if (eh) throw new Error("hoja: " + eh.message);
+    hoja.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
   const mos = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "!=", "cancel"], ["date_start", ">=", desde + " 00:00:00"]]],
     { fields: ["name", "product_id", "product_qty", "product_uom_id", "state", "date_start"] }) as Row[];
   const prodM = await productos([...new Set(mos.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
@@ -105,7 +118,7 @@ export async function modoControl() {
       x.q += neto;
       if (neto > 1e-9) x.det.push({ mo: m.name + (desm ? ` (desmontada en parte: ${desm.refs.join(", ")})` : ""), cantidad: neto, unidad: b.u });
     }
-    else x.abiertas.push({ mo: m.name, estado: m.state, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id) });
+    else x.abiertas.push({ mo: m.name, estado: m.state, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id), base: b.q });
   }
 
   const habiles = (a: string, b: string) => { let n = 0; const d = new Date(a + "T12:00:00"); const f = new Date(b + "T12:00:00"); while (d < f) { d.setDate(d.getDate() + 1); if (d.getDay() % 6 !== 0) n++; } return n; };
@@ -118,7 +131,15 @@ export async function modoControl() {
   for (const k of new Set([...Object.keys(H), ...Object.keys(OD)])) {
     const h = H[k], o = OD[k];
     const fecha = (h || o).fecha;
-    if (fecha >= hoyAR) { if (h && !(o && (o.q > 0 || o.abiertas.length))) pendHoy.push({ c: h.c, nombre: h.nombre, q: n2(h.q), u: h.u }); continue; }
+    if (fecha >= hoyAR) {
+      // lo de hoy que falta pasar, también si se pasó solo una parte (hoja 100 kg, Odoo 1 kg → faltan 99)
+      if (h) {
+        const enOdoo = o && o.u === h.u ? o.q + o.abiertas.reduce((a, x) => a + Number(x.base || 0), 0) : 0;
+        const falta = h.q - enOdoo;
+        if (falta > Math.max(0.005, 0.01 * h.q)) pendHoy.push({ c: h.c, nombre: h.nombre, q: n2(falta), u: h.u, parcial: enOdoo > 0 });
+      }
+      continue;
+    }
     pasados.push(k);
     if (o && o.abiertas.length) {
       const atraso = habiles(fecha, hoyAR);
@@ -168,18 +189,21 @@ export async function modoControl() {
     }
   }
   if (pendHoy.length) alertas.push({ clave: `pendiente_hoy|${hoyAR}`, tipo: "pendiente_hoy", severidad: "info", fecha_ref: hoyAR, codigo: null,
-    titulo: `Hoy: ${pendHoy.length} producto${pendHoy.length === 1 ? "" : "s"} de la Hoja todavía sin pasar a Odoo`, detalle: pendHoy.map((p) => `${p.nombre} ${p.q} ${p.u}`).join(" · "), datos: { items: pendHoy } });
+    titulo: `Hoy: ${pendHoy.length} producto${pendHoy.length === 1 ? "" : "s"} de la Hoja todavía sin pasar a Odoo`, detalle: pendHoy.map((p) => `${p.nombre} ${p.parcial ? "faltan " : ""}${p.q} ${p.u}`).join(" · "), datos: { items: pendHoy } });
 
   const ahora = new Date().toISOString();
   // lo que el usuario ya revisó y descartó no se vuelve a abrir
-  const { data: desc } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "descartada");
+  const { data: desc, error: ed } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "descartada");
+  if (ed) throw new Error("descartadas: " + ed.message); // sin esta lista se reabrirían avisos ya revisados
   const descartadas = new Set((desc || []).map((d) => d.clave));
-  const filas = alertas.filter((a) => !descartadas.has(a.clave)).map((a) => ({ ...a, area: "produccion", estado: "abierta", ultima_vez: ahora, resuelta_en: null, href: "produccion/control.html" }));
+  // de los días fuera de la ventana normal solo se mantienen los avisos que ya estaban abiertos
+  const yaAbiertas = new Set((abiertasAntes || []).map((a) => a.clave));
+  const filas = alertas.filter((a) => !descartadas.has(a.clave) && (String(a.fecha_ref) >= desde21 || yaAbiertas.has(a.clave))).map((a) => ({ ...a, area: "produccion", estado: "abierta", ultima_vez: ahora, resuelta_en: null, href: "produccion/control.html" }));
   if (filas.length) { const { error } = await sb.from("control_alertas").upsert(filas, { onConflict: "clave" }); if (error) throw new Error("alertas: " + error.message); }
   // lo que estaba abierto y ya no aparece, se da por resuelto
-  const { data: abiertas } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "abierta");
+  // (solo los que se volvieron a revisar: uno más viejo que la ventana revisada queda como estaba)
   const vivas = new Set(filas.map((f) => f.clave));
-  const resueltas = (abiertas || []).map((a) => a.clave).filter((k) => !vivas.has(k));
+  const resueltas = (abiertasAntes || []).filter((a) => String(a.fecha_ref || "") >= desde && !vivas.has(a.clave)).map((a) => a.clave);
   if (resueltas.length) await sb.from("control_alertas").update({ estado: "resuelta", resuelta_en: ahora }).in("clave", resueltas);
   const cuenta: Record<string, number> = {}; for (const a of alertas) cuenta[a.tipo] = (cuenta[a.tipo] || 0) + 1;
   return { ok: true, duracion_ms: Date.now() - t0, desde, hoja: (hoja || []).length, ordenes: mos.length, alertas: cuenta, resueltas: resueltas.length, unidades_odoo: [...new Set(mos.map((m) => m2oName(m.product_uom_id)))] };

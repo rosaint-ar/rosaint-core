@@ -178,7 +178,7 @@ const FICHA = (() => {
       ${calc && calc.sugerido > 0 ? `<div class="fi-dato" style="background:var(--accent-tint);margin-bottom:6px">
         <div class="k">Sugerencia</div>
         <div class="v" style="color:var(--accent)">Pedir ${num(calc.sugerido)} ${esc(unidad)}</div>
-        <div class="s">Cubre ${calc.diasObjetivo} días${calc.proveedor ? ' · a ' + esc(calc.proveedor) : ''}${calc.yaPedido ? ` · además de los ${num(calc.yaPedido)} ${esc(unidad)} ya pedidos` : ''}</div></div>`
+        <div class="s">Cubre ${calc.diasObjetivo} días${calc.proveedor ? ' · a ' + esc(calc.proveedor) : ''}${calc.pedidoTotal ? ` · además de los ${num(calc.pedidoTotal)} ${esc(unidad)} ya pedidos` : ''}</div></div>`
       : calc?.alerta && calc?.tienePedido && !calc.pedidoDemorado ? `<div class="fi-dato" style="background:var(--bg);margin-bottom:6px">
         <div class="k">Sugerencia</div>
         <div class="v">No hace falta comprar más</div>

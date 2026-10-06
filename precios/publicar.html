@@ -422,7 +422,7 @@ async function descargar() {
   try {
     const html = await generarHTML();
     if (!html) return;
-    const fecha = new Date().toISOString().split('T')[0];
+    const fecha = new Date().toLocaleDateString('en-CA');
     const nombre = 'Rosaint_Lista_Profesional_' + fecha + '.html';
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);

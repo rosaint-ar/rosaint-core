@@ -181,7 +181,7 @@ async function cargar() {
       : '<tr><td colspan="3" style="padding:20px; text-align:center; color:var(--muted);">Sin registros</td></tr>';
 
     // Prefill fecha con hoy
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = new Date().toLocaleDateString('en-CA');
     document.getElementById('input-fecha').value = hoy;
   } catch (err) {
     document.getElementById('historial-body').innerHTML =

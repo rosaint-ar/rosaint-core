@@ -21,7 +21,7 @@
 
   // las fechas 'AAAA-MM-DD' se leen como día local (si no, en Argentina caen el día anterior)
   const d0 = (x) => { const d = typeof x === 'string' && x.length === 10 ? new Date(x + 'T12:00:00') : new Date(x); d.setHours(0, 0, 0, 0); return d; };
-  const iso = (d) => d0(d).toISOString().slice(0, 10);
+  const iso = (d) => d0(d).toLocaleDateString('en-CA');
   // días hábiles (lun-vie) desde mañana hasta `hasta` inclusive; hoy cuenta como 1
   function diasHabiles(hoy, hasta) {
     let n = 1; const d = d0(hoy); const h = d0(hasta);
@@ -277,7 +277,7 @@
         const nec = hacer * s.pct / 100;
         const tengoS = est.gr[s.c] ?? dispGr[s.c] ?? 0;
         if (tengoS < nec - 1e-9 && diaAnterior.has(s.c)) {
-          est.prep[s.c] = Math.max(est.prep[s.c] || 0, nec - tengoS);
+          est.prep[s.c] = { nec, tengo: tengoS };
           return { ok: false, motivo: `falta ${nombre[s.c] || s.c} y hay que prepararlo el día anterior`, preparar: s.c };
         }
         const sub = planGranel(s.c, nec, est, prof + 1);
@@ -324,7 +324,9 @@
       let est = nuevoEst();
       const plan = planGranel(pr.g, q * pr.kg, est);
       if (!plan.ok) {
-        for (const [s, kg] of Object.entries(est.prep)) preparar[s] = { c: s, kg: Math.max(preparar[s]?.kg || 0, kg) };
+        // Cada pedido que espera este sub-granel suma su necesidad; el stock se descuenta una sola vez
+        // (con el último valor conocido, que ya tiene restado lo que se usa hoy).
+        for (const [s, x] of Object.entries(est.prep)) { const p = (preparar[s] = preparar[s] || { c: s, nec: 0, tengo: 0 }); p.nec += x.nec; p.tengo = x.tengo; }
         postergado.push({ ...d, q, motivo: plan.motivo }); continue;
       }
       if (!URGENTE(d.prio) && est.kg > 0 && carga.kg + est.kg > capKg) {
@@ -397,7 +399,9 @@
     const tareasFracc = Object.values(fraccionar).map((f) => ({ ...conNombre(f), granel: presDe[f.c]?.g, kg: r2(f.q * (presDe[f.c]?.kg || 0)), etiqueta: ETIQUETA[f.prio] }))
       .sort((a, b) => RANGO[a.prio] - RANGO[b.prio] || b.q - a.q);
     const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), para: [...e.para], dia_anterior: diaAnterior.has(e.c) }));
-    const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); return { ...conNombre(p), kg: Math.ceil(p.kg / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; });
+    const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); const falta = Math.max(0, p.nec - p.tengo); return { c: p.c, nombre: nombre[p.c] || p.c, kg: Math.ceil(falta / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; }).filter((p) => p.kg > 0);
+    // lo que se prepara para mañana se elabora HOY: ocupa capacidad del día
+    carga.kg += tareasPrep.reduce((a, p) => a + p.kg, 0);
     const moViejas = snap.mo_abiertas.filter((m) => m.inicio && (d0(hoy) - d0(m.inicio)) / 864e5 > 14);
     if (moViejas.length) alertas.push({ tipo: 'mo_vieja', texto: `${moViejas.length === 1 ? 'Hay 1 orden de fabricación abierta' : `Hay ${moViejas.length} órdenes de fabricación abiertas`} hace más de 2 semanas en Odoo (${moViejas.map((m) => `${m.nombre} ${nombre[m.c] || m.c}`).join(' · ')}): si no se van a hacer, conviene cancelarlas.` });
     // pedido grande sin 🔄 que no entra en un día: probablemente sea de entrega parcial
@@ -426,11 +430,13 @@
   // elaborar: [{c: granel, kg}] · fraccionar: [{c: sku, q}] · hechoHoy: lo cargado hoy en la hoja que
   // todavía no está en Odoo (ya se consumió, pero el stock de Odoo todavía no lo descontó).
   // Solo cuenta lo que tiene stock en Odoo (el agua y la hoja de etiquetas no se stockean).
+  // el agua (20000) entra en las fórmulas pero no se lleva stock en Odoo: no es un faltante de datos
+  const NO_SE_STOCKEA = new Set(['20000']);
   function necesidadMateriales({ snap, formulas = [], pres = [], elaborar = [], fraccionar = [], hechoHoy = [] }) {
     const stock = {}; for (const x of snap.stock) stock[x.c] = x;
     const comp = {}; for (const r of formulas) (comp[r.g] = comp[r.g] || []).push({ c: r.c, pct: Number(r.pct) });
     const presDe = {}; for (const p of pres) presDe[p.c] = p;
-    const nec = {}, motivo = {};
+    const nec = {}, motivo = {}, sinReceta = new Set();
     const sumar = (c, q, para, ya) => {
       if (!(q > 0)) return;
       const x = (nec[c] = nec[c] || { c, plan: 0, hecho: 0, para: new Set() });
@@ -438,8 +444,9 @@
     };
     // MP directa de un granel (los sub-graneles se cuentan aparte: o hay stock o están en la lista de elaborar)
     const explotar = (g, kg, ya) => { for (const k of comp[g] || []) if (!k.c.startsWith('9')) sumar(k.c, kg * k.pct / 100, g, ya); };
-    for (const e of elaborar) explotar(e.c, Number(e.kg), false);
-    for (const f of fraccionar) { const p = presDe[f.c]; if (p && p.env) sumar(p.env, Number(f.q), f.c, false); }
+    // Sin receta no se puede saber qué consume: se avisa, no se da por "alcanza".
+    for (const e of elaborar) { if (!(comp[e.c] || []).length) sinReceta.add(e.c); explotar(e.c, Number(e.kg), false); }
+    for (const f of fraccionar) { const p = presDe[f.c]; if (p && p.env) sumar(p.env, Number(f.q), f.c, false); else sinReceta.add(f.c); }
     for (const h of hechoHoy) {
       const extra = Number(h.q) - Number(h.en_odoo || 0); if (!(extra > 0)) continue;
       if (h.c.startsWith('9')) explotar(h.c, extra, true);
@@ -448,14 +455,14 @@
     const lista = [], sinStock = [];
     for (const x of Object.values(nec)) {
       const st = stock[x.c];
-      if (!st) { if (x.plan > 0) sinStock.push(x.c); continue; }
+      if (!st) { if (x.plan > 0 && !NO_SE_STOCKEA.has(x.c)) sinStock.push(x.c); continue; }
       const hay = Math.max(0, Number(st.libre)) - x.hecho;     // lo hecho hoy sin pasar a Odoo ya se usó
       const falta = x.plan - hay;
       const r4 = (v) => Math.round(v * 10000) / 10000;
       lista.push({ c: x.c, nombre: st.n, uom: st.uom, necesita: r4(x.plan), hay: r4(Math.max(0, hay)), falta: falta > 1e-6 ? Math.round(falta * 1000) / 1000 : 0, usado_hoy: r2(x.hecho), para: [...x.para], envase: x.c.startsWith('3') });
     }
     lista.sort((a, b) => (b.falta > 0) - (a.falta > 0) || b.falta - a.falta || a.c.localeCompare(b.c));
-    return { lista, faltan: lista.filter((x) => x.falta > 0), sin_stock_en_odoo: sinStock };
+    return { lista, faltan: lista.filter((x) => x.falta > 0), sin_stock_en_odoo: sinStock, sin_receta: [...sinReceta] };
   }
 
   const API = { programar, necesidadMateriales, aBase, diasHabiles, RANGO, ETIQUETA };

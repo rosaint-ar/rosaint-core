@@ -657,7 +657,7 @@ async function guardarItem() {
         usd_unidad: precioUSD,
         flete_pct: old?.flete_pct ?? 5.0,
         iva_pct: old?.iva_pct ?? 21.0,
-        vigente_desde: new Date().toISOString().slice(0, 10),
+        vigente_desde: new Date().toLocaleDateString('en-CA'),
       });
       if (ePr) throw ePr;
     }
@@ -714,7 +714,7 @@ async function guardarPrecio() {
       usd_unidad: valor,
       flete_pct: old?.flete_pct ?? 5.0,
       iva_pct: old?.iva_pct ?? 21.0,
-      vigente_desde: new Date().toISOString().slice(0, 10),
+      vigente_desde: new Date().toLocaleDateString('en-CA'),
     });
     if (error) throw error;
     cerrarPrecio();

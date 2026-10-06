@@ -534,7 +534,7 @@
    ========================================================================= */
 
 const STATE = {
-  fecha: new Date().toISOString().split('T')[0],
+  fecha: new Date().toLocaleDateString('en-CA'),
   actividades: [],
   productos: [],
   productoSel: null,
@@ -593,11 +593,20 @@ function renderPendList(elId, list, unidadDefault) {
 
 // Descuenta las actividades del día del pendiente de Odoo
 // (solo local, no afecta la sync general)
-function aplicarDescuentoLocal(pendientes, actividades) {
-  const consumo = new Map(); // sku -> cantidad total consumida hoy
+// El recuadro de fabricar está en kg y el de fraccionar en unidades: cada carga
+// se pasa a esa unidad (500 g = 0,5 kg) y solo descuenta del recuadro de su tipo.
+function aplicarDescuentoLocal(pendientes, actividades, tipo) {
+  const consumo = new Map(); // sku -> cantidad total consumida hoy, en la unidad del recuadro
   for (const a of actividades) {
+    if ((a.tipo || 'fraccionamiento') !== tipo) continue;
+    const u = String(a.unidad || '').toLowerCase();
+    let q = Number(a.cantidad || 0);
+    if (tipo === 'fabricacion') {
+      if (['g', 'gr', 'cc', 'ml'].includes(u)) q = q / 1000;
+      else if (!['kg', 'l', 'lt', 'lts'].includes(u)) continue; // unidades sueltas no descuentan kg
+    } else if (!['un', 'u', ''].includes(u)) continue;
     const sku = a.producto_sku;
-    consumo.set(sku, (consumo.get(sku) || 0) + Number(a.cantidad || 0));
+    consumo.set(sku, (consumo.get(sku) || 0) + q);
   }
   return pendientes.map(p => {
     const c = consumo.get(p.sku) || 0;
@@ -606,18 +615,24 @@ function aplicarDescuentoLocal(pendientes, actividades) {
 }
 
 async function cargarPendientes() {
-  const [{ data: fabRaw }, { data: fracRaw }] = await Promise.all([
+  const [{ data: fabRaw, error: e1 }, { data: fracRaw, error: e2 }] = await Promise.all([
     sb.from('v_prod_a_fabricar').select('*').order('qty_faltante', { ascending: false }),
     sb.from('v_prod_a_fraccionar').select('*').order('qty_faltante', { ascending: false })
   ]);
+  // si no se pudo leer, se dice: no es lo mismo que "nada pendiente"
+  if (e1 || e2) {
+    for (const id of ['pend-fab-list', 'pend-frac-list']) document.getElementById(id).innerHTML = '<span class="pend-empty">⚠ No se pudo leer el pendiente</span>';
+    toast('No se pudo leer el pendiente: ' + (e1 || e2).message, 'err');
+    return;
+  }
   STATE.pendFab = fabRaw || [];
   STATE.pendFrac = fracRaw || [];
   renderPendientes();
 }
 
 function renderPendientes() {
-  const fab = aplicarDescuentoLocal(STATE.pendFab, STATE.actividades);
-  const frac = aplicarDescuentoLocal(STATE.pendFrac, STATE.actividades);
+  const fab = aplicarDescuentoLocal(STATE.pendFab, STATE.actividades, 'fabricacion');
+  const frac = aplicarDescuentoLocal(STATE.pendFrac, STATE.actividades, 'fraccionamiento');
 
   const fabActivos = fab.filter(f => Number(f.qty_faltante) > 0);
   const fracActivos = frac.filter(f => Number(f.qty_faltante) > 0);
@@ -662,7 +677,7 @@ async function cargarActividades() {
 function renderTabla() {
   const tbody = document.getElementById('tbody-hoja');
   document.getElementById('titulo-fecha').textContent =
-    STATE.fecha === new Date().toISOString().split('T')[0]
+    STATE.fecha === new Date().toLocaleDateString('en-CA')
       ? 'Actividades de hoy'
       : 'Actividades del ' + fmtFechaLarga(STATE.fecha);
   document.getElementById('badge-count').textContent = STATE.actividades.length;
@@ -881,7 +896,18 @@ function actualizarBotonSave() {
   document.getElementById('btn-save').disabled = !STATE.productoSel || cant <= 0 || inic.length === 0;
 }
 
+// Un toque doble rápido no tiene que registrar la línea dos veces: mientras se
+// guarda, el botón queda bloqueado y se libera al terminar (aunque falle).
 async function guardarActividad() {
+  if (STATE.guardando) return;
+  STATE.guardando = true;
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  try { await guardarActividadUnaVez(); }
+  finally { STATE.guardando = false; actualizarBotonSave(); }
+}
+
+async function guardarActividadUnaVez() {
   if (!STATE.productoSel) return;
   const cantidad = Number(document.getElementById('in-cantidad').value || 0);
   const unidad = document.getElementById('in-unidad').value;

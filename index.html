@@ -236,7 +236,7 @@ function setNum(id, n, o) {
 
 document.getElementById('saludo').innerHTML = saludoPorHora() + ', <span class="hi">Diego</span>';
 document.getElementById('hoy').textContent = fmtFechaLarga(new Date());
-const HOY = new Date().toISOString().split('T')[0];
+const HOY = new Date().toLocaleDateString('en-CA');
 
 async function cargarTodo(manual) {
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });

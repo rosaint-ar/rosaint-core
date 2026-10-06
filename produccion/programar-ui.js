@@ -80,7 +80,8 @@
 
   async function actualizarOdoo() {
     const b = $('btn-actualizar'); b.disabled = true; b.textContent = 'Leyendo Odoo…';
-    try { await fn('plan'); await Promise.all([cargarSnap(), cargarHoja()]); calcular(); msg('Datos de Odoo y de la hoja actualizados'); }
+    // se recarga todo (también lo que se cambió desde otra tablet: plan editado, entregas, postergados, ajustes)
+    try { await fn('plan'); await Promise.all([cargarSnap(), cargarHoja(), cargarDia(), cargarEntregas(), cargarConfig()]); calcular(); msg('Datos de Odoo y de la hoja actualizados'); }
     catch (e) { msg('No se pudo actualizar: ' + e.message, true); }
     finally { b.disabled = false; b.textContent = 'Actualizar desde Odoo'; }
   }
@@ -220,11 +221,13 @@
   }
   function bloqueMateriales() {
     const m = S.mat; if (!m) return '';
+    // si algo no se pudo revisar (no está en el stock de Odoo o le falta la receta), no se afirma que alcance
+    const sinVerificar = m.sin_stock_en_odoo.length + m.sin_receta.length > 0;
     const fila = (x) => `<tr class="${x.falta ? 'falta' : ''}"><td class="cod">${esc(x.c)}</td><td><b>${esc(x.nombre)}</b></td><td class="num">${cantMat(x.necesita, x.uom)}</td><td class="num">${cantMat(x.hay, x.uom)}${x.usado_hoy > 0 ? `<div class="muted" style="font-size:11px">ya se usaron ${cantMat(x.usado_hoy, x.uom)} hoy, sin pasar a Odoo</div>` : ""}</td>
       <td class="num">${x.falta ? `<b class="rojo">${cantMat(x.falta, x.uom)}</b>` : '✓'}</td><td class="muted">${x.para.map((c) => esc(nombreDe(c))).join(', ')}</td></tr>`;
     const cab = '<thead><tr><th>Código</th><th>Material</th><th class="num">Necesita</th><th class="num">Hay en Odoo</th><th class="num">Falta</th><th>Para</th></tr></thead>';
     return `<div class="pg-bloque mat ${m.faltan.length ? 'conFaltas' : ''}"><header><h3>Materiales</h3>
-      <span class="meta">${m.faltan.length ? `Faltan ${m.faltan.length} para hacer este plan` : `Alcanzan las materias primas y envases (${m.lista.length} revisados)`}${m.sin_stock_en_odoo.length ? ` · sin stock en Odoo: ${m.sin_stock_en_odoo.join(', ')}` : ''}</span>
+      <span class="meta">${m.faltan.length ? `Faltan ${m.faltan.length} para hacer este plan` : sinVerificar ? `No se puede confirmar que alcance todo (${m.lista.length} revisados)` : `Alcanzan las materias primas y envases (${m.lista.length} revisados)`}${m.sin_stock_en_odoo.length ? ` · no figuran en el stock de Odoo: ${esc(m.sin_stock_en_odoo.map(nombreDe).join(', '))}` : ''}${m.sin_receta.length ? ` · sin receta o sin envase cargado: ${esc(m.sin_receta.map(nombreDe).join(', '))}` : ''}</span>
       ${m.faltan.length ? '<span class="der"><a class="btn secondary" href="../laboratorio/reposicion.html">Ir a Stock y reposición</a></span>' : ''}</header>
       ${m.faltan.length ? `<table class="pg-tabla">${cab}<tbody>${m.faltan.map(fila).join('')}</tbody></table>` : ''}
       <details class="todos"><summary>Ver todos los materiales del plan (${m.lista.length})</summary><table class="pg-tabla">${cab}<tbody>${m.lista.map(fila).join('')}</tbody></table></details></div>`;
@@ -570,13 +573,14 @@
     if (todo) { const i = document.querySelector(`[data-ent="${todo.dataset.todo}"]`); if (i) i.value = todo.dataset.max; return; }
     const t = ev.target.closest('[data-acc]'); if (!t || t.tagName === 'SELECT') return;
     const a = t.dataset.acc;
-    if (a === 'post1') { t.disabled = true; await postergar(t.dataset.so, t.dataset.sku, isoLocal(proximoHabil()), null); }
+    // el botón se bloquea mientras trabaja y se libera al final (si falló, se puede reintentar; si salió bien, la pantalla se repinta)
+    if (a === 'post1') { t.disabled = true; try { await postergar(t.dataset.so, t.dataset.sku, isoLocal(proximoHabil()), null); } finally { t.disabled = false; } }
     else if (a === 'posthasta') abrirPostergar(t.dataset.so, t.dataset.sku, t.dataset.et);
-    else if (a === 'volver') { t.disabled = true; await postergar(t.dataset.so, t.dataset.sku, null, null); }
-    else if (a === 'etiq') { t.disabled = true; await etiquetar(t.dataset.so, t.dataset.prio); }
+    else if (a === 'volver') { t.disabled = true; try { await postergar(t.dataset.so, t.dataset.sku, null, null); } finally { t.disabled = false; } }
+    else if (a === 'etiq') { t.disabled = true; try { await etiquetar(t.dataset.so, t.dataset.prio); } finally { t.disabled = false; } }
     else if (a === 'irpedido') { abrirTab('pedidos'); document.getElementById('ped-' + t.dataset.so)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     else if (a === 'entrega') abrirEntrega(t.dataset.so);
-    else if (a === 'quitarentrega') { t.disabled = true; await quitarEntrega(t.dataset.so); }
+    else if (a === 'quitarentrega') { t.disabled = true; try { await quitarEntrega(t.dataset.so); } finally { t.disabled = false; } }
     else if (a === 'restaurar') { ev.preventDefault(); await restaurar(t.dataset.tipo, t.dataset.cod); }
     else if (a === 'imprimirplan') imprimirPlan();
     else if (a === 'agregar') {
