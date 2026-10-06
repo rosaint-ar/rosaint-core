@@ -212,7 +212,9 @@ export async function modoConteoSync(body: Row) {
     const ms = (porCod[l.codigo] || []).sort((a, b) => a.t - b.t);
     const corte = l.contado != null && l.contado_en ? new Date(l.contado_en).getTime() : Infinity;
     const ov = (l.mov_override || {}) as Record<string, boolean>;   // corrección a mano: "ya había salido/entrado cuando contaron"
-    const incluye = (m: Row) => (m.ref in ov ? !!ov[m.ref] : m.t <= corte);
+    // Por defecto TODO movimiento ya validado cuenta como ocurrido: la mercadería sale (o entra) primero y se valida
+    // en Odoo después. Se destilda a mano solo si de verdad pasó después de contar.
+    const incluye = (m: Row) => (m.ref in ov ? !!ov[m.ref] : true);
     const antes = ms.filter(incluye).reduce((a, m) => a + m.q, 0);
     const p = prods.find((x) => String(x.default_code).trim() === l.codigo);
     return { conteo_id: id, codigo: l.codigo, esperado: Math.round((Number(l.odoo_qty || 0) + antes) * 10000) / 10000,

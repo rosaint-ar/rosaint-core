@@ -142,7 +142,8 @@
   }
 
   // ---------------- cálculo de lo esperado y la diferencia ----------------
-  const incluye = (l, m) => { const ov = l.mov_override || {}; return m.ref in ov ? !!ov[m.ref] : !!m.antes_de_contar; };
+  // por defecto todo movimiento validado en Odoo cuenta como ocurrido (sale primero, se valida después); se destilda a mano
+  const incluye = (l, m) => { const ov = l.mov_override || {}; return m.ref in ov ? !!ov[m.ref] : true; };
   function esperadoDe(l) {
     const movs = l.movimientos || [];
     return Math.round((Number(l.odoo_qty || 0) + movs.filter((m) => incluye(l, m)).reduce((a, m) => a + Number(m.q), 0)) * 10000) / 10000;
@@ -245,9 +246,9 @@
     const ms = l.movimientos || [];
     if (!ms.length) return '<span class="muted">—</span>';
     const ro = !abierto();
-    return ms.map((m) => `<label class="mov ${incluye(l, m) ? 'in' : ''}" title="${incluye(l, m) ? 'Se descuenta/suma: había pasado cuando se contó' : 'No se tiene en cuenta: pasó después de contar'}">
+    return ms.map((m) => `<label class="mov ${incluye(l, m) ? 'in' : ''}" title="${incluye(l, m) ? 'Se tiene en cuenta (destildá si pasó DESPUÉS de contar)' : 'No se tiene en cuenta: marcado como posterior al conteo'}">
       <input type="checkbox" ${incluye(l, m) ? 'checked' : ''} ${ro ? 'disabled' : ''} data-movcod="${esc(l.codigo)}" data-movref="${esc(m.ref)}">
-      <b class="${m.q < 0 ? 'neg' : 'pos'}">${m.q > 0 ? '+' : ''}${fmt(m.q, 3)}</b> ${esc(m.ref)} <span class="muted">${fh(m.fecha, false)}</span></label>`).join('');
+      <b class="${m.q < 0 ? 'neg' : 'pos'}">${m.q > 0 ? '+' : ''}${fmt(m.q, 3)}</b> ${esc(m.ref)} <span class="muted">${fh(m.fecha, false)}${m.antes_de_contar ? '' : ' · validado después del conteo'}</span></label>`).join('');
   }
 
   function pintarDiferencias() {
@@ -260,7 +261,7 @@
     const base = S.difFiltro === 'falta' ? falta : S.difFiltro === 'sobra' ? sobra : S.difFiltro === 'mov' ? conMov : xs;
     const lista = [...base].sort((a, b) => Math.abs(dif(b) || 0) - Math.abs(dif(a) || 0));
     $('vista').innerHTML = `
-      <div class="cn-nota"><b>Esperado</b> = lo que decía Odoo al empezar + los movimientos de Odoo que <b>ya habían pasado cuando se contó</b> ese producto (entregas, fabricaciones). Si una entrega salió antes de contar pero se validó en Odoo después, <b>marcá su casilla</b>. ${abierto() ? '<b>Sincronizá con Odoo</b> para traer los movimientos nuevos.' : ''} El ajuste en Odoo se hace aparte y con tu OK.</div>
+      <div class="cn-nota"><b>Esperado</b> = lo que decía Odoo al empezar + los movimientos de Odoo desde entonces (entregas, fabricaciones). Por defecto <b>se cuentan todos los movimientos</b> (la mercadería sale y después se valida en Odoo). <b>Destildá</b> uno solo si de verdad pasó después de contar ese producto. ${abierto() ? '<b>Sincronizá con Odoo</b> para traer los movimientos nuevos.' : ''} El ajuste en Odoo se hace aparte y con tu OK.</div>
       <div class="cn-filtros">
         <button class="chip-f ${!S.difFiltro ? 'on' : ''}" data-dif="">Con diferencia (${xs.length})</button>
         <button class="chip-f ${S.difFiltro === 'falta' ? 'on' : ''}" data-dif="falta">Hay menos (${falta.length})</button>
