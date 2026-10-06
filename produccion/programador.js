@@ -451,7 +451,8 @@
       if (!st) { if (x.plan > 0) sinStock.push(x.c); continue; }
       const hay = Math.max(0, Number(st.libre)) - x.hecho;     // lo hecho hoy sin pasar a Odoo ya se usó
       const falta = x.plan - hay;
-      lista.push({ c: x.c, nombre: st.n, uom: st.uom, necesita: r2(x.plan), hay: r2(Math.max(0, hay)), falta: falta > 1e-6 ? Math.round(falta * 1000) / 1000 : 0, usado_hoy: r2(x.hecho), para: [...x.para], envase: x.c.startsWith('3') });
+      const r4 = (v) => Math.round(v * 10000) / 10000;
+      lista.push({ c: x.c, nombre: st.n, uom: st.uom, necesita: r4(x.plan), hay: r4(Math.max(0, hay)), falta: falta > 1e-6 ? Math.round(falta * 1000) / 1000 : 0, usado_hoy: r2(x.hecho), para: [...x.para], envase: x.c.startsWith('3') });
     }
     lista.sort((a, b) => (b.falta > 0) - (a.falta > 0) || b.falta - a.falta || a.c.localeCompare(b.c));
     return { lista, faltan: lista.filter((x) => x.falta > 0), sin_stock_en_odoo: sinStock };
