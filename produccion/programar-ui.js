@@ -137,7 +137,7 @@
     // encabezado
     const mins = Math.round((Date.now() - S.snapCreado) / 60000);
     const c = $('cuando');
-    c.textContent = `Datos de Odoo de las ${S.snapCreado.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} (${mins < 1 ? 'recién' : mins < 60 ? 'hace ' + mins + ' min' : 'hace ' + Math.round(mins / 60) + ' h'})`;
+    c.textContent = `Datos de Odoo de las ${S.snapCreado.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} (${mins < 1 ? 'recién' : mins < 60 ? 'hace ' + mins + ' min' : 'hace ' + Math.round(mins / 60) + ' h'})`;
     c.classList.toggle('viejo', mins > 30);
     const barra = (v, cap) => { const pct = cap ? v / cap : 0; return `<div class="barra ${pct > 1 ? 'pasada' : pct >= 0.95 ? 'llena' : ''}"><i style="width:${Math.min(100, pct * 100)}%"></i></div>`; };
     const confirmados = S.snap.pedidos.filter((p) => !esPresupuesto(p));
@@ -164,22 +164,8 @@
   // ---------------- plan del día (cantidades editables → Hoja de Producción) ----------------
   const hoyIso = () => isoLocal(new Date());
   // Junta lo que sugiere el programador con lo que se editó/agregó a mano hoy (prod_plan_dia)
-  function filasDelDia() {
-    const pl = S.plan, guard = {};
-    for (const r of S.dia) guard[r.tipo + '|' + r.codigo] = r;
-    const filas = [];
-    const sumar = (tipo, codigo, nombre, sugerido, extra) => {
-      const g = guard[tipo + '|' + codigo];
-      filas.push({ tipo, codigo, nombre, sugerido, cantidad: g?.editado ? Number(g.cantidad) : sugerido, editado: !!g?.editado, agregado: false, en_hoja: !!g?.en_hoja, guardada: g, ...extra });
-      delete guard[tipo + '|' + codigo];
-    };
-    for (const x of pl.preparar) sumar('preparar', x.c, x.nombre, x.kg, { x });
-    for (const x of pl.elaborar) sumar('elaborar', x.c, x.nombre, x.kg, { x });
-    for (const x of pl.fraccionar) sumar('fraccionar', x.c, x.nombre, x.q, { x });
-    for (const g of Object.values(guard)) if (g.agregado || g.editado)
-      filas.push({ tipo: g.tipo, codigo: g.codigo, nombre: g.nombre || nombreDe(g.codigo), sugerido: g.agregado ? null : 0, cantidad: Number(g.cantidad), editado: true, agregado: !!g.agregado, en_hoja: !!g.en_hoja, guardada: g });
-    return filas;
-  }
+  // misma lógica que la Hoja, Inicio y Producción (plan-del-dia.js)
+  function filasDelDia() { return window.PLAN_DEL_DIA.filasDelDia(S.plan, S.dia, nombreDe); }
   async function guardarCantidad(tipo, codigo, nombre, cantidad, sugerido, agregado) {
     const { data: u } = await sb.auth.getUser();
     const fila = { fecha: hoyIso(), tipo, codigo, nombre, cantidad, sugerido, editado: true, agregado: !!agregado, actualizado: new Date().toISOString(), actualizado_por: u?.user?.email || null };

@@ -117,12 +117,12 @@
       <span class="d" id="kpi-pedidos-sub">—</span>
     </a>
     <a href="produccion/hoja.html" class="kpi">
-      <span class="l">A fabricar (kg)</span>
+      <span class="l">A elaborar hoy (kg)</span>
       <span class="v" id="kpi-fabricar">—</span>
       <span class="d" id="kpi-fabricar-sub">—</span>
     </a>
     <a href="produccion/hoja.html" class="kpi">
-      <span class="l">A fraccionar (u.)</span>
+      <span class="l">A fraccionar hoy (u.)</span>
       <span class="v" id="kpi-fraccionar" style="color:var(--warn)">—</span>
       <span class="d" id="kpi-fraccionar-sub">—</span>
     </a>
@@ -174,11 +174,11 @@
 
   <div class="row-2">
     <div class="card">
-      <div class="panel-head"><h2>🔨 Top a fabricar</h2><a href="produccion/index.html" class="link">Ver todo →</a></div>
+      <div class="panel-head"><h2>🔨 Elaborar hoy</h2><a href="produccion/programar.html" class="link">Ver el plan →</a></div>
       <div class="lista-mini" id="top-fabricar"><div class="empty-mini">Cargando…</div></div>
     </div>
     <div class="card">
-      <div class="panel-head"><h2>📦 Top a fraccionar</h2><a href="produccion/index.html" class="link">Ver todo →</a></div>
+      <div class="panel-head"><h2>📦 Fraccionar hoy</h2><a href="produccion/programar.html" class="link">Ver el plan →</a></div>
       <div class="lista-mini" id="top-fraccionar"><div class="empty-mini">Cargando…</div></div>
     </div>
   </div>
@@ -213,6 +213,8 @@
 <script src="shared/supabase.js"></script>
 <script src="shared/charts.js"></script>
 <script src="shell/shell.js"></script>
+<script src="produccion/programador.js?v=202610061443"></script>
+<script src="produccion/plan-del-dia.js?v=202610061443"></script>
 <script>
 const FN_ESC = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/escandallo-prod';
 const KEY = window.SUPABASE_KEY;
@@ -258,23 +260,29 @@ async function cargarUSD() {
   if (window.Charts) Charts.sparkline(document.getElementById('spark-usd'), data.map(d => Number(d.venta_oficial)).reverse(), { color: 'var(--cyan)' });
 }
 
+// el plan se calcula una sola vez y lo usan los números de producción y las alertas
+let _planP = null;
+const planDelDia = () => (_planP = _planP || PLAN_DEL_DIA.cargar(sb));
+
+// Lo mismo que muestra "Programar el día": pedidos de Odoo (foto) y lo que falta hacer hoy.
 async function cargarProduccion() {
-  const [pedidosR, fabR, fracR] = await Promise.all([
-    sb.from('prod_pedidos').select('id, cliente'),
-    sb.from('v_prod_a_fabricar').select('sku, nombre_producto, qty_faltante').order('qty_faltante', { ascending: false }),
-    sb.from('v_prod_a_fraccionar').select('sku, nombre_producto, qty_faltante').order('qty_faltante', { ascending: false })
-  ]);
-  const pedidos = pedidosR.data || [];
-  const fab = (fabR.data || []).filter(f => Number(f.qty_faltante) > 0);
-  const frac = (fracR.data || []).filter(f => Number(f.qty_faltante) > 0);
-  setNum('kpi-pedidos', pedidos.length);
-  document.getElementById('kpi-pedidos-sub').textContent = new Set(pedidos.map(p => p.cliente)).size + ' clientes distintos';
+  let r;
+  try { r = await planDelDia(); }
+  catch (e) {
+    for (const id of ['top-fabricar', 'top-fraccionar']) document.getElementById(id).innerHTML = '<div class="empty-mini">⚠ No se pudo calcular el plan del día</div>';
+    console.warn('plan del día:', e);
+    return;
+  }
+  setNum('kpi-pedidos', r.pedidos.length);
+  document.getElementById('kpi-pedidos-sub').textContent = new Set(r.pedidos.map(p => p.cliente)).size + ' clientes · ' + PLAN_DEL_DIA.textoFoto(r.creado);
+  const fab = r.pendientes.elaborar.map(f => ({ nombre_producto: f.nombre + (f.tipo === 'preparar' ? ' (para mañana)' : ''), qty_faltante: f.falta }));
+  const frac = r.pendientes.fraccionar.map(f => ({ nombre_producto: f.nombre, qty_faltante: f.falta }));
   setNum('kpi-fabricar', fab.reduce((s, x) => s + Number(x.qty_faltante), 0), { dec: 0 });
-  document.getElementById('kpi-fabricar-sub').textContent = fab.length + ' graneles distintos';
+  document.getElementById('kpi-fabricar-sub').textContent = fab.length + ' granel' + (fab.length === 1 ? '' : 'es');
   setNum('kpi-fraccionar', frac.reduce((s, x) => s + Number(x.qty_faltante), 0));
-  document.getElementById('kpi-fraccionar-sub').textContent = frac.length + ' presentaciones';
+  document.getElementById('kpi-fraccionar-sub').textContent = frac.length + ' presentaci' + (frac.length === 1 ? 'ón' : 'ones');
   renderTopLista('top-fabricar', fab.slice(0, 6), 'kg', 'fab');
-  renderTopLista('top-fraccionar', frac.slice(0, 6), 'un', 'frac');
+  renderTopLista('top-fraccionar', frac.slice(0, 6), 'u', 'frac');
 }
 function renderTopLista(elId, list, unidad, cls) {
   const el = document.getElementById(elId);
@@ -437,8 +445,10 @@ async function cargarAlertas() {
   if (sinComp.length) alertas.push({ cls: 'warn', texto: '<strong>' + sinComp.length + ' pack' + (sinComp.length === 1 ? '' : 's') + '</strong> sin componente asignado', cnt: sinComp.length, href: 'catalogo/index.html' });
   const { data: usd } = await sb.from('cotizaciones_dolar').select('fecha').order('fecha', { ascending: false }).limit(1);
   if (usd && usd[0]) { const dias = (Date.now() - new Date(usd[0].fecha).getTime()) / 864e5; if (dias > 2) alertas.push({ cls: 'warn', texto: '<strong>Cotización USD vieja</strong> — hace ' + Math.floor(dias) + ' días', cnt: Math.floor(dias) + 'd', href: 'precios/cotizacion.html' }); }
-  const { data: pedVenc } = await sb.from('prod_pedidos').select('id').lt('fecha_compromiso', HOY);
-  if (pedVenc && pedVenc.length) alertas.push({ cls: 'critico', texto: '<strong>' + pedVenc.length + ' pedido' + (pedVenc.length === 1 ? '' : 's') + '</strong> con fecha de compromiso vencida', cnt: pedVenc.length, href: 'produccion/index.html' });
+  // pedidos confirmados con fecha de entrega prometida ya pasada (foto de Odoo del plan del día)
+  const plan = await planDelDia().catch(() => null);
+  const pedVenc = (plan?.pedidos || []).filter(p => p.compromiso && p.compromiso < HOY);
+  if (pedVenc.length) alertas.push({ cls: 'critico', texto: '<strong>' + pedVenc.length + ' pedido' + (pedVenc.length === 1 ? '' : 's') + '</strong> con fecha de entrega prometida vencida', cnt: pedVenc.length, href: 'produccion/index.html' });
 
   // Control Hoja de Producción ↔ Fabricación en Odoo + materiales del plan del día (control_alertas)
   const { data: ctrl } = await sb.from('control_alertas').select('tipo, severidad').eq('estado', 'abierta');

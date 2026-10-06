@@ -287,10 +287,10 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { /* */ }
     const modo = String(body.modo ?? "contar");
 
-    // Todos los modos piden sesión de Core. La única excepción es el control que corre el cron,
-    // que se identifica con una clave propia (CONTROL_CRON_KEY) en vez de un usuario.
+    // Todos los modos piden sesión de Core. Las excepciones son lo que corre el cron: el control
+    // y la foto de Odoo (plan), que se identifican con una clave propia (CONTROL_CRON_KEY) en vez de un usuario.
     const cronKey = Deno.env.get("CONTROL_CRON_KEY") || "";
-    const esCron = modo === "control" && !!cronKey && req.headers.get("x-cron-key") === cronKey;
+    const esCron = (modo === "control" || modo === "plan") && !!cronKey && req.headers.get("x-cron-key") === cronKey;
     const usuario = esCron ? null : await usuarioValido(req);
     if (!esCron && !usuario) return new Response(JSON.stringify({ ok: false, error: "No autorizado: iniciá sesión en Core" }), { headers: cors });
 

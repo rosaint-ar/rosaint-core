@@ -148,7 +148,7 @@
     .hoja-cta__arrow { font-size: 22px; opacity: 0.8; }
   </style>
 </head>
-<body data-page="produccion" data-title="Producción" data-subtitle="Pedidos pendientes · faltantes · fabricar y fraccionar">
+<body data-page="produccion" data-title="Producción" data-subtitle="Pedidos por entregar · lo que falta elaborar y fraccionar hoy">
 
 <div id="app-shell"></div>
 
@@ -156,9 +156,9 @@
 
   <div class="kpi-row">
     <div class="kpi">
-      <div class="k">Pedidos pendientes</div>
+      <div class="k">Pedidos por entregar</div>
       <div class="v" id="kpi-pedidos">—</div>
-      <div class="sub">Con entrega incompleta</div>
+      <div class="sub">Confirmados, con algo pendiente</div>
     </div>
     <div class="kpi">
       <div class="k">Productos por entregar</div>
@@ -166,14 +166,14 @@
       <div class="sub">SKUs distintos</div>
     </div>
     <div class="kpi">
-      <div class="k">A Fabricar</div>
+      <div class="k">A elaborar hoy</div>
       <div class="v" id="kpi-fabricar" style="color: var(--hot);">—</div>
-      <div class="sub">Falta granel o MP</div>
+      <div class="sub" id="kpi-fabricar-sub">graneles</div>
     </div>
     <div class="kpi">
-      <div class="k">A Fraccionar</div>
+      <div class="k">A fraccionar hoy</div>
       <div class="v" id="kpi-fraccionar" style="color: var(--warn);">—</div>
-      <div class="sub">Solo envasar</div>
+      <div class="sub" id="kpi-fraccionar-sub">presentaciones</div>
     </div>
   </div>
 
@@ -188,7 +188,8 @@
 
   <div class="toolbar">
     <div class="status" id="status-sync">Cargando…</div>
-    <button class="btn-primary" id="btn-sync">🔄 Sincronizar ahora</button>
+    <button class="btn-primary" id="btn-sync">🔄 Actualizar desde Odoo</button>
+    <a class="btn-primary" href="programar.html" style="text-decoration:none">🗓 Programar el día</a>
     <button class="btn-primary" id="btn-sync-catalogo" style="background: var(--surface-2); color: var(--text); border: 1px solid var(--border);" title="Trae todos los productos y BOMs de VELAZQUEZ (~40 seg). Correr cuando agregues productos nuevos o cambies BOMs en Odoo.">🗂 Actualizar catálogo maestro</button>
   </div>
 
@@ -198,8 +199,8 @@
   <div class="panel">
     <div class="panel-header">
       <div>
-        <h2>🔨 A Fabricar</h2>
-        <div class="lead">Productos que necesitan producción del granel (o alguna materia prima)</div>
+        <h2>🔨 A elaborar hoy</h2>
+        <div class="lead">Graneles del plan de hoy (Programar el día), descontando lo ya cargado en la Hoja</div>
       </div>
       <span class="count-badge" id="badge-fabricar">—</span>
     </div>
@@ -212,8 +213,8 @@
   <div class="panel">
     <div class="panel-header">
       <div>
-        <h2>📦 A Fraccionar</h2>
-        <div class="lead">Hay granel y envases. Solo hay que envasar / fraccionar.</div>
+        <h2>📦 A fraccionar hoy</h2>
+        <div class="lead">Presentaciones del plan de hoy y para qué pedido es cada una. Lo que no entra hoy está en Programar el día.</div>
       </div>
       <span class="count-badge warn" id="badge-fraccionar">—</span>
     </div>
@@ -242,6 +243,8 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shared/charts.js"></script>
 <script src="../shell/shell.js"></script>
+<script src="programador.js?v=202610061443"></script>
+<script src="plan-del-dia.js?v=202610061443"></script>
 <script>
 const SYNC_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
 // La función pide la sesión del usuario (escribe y borra tablas): sin sesión no se sincroniza.
@@ -263,39 +266,24 @@ function showMsg(kind, html) {
 }
 function hideMsg() { document.getElementById('msg').style.display = 'none'; }
 
+// Todo sale del plan del día (la misma cuenta que "Programar el día"): foto de Odoo + lo editado
+// en Core + lo cargado hoy en la Hoja. Reemplaza a la sincronización vieja (pedidos / stock / BOM).
 async function cargarDatos() {
-  // Faltantes clasificados
-  const { data: faltantes, error: e1 } = await sb.from('v_prod_faltantes_clasificados').select('*').order('qty_faltante', { ascending: false });
-  if (e1) { showMsg('err', 'Error cargando faltantes: ' + e1.message); return; }
-
-  // Detalle (componentes) de cada faltante
-  const { data: detalle, error: e2 } = await sb.from('v_prod_faltantes_detalle').select('*');
-  if (e2) { showMsg('err', 'Error cargando detalle: ' + e2.message); return; }
-
-  // Pedidos + líneas pendientes (ordenados por número, más nuevo arriba)
-  const { data: pedidos, error: e3 } = await sb.from('prod_pedidos').select('*').order('numero', { ascending: false });
-  if (e3) { showMsg('err', 'Error cargando pedidos: ' + e3.message); return; }
-
-  const { data: lineas, error: e4 } = await sb.from('prod_pedido_lineas').select('*');
-  if (e4) { showMsg('err', 'Error cargando líneas: ' + e4.message); return; }
-
-  // Último log de sync
-  const { data: logs } = await sb.from('prod_sync_log').select('*').order('ejecutado_en', { ascending: false }).limit(1);
-  const lastLog = logs && logs[0];
-
-  renderKPIs(pedidos, lineas, faltantes);
-  renderStatus(lastLog);
-
-  const fabricar = faltantes.filter(f => f.accion === 'a_fabricar');
-  const fraccionar = faltantes.filter(f => f.accion === 'a_fraccionar');
-
-  renderFaltantes('tabla-fabricar', fabricar, detalle, true);
-  renderFaltantes('tabla-fraccionar', fraccionar, detalle, false);
-
-  document.getElementById('badge-fabricar').textContent = fabricar.length + ' SKUs';
-  document.getElementById('badge-fraccionar').textContent = fraccionar.length + ' SKUs';
-
-  renderPedidos(pedidos, lineas);
+  let r;
+  try { r = await PLAN_DEL_DIA.cargar(sb); }
+  catch (e) { showMsg('err', 'No se pudo calcular el plan del día: ' + e.message); return; }
+  const prods = new Set(); for (const p of r.pedidos) for (const l of p.lineas) prods.add(l.c);
+  setKpi('kpi-pedidos', r.pedidos.length);
+  setKpi('kpi-productos', prods.size);
+  setKpi('kpi-fabricar', r.pendientes.elaborar.length);
+  setKpi('kpi-fraccionar', r.pendientes.fraccionar.length);
+  _kpiAnimado = true;
+  document.getElementById('kpi-fabricar-sub').textContent = fmt(r.pendientes.elaborar.reduce((a, f) => a + f.falta, 0)) + ' kg en total';
+  document.getElementById('kpi-fraccionar-sub').textContent = fmt(r.pendientes.fraccionar.reduce((a, f) => a + f.falta, 0)) + ' unidades en total';
+  document.getElementById('status-sync').textContent = 'Plan de hoy con ' + PLAN_DEL_DIA.textoFoto(r.creado);
+  renderElaborar(r);
+  renderFraccionar(r);
+  renderPedidos(r.pedidos);
 }
 
 let _kpiAnimado = false;
@@ -305,141 +293,73 @@ function setKpi(id, n) {
   if (!_kpiAnimado && window.Charts) Charts.countUp(el);
   else el.textContent = Number(n).toLocaleString('es-AR');
 }
-function renderKPIs(pedidos, lineas, faltantes) {
-  setKpi('kpi-pedidos', pedidos.length);
-  setKpi('kpi-productos', new Set(lineas.filter(l => l.qty_pendiente > 0).map(l => l.sku)).size);
-  setKpi('kpi-fabricar', faltantes.filter(f => f.accion === 'a_fabricar').length);
-  setKpi('kpi-fraccionar', faltantes.filter(f => f.accion === 'a_fraccionar').length);
-  _kpiAnimado = true;
-}
 
-function renderStatus(lastLog) {
-  const el = document.getElementById('status-sync');
-  if (!lastLog) { el.textContent = 'Sin sincronizaciones previas'; return; }
-  const dt = new Date(lastLog.ejecutado_en);
-  const hace = tiempoRelativo(dt);
-  const status = lastLog.ok ? '✓' : '✗';
-  el.innerHTML = 'Última sync: <strong>' + hace + '</strong> ' + status + (lastLog.error ? ' — <span style="color:var(--hot);">' + escapeHTML(lastLog.error) + '</span>' : '');
-}
+const vacio = (t) => '<div class="empty"><span class="icon">✓</span>' + t + '</div>';
+const editada = (f) => f.editado ? ' <span style="color:var(--muted);font-size:11px">(cantidad editada)</span>' : '';
 
-function tiempoRelativo(fecha) {
-  const diff = (Date.now() - fecha.getTime()) / 1000;
-  if (diff < 60) return 'hace ' + Math.floor(diff) + 's';
-  if (diff < 3600) return 'hace ' + Math.floor(diff / 60) + ' min';
-  if (diff < 86400) return 'hace ' + Math.floor(diff / 3600) + ' hs';
-  return fecha.toLocaleString('es-AR');
-}
-
-function renderFaltantes(elId, list, detalle, showComponentes) {
-  const cont = document.getElementById(elId);
-  if (list.length === 0) {
-    cont.innerHTML = '<div class="empty"><span class="icon">✓</span>Nada pendiente en esta categoría</div>';
-    return;
-  }
-  let html = '<table class="data"><thead><tr>' +
-    '<th style="width:100px;">SKU</th>' +
-    '<th>Producto</th>' +
-    '<th style="width:80px;" class="num">Pedidos</th>' +
-    '<th style="width:80px;" class="num">Requerido</th>' +
-    '<th style="width:80px;" class="num">Stock</th>' +
-    '<th style="width:90px;" class="num">Faltante</th>' +
-    '</tr></thead><tbody>';
+function renderElaborar(r) {
+  const list = r.pendientes.elaborar;
+  document.getElementById('badge-fabricar').textContent = list.length + ' granel' + (list.length === 1 ? '' : 'es');
+  const cont = document.getElementById('tabla-fabricar');
+  if (!list.length) { cont.innerHTML = vacio('Nada para elaborar hoy'); return; }
+  let html = '<table class="data"><thead><tr><th style="width:100px;">Código</th><th>Granel</th><th>Para</th><th style="width:110px;" class="num">Falta hoy</th></tr></thead><tbody>';
   for (const f of list) {
-    html += '<tr>';
-    html += '<td class="sku">' + escapeHTML(f.sku) + '</td>';
-    html += '<td>' + escapeHTML(f.nombre_producto);
-    if (showComponentes) {
-      const comps = detalle.filter(d => d.sku === f.sku && d.componente_sku);
-      if (comps.length) {
-        html += '<div class="componentes">';
-        for (const c of comps) {
-          const falta = c.qty_componente_faltante > 0;
-          html += '<div class="comp-row ' + (falta ? 'faltante' : 'ok') + '">';
-          html += '<span class="comp-name">' + escapeHTML(c.componente_nombre || c.componente_sku) + '</span>';
-          html += '<span class="comp-qty">' + fmt(c.qty_componente_necesaria) + ' nec · ' + fmt(c.qty_componente_stock) + ' stock';
-          if (falta) html += ' · <strong>faltan ' + fmt(c.qty_componente_faltante) + '</strong>';
-          html += '</span>';
-          html += '</div>';
-        }
-        html += '</div>';
-      }
-    }
-    html += '</td>';
-    html += '<td class="num">' + f.pedidos_involucrados + '</td>';
-    html += '<td class="num">' + fmt(f.qty_requerida) + '</td>';
-    html += '<td class="num">' + fmt(f.qty_stock) + '</td>';
-    html += '<td class="num error">' + fmt(f.qty_faltante) + '</td>';
-    html += '</tr>';
+    const para = f.tipo === 'preparar' ? 'Preparar hoy para elaborar mañana' : (f.x?.para || []).map(r.nombreDe).join(', ');
+    html += '<tr><td class="sku">' + escapeHTML(f.codigo) + '</td><td>' + escapeHTML(f.nombre) + editada(f) + '</td>'
+      + '<td style="color:var(--muted);font-size:12.5px">' + escapeHTML(para) + '</td><td class="num error">' + fmt(f.falta) + ' kg</td></tr>';
   }
-  html += '</tbody></table>';
-  cont.innerHTML = html;
+  cont.innerHTML = html + '</tbody></table>';
 }
 
-function renderPedidos(pedidos, lineas) {
+function renderFraccionar(r) {
+  const list = r.pendientes.fraccionar;
+  document.getElementById('badge-fraccionar').textContent = list.length + ' presentaci' + (list.length === 1 ? 'ón' : 'ones');
+  const cont = document.getElementById('tabla-fraccionar');
+  if (!list.length) { cont.innerHTML = vacio('Nada para fraccionar hoy'); return; }
+  let html = '<table class="data"><thead><tr><th style="width:100px;">Código</th><th>Producto</th><th>Para</th><th style="width:110px;" class="num">Falta hoy</th></tr></thead><tbody>';
+  for (const f of list) {
+    const para = (f.x?.motivos || []).map(m => m.numero ? m.numero + ' ' + m.cliente + ' (' + fmt(m.q) + ')' : 'stock (' + fmt(m.q) + ')').join(' · ');
+    html += '<tr><td class="sku">' + escapeHTML(f.codigo) + '</td><td>' + escapeHTML(f.nombre) + editada(f) + '</td>'
+      + '<td style="color:var(--muted);font-size:12.5px">' + escapeHTML(para) + '</td><td class="num error">' + fmt(f.falta) + ' u</td></tr>';
+  }
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+function renderPedidos(pedidos) {
   const cont = document.getElementById('tabla-pedidos');
-  if (pedidos.length === 0) {
-    cont.innerHTML = '<div class="empty"><span class="icon">✓</span>No hay pedidos pendientes</div>';
-    return;
-  }
   document.getElementById('badge-pedidos').textContent = pedidos.length + ' pedidos';
-
-  const lineasByPedido = new Map();
-  for (const l of lineas) {
-    if (!lineasByPedido.has(l.pedido_id)) lineasByPedido.set(l.pedido_id, []);
-    lineasByPedido.get(l.pedido_id).push(l);
-  }
-
+  if (pedidos.length === 0) { cont.innerHTML = vacio('No hay pedidos pendientes'); return; }
+  const hoy = PLAN_DEL_DIA.isoLocal(new Date());
+  const lista = [...pedidos].sort((a, b) => String(b.numero).localeCompare(String(a.numero)));
   let html = '';
-  for (const p of pedidos) {
-    const lin = lineasByPedido.get(p.id) || [];
-    const badge = p.estado === 'partial' ? '<span class="badge-partial">Parcial</span>' :
-                  p.estado === 'pending' ? '<span class="badge-pending">Pendiente</span>' :
-                  '';
-    html += '<details class="pedido-details">';
-    html += '<summary>';
-    html += '<span><strong>' + escapeHTML(p.numero) + '</strong> · ' + escapeHTML(p.cliente || '(sin cliente)') + ' · ' + fmtFecha(p.fecha_pedido) + '</span>';
-    html += '<span>' + badge + ' <span style="color:var(--muted); font-size:12px; margin-left:8px;">' + lin.length + ' líneas</span></span>';
-    html += '</summary>';
-    html += '<div class="lineas-list">';
-    html += '<div class="linea" style="font-weight:600; color:var(--muted); font-size:11px; letter-spacing:.04em; text-transform:uppercase;">';
-    html += '<span>SKU</span><span>Producto</span><span class="qty">Pedido</span><span class="qty">Falta</span>';
-    html += '</div>';
-    for (const l of lin) {
-      const falta = Math.max(0, (l.qty_pedida || 0) - (l.qty_entregada || 0));
-      html += '<div class="linea">';
-      html += '<span class="sku">' + escapeHTML(l.sku) + '</span>';
-      html += '<span>' + escapeHTML(l.nombre_producto) + '</span>';
-      html += '<span class="qty">' + fmt(l.qty_pedida) + '</span>';
-      html += '<span class="qty ' + (falta > 0 ? 'pendiente' : '') + '">' + fmt(falta) + '</span>';
-      html += '</div>';
+  for (const p of lista) {
+    const badge = p.entrega === 'partial' ? '<span class="badge-partial">Parcial</span>' : '<span class="badge-pending">Pendiente</span>';
+    const vencido = p.compromiso && p.compromiso < hoy ? ' · <b style="color:var(--hot)">prometido el ' + fmtFecha(p.compromiso) + '</b>' : '';
+    html += '<details class="pedido-details"><summary>';
+    html += '<span><strong>' + escapeHTML(p.numero) + '</strong> · ' + escapeHTML(p.cliente || '(sin cliente)') + ' · ' + fmtFecha(p.fecha) + vencido + '</span>';
+    html += '<span>' + badge + ' <span style="color:var(--muted); font-size:12px; margin-left:8px;">' + p.lineas.length + ' líneas</span></span>';
+    html += '</summary><div class="lineas-list">';
+    html += '<div class="linea" style="font-weight:600; color:var(--muted); font-size:11px; letter-spacing:.04em; text-transform:uppercase;"><span>SKU</span><span>Producto</span><span class="qty">Pedido</span><span class="qty">Falta</span></div>';
+    for (const l of p.lineas) {
+      html += '<div class="linea"><span class="sku">' + escapeHTML(l.c) + '</span><span>' + escapeHTML(l.n) + '</span><span class="qty">' + fmt(l.pedido) + '</span><span class="qty pendiente">' + fmt(l.pend) + '</span></div>';
     }
     html += '</div></details>';
   }
   cont.innerHTML = html;
 }
 
-// Sincronización manual: encadena los 3 modos
+// Actualizar: pide a Odoo una foto nueva (la misma que usa Programar el día) y recalcula
 async function sincronizar() {
   const btn = document.getElementById('btn-sync');
   const originalTxt = btn.innerHTML;
   btn.disabled = true;
   hideMsg();
-
   try {
-    btn.innerHTML = '⏳ Trayendo pedidos…';
-    const r1 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'pedidos' }) }).then(r => r.json());
-    if (!r1.ok) throw new Error('pedidos: ' + (r1.error || 'desconocido'));
-
-    btn.innerHTML = '⏳ Trayendo stock…';
-    const r2 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'productos', product_ids: r1.product_ids }) }).then(r => r.json());
-    if (!r2.ok) throw new Error('productos: ' + (r2.error || 'desconocido'));
-
-    btn.innerHTML = '⏳ Trayendo BOMs…';
-    const r3 = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'bom', tmpl_ids: r2.tmpl_ids }) }).then(r => r.json());
-    if (!r3.ok) throw new Error('bom: ' + (r3.error || 'desconocido'));
-
-    showMsg('ok', 'Sincronizado: ' + r1.pedidos + ' pedidos, ' + r1.lineas + ' líneas, ' + r2.stock + ' productos con stock, ' + r3.bom + ' relaciones BOM.');
+    btn.innerHTML = '⏳ Leyendo Odoo…';
+    const r = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'plan' }) }).then(r => r.json());
+    if (!r.ok) throw new Error(r.error || 'desconocido');
     await cargarDatos();
+    showMsg('ok', 'Datos de Odoo actualizados');
   } catch (e) {
     console.error(e);
     showMsg('err', 'Error: ' + e.message);

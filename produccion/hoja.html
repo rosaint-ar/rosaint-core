@@ -393,6 +393,7 @@
     </div>
     <div class="pend-list" id="pend-frac-list"><span class="pend-empty">Cargando…</span></div>
   </div>
+  <div id="pend-fuente" style="grid-column:1/-1;font-size:11.5px;color:var(--muted);padding-top:4px"></div>
 </div>
 
 <div class="contenido">
@@ -519,6 +520,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js"></script>
+<script src="programador.js?v=202610061443"></script>
+<script src="plan-del-dia.js?v=202610061443"></script>
 <script>
 /* Auth guard — si no hay sesión, redirige a login */
 (async () => {
@@ -540,8 +543,8 @@ const STATE = {
   productoSel: null,
   tipoSel: 'fabricacion',
   editId: null,
-  pendFab: [],
-  pendFrac: []
+  pend: null       // lo que falta hacer hoy según Programar el día
+
 };
 
 const TIPO_LABEL = { fabricacion: 'Fabricación', fraccionamiento: 'Fraccionamiento' };
@@ -567,83 +570,52 @@ function toast(msg, kind) {
 
 /* ---- Carga inicial: pendientes + productos + actividades ---- */
 async function cargarTodo() {
-  // Cargar productos y actividades primero; luego pendientes (que descuenta actividades)
+  // el pendiente se calcula con el plan del día (que ya tiene en cuenta lo cargado en la hoja)
   await Promise.all([cargarProductos(), cargarActividades()]);
   await cargarPendientes();
 }
+// el plan cambia con lo que se carga en Odoo y en otras tablets: se recalcula cada 3 minutos
+setInterval(() => { if (document.visibilityState === 'visible') cargarPendientes(); }, 3 * 60000);
 
-function renderPendList(elId, list, unidadDefault) {
+function renderPendList(elId, list, unidad) {
   const el = document.getElementById(elId);
-  const visible = list.filter(f => Number(f.qty_faltante) > 0);
-  if (visible.length === 0) {
+  if (list.length === 0) {
     el.innerHTML = '<span class="pend-empty">✓ Nada pendiente</span>';
     return;
   }
   let html = '';
-  for (const f of visible) {
-    const qty = fmt(f.qty_faltante);
-    const un = unidadDefault === 'kg' ? 'kg' : (f.qty_faltante == 1 ? 'un' : 'un');
+  for (const f of list) {
+    const extra = f.tipo === 'preparar' ? ' (para mañana)' : '';
     html += '<div class="pend-item">';
-    html += '<span class="pend-item__name">' + escapeHTML(f.nombre_producto) + '</span>';
-    html += '<span class="pend-item__qty">' + qty + ' ' + un + '</span>';
+    html += '<span class="pend-item__name">' + escapeHTML(f.nombre + extra) + '</span>';
+    html += '<span class="pend-item__qty">' + fmt(f.falta) + ' ' + unidad + '</span>';
     html += '</div>';
   }
   el.innerHTML = html;
 }
 
-// Descuenta las actividades del día del pendiente de Odoo
-// (solo local, no afecta la sync general)
-// El recuadro de fabricar está en kg y el de fraccionar en unidades: cada carga
-// se pasa a esa unidad (500 g = 0,5 kg) y solo descuenta del recuadro de su tipo.
-function aplicarDescuentoLocal(pendientes, actividades, tipo) {
-  const consumo = new Map(); // sku -> cantidad total consumida hoy, en la unidad del recuadro
-  for (const a of actividades) {
-    if ((a.tipo || 'fraccionamiento') !== tipo) continue;
-    const u = String(a.unidad || '').toLowerCase();
-    let q = Number(a.cantidad || 0);
-    if (tipo === 'fabricacion') {
-      if (['g', 'gr', 'cc', 'ml'].includes(u)) q = q / 1000;
-      else if (!['kg', 'l', 'lt', 'lts'].includes(u)) continue; // unidades sueltas no descuentan kg
-    } else if (!['un', 'u', ''].includes(u)) continue;
-    const sku = a.producto_sku;
-    consumo.set(sku, (consumo.get(sku) || 0) + q);
-  }
-  return pendientes.map(p => {
-    const c = consumo.get(p.sku) || 0;
-    return { ...p, qty_faltante: Math.max(0, Number(p.qty_faltante) - c) };
-  });
-}
-
+// El pendiente es el plan de HOY de "Programar el día" (foto de Odoo + lo editado en Core),
+// y ya descuenta lo que se va cargando en esta hoja: no se descuenta otra vez acá.
 async function cargarPendientes() {
-  const [{ data: fabRaw, error: e1 }, { data: fracRaw, error: e2 }] = await Promise.all([
-    sb.from('v_prod_a_fabricar').select('*').order('qty_faltante', { ascending: false }),
-    sb.from('v_prod_a_fraccionar').select('*').order('qty_faltante', { ascending: false })
-  ]);
-  // si no se pudo leer, se dice: no es lo mismo que "nada pendiente"
-  if (e1 || e2) {
+  try {
+    const r = await PLAN_DEL_DIA.cargar(sb);
+    STATE.pend = r.pendientes;
+    document.getElementById('pend-fuente').textContent = 'Plan de hoy según Programar el día · ' + PLAN_DEL_DIA.textoFoto(r.creado);
+  } catch (e) {
     for (const id of ['pend-fab-list', 'pend-frac-list']) document.getElementById(id).innerHTML = '<span class="pend-empty">⚠ No se pudo leer el pendiente</span>';
-    toast('No se pudo leer el pendiente: ' + (e1 || e2).message, 'err');
+    document.getElementById('pend-fuente').textContent = 'No se pudo calcular el plan del día: ' + e.message;
     return;
   }
-  STATE.pendFab = fabRaw || [];
-  STATE.pendFrac = fracRaw || [];
   renderPendientes();
 }
 
 function renderPendientes() {
-  const fab = aplicarDescuentoLocal(STATE.pendFab, STATE.actividades, 'fabricacion');
-  const frac = aplicarDescuentoLocal(STATE.pendFrac, STATE.actividades, 'fraccionamiento');
-
-  const fabActivos = fab.filter(f => Number(f.qty_faltante) > 0);
-  const fracActivos = frac.filter(f => Number(f.qty_faltante) > 0);
-
-  document.getElementById('pend-fab-count').textContent =
-    fabActivos.length + ' SKU' + (fabActivos.length === 1 ? '' : 's');
-  document.getElementById('pend-frac-count').textContent =
-    fracActivos.length + ' SKU' + (fracActivos.length === 1 ? '' : 's');
-
+  if (!STATE.pend) return;
+  const fab = STATE.pend.elaborar, frac = STATE.pend.fraccionar;
+  document.getElementById('pend-fab-count').textContent = fab.length + ' producto' + (fab.length === 1 ? '' : 's');
+  document.getElementById('pend-frac-count').textContent = frac.length + ' producto' + (frac.length === 1 ? '' : 's');
   renderPendList('pend-fab-list', fab, 'kg');
-  renderPendList('pend-frac-list', frac, 'un');
+  renderPendList('pend-frac-list', frac, 'u');
 }
 
 // Solo productos reales: excluye servicios/envíos/descuentos
@@ -671,7 +643,7 @@ async function cargarActividades() {
   STATE.actividades = data || [];
   renderTabla();
   // Recalcular pendientes con el descuento de las actividades del día
-  if (STATE.pendFab.length || STATE.pendFrac.length) renderPendientes();
+  if (STATE.pend) cargarPendientes(); // lo cargado cambia lo que falta
 }
 
 function renderTabla() {
@@ -731,7 +703,6 @@ async function borrarLinea(id) {
   if (error) { toast('Error: ' + error.message, 'err'); return; }
   toast('Línea borrada — pendiente restaurado');
   await cargarActividades();
-  renderPendientes();
 }
 
 /* ---- Modal agregar ---- */
@@ -932,7 +903,6 @@ async function guardarActividadUnaVez() {
     toast('✓ Cambios guardados');
     cerrarModalAdd();
     await cargarActividades();
-    renderPendientes();
     return;
   }
 
@@ -955,7 +925,6 @@ async function guardarActividadUnaVez() {
   toast('✓ Registrado: ' + STATE.productoSel.nombre_producto);
   cerrarModalAdd();
   await cargarActividades();
-  renderPendientes();
 }
 
 /* ---- Modal observaciones ---- */
