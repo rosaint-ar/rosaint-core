@@ -16,7 +16,6 @@
   const GRUPOS = [
     { k: 'granel', t: 'Graneles', u: 'kg', ayuda: 'En kilos, con un decimal si hace falta.' },
     { k: 'terminado', t: 'Producto terminado', u: 'u', ayuda: 'En unidades (potes, baldes, botellas).' },
-    { k: 'revisar', t: 'Revisar', u: 'u', ayuda: 'Combos con stock propio en Odoo: no deberían tenerlo (se arman con sus productos). Contá si hay alguno armado.' },
   ];
   const unidad = (l) => (l.grupo === 'granel' ? 'kg' : 'u');
   const grupoDe = (k) => (GRUPOS.find((g) => g.k === k) || {}).t || k;
@@ -60,7 +59,9 @@
       const lineas = [];
       for (const p of snap.datos.stock) {
         const fam = p.c.charAt(0);
-        const grupo = fam === '9' ? 'granel' : fam === '1' ? 'terminado' : (fam === '6' && Number(p.disp) !== 0) ? 'revisar' : null;
+        // los combos y packs son kits: Odoo informa cuántos se podrían ARMAR con sus productos, no stock real → no se cuentan
+        if (snap.datos.kits && snap.datos.kits[p.c]) continue;
+        const grupo = fam === '9' ? 'granel' : fam === '1' ? 'terminado' : null;
         if (!grupo) continue;
         lineas.push({ codigo: p.c, nombre: p.n, grupo, uom: p.uom, odoo_qty: Number(p.disp) });
       }
