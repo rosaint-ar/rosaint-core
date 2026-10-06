@@ -6,7 +6,7 @@
   <title>Canales · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
   <style>
     /* ---- Tabs principales de canal ---- */
     .canal-tabs {
@@ -461,7 +461,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../shared/supabase.js?v=202610061655"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -630,7 +630,7 @@ function renderDirGrid() {
     <div class="grupo">
       <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU${g.rows.length !== 1 ? 's' : ''}</div></div>
       <table class="grilla-precios">
-        <colgroup><col style="width:76px"><col><col style="width:70px"><col style="width:88px"><col style="width:98px"><col style="width:80px"><col style="width:98px"><col style="width:80px"><col style="width:92px"><col style="width:92px"><col style="width:92px"></colgroup>
+        <colgroup><col style="width:92px"><col><col style="width:70px"><col style="width:88px"><col style="width:98px"><col style="width:80px"><col style="width:98px"><col style="width:80px"><col style="width:92px"><col style="width:92px"><col style="width:92px"></colgroup>
         <thead><tr>
           <th>Código</th><th>Nombre</th><th class="num">Tam.</th><th class="num">Costo</th>
           <th class="num col-l1">L1 c/IVA</th><th class="num col-l1">Rent L1</th>
@@ -821,7 +821,7 @@ function renderGrillaTN() {
     <div class="grupo">
       <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU · ${esc(g.rows[0]?.medio_pago || '')}</div></div>
       <table class="grilla-precios">
-        <colgroup><col style="width:76px"><col><col style="width:98px"><col style="width:98px"><col style="width:98px"><col style="width:96px"><col style="width:98px"><col style="width:96px"><col style="width:104px"></colgroup>
+        <colgroup><col style="width:92px"><col><col style="width:98px"><col style="width:98px"><col style="width:98px"><col style="width:96px"><col style="width:98px"><col style="width:96px"><col style="width:104px"></colgroup>
         <thead><tr>
           <th>Código</th><th>Nombre</th><th class="num">L1 c/IVA</th>
           <th class="num col-tn">Lista</th><th class="num col-tn">Transf.</th><th class="num">Rent Transf.</th>

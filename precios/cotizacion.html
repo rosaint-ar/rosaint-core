@@ -6,7 +6,7 @@
   <title>Cotización del dólar · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
   <style>
     .current-box {
       background: var(--surface); border: 1px solid var(--border);
@@ -22,6 +22,12 @@
       font-size: 15px; font-weight: 600; margin-bottom: 4px;
     }
     .current-box .info .sub { font-size: 13px; color: var(--muted); }
+    /* en el celular el importe va arriba y el detalle abajo (antes se salía de la pantalla) */
+    @media (max-width: 640px) {
+      .current-box { flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; }
+      .current-box .big { font-size: 34px; }
+      .current-box .info { width: 100%; min-width: 0; }
+    }
     .field-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
     .field { display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
     .field .input { width: 100%; }
@@ -88,8 +94,8 @@
   <div class="card" style="margin-bottom: 16px;">
     <h2 style="font-size:15px; font-weight:600; margin-bottom:6px;">Actualizar manualmente</h2>
     <p style="color:var(--muted); font-size:13px; margin-bottom:14px;">
-      Solo hace falta si querés cargar un valor distinto al del BNA (ej. para simular escenarios).
-      El sync automático seguirá corriendo; tu valor manual se sobrescribe al siguiente ciclo.
+      Solo hace falta si el automático falló o hay que corregir un día. <b>Ojo: es el valor real</b> que usa todo Core
+      (no sirve para simular). El automático lo vuelve a pisar en el siguiente ciclo del día.
     </p>
 
     <div class="field-row">
@@ -134,7 +140,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../shared/supabase.js?v=202610061655"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
 const fmtARS = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -145,10 +151,12 @@ function claseFuente(fuente) {
   if (fuente.endsWith('-auto')) return 'auto';
   return 'manual';
 }
+// la fuente viene de la base: se escapa antes de ponerla en la página
+const escF = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 function labelFuente(fuente) {
   if (!fuente) return '—';
-  if (fuente.endsWith('-auto')) return fuente.replace('-auto', '') + ' · auto';
-  return fuente + ' · manual';
+  if (fuente.endsWith('-auto')) return escF(fuente.replace('-auto', '')) + ' · auto';
+  return escF(fuente) + ' · manual';
 }
 
 async function cargar() {
@@ -230,6 +238,8 @@ document.getElementById('btnGuardar').addEventListener('click', async () => {
   const fecha = document.getElementById('input-fecha').value;
   if (isNaN(valor) || valor <= 0) { setStatus('Valor inválido — ingresá un número mayor a 0', 'err'); return; }
   if (!fecha) { setStatus('Ingresá una fecha', 'err'); return; }
+  // una fecha futura quedaría como "la cotización vigente" por encima de las reales
+  if (fecha > new Date().toLocaleDateString('en-CA')) { setStatus('La fecha no puede ser futura', 'err'); return; }
 
   const btn = document.getElementById('btnGuardar');
   btn.disabled = true;

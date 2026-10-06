@@ -6,7 +6,7 @@
   <title>Precios · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
 </head>
 <body data-page="precios" data-title="Precios" data-subtitle="Listas · cotización · análisis">
 
@@ -59,7 +59,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../shared/supabase.js?v=202610061655"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
 (async () => {
@@ -67,7 +67,7 @@
     const { data } = await sb.from('cotizaciones_dolar').select('venta_oficial, fecha').order('fecha', { ascending: false }).limit(1).single();
     if (data) {
       const usd = '$' + Number(data.venta_oficial).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const dias = (Date.now() - new Date(data.fecha).getTime()) / 864e5;
+      const dias = (Date.now() - new Date(data.fecha + 'T12:00:00').getTime()) / 864e5; // fecha civil: no leerla como UTC
       document.getElementById('usd-actual').textContent = usd;
       document.getElementById('usd-fecha').textContent = data.fecha.split('-').reverse().join('/');
       const ru = document.getElementById('row-usd');

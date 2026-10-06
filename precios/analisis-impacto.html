@@ -6,7 +6,7 @@
   <title>Análisis de impacto · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
   <style>
     .search-hero {
       background: var(--surface); border: 1px solid var(--border);
@@ -112,7 +112,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../shared/supabase.js?v=202610061655"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -121,12 +121,14 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 let ITEMS = [], FORMULAS = [], COMPS = [];
+let VIGENTES = []; // lo que se puede buscar
+let ESTADO = 'cargando'; // cargando | listo | error
 const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 async function cargar() {
   try {
     const [it, fm, cp] = await Promise.all([
-      sb.from('items').select('codigo, nombre, tipo, estado').eq('estado', 'vigente'),
+      sb.from('items').select('codigo, nombre, tipo, estado'), // todos: para poner nombre también a fórmulas en desarrollo
       sb.from('formulas').select('id, codigo_granel, estado').eq('estado', 'vigente'),
       sb.from('formula_componentes').select('formula_id, codigo_componente, composicion_pct'),
     ]);
@@ -135,9 +137,13 @@ async function cargar() {
     if (cp.error) throw cp.error;
 
     ITEMS = it.data || [];
+    VIGENTES = ITEMS.filter(i => i.estado === 'vigente');
     FORMULAS = fm.data || [];
     COMPS = cp.data || [];
+    ESTADO = 'listo';
+    renderImpact(); // si ya escribieron algo mientras cargaba, se busca ahora
   } catch (err) {
+    ESTADO = 'error';
     document.getElementById('empty-hint').textContent = 'Error cargando datos: ' + err.message;
     document.getElementById('empty-hint').style.color = 'var(--hot)';
   }
@@ -148,17 +154,25 @@ function renderImpact() {
   const emptyEl = document.getElementById('empty-hint');
   const resultEl = document.getElementById('result');
 
+  if (ESTADO === 'error') return; // queda visible el error de carga
   if (!q) {
     emptyEl.style.display = ''; emptyEl.style.color = '';
     emptyEl.textContent = 'Empezá a tipear arriba para buscar un ingrediente.';
     resultEl.style.display = 'none';
     return;
   }
+  if (ESTADO === 'cargando') {
+    emptyEl.style.display = ''; emptyEl.style.color = '';
+    emptyEl.textContent = 'Cargando fórmulas…';
+    resultEl.style.display = 'none';
+    return;
+  }
 
-  const item = ITEMS.find(i =>
-    i.codigo.toLowerCase() === q ||
-    i.nombre.toLowerCase().includes(q)
-  );
+  // primero el código exacto; si no, el que empieza con ese código; si no, por nombre
+  const item = VIGENTES.find(i => i.codigo.toLowerCase() === q)
+    || VIGENTES.find(i => i.codigo.toLowerCase().startsWith(q))
+    || VIGENTES.find(i => i.nombre.toLowerCase().includes(q));
+  const otros = VIGENTES.filter(i => i !== item && (i.codigo.toLowerCase().startsWith(q) || i.nombre.toLowerCase().includes(q))).length;
 
   if (!item) {
     emptyEl.style.display = ''; emptyEl.style.color = '';
@@ -174,7 +188,8 @@ function renderImpact() {
   document.getElementById('found-item').innerHTML = `
     <span class="code">${esc(item.codigo)}</span>
     <span class="name">${esc(item.nombre)}</span>
-    <span class="badge-tipo ${item.tipo}">${item.tipo}</span>
+    <span class="badge-tipo ${esc(item.tipo)}">${esc(item.tipo)}</span>
+    ${otros ? `<span style="font-size:12px;color:var(--muted);margin-left:8px">y ${otros} más coinciden: escribí el código para elegir otro</span>` : ''}
   `;
 
   // Uso directo: componentes que apuntan a este código
@@ -197,7 +212,7 @@ function renderImpact() {
             <span class="code">${esc(f.codigo)}</span>
             <span class="name">${esc(f.nombre)}</span>
           </div>
-          <span class="pct">${f.pct.toFixed(2)}%</span>
+          <span class="pct">${f.pct.toLocaleString('es-AR', { maximumFractionDigits: 2 })}%</span>
         </div>
       `).join('')
     : '<div class="empty-box" style="padding:20px;">No se usa directamente en ninguna fórmula.</div>';
@@ -205,14 +220,16 @@ function renderImpact() {
   // Uso indirecto: fórmulas que incluyen a otra fórmula que usa este ingrediente
   const codigosDirectos = new Set(formulasDirectas.map(f => f.codigo));
   const indirectas = new Map(); // codigo → nombre
-  for (const cod of codigosDirectos) {
+  const pendientes = [...codigosDirectos];
+  while (pendientes.length) {                 // MP → SE1 → SE2 → TE: se recorren todos los niveles
+    const cod = pendientes.shift();
     for (const c of COMPS) {
       if (c.codigo_componente !== cod) continue;
       const f = FORMULAS.find(x => x.id === c.formula_id);
-      if (!f || codigosDirectos.has(f.codigo_granel)) continue;
-      if (indirectas.has(f.codigo_granel)) continue;
+      if (!f || codigosDirectos.has(f.codigo_granel) || indirectas.has(f.codigo_granel) || f.codigo_granel === item.codigo) continue;
       const granel = ITEMS.find(i => i.codigo === f.codigo_granel);
       indirectas.set(f.codigo_granel, granel?.nombre || '—');
+      pendientes.push(f.codigo_granel);
     }
   }
 

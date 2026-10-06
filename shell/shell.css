@@ -492,3 +492,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   #app-content { padding: 20px 18px 40px; }
   .topbar-hamburger { display: inline-flex !important; }
 }
+
+/* Los códigos nunca se parten en dos renglones (ej. 10211-AD) */
+td.codigo, td.code, td.cod, td.sku, th.codigo, th.cod { white-space: nowrap; }

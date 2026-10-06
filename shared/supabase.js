@@ -20,7 +20,15 @@ if (typeof supabase !== 'undefined') {
    (auditoría 6-oct-2026). Toda llamada a una función se manda con el token de la sesión, aunque la
    pantalla haya puesto la clave pública, así no hay que tocar cada pantalla. */
 (function () {
-  const esFuncion = (u) => /\/functions\/v1\/|\.functions\.supabase\.co\//.test(u);
+  // solo las funciones de ESTE proyecto (nunca mandar el token a otro dominio)
+  const esFuncion = (u) => {
+    try {
+      const x = new URL(u, location.href);
+      const base = new URL(window.SUPABASE_URL);
+      if (x.origin === base.origin) return x.pathname.startsWith('/functions/v1/');
+      return x.hostname === base.hostname.replace('.supabase.co', '.functions.supabase.co');
+    } catch (e) { return false; }
+  };
   const fetchOriginal = window.fetch.bind(window);
   window.fetch = async function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';

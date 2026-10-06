@@ -6,7 +6,7 @@
   <title>Rentabilidad · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
   <style>
     /* Top toggle L1 / L2 */
     .toggle-nivel {
@@ -201,14 +201,14 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../shared/supabase.js?v=202610061655"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
-const fmtPct = n => n == null ? '—' : Number(n).toFixed(1) + '%';
+const fmtPct = n => n == null ? '—' : Number(n).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 
 let SKUS = [];
 let LINEAS = [];
@@ -251,7 +251,7 @@ async function cargar() {
       sb.from('v_costo_mano_obra').select('codigo, costo_mo, costo_con_mo'),
       sb.from('escandallo_tarifas').select('*').eq('id', 1).maybeSingle(),
     ]);
-    if (skus.error) throw skus.error;
+    for (const r of [skus, objs, lineas, costoMO, tarifa]) if (r.error) throw r.error;
     SKUS = skus.data || [];
     LINEAS = lineas.data || [];
     // Cruzar el costo con mano de obra (del escandallo) en cada SKU
@@ -260,7 +260,8 @@ async function cargar() {
     for (const s of SKUS) {
       const m = moMap[s.codigo_sku];
       s.costo_mo = m ? Number(m.costo_mo) : null;
-      s.costo_con_mo = m ? Number(m.costo_con_mo) : (s.costo_unitario != null ? Number(s.costo_unitario) : null);
+      // sin dato de mano de obra el costo "con MO" es desconocido (antes se usaba el de material y el margen salía inflado)
+      s.costo_con_mo = m && m.costo_con_mo != null ? Number(m.costo_con_mo) : null;
     }
     TARIFA = tarifa.data || null;
     if (TARIFA) {
@@ -289,8 +290,8 @@ function renderTodo() {
 }
 
 function renderKPIs() {
-  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(costoDe(s)) > 0);
-  const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+  const conPrecio = SKUS.filter(s => rentDe(s) != null);
+  const rents = conPrecio.map(s => rentDe(s));
   const avg = rents.length ? rents.reduce((a,n)=>a+n,0)/rents.length : null;
   const o = objDe();
   const verde = o ? o.objetivo + o.tolerancia : 20;
@@ -301,7 +302,7 @@ function renderKPIs() {
   const sinPrecio = SKUS.filter(s => precioDe(s) == null).length;
 
   $('#k-total').textContent = conPrecio.length;
-  $('#k-avg').textContent = avg != null ? avg.toFixed(1) + '%' : '—';
+  $('#k-avg').textContent = fmtPct(avg);
   $('#k-verde').textContent = cVerde;
   $('#k-ambar').textContent = cAmbar;
   $('#k-rojo').textContent = cRojo;
@@ -329,8 +330,8 @@ function renderAlerta() {
 }
 
 function renderDistribucion() {
-  const conPrecio = SKUS.filter(s => precioDe(s) != null && Number(costoDe(s)) > 0);
-  const rents = conPrecio.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+  const conPrecio = SKUS.filter(s => rentDe(s) != null);
+  const rents = conPrecio.map(s => rentDe(s));
   const buckets = [
     { l: '< 0% (perdiendo)', min: -Infinity, max: 0, cls: 'hot' },
     { l: '0 - 10%', min: 0, max: 10, cls: 'hot' },
@@ -342,6 +343,20 @@ function renderDistribucion() {
     { l: '60 - 70%', min: 60, max: 70, cls: 'ok' },
     { l: '≥ 70%', min: 70, max: Infinity, cls: 'ok' },
   ];
+  // Con objetivo: las franjas se cortan en el objetivo y en objetivo+tolerancia, con los mismos colores
+  // que las tarjetas (rojo bajo objetivo, amarillo en la tolerancia, verde arriba).
+  const oo = objDe();
+  if (oo) {
+    const obj = oo.objetivo, verde = oo.objetivo + oo.tolerancia;
+    const f = (n) => n.toLocaleString('es-AR');
+    const base = buckets.filter(b => b.max <= obj);
+    const desde = base.length ? base[base.length - 1].max : 0;
+    if (desde < obj) base.push({ l: `${f(desde)} - ${f(obj)}%`, min: desde, max: obj });
+    base.push({ l: `${f(obj)} - ${f(verde)}%`, min: obj, max: verde });
+    base.push({ l: `≥ ${f(verde)}%`, min: verde, max: Infinity });
+    buckets.length = 0; buckets.push(...base);
+    for (const b of buckets) b.cls = b.max <= obj ? 'hot' : b.min >= verde ? 'ok' : 'warn';
+  }
   const counts = buckets.map(b => rents.filter(r => r >= b.min && r < b.max).length);
   const maxCnt = Math.max(...counts, 1);
   const o = objDe();
@@ -367,8 +382,8 @@ function renderDistribucion() {
 
 function renderPorLinea() {
   const grupos = LINEAS.map(l => {
-    const filas = SKUS.filter(s => s.linea === l.nombre && precioDe(s) != null && Number(costoDe(s)) > 0);
-    const rents = filas.map(s => Number(rentDe(s))).filter(n => isFinite(n));
+    const filas = SKUS.filter(s => s.linea === l.nombre && rentDe(s) != null);
+    const rents = filas.map(s => rentDe(s));
     return {
       nombre: l.nombre,
       total: filas.length,
@@ -409,7 +424,7 @@ function renderTabla() {
     if (l) rows = rows.filter(s => s.linea === l.nombre);
   }
   if (soloBajo && o) {
-    rows = rows.filter(s => Number(rentDe(s)) < o.objetivo);
+    rows = rows.filter(s => rentDe(s) != null && rentDe(s) < o.objetivo);
   }
 
   // Sort
@@ -419,7 +434,7 @@ function renderTabla() {
     if (sortBy === 'nombre') { va = a.nombre_sku || ''; vb = b.nombre_sku || ''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
     if (sortBy === 'precio') { va = Number(precioDe(a) || 0); vb = Number(precioDe(b) || 0); }
     else if (sortBy === 'costo') { va = Number(costoDe(a) || 0); vb = Number(costoDe(b) || 0); }
-    else { va = Number(rentDe(a) || -999); vb = Number(rentDe(b) || -999); }
+    else { const ra = rentDe(a), rb = rentDe(b); va = ra == null ? -999 : ra; vb = rb == null ? -999 : rb; }
     return sortDir === 'asc' ? va - vb : vb - va;
   });
 
@@ -429,7 +444,7 @@ function renderTabla() {
 
   const nivelUp = nivel.toUpperCase();
   $('#tabla-skus').innerHTML = `
-    <table class="tbl">
+    <div class="table-scroll"><table class="tbl">
       <thead><tr>
         <th class="sort${sortBy==='codigo'?' '+sortDir:''}" data-sort="codigo">Código</th>
         <th class="sort${sortBy==='nombre'?' '+sortDir:''}" data-sort="nombre">Nombre</th>
@@ -450,7 +465,7 @@ function renderTabla() {
           </tr>
         `).join('')}
       </tbody>
-    </table>
+    </table></div>
   `;
 
   // Enganchar sort
