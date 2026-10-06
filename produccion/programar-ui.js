@@ -6,7 +6,7 @@
   'use strict';
   const FN = window.SUPABASE_URL + '/functions/v1/sync-produccion';
   const P = window.PROGRAMADOR;
-  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], plan: null };
+  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], plan: null };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const fmt = (n, d = 1) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: d });
@@ -36,6 +36,11 @@
     if (!data.length) return false;
     S.snap = data[0].datos; S.snapCreado = new Date(data[0].creado);
     return true;
+  }
+  async function cargarDia() {
+    const { data, error } = await sb.from('prod_plan_dia').select('*').eq('fecha', isoLocal(new Date())).order('orden');
+    if (error) throw new Error('plan del día: ' + error.message);
+    S.dia = data;
   }
   async function cargarConfig() {
     const [cfg, par, cli, pos] = await Promise.all([
@@ -94,9 +99,12 @@
     c.classList.toggle('viejo', mins > 30);
     const barra = (v, cap) => { const pct = cap ? v / cap : 0; return `<div class="barra ${pct > 1 ? 'pasada' : pct >= 0.95 ? 'llena' : ''}"><i style="width:${Math.min(100, pct * 100)}%"></i></div>`; };
     const confirmados = S.snap.pedidos.filter((p) => !esPresupuesto(p));
+    const fl = filasDelDia();
+    const uHoy = fl.filter((x) => x.tipo === 'fraccionar').reduce((a, x) => a + x.cantidad, 0);
+    const kgHoy = fl.filter((x) => x.tipo === 'elaborar').reduce((a, x) => a + x.cantidad, 0);
     $('kpis').innerHTML = `
-      <div class="pg-kpi"><div class="k">Fraccionar hoy</div><div class="v">${fmt(pl.carga.u, 0)} <small>/ ${fmt(pl.carga.cap_u, 0)} u</small></div>${barra(pl.carga.u, pl.carga.cap_u)}</div>
-      <div class="pg-kpi"><div class="k">Elaborar hoy</div><div class="v">${fmt(pl.carga.kg, 0)} <small>/ ${fmt(pl.carga.cap_kg, 0)} kg</small></div>${barra(pl.carga.kg, pl.carga.cap_kg)}</div>
+      <div class="pg-kpi"><div class="k">Fraccionar hoy</div><div class="v">${fmt(uHoy, 0)} <small>/ ${fmt(pl.carga.cap_u, 0)} u</small></div>${barra(uHoy, pl.carga.cap_u)}</div>
+      <div class="pg-kpi"><div class="k">Elaborar hoy</div><div class="v">${fmt(kgHoy, 0)} <small>/ ${fmt(pl.carga.cap_kg, 0)} kg</small></div>${barra(kgHoy, pl.carga.cap_kg)}</div>
       <div class="pg-kpi"><div class="k">Pedidos abiertos</div><div class="v">${confirmados.length}</div><div class="sub">${pl.a_confirmar.length} presupuestos a confirmar</div></div>
       <div class="pg-kpi"><div class="k">Avisos</div><div class="v" style="color:${pl.alertas.length ? 'var(--warn)' : 'var(--ok)'}">${pl.alertas.length}</div><div class="sub">${pl.postergados.length} cosas postergadas a mano</div></div>`;
     $('n-pedidos').textContent = confirmados.length;
@@ -111,8 +119,86 @@
     return `<span class="acc">${['hoy', '1d', '23d', 'parcial'].map((k) => `<button data-acc="etiq" data-so="${so}" data-prio="${k}">${esc(P.ETIQUETA[k])}</button>`).join('')}</span>`;
   }
 
+  // ---------------- plan del día (cantidades editables → Hoja de Producción) ----------------
+  const hoyIso = () => isoLocal(new Date());
+  // Junta lo que sugiere el programador con lo que se editó/agregó a mano hoy (prod_plan_dia)
+  function filasDelDia() {
+    const pl = S.plan, guard = {};
+    for (const r of S.dia) guard[r.tipo + '|' + r.codigo] = r;
+    const filas = [];
+    const sumar = (tipo, codigo, nombre, sugerido, extra) => {
+      const g = guard[tipo + '|' + codigo];
+      filas.push({ tipo, codigo, nombre, sugerido, cantidad: g?.editado ? Number(g.cantidad) : sugerido, editado: !!g?.editado, agregado: false, en_hoja: !!g?.en_hoja, guardada: g, ...extra });
+      delete guard[tipo + '|' + codigo];
+    };
+    for (const x of pl.preparar) sumar('preparar', x.c, x.nombre, x.kg, { x });
+    for (const x of pl.elaborar) sumar('elaborar', x.c, x.nombre, x.kg, { x });
+    for (const x of pl.fraccionar) sumar('fraccionar', x.c, x.nombre, x.q, { x });
+    for (const g of Object.values(guard)) if (g.agregado || g.editado)
+      filas.push({ tipo: g.tipo, codigo: g.codigo, nombre: g.nombre || nombreDe(g.codigo), sugerido: g.agregado ? null : 0, cantidad: Number(g.cantidad), editado: true, agregado: !!g.agregado, en_hoja: !!g.en_hoja, guardada: g });
+    return filas;
+  }
+  function estadoHoja(filas) {
+    const enHoja = S.dia.filter((r) => r.en_hoja);
+    if (!enHoja.length) return { pasada: false };
+    const ultima = enHoja.reduce((a, r) => (r.actualizado > a ? r.actualizado : a), '');
+    const cambios = filas.some((f) => (f.cantidad > 0) !== f.en_hoja || (f.en_hoja && Number(f.guardada?.cantidad) !== f.cantidad));
+    return { pasada: true, ultima, cambios };
+  }
+  async function guardarCantidad(tipo, codigo, nombre, cantidad, sugerido, agregado) {
+    const { data: u } = await sb.auth.getUser();
+    const fila = { fecha: hoyIso(), tipo, codigo, nombre, cantidad, sugerido, editado: true, agregado: !!agregado, actualizado: new Date().toISOString(), actualizado_por: u?.user?.email || null };
+    const prev = S.dia.find((r) => r.tipo === tipo && r.codigo === codigo);
+    if (prev) fila.en_hoja = prev.en_hoja;
+    const { error } = await sb.from('prod_plan_dia').upsert(fila);
+    if (error) return msg('No se pudo guardar: ' + error.message, true);
+    await cargarDia(); pintar();
+  }
+  async function restaurar(tipo, codigo) {
+    const { error } = await sb.from('prod_plan_dia').delete().eq('fecha', hoyIso()).eq('tipo', tipo).eq('codigo', codigo);
+    if (error) return msg(error.message, true);
+    await cargarDia(); pintar();
+  }
+  async function pasarAHoja() {
+    const filas = filasDelDia();
+    const { data: u } = await sb.auth.getUser();
+    const ahora = new Date().toISOString(), quien = u?.user?.email || null;
+    const detalle = (f) => f.tipo === 'fraccionar' && f.x ? f.x.motivos.map((m) => m.numero ? `${m.numero} ${m.cliente} ${fmt(m.q, 0)}` : `stock ${fmt(m.q, 0)}`).join('; ')
+      : f.tipo === 'elaborar' && f.x ? 'para ' + f.x.para.map(nombreDe).join(', ') : null;
+    const rows = filas.map((f, i) => ({ fecha: hoyIso(), tipo: f.tipo, codigo: f.codigo, nombre: f.nombre, cantidad: f.cantidad, sugerido: f.sugerido, editado: f.editado, agregado: f.agregado,
+      en_hoja: f.cantidad > 0, detalle: detalle(f), orden: i, actualizado: ahora, actualizado_por: quien }));
+    const { error } = await sb.from('prod_plan_dia').upsert(rows);
+    if (error) return msg('No se pudo pasar a la hoja: ' + error.message, true);
+    // lo que estaba en la hoja y ya no está en la lista, sale de la hoja
+    const claves = new Set(rows.map((r) => r.tipo + '|' + r.codigo));
+    for (const r of S.dia.filter((r) => r.en_hoja && !claves.has(r.tipo + '|' + r.codigo)))
+      await sb.from('prod_plan_dia').update({ en_hoja: false }).eq('fecha', r.fecha).eq('tipo', r.tipo).eq('codigo', r.codigo);
+    await cargarDia(); pintar();
+    msg('Listo: la Hoja de Producción ya muestra este plan');
+  }
+
+  function inputCant(f, unidad) {
+    const dif = f.sugerido != null && f.cantidad !== f.sugerido;
+    return `<div class="cant-edit">
+      <div class="cant-fila"><input type="number" min="0" step="${unidad === 'kg' ? '0.5' : '1'}" class="inp cant-in" value="${f.cantidad}" data-acc="cant" data-tipo="${f.tipo}" data-cod="${esc(f.codigo)}" data-nom="${esc(f.nombre)}" data-sug="${f.sugerido ?? ''}" data-agr="${f.agregado ? 1 : ''}" aria-label="Cantidad a hacer"><span class="u">${unidad}</span></div>
+      <div class="sug">${f.agregado ? `a mano · <a href="#" data-acc="restaurar" data-tipo="${f.tipo}" data-cod="${esc(f.codigo)}">quitar</a>`
+        : dif ? `sugerido ${fmt(f.sugerido)} · <a href="#" data-acc="restaurar" data-tipo="${f.tipo}" data-cod="${esc(f.codigo)}">volver</a>` : 'sugerido'}</div>
+    </div>`;
+  }
+  function formAgregar(tipo) {
+    const lista = S.snap.stock.filter((s) => (tipo === 'fraccionar' ? /^1/ : /^9/).test(s.c));
+    return `<div class="agregar"><input class="inp" list="dl-${tipo}" id="ag-${tipo}" placeholder="Agregar ${tipo === 'fraccionar' ? 'un producto' : 'un granel'}: código o nombre">
+      <datalist id="dl-${tipo}">${lista.map((s) => `<option value="${esc(s.c)} · ${esc(s.n)}">`).join('')}</datalist>
+      <input type="number" min="0" class="inp corto" id="ag-${tipo}-q" placeholder="${tipo === 'fraccionar' ? 'u' : 'kg'}">
+      <span class="acc"><button data-acc="agregar" data-tipo="${tipo}">Agregar</button></span></div>`;
+  }
+
   function pintarHoy() {
     const pl = S.plan;
+    const filas = filasDelDia();
+    const de = (tipo) => filas.filter((f) => f.tipo === tipo);
+    const hoja = estadoHoja(filas);
+    const hora = (t) => new Date(t).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
     const ico = { sin_etiqueta: '🏷️', sugerir_parcial: '🔄', ml_borrador: '🟡', parcial_sin_ritmo: '🔄', parcial_vencido: '⏰', sin_ficha: '❓', mo_vieja: '🗂️', excede: '⚠️' };
     const alertas = pl.alertas.length ? `
       <div class="pg-bloque"><header><h3>Avisos</h3><span class="meta">${pl.alertas.length}</span></header>
@@ -121,35 +207,44 @@
         ${a.tipo === 'parcial_sin_ritmo' ? `<span class="acc"><button data-acc="irpedido" data-so="${a.so_id}">Cargar ritmo</button></span>` : ''}</div>`).join('')}
       </div>` : '';
 
-    const prep = pl.preparar.length ? `
+    const barraHoja = `<div class="pg-hoja ${hoja.pasada ? (hoja.cambios ? 'cambios' : 'ok') : ''}">
+      <div class="txt">${!hoja.pasada ? '<b>Revisá y ajustá las cantidades</b>, y después pasalas a la Hoja de Producción: ahí las ven en planta y se van descontando a medida que se cargan.'
+        : hoja.cambios ? `<b>Hay cambios sin pasar a la hoja.</b> La hoja tiene lo que pasaste a las ${hora(hoja.ultima)}.`
+        : `<b>Este plan ya está en la Hoja de Producción</b> (pasado a las ${hora(hoja.ultima)}).`}</div>
+      <span class="der"><a class="btn secondary" href="hoja.html" target="_blank" rel="noopener">Abrir la hoja</a>
+      <button class="btn primary" data-acc="pasarhoja">${hoja.pasada ? 'Actualizar la hoja' : 'Pasar a la Hoja de Producción'}</button></span></div>`;
+
+    const prep = de('preparar').length ? `
       <div class="pg-bloque"><header><h3>Preparar hoy para mañana</h3><span class="meta">Necesitan reposar o mezclar de un día para el otro</span></header>
-      <table class="pg-tabla"><tbody>${pl.preparar.map((x) => `<tr><td class="cod">${esc(x.c)}</td><td><b>${esc(x.nombre)}</b></td><td class="num"><b>${fmt(x.kg)} kg</b></td><td class="muted">lote de ${fmt(x.lote)} kg</td></tr>`).join('')}</tbody></table></div>` : '';
+      ${de('preparar').map((f) => `<div class="fila elab"><div class="cod">${esc(f.codigo)}</div><div><div class="nom">${esc(f.nombre)}</div>${f.x ? `<div class="m-nota">lote de ${fmt(f.x.lote)} kg · ${esc(f.x.texto)}</div>` : ''}</div>${inputCant(f, 'kg')}</div>`).join('')}</div>` : '';
 
+    const kgTot = de('elaborar').reduce((a, f) => a + f.cantidad, 0);
     const elab = `
-      <div class="pg-bloque"><header><h3>Elaborar</h3><span class="meta">${fmt(pl.carga.kg, 0)} kg · tope ${fmt(pl.carga.cap_kg, 0)} kg</span></header>
-      ${pl.elaborar.length ? `<table class="pg-tabla"><thead><tr><th>Granel</th><th></th><th class="num">Cantidad</th><th>Lote habitual</th><th>Para</th></tr></thead><tbody>
-        ${pl.elaborar.map((e) => `<tr><td class="cod">${esc(e.c)}</td><td><b>${esc(e.nombre)}</b></td><td class="num"><b>${fmt(e.kg)} kg</b></td>
-          <td class="muted">${fmt(e.lote)} kg${e.kg > e.lote ? ` (${fmt(e.kg / e.lote, 1)} lotes)` : ''}</td>
-          <td class="muted">${e.para.map((c) => esc(nombreDe(c))).join(' · ')}</td></tr>`).join('')}
-      </tbody></table>` : '<div class="pg-vacio">No hace falta elaborar granel hoy: alcanza con lo que hay.</div>'}</div>`;
+      <div class="pg-bloque"><header><h3>Elaborar</h3><span class="meta">${fmt(kgTot, 0)} kg · tope ${fmt(pl.carga.cap_kg, 0)} kg</span></header>
+      ${de('elaborar').map((f) => `<div class="fila elab${f.cantidad === 0 ? ' anulada' : ''}"><div class="cod">${esc(f.codigo)}</div>
+        <div><div class="nom">${esc(f.nombre)}</div>${f.x ? `<div class="m-nota">lote habitual ${fmt(f.x.lote)} kg${f.x.kg > f.x.lote ? ` (${fmt(f.x.kg / f.x.lote, 1)} lotes)` : ''} · para ${f.x.para.map((c) => esc(nombreDe(c))).join(', ')}</div>` : ''}</div>
+        ${inputCant(f, 'kg')}</div>`).join('') || '<div class="pg-vacio">No hace falta elaborar granel hoy: alcanza con lo que hay.</div>'}
+      ${formAgregar('elaborar')}</div>`;
 
+    const uTot = de('fraccionar').reduce((a, f) => a + f.cantidad, 0);
+    const motivoHtml = (f, m) => `<div class="motivo">
+        <div class="m-quien">${m.prio !== f.x.prio ? pill(m.prio) + ' ' : ''}${m.numero ? `<b>${esc(m.numero)}</b> <span class="cli">${esc(m.cliente)}</span>` : '<span class="cli">Para stock</span>'}</div>
+        <div class="m-q">${fmt(m.q, 0)} u</div>
+        <div class="m-acc">${accPost(m.so_id || 0, f.codigo, m.numero, m.numero ? `${m.numero} · ${f.nombre}` : `${f.nombre} para stock`)}</div>
+        ${m.nota || m.kit ? `<div class="m-nota">${m.kit ? `va en ${esc(m.kit)}` : ''}${m.kit && m.nota ? ' · ' : ''}${esc(m.nota || '')}</div>` : ''}
+      </div>`;
     const fracc = `
-      <div class="pg-bloque"><header><h3>Fraccionar</h3><span class="meta">${fmt(pl.carga.u, 0)} unidades · tope ${fmt(pl.carga.cap_u, 0)}</span>
+      <div class="pg-bloque"><header><h3>Fraccionar</h3><span class="meta">${fmt(uTot, 0)} unidades · tope ${fmt(pl.carga.cap_u, 0)}</span>
         <span class="der"><button class="btn secondary" data-acc="copiar">Copiar lista</button><button class="btn secondary" data-acc="imprimir">Imprimir</button></span></header>
-      ${pl.fraccionar.length ? pl.fraccionar.map((f) => `
-        <div class="fila">
-          <div>${pill(f.prio)}</div>
-          <div class="cod">${esc(f.c)}</div>
-          <div><div class="nom">${esc(f.nombre)}</div>
-            <div class="motivos">${f.motivos.map((m) => `<div class="motivo">${m.prio !== f.prio ? pill(m.prio) : ''}
-              ${m.numero ? `<span><b>${esc(m.numero)}</b> ${esc(m.cliente)}</span>` : '<span>Para stock</span>'}
-              <b>${fmt(m.q, 0)} u</b>${m.kit ? `<span class="nota">(va en ${esc(m.kit)})</span>` : ''}
-              ${m.nota ? `<span class="nota">· ${esc(m.nota)}</span>` : ''}
-              ${accPost(m.so_id || 0, f.c, m.numero, m.numero ? `${m.numero} · ${f.nombre}` : `${f.nombre} para stock`)}</div>`).join('')}</div></div>
-          <div class="cant">${fmt(f.q, 0)}<small>${f.kg ? fmt(f.kg) + ' kg' : 'u'}</small></div>
-        </div>`).join('') : '<div class="pg-vacio">Nada para fraccionar hoy.</div>'}</div>`;
+      ${de('fraccionar').map((f) => `
+        <div class="fila${f.cantidad === 0 ? ' anulada' : ''}">
+          <div>${f.x ? pill(f.x.prio) : '<span class="prio sin">A mano</span>'}</div>
+          <div class="cod">${esc(f.codigo)}</div>
+          <div><div class="nom">${esc(f.nombre)}</div>${f.x ? `<div class="motivos">${f.x.motivos.map((m) => motivoHtml(f, m)).join('')}</div>` : ''}</div>
+          ${inputCant(f, 'u')}
+        </div>`).join('') || '<div class="pg-vacio">Nada para fraccionar hoy.</div>'}
+      ${formAgregar('fraccionar')}</div>`;
 
-    // lo que se entrega con producto ya hecho, agrupado por pedido
     const porPed = {};
     for (const d of pl.de_stock) (porPed[d.numero] = porPed[d.numero] || { numero: d.numero, cliente: d.cliente, prio: d.prio, items: [] }).items.push(d);
     const deStock = Object.keys(porPed).length ? `
@@ -165,7 +260,7 @@
 
     $('tab-hoy').innerHTML = `
       <div class="pg-nota">Orden de la fila: <b>Mercado Libre y 🟥 Hoy</b> → <b>🟧 1 día</b> → <b>la entrega que le toca</b> a clientes que se entregan de a partes → <b>🟨 2-3 días</b> → <b>🔄 cuota de los parciales</b> → <b>sin etiqueta</b> → <b>próximas entregas</b> → <b>stock</b> con el lugar que sobra. Lo urgente entra siempre, aunque pase el tope.</div>
-      ${alertas}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
+      ${alertas}${barraHoja}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
   }
 
   function pintarPedidos() {
@@ -311,13 +406,14 @@
     d.showModal();
   }
   function textoLista() {
-    const pl = S.plan; const l = [`Producción del ${fCorta(pl.fecha)}`];
-    if (pl.preparar.length) { l.push('', 'PREPARAR PARA MAÑANA'); for (const x of pl.preparar) l.push(`- ${x.c} ${x.nombre}: ${fmt(x.kg)} kg`); }
-    if (pl.elaborar.length) { l.push('', 'ELABORAR'); for (const e of pl.elaborar) l.push(`- ${e.c} ${e.nombre}: ${fmt(e.kg)} kg`); }
-    if (pl.fraccionar.length) {
-      l.push('', 'FRACCIONAR');
-      for (const f of pl.fraccionar) l.push(`- ${f.c} ${f.nombre}: ${fmt(f.q, 0)} (${f.motivos.map((m) => m.numero ? `${m.numero} ${m.cliente} ${fmt(m.q, 0)}` : `stock ${fmt(m.q, 0)}`).join('; ')})`);
-    }
+    const fl = filasDelDia().filter((x) => x.cantidad > 0);
+    const l = [`Producción del ${fCorta(S.plan.fecha)}`];
+    const bloque = (tipo, titulo, u) => {
+      const xs = fl.filter((x) => x.tipo === tipo); if (!xs.length) return;
+      l.push('', titulo);
+      for (const x of xs) l.push(`- ${x.codigo} ${x.nombre}: ${fmt(x.cantidad)} ${u}` + (tipo === 'fraccionar' && x.x ? ` (${x.x.motivos.map((m) => m.numero ? `${m.numero} ${m.cliente} ${fmt(m.q, 0)}` : `stock ${fmt(m.q, 0)}`).join('; ')})` : ''));
+    };
+    bloque('preparar', 'PREPARAR PARA MAÑANA', 'kg'); bloque('elaborar', 'ELABORAR', 'kg'); bloque('fraccionar', 'FRACCIONAR', 'u');
     return l.join('\n');
   }
 
@@ -329,6 +425,18 @@
     else if (a === 'volver') { t.disabled = true; await postergar(t.dataset.so, t.dataset.sku, null, null); }
     else if (a === 'etiq') { t.disabled = true; await etiquetar(t.dataset.so, t.dataset.prio); }
     else if (a === 'irpedido') { abrirTab('pedidos'); document.getElementById('ped-' + t.dataset.so)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    else if (a === 'restaurar') { ev.preventDefault(); await restaurar(t.dataset.tipo, t.dataset.cod); }
+    else if (a === 'pasarhoja') { t.disabled = true; await pasarAHoja(); }
+    else if (a === 'agregar') {
+      const tipo = t.dataset.tipo, txt = $('ag-' + tipo).value.trim(), q = Number($('ag-' + tipo + '-q').value);
+      const cod = txt.split('·')[0].trim();
+      const prod = S.snap.stock.find((x) => x.c === cod) || S.snap.stock.find((x) => x.n.toLowerCase() === txt.toLowerCase());
+      if (!prod) return msg('Elegí un producto de la lista', true);
+      if (!(q > 0)) return msg('Poné la cantidad', true);
+      const ya = filasDelDia().find((x) => x.tipo === tipo && x.codigo === prod.c);
+      await guardarCantidad(tipo, prod.c, prod.n, ya ? ya.cantidad + q : q, ya ? ya.sugerido : null, !ya || ya.agregado);
+      msg(ya ? `Sumado a ${prod.n}` : `Agregado: ${prod.n}`);
+    }
     else if (a === 'copiar') { await navigator.clipboard.writeText(textoLista()); msg('Lista copiada'); }
     else if (a === 'imprimir') { abrirTab('hoy'); window.print(); }
     else if (a === 'guardarritmo' || a === 'borrarritmo') {
@@ -370,7 +478,15 @@
     }
   });
   document.addEventListener('change', (ev) => {
-    const t = ev.target; if (t.dataset?.acc !== 'etiqsel') return;
+    const t = ev.target;
+    if (t.dataset?.acc === 'cant') {
+      const v = Math.max(0, Number(t.value) || 0);
+      const sug = t.dataset.sug === '' ? null : Number(t.dataset.sug);
+      if (sug !== null && v === sug && !t.dataset.agr) { restaurar(t.dataset.tipo, t.dataset.cod); return; }
+      guardarCantidad(t.dataset.tipo, t.dataset.cod, t.dataset.nom, v, sug, !!t.dataset.agr);
+      return;
+    }
+    if (t.dataset?.acc !== 'etiqsel') return;
     t.disabled = true; etiquetar(t.dataset.so, t.value).finally(() => { t.disabled = false; });
   });
 
@@ -385,7 +501,7 @@
   (async function inicio() {
     try {
       try { const t = localStorage.getItem('programar.tab'); if (t) abrirTab(t); } catch { /* */ }
-      await Promise.all([cargarConfig(), cargarRecetas()]);
+      await Promise.all([cargarConfig(), cargarRecetas(), cargarDia()]);
       const hay = await cargarSnap();
       if (!hay) { await actualizarOdoo(); return; }
       calcular();

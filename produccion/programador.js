@@ -140,7 +140,7 @@
         const prox = ult ? masDias(ult, pt.dias_entre) : d0(hoy);
         const toca = prox <= manana;
         const restantes = Math.max(1, (pt.entregas_por_pedido || 2) - (ap.entregasHechas[p.id] || 0));
-        const nota = `se entrega de a partes cada ~${pt.dias_entre} días` + (ult ? ` · última ${ult.split('-').reverse().join('/')} · próxima ~${iso(prox).split('-').reverse().join('/')}` : '');
+        const nota = `entregas cada ~${pt.dias_entre} días` + (ult ? ` · última ${fechaCorta(ult)} · próxima ${fechaCorta(iso(prox))}` : '');
         for (const r of renglones) {
           const t = pt.tandas[r.c] || pt.tanda_general;
           const tq = t ? Math.min(r.pend, t) : Math.min(r.pend, Math.ceil(r.pend / restantes));
