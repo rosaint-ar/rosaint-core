@@ -151,6 +151,28 @@ export async function modoPlan() {
   const prodP = await productos(prodPids);
   const produccion = prodRaw.map((r) => ({ c: String(prodP.get(m2o(r.product_id))?.default_code || "").trim(), d: r["date_start:day"], q: Number(r.product_qty || 0), n: Number(r.__count || 0) })).filter((r) => r.c);
 
+  // 5b) Cada orden de fabricación hecha (para aprender lotes de elaboración y tandas de fraccionado)
+  const moHechas = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "=", "done"], ["date_start", ">=", desde]]],
+    { fields: ["product_id", "product_qty", "date_start"] }) as Row[];
+  const moHP = await productos([...new Set(moHechas.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
+  const mo = moHechas.map((m) => ({ c: String(moHP.get(m2o(m.product_id))?.default_code || "").trim(), q: Number(m.product_qty), f: dia(m.date_start) })).filter((m) => m.c);
+
+  // 5c) Historial de entregas (180 días): de a cuánto y cada cuánto se le entrega a cada cliente
+  const desdeEnt = new Date(Date.now() - 180 * 864e5).toISOString().slice(0, 10);
+  const mv = await ex("stock.move", "search_read", [[["company_id", "=", 2], ["state", "=", "done"], ["location_dest_id.usage", "=", "customer"], ["date", ">=", desdeEnt]]],
+    { fields: ["date", "product_id", "quantity", "picking_id", "origin"] }) as Row[];
+  const mvP = await productos([...new Set(mv.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
+  const soNombres = [...new Set(mv.map((m) => m.origin).filter((o) => typeof o === "string" && o.startsWith("S")))] as string[];
+  const soPartner = new Map<string, Row>();
+  for (let i = 0; i < soNombres.length; i += 300) {
+    const r = await ex("sale.order", "search_read", [[["name", "in", soNombres.slice(i, i + 300)]]], { fields: ["id", "name", "partner_id"] }) as Row[];
+    for (const o of r) soPartner.set(o.name, o);
+  }
+  const entregas = mv.map((m) => {
+    const o = soPartner.get(m.origin);
+    return { c: String(mvP.get(m2o(m.product_id))?.default_code || "").trim(), q: Number(m.quantity), f: dia(m.date), pick: m2o(m.picking_id), so: o?.name || null, so_id: o?.id || null, p: o ? m2o(o.partner_id) : null, cli: o ? m2oName(o.partner_id) : null };
+  }).filter((e) => e.c && e.so);
+
   // 6) Órdenes de fabricación abiertas
   const moAb = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "in", ["draft", "confirmed", "progress", "to_close"]]]],
     { fields: ["name", "product_id", "product_qty", "state", "date_start", "origin"] }) as Row[];
@@ -177,7 +199,7 @@ export async function modoPlan() {
   const datos = {
     generado: new Date().toISOString(), ventana_dias: ventana, desde,
     tags, prioridad, ml_source: ML_SOURCE, tn_source: TN_SOURCE,
-    pedidos, stock, ventas, produccion, mo_abiertas, kits,
+    pedidos, stock, ventas, produccion, mo, entregas, mo_abiertas, kits,
   };
   const { error } = await sb.from("prod_plan_snapshot").insert({ datos });
   if (error) throw new Error("guardar foto: " + error.message);
@@ -187,7 +209,7 @@ export async function modoPlan() {
 
   return {
     ok: true, duracion_ms: Date.now() - t0, tag_parcial_id: prioridad.parcial, tag_creado: tagCreado,
-    resumen: { pedidos: pedidos.length, confirmados: pedidos.filter((p) => p.estado === "sale").length, lineas: pedidos.reduce((a, p) => a + p.lineas.length, 0), stock: stock.length, ventas: ventas.length, produccion: produccion.length, mo_abiertas: mo_abiertas.length, kits: Object.keys(kits).length },
+    resumen: { pedidos: pedidos.length, confirmados: pedidos.filter((p) => p.estado === "sale").length, lineas: pedidos.reduce((a, p) => a + p.lineas.length, 0), stock: stock.length, ventas: ventas.length, produccion: produccion.length, mo: mo.length, entregas: entregas.length, mo_abiertas: mo_abiertas.length, kits: Object.keys(kits).length },
   };
 }
 

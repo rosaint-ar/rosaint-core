@@ -11,11 +11,16 @@
 (function (root) {
   'use strict';
 
-  const RANGO = { hoy: 0, '1d': 1, '23d': 2, parcial: 3, sin: 4, stock: 5 };
-  const ETIQUETA = { hoy: '🟥 Hoy', '1d': '🟧 1 día', '23d': '🟨 2-3 días', parcial: '🔄 Parcial', sin: 'Sin etiqueta', stock: 'Para stock' };
+  // "anticipo" = la próxima tanda de un pedido que se entrega de a partes, cuando todavía no le toca:
+  // se adelanta solo si sobra lugar, antes que el stock genérico.
+  // 'tanda' = la entrega que le TOCA hoy/mañana a un cliente que se entrega de a partes (ej. Saracho, 2 baldes):
+  // es un compromiso del día, va antes que 2-3 días.
+  const RANGO = { hoy: 0, '1d': 1, tanda: 1.5, '23d': 2, parcial: 3, sin: 4, anticipo: 5, stock: 6 };
+  const ETIQUETA = { hoy: '🟥 Hoy', '1d': '🟧 1 día', tanda: '🔄 Entrega que toca', '23d': '🟨 2-3 días', parcial: '🔄 Parcial', sin: 'Sin etiqueta', anticipo: 'Próxima entrega', stock: 'Para stock' };
   const URGENTE = (p) => p === 'hoy' || p === '1d';
 
-  const d0 = (x) => { const d = new Date(x); d.setHours(0, 0, 0, 0); return d; };
+  // las fechas 'AAAA-MM-DD' se leen como día local (si no, en Argentina caen el día anterior)
+  const d0 = (x) => { const d = typeof x === 'string' && x.length === 10 ? new Date(x + 'T12:00:00') : new Date(x); d.setHours(0, 0, 0, 0); return d; };
   const iso = (d) => d0(d).toISOString().slice(0, 10);
   // días hábiles (lun-vie) desde mañana hasta `hasta` inclusive; hoy cuenta como 1
   function diasHabiles(hoy, hasta) {
@@ -24,9 +29,59 @@
     return n;
   }
   const mediana = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  // valor más repetido (empate → el mayor) y qué parte de los casos representa
+  function moda(a) {
+    const n = {}; for (const x of a) { const k = Math.round(x * 100) / 100; n[k] = (n[k] || 0) + 1; }
+    let best = null, cnt = 0; for (const [k, v] of Object.entries(n)) if (v > cnt || (v === cnt && Number(k) > best)) { best = Number(k); cnt = v; }
+    return { valor: best, parte: a.length ? cnt / a.length : 0 };
+  }
   const r2 = (x) => Math.round(x * 100) / 100;
+  const masDias = (f, n) => { const d = d0(f); d.setDate(d.getDate() + Math.round(n)); return d; };
+  function proximoHabil(f) { const d = d0(f); do d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6); return d; }
 
-  function programar({ snap, cfg, parciales = [], pres = [], subg = [], hoy = new Date(), quitar = {} }) {
+  // ---------- Lo que se aprende de cómo trabaja la planta (historial de Odoo) ----------
+  // Lote de elaboración y tanda de fraccionado = cantidad más repetida por orden de fabricación.
+  // Patrón de entrega por cliente = pedidos que se entregaron en varias veces: de a cuánto por
+  // producto (si es constante) y cada cuántos días.
+  function aprender(snap) {
+    const porProd = {}; for (const m of snap.mo || []) (porProd[m.c] = porProd[m.c] || []).push(m.q);
+    const lote = {}, tanda = {};
+    for (const [c, qs] of Object.entries(porProd)) {
+      const mo = moda(qs);
+      if (c.startsWith('9')) lote[c] = mo.parte >= 0.25 ? mo.valor : Math.round(mediana(qs));
+      else tanda[c] = mo.valor;
+    }
+    // entregas agrupadas por pedido → por entrega (picking)
+    const porSo = {};
+    for (const e of snap.entregas || []) {
+      const s = (porSo[e.so] = porSo[e.so] || { so: e.so, so_id: e.so_id, p: e.p, cli: e.cli, picks: {} });
+      const k = (s.picks[e.pick] = s.picks[e.pick] || { f: e.f, items: {} });
+      if (e.f < k.f) k.f = e.f;
+      k.items[e.c] = (k.items[e.c] || 0) + e.q;
+    }
+    const ultimaEntrega = {}, entregasHechas = {};
+    const cli = {};
+    for (const s of Object.values(porSo)) {
+      const picks = Object.values(s.picks).sort((a, b) => a.f.localeCompare(b.f));
+      ultimaEntrega[s.so_id] = picks[picks.length - 1].f; entregasHechas[s.so_id] = picks.length;
+      const c = (cli[s.p] = cli[s.p] || { p: s.p, cli: s.cli, pedidos: 0, multi: 0, n_entregas: [], intervalos: [], porSku: {} });
+      c.pedidos++;
+      if (picks.length < 2) continue;
+      c.multi++; c.n_entregas.push(picks.length);
+      for (let i = 1; i < picks.length; i++) c.intervalos.push((d0(picks[i].f) - d0(picks[i - 1].f)) / 864e5);
+      for (const pk of picks) for (const [sku, q] of Object.entries(pk.items)) (c.porSku[sku] = c.porSku[sku] || []).push(q);
+    }
+    const patrones = {};
+    for (const c of Object.values(cli)) {
+      if (c.multi < 2) continue;   // un solo pedido partido no es costumbre
+      const tandas = {};
+      for (const [sku, qs] of Object.entries(c.porSku)) { const mo = moda(qs); if (qs.length >= 3 && mo.parte >= 0.6) tandas[sku] = mo.valor; }
+      patrones[c.p] = { p: c.p, cli: c.cli, pedidos: c.pedidos, pedidos_partidos: c.multi, entregas_por_pedido: Math.round(mediana(c.n_entregas)), dias_entre: Math.max(1, Math.round(mediana(c.intervalos))), tandas, aprendido: true };
+    }
+    return { lote, tanda, patrones, ultimaEntrega, entregasHechas };
+  }
+
+  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), quitar = {} }) {
     const capU = Number(cfg.cap_u_dia), capKg = Number(cfg.cap_kg_dia);
     const umbral = Number(cfg.umbral_pedido_grande || 10);
     const diaAnterior = new Set(cfg.graneles_dia_anterior || []);
@@ -39,9 +94,18 @@
     const presDe = {}; for (const p of pres) presDe[p.c] = { g: p.g, kg: Number(p.kg) };
     const subDe = {}; for (const s of subg) (subDe[s.g] = subDe[s.g] || []).push({ c: s.c, pct: Number(s.pct) });
     const parcialDe = {}; for (const p of parciales) parcialDe[p.so_id] = p;
-    // lote habitual de cada granel = mediana de lo elaborado por orden (historial)
-    const lotes = {}; for (const r of snap.produccion) if (r.c.startsWith('9')) (lotes[r.c] = lotes[r.c] || []).push(r.q / Math.max(1, r.n));
-    const loteDe = (g) => Math.max(1, Math.round(mediana(lotes[g] || [])) || 10);
+    const ap = aprender(snap);
+    const loteDe = (g) => ap.lote[g] || 10;
+    // patrón de entrega del cliente: lo cargado a mano (prod_plan_clientes) manda sobre lo aprendido
+    const patrones = JSON.parse(JSON.stringify(ap.patrones));
+    for (const c of clientes) {
+      const pt = (patrones[c.partner_id] = patrones[c.partner_id] || { p: c.partner_id, cli: c.cliente, tandas: {}, entregas_por_pedido: 2, dias_entre: 7, aprendido: false });
+      if (c.sku && c.sku !== '*') { if (Number(c.tanda) > 0) pt.tandas[c.sku] = Number(c.tanda); }
+      else if (Number(c.tanda) > 0) pt.tanda_general = Number(c.tanda);
+      if (Number(c.dias_entre) > 0) pt.dias_entre = Number(c.dias_entre);
+      pt.manual = true; if (c.nota) pt.nota = c.nota;
+    }
+    const manana = proximoHabil(hoy);
 
     // ---------- 1) pedidos → renglones de demanda ----------
     const aConfirmar = [], demanda = [], masAdelante = [];
@@ -61,6 +125,29 @@
         const comps = snap.kits[l.c];
         if (comps) for (const k of comps) renglones.push({ c: k.c, pend: l.pend * k.q, kit: l.c });
         else renglones.push({ c: l.c, pend: l.pend });
+      }
+
+      // Cliente que se entrega de a partes (aprendido del historial o cargado a mano):
+      // hoy entra la tanda que le toca; si todavía no le toca, la tanda queda como "próxima entrega".
+      // Lo que se cargue a mano para ESTE pedido (prod_plan_parciales) manda sobre el patrón.
+      const pt = patrones[p.partner_id];
+      if (pt && !parcialDe[p.id] && (prio === '23d' || prio === 'sin' || prio === 'parcial')) {
+        const ult = ap.ultimaEntrega[p.id];
+        const prox = ult ? masDias(ult, pt.dias_entre) : d0(hoy);
+        const toca = prox <= manana;
+        const restantes = Math.max(1, (pt.entregas_por_pedido || 2) - (ap.entregasHechas[p.id] || 0));
+        const nota = `se entrega de a partes cada ~${pt.dias_entre} días` + (ult ? ` · última ${ult.split('-').reverse().join('/')} · próxima ~${iso(prox).split('-').reverse().join('/')}` : '');
+        for (const r of renglones) {
+          const t = pt.tandas[r.c] || pt.tanda_general;
+          const tq = t ? Math.min(r.pend, t) : Math.min(r.pend, Math.ceil(r.pend / restantes));
+          const base = { c: r.c, so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, kit: r.kit || null, nota: nota + (t ? ` · de a ${t}` : '') };
+          let resto = r.pend;
+          if (toca) { demanda.push({ ...base, prio: RANGO[prio] < RANGO.tanda ? prio : 'tanda', q: tq }); resto -= tq; }
+          const sig = Math.min(resto, t || tq);
+          if (sig > 0) { demanda.push({ ...base, prio: 'anticipo', q: sig }); resto -= sig; }
+          if (resto > 0) masAdelante.push({ ...base, prio, q: resto, motivo: 'próximas entregas' });
+        }
+        continue;
       }
 
       // pedidos de entrega parcial: solo la cuota de hoy
@@ -216,6 +303,9 @@
         if (lugar <= 0) break;
         const ya = fraccionar[r.c]?.motivos.filter((m) => m.prio === 'stock').reduce((a, m) => a + m.q, 0) || 0;
         let q = Math.min(lugar, Math.ceil(r.por_dia * objetivoDias - Math.max(0, r.stock_libre)) - ya);
+        if (q <= 0) continue;
+        // para stock se fracciona en la tanda de siempre (ej. Criógeno 500g de a 6), no de a 1
+        const tf = ap.tanda[r.c]; if (tf && q < tf) q = Math.min(tf, lugar);
         const pr = presDe[r.c];
         // primera pasada: solo lo que alcanza con el granel que ya está hecho
         if (pasada === 'con_granel') q = Math.min(q, Math.floor((dispGr[pr.g] ?? 0) / pr.kg + 1e-9));
@@ -238,6 +328,11 @@
     const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); return { ...conNombre(p), kg: Math.ceil(p.kg / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; });
     for (const m of snap.mo_abiertas) if (m.inicio && (d0(hoy) - d0(m.inicio)) / 864e5 > 14)
       alertas.push({ tipo: 'mo_vieja', texto: `Orden de fabricación ${m.nombre} (${nombre[m.c] || m.c}) abierta desde ${m.inicio}: si no se va a hacer, conviene cancelarla.` });
+    // pedido grande sin 🔄 que no entra en un día: probablemente sea de entrega parcial
+    const postPorSo = {};
+    for (const x of postergado) if (x.prio === '23d' || x.prio === 'sin') { postPorSo[x.so_id] = postPorSo[x.so_id] || { ...x, q: 0 }; postPorSo[x.so_id].q += x.q; }
+    for (const x of Object.values(postPorSo)) if (x.q >= capU / 2)
+      alertas.push({ tipo: 'sugerir_parcial', so_id: x.so_id, numero: x.numero, cliente: x.cliente, texto: `${x.numero} (${x.cliente}) tiene ${x.q} unidades que no entran en el día: si se entrega de a partes, conviene marcarlo 🔄 Entrega parcial.` });
     if (carga.u > capU) alertas.push({ tipo: 'excede', texto: `Lo urgente suma ${carga.u} unidades a fraccionar y el tope del día es ${capU}.` });
     if (carga.kg > capKg) alertas.push({ tipo: 'excede', texto: `Lo urgente pide elaborar ${r2(carga.kg)} kg y el tope del día es ${capKg} kg.` });
 
@@ -248,6 +343,7 @@
       de_stock: deStock.map(conNombre), postergado: postergado.map(conNombre), mas_adelante: masAdelante.map(conNombre),
       a_confirmar: aConfirmar.map((p) => ({ so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, estado: p.estado, monto: p.monto, lineas: p.lineas })),
       ritmo, alertas,
+      aprendido: { lotes: ap.lote, tandas: ap.tanda, patrones },
     };
   }
 
