@@ -332,8 +332,8 @@
       .sort((a, b) => RANGO[a.prio] - RANGO[b.prio] || b.q - a.q);
     const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), para: [...e.para], dia_anterior: diaAnterior.has(e.c) }));
     const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); return { ...conNombre(p), kg: Math.ceil(p.kg / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; });
-    for (const m of snap.mo_abiertas) if (m.inicio && (d0(hoy) - d0(m.inicio)) / 864e5 > 14)
-      alertas.push({ tipo: 'mo_vieja', texto: `Orden de fabricación ${m.nombre} (${nombre[m.c] || m.c}) abierta desde ${m.inicio}: si no se va a hacer, conviene cancelarla.` });
+    const moViejas = snap.mo_abiertas.filter((m) => m.inicio && (d0(hoy) - d0(m.inicio)) / 864e5 > 14);
+    if (moViejas.length) alertas.push({ tipo: 'mo_vieja', texto: `${moViejas.length === 1 ? 'Hay 1 orden de fabricación abierta' : `Hay ${moViejas.length} órdenes de fabricación abiertas`} hace más de 2 semanas en Odoo (${moViejas.map((m) => `${m.nombre} ${nombre[m.c] || m.c}`).join(' · ')}): si no se van a hacer, conviene cancelarlas.` });
     // pedido grande sin 🔄 que no entra en un día: probablemente sea de entrega parcial
     const postPorSo = {};
     for (const x of postergado) if (x.prio === '23d' || x.prio === 'sin') { postPorSo[x.so_id] = postPorSo[x.so_id] || { ...x, q: 0 }; postPorSo[x.so_id].q += x.q; }

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Programar el día · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    /* ---- Encabezado: carga del día + actualizar ------------------------- */
+    .pg-top { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; margin-bottom:18px; }
+    .pg-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; flex:1; min-width:280px; }
+    .pg-kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
+    .pg-kpi .k { font-size:11px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
+    .pg-kpi .v { font-size:23px; font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums; line-height:1.15; }
+    .pg-kpi .v small { font-size:13px; font-weight:600; color:var(--muted); }
+    .pg-kpi .sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+    .barra { height:7px; background:var(--bg); border-radius:99px; overflow:hidden; margin-top:8px; }
+    .barra > i { display:block; height:100%; background:var(--ok); border-radius:99px; transition:width .3s; }
+    .barra.llena > i { background:var(--warn); }
+    .barra.pasada > i { background:var(--hot); }
+    .pg-sync { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+               padding:12px 14px; min-width:220px; display:flex; flex-direction:column; gap:8px; }
+    .pg-sync .cuando { font-size:11.5px; color:var(--muted); line-height:1.45; }
+    .pg-sync .cuando.viejo { color:var(--warn); }
+    /* ---- Pestañas -------------------------------------------------------- */
+    .pg-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap; }
+    .pg-tab { background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;
+              padding:9px 14px; font-size:13.5px; font-weight:600; color:var(--muted); font-family:inherit; }
+    .pg-tab:hover { color:var(--text); }
+    .pg-tab[aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); }
+    .pg-tab .n { font-size:11px; background:var(--surface-2,var(--bg)); border:1px solid var(--border);
+                 border-radius:20px; padding:1px 7px; margin-left:5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .pg-tab[aria-selected="true"] .n { background:var(--accent-tint); border-color:transparent; color:var(--accent); }
+    /* ---- Bloques --------------------------------------------------------- */
+    .pg-bloque { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+                 margin-bottom:14px; overflow-x:auto; }
+    .pg-bloque > header { display:flex; align-items:baseline; gap:10px; padding:12px 16px;
+                          border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .pg-bloque h3 { font-size:14.5px; font-weight:700; }
+    .pg-bloque .meta { font-size:12px; color:var(--muted); }
+    .pg-bloque .der { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+    .pg-vacio { padding:16px; font-size:13px; color:var(--muted); }
+    .pg-nota { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--structure, var(--accent));
+               border-radius:var(--radius-sm); padding:11px 14px; font-size:12.5px; color:var(--muted);
+               line-height:1.55; margin-bottom:16px; }
+    .pg-nota b { color:var(--text); font-weight:600; }
+    /* ---- Alertas --------------------------------------------------------- */
+    .alerta { display:flex; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid var(--border);
+              font-size:12.8px; flex-wrap:wrap; }
+    .alerta:last-child { border-bottom:none; }
+    .alerta .txt { flex:1; min-width:220px; line-height:1.4; }
+    .alerta .ico { width:18px; text-align:center; }
+    /* ---- Filas de tareas ------------------------------------------------- */
+    .fila { display:grid; grid-template-columns:150px 60px minmax(200px,1fr) 80px; gap:12px; align-items:start;
+            padding:11px 16px; border-bottom:1px solid var(--border); font-size:13px; }
+    .fila:last-child { border-bottom:none; }
+    .fila .cod { font-family:var(--font-mono); font-size:11.5px; color:var(--muted); padding-top:2px; }
+    .fila .nom { font-weight:600; line-height:1.3; }
+    .fila .cant { font-size:20px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; line-height:1.1; }
+    .fila .cant small { display:block; font-size:10.5px; font-weight:600; color:var(--muted); }
+    .motivos { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
+    .motivo { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+    .motivo b { color:var(--text); font-weight:600; font-variant-numeric:tabular-nums; }
+    .motivo .nota { font-size:11.5px; }
+    .acc { display:inline-flex; gap:4px; }
+    .acc button { font:inherit; font-size:11px; font-weight:600; padding:2px 8px; border-radius:99px; cursor:pointer;
+                  background:var(--surface); border:1px solid var(--border); color:var(--muted); }
+    .acc button:hover { border-color:var(--muted); color:var(--text); }
+    .acc button:disabled { opacity:.5; cursor:wait; }
+    /* ---- Etiquetas de prioridad ----------------------------------------- */
+    .prio { display:inline-block; font-size:11px; font-weight:700; padding:2px 9px; border-radius:99px; white-space:nowrap; }
+    .prio.hoy { color:var(--hot); background:color-mix(in srgb, var(--hot) 14%, transparent); }
+    .prio.d1 { color:#c2610c; background:rgba(234,120,20,.14); }
+    .prio.tanda, .prio.parcial { color:#2563a8; background:rgba(37,99,168,.12); }
+    .prio.d23 { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent); }
+    .prio.sin { color:var(--muted); background:var(--bg); border:1px dashed var(--border); }
+    .prio.anticipo { color:#6b4fa0; background:rgba(107,79,160,.12); }
+    .prio.stock { color:var(--ok); background:color-mix(in srgb, var(--ok) 13%, transparent); }
+    /* ---- Tablas simples -------------------------------------------------- */
+    .pg-tabla { width:100%; border-collapse:collapse; font-size:12.8px; }
+    .pg-tabla th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+                   font-weight:600; padding:8px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .pg-tabla td { padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+    .pg-tabla tr:last-child td { border-bottom:none; }
+    .pg-tabla td.num, .pg-tabla th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .pg-tabla .cod { font-family:var(--font-mono); font-size:11.5px; color:var(--muted); }
+    .pg-tabla tr.dim td { opacity:.55; }
+    /* ---- Pedidos --------------------------------------------------------- */
+    .ped { padding:12px 16px; border-bottom:1px solid var(--border); }
+    .ped:last-child { border-bottom:none; }
+    .ped .cab { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .ped .num { font-family:var(--font-mono); font-weight:700; font-size:13px; }
+    .ped .cli { font-weight:600; }
+    .ped .fecha { font-size:12px; color:var(--muted); }
+    .ped .der { margin-left:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .ped .detalle { margin-top:7px; font-size:12px; color:var(--muted); line-height:1.55; }
+    .ped .detalle b { color:var(--text); }
+    .ped .ritmo { margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:12px; }
+    select.sel, input.inp { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm);
+                            padding:5px 8px; font-size:12.5px; color:var(--text); font-family:inherit; }
+    input.inp.corto { width:80px; }
+    /* ---- Diálogo de postergar ------------------------------------------- */
+    dialog.pg-dlg { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--text);
+                    padding:18px 20px; width:min(380px, calc(100vw - 32px)); box-shadow:var(--shadow); }
+    dialog.pg-dlg::backdrop { background:rgba(0,0,0,.35); }
+    dialog.pg-dlg h4 { font-size:15px; margin-bottom:4px; }
+    dialog.pg-dlg p { font-size:12.5px; color:var(--muted); margin-bottom:12px; line-height:1.45; }
+    dialog.pg-dlg label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+    dialog.pg-dlg input { width:100%; }
+    dialog.pg-dlg .bot { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+    .pg-msg { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface);
+              padding:10px 16px; border-radius:var(--radius-sm); font-size:13px; z-index:50; max-width:calc(100vw - 32px);
+              box-shadow:var(--shadow); display:none; }
+    .pg-msg.err { background:var(--hot); color:#fff; }
+    @media (max-width: 720px) {
+      .fila { grid-template-columns:1fr auto; }
+      .fila .cod { display:none; }
+      .fila > :first-child { grid-column:1 / -1; }
+    }
+    @media print {
+      .pg-top .pg-sync, .pg-tabs, .acc, .der, .pg-nota, #app-shell { display:none !important; }
+      .pg-panel { display:block !important; }
+      .pg-panel:not(#tab-hoy) { display:none !important; }
+    }
+  </style>
+</head>
+<body data-page="programar" data-title="Programar el día" data-subtitle="Qué elaborar y fraccionar hoy, según pedidos, etiquetas, entregas y stock">
+<div id="app-shell"></div>
+<main id="app-content">
+
+  <div class="pg-top">
+    <div class="pg-kpis" id="kpis"></div>
+    <div class="pg-sync">
+      <div class="cuando" id="cuando">Cargando…</div>
+      <button class="btn primary" id="btn-actualizar">Actualizar desde Odoo</button>
+    </div>
+  </div>
+
+  <div class="pg-tabs" role="tablist">
+    <button class="pg-tab" role="tab" data-tab="hoy" aria-selected="true">Hoy</button>
+    <button class="pg-tab" role="tab" data-tab="pedidos">Pedidos <span class="n" id="n-pedidos">—</span></button>
+    <button class="pg-tab" role="tab" data-tab="postergados">Postergados <span class="n" id="n-post">—</span></button>
+    <button class="pg-tab" role="tab" data-tab="clientes">Clientes y lotes</button>
+    <button class="pg-tab" role="tab" data-tab="ajustes">Ajustes</button>
+  </div>
+
+  <section class="pg-panel" id="tab-hoy"></section>
+  <section class="pg-panel" id="tab-pedidos" hidden></section>
+  <section class="pg-panel" id="tab-postergados" hidden></section>
+  <section class="pg-panel" id="tab-clientes" hidden></section>
+  <section class="pg-panel" id="tab-ajustes" hidden></section>
+
+  <dialog class="pg-dlg" id="dlg-post">
+    <form method="dialog">
+      <h4 id="dlg-titulo">Postergar</h4>
+      <p id="dlg-texto"></p>
+      <label for="dlg-fecha">Vuelve a la fila el día</label>
+      <input type="date" class="inp" id="dlg-fecha" required>
+      <label for="dlg-motivo">Motivo (opcional)</label>
+      <input type="text" class="inp" id="dlg-motivo" maxlength="140" placeholder="Ej.: el cliente pidió esperar">
+      <div class="bot">
+        <button class="btn ghost" value="cancelar" formnovalidate>Cancelar</button>
+        <button class="btn primary" value="ok">Postergar</button>
+      </div>
+    </form>
+  </dialog>
+  <div class="pg-msg" id="msg"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shell/shell.js"></script>
+<script src="programador.js"></script>
+<script src="programar-ui.js"></script>
+</body>
+</html>
