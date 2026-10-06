@@ -862,6 +862,7 @@ async function cargarML() {
       <button class="subtab" data-sub="promos">Promociones</button>
       <button class="subtab" data-sub="ads">Publicidad</button>
       <button class="subtab" data-sub="odoo">Ventas → Odoo</button>
+      <button class="subtab" data-sub="preguntas">Preguntas</button>
       <button class="subtab" data-sub="precios">Precios sugeridos</button>
       <button class="subtab" data-sub="cfg">Configuración</button>
     </div>
@@ -870,6 +871,7 @@ async function cargarML() {
     <div id="sub-promos" style="display:none;"></div>
     <div id="sub-ads" style="display:none;"></div>
     <div id="sub-odoo" style="display:none;"></div>
+    <div id="sub-preguntas" style="display:none;"></div>
     <div id="sub-precios" style="display:none;"></div>
     <div id="sub-cfg" style="display:none;"></div>
   `;
@@ -877,10 +879,11 @@ async function cargarML() {
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','promos','ads','odoo','precios','cfg'].forEach(v => {
+    ['pubs','promos','ads','odoo','preguntas','precios','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
     if (which === 'odoo' && !VENTAS_ODOO_CARGADO) cargarVentasOdoo();
+    if (which === 'preguntas') cargarPreguntasML();
   }));
 
   // Config y precios sugeridos van despues: leen PUBS para resaltar pesos y umbrales.
@@ -888,11 +891,136 @@ async function cargarML() {
   await Promise.all([cargarConfigML(), cargarPreciosSugeridos()]);
 }
 
+// ─────── SUB-TAB PREGUNTAS ───────
+// Preguntas de compradores. El respondedor vive en la edge function ml-webhook (cron cada 2 min
+// + notificaciones de ML): responde solo con la guía (ml_respuestas_guia) si preguntas_auto = 1,
+// y deja "para revisar" lo que la guía marca como escalar. Ver memoria rosaint-ml-preguntas.
+const PREG_ESTADOS = {
+  nueva: ['Sin responder', 'var(--warn)'], procesando: ['Procesando', 'var(--muted)'],
+  respondida_auto: ['Respondida sola', 'var(--ok)'], respondida_manual: ['Respondida desde el Core', 'var(--ok)'],
+  respondida_fuera: ['Respondida en ML', 'var(--muted)'], escalada: ['Para revisar', 'var(--hot)'], error: ['Error', 'var(--hot)'],
+};
+const pregEstado = e => { const [t, c] = PREG_ESTADOS[e] || [e, 'var(--muted)']; return `<span style="color:${c};font-weight:600">${t}</span>`; };
+
+async function cargarPreguntasML() {
+  const el = $('#sub-preguntas');
+  el.innerHTML = '<div class="empty-box">Cargando preguntas…</div>';
+  const [est, preg, guia] = await Promise.all([
+    sb.functions.invoke('ml-webhook', { body: { accion: 'estado' } }).then(r => r.data || { ok: false, error: r.error?.message }).catch(e => ({ ok: false, error: e.message })),
+    sb.from('ml_preguntas').select('*').order('fecha', { ascending: false }).limit(80),
+    sb.from('ml_respuestas_guia').select('*').order('orden'),
+  ]);
+  const P = preg.data || [], G = guia.data || [];
+  const revisar = P.filter(p => ['escalada', 'error', 'nueva'].includes(p.estado));
+  const sinPermiso = !!(est.ultimo_error && /403|UNAUTHORIZED/i.test(est.ultimo_error.error || ''));
+  const fila = (k, v, ok) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>${k}</span><b style="color:${ok === false ? 'var(--hot)' : ok ? 'var(--ok)' : 'var(--text)'}">${v}</b></div>`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+      <div class="medio-card">
+        <h4>Conexión con Mercado Libre</h4>
+        ${est.ok ? `
+          ${fila('Cuenta', esc(est.cuenta || '—'), est.token_ok)}
+          ${fila('Leer preguntas', est.lectura_preguntas ? 'OK' : 'Sin acceso', est.lectura_preguntas)}
+          ${fila('Responder preguntas', sinPermiso ? 'Falta permiso en la app de ML'
+            : P.some(p => ['respondida_auto', 'respondida_manual'].includes(p.estado)) ? 'OK' : 'Sin probar todavía',
+            sinPermiso ? false : P.some(p => ['respondida_auto', 'respondida_manual'].includes(p.estado)) ? true : null)}
+          ${fila('Asistente (IA)', est.ia_configurada ? 'Configurado' : 'Falta la clave', est.ia_configurada)}
+          ${fila('Sin responder en ML ahora', est.sin_responder_en_ml ?? '—')}
+        ` : `<div style="color:var(--hot)">No se pudo consultar: ${esc(est.error || '')}</div>`}
+        <p class="help" style="font-size:11.5px;color:var(--muted);margin-top:8px">Las preguntas se revisan solas cada 2 minutos.</p>
+      </div>
+      <div class="medio-card">
+        <h4>Respuesta automática</h4>
+        <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="preg-auto" ${est.auto ? 'checked' : ''} style="width:18px;height:18px">
+          <span>${est.auto ? '<b style="color:var(--ok)">Activada</b>: responde sola con la guía' : '<b>Apagada</b>: solo registra las preguntas'}</span>
+        </label>
+        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 12px">Lo que la guía marca "escalar" (reclamos, temas sin dato) nunca se responde solo: queda abajo, en "Para revisar".</p>
+        <button class="btn" id="preg-poll">Revisar ahora</button>
+        <span id="preg-poll-st" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+      </div>
+    </div>
+
+    <h3 style="font-size:15px;margin:6px 0 10px">Para revisar (${revisar.length})</h3>
+    ${revisar.length ? revisar.map(p => `
+      <div class="medio-card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)">
+          <span>${esc(p.item_titulo || p.item_id)} · ${fFechaHora(p.fecha)}</span>${pregEstado(p.estado)}
+        </div>
+        <div style="font-size:14.5px;margin:8px 0"><b>“${esc(p.texto)}”</b></div>
+        ${p.motivo ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Motivo: ${esc(p.motivo)}</div>` : ''}
+        ${p.error ? `<div style="font-size:12px;color:var(--hot);margin-bottom:6px">${esc(p.error)}</div>` : ''}
+        <textarea data-q="${p.question_id}" rows="3" maxlength="2000" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:13px">${esc(p.respuesta || '')}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <button class="btn primary" data-responder="${p.question_id}">Responder en ML</button>
+          <span data-st="${p.question_id}" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+      </div>`).join('') : '<div class="empty-box">No hay preguntas pendientes de revisión.</div>'}
+
+    <h3 style="font-size:15px;margin:22px 0 10px">Historial</h3>
+    <table class="tbl"><thead><tr><th>Fecha</th><th>Publicación</th><th>Pregunta</th><th>Respuesta</th><th>Estado</th></tr></thead><tbody>
+      ${P.filter(p => !revisar.includes(p)).map(p => `<tr>
+        <td style="white-space:nowrap">${fFechaHora(p.fecha)}</td><td>${esc(p.item_titulo || p.item_id)}</td>
+        <td>${esc(p.texto)}</td><td style="font-size:12.5px">${esc(p.respuesta || '—')}</td><td>${pregEstado(p.estado)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Todavía no hay preguntas registradas.</td></tr>'}
+    </tbody></table>
+
+    <details class="config-box" style="margin-top:22px">
+      <summary>Guía de respuestas <span class="sub">${G.filter(g => g.activo).length} temas activos · el asistente responde sólo con esto y con la descripción de la publicación</span></summary>
+      <div class="cfg-body">
+        <table class="tbl"><thead><tr><th>Tema</th><th>Aplica a</th><th>Cuándo</th><th>Qué responder</th><th>Acción</th><th>Activo</th><th></th></tr></thead><tbody>
+          ${G.map(g => `<tr data-g="${g.id}">
+            <td><input data-f="tema" value="${esc(g.tema)}" style="width:150px"></td>
+            <td><input data-f="aplica_a" value="${esc(g.aplica_a)}" style="width:110px"></td>
+            <td><textarea data-f="cuando" rows="3" style="width:220px;font:inherit;font-size:12px">${esc(g.cuando)}</textarea></td>
+            <td><textarea data-f="respuesta" rows="4" style="width:360px;font:inherit;font-size:12px">${esc(g.respuesta)}</textarea></td>
+            <td><select data-f="accion"><option value="responder" ${g.accion === 'responder' ? 'selected' : ''}>Responder</option><option value="escalar" ${g.accion === 'escalar' ? 'selected' : ''}>Escalar</option></select></td>
+            <td><input type="checkbox" data-f="activo" ${g.activo ? 'checked' : ''}></td>
+            <td><button class="btn" data-gsave="${g.id}">Guardar</button></td></tr>`).join('')}
+        </tbody></table>
+        <button class="btn" id="preg-gnew" style="margin-top:10px">+ Agregar tema</button>
+      </div>
+    </details>`;
+
+  $('#preg-auto').addEventListener('change', async ev => {
+    const { error } = await sb.from('ml_parametros').update({ valor: ev.target.checked ? 1 : 0, actualizado_en: new Date().toISOString() }).eq('clave', 'preguntas_auto');
+    if (error) alert('No se pudo guardar: ' + error.message);
+    cargarPreguntasML();
+  });
+  $('#preg-poll').addEventListener('click', async () => {
+    $('#preg-poll-st').textContent = 'Revisando…';
+    const r = await sb.functions.invoke('ml-webhook', { body: { accion: 'poll_ahora' } });
+    $('#preg-poll-st').textContent = r.error ? 'Error: ' + r.error.message : `Listo (${r.data?.sin_responder ?? 0} sin responder en ML)`;
+    setTimeout(cargarPreguntasML, 800);
+  });
+  el.querySelectorAll('[data-responder]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.responder, txt = el.querySelector(`textarea[data-q="${id}"]`).value.trim(), st = el.querySelector(`[data-st="${id}"]`);
+    if (!txt) { st.textContent = 'Escribí la respuesta.'; return; }
+    if (!confirm('¿Publicar esta respuesta en Mercado Libre? Solo se puede responder una vez.')) return;
+    st.textContent = 'Enviando…'; b.disabled = true;
+    const r = await sb.functions.invoke('ml-webhook', { body: { accion: 'responder', question_id: Number(id), texto: txt } });
+    if (r.error || !r.data?.ok) { st.textContent = 'No se pudo: ' + (r.data?.error || r.error?.message); b.disabled = false; return; }
+    st.textContent = 'Respondida ✓'; setTimeout(cargarPreguntasML, 800);
+  }));
+  el.querySelectorAll('[data-gsave]').forEach(b => b.addEventListener('click', async () => {
+    const tr = b.closest('tr'), v = f => tr.querySelector(`[data-f="${f}"]`);
+    const { error } = await sb.from('ml_respuestas_guia').update({
+      tema: v('tema').value, aplica_a: v('aplica_a').value, cuando: v('cuando').value, respuesta: v('respuesta').value,
+      accion: v('accion').value, activo: v('activo').checked, actualizado_en: new Date().toISOString(),
+    }).eq('id', b.dataset.gsave);
+    b.textContent = error ? 'Error' : 'Guardado ✓'; setTimeout(() => b.textContent = 'Guardar', 1500);
+  }));
+  $('#preg-gnew').addEventListener('click', async () => {
+    const { error } = await sb.from('ml_respuestas_guia').insert({ tema: 'Nuevo tema', cuando: 'Describir cuándo aplica', respuesta: 'Qué responder', orden: 500 });
+    if (error) alert(error.message); else cargarPreguntasML();
+  });
+}
+
 // ─────── SUB-TAB VENTAS → ODOO ───────
 // Revisar las ventas de ML (por pack, desde 01/09) y cargarlas en Odoo como borrador.
 // Usa la edge function ml-odoo-cargar (modos listar/preview/cargar). Ver memoria rosaint-ml-odoo-conector.
 let VENTAS_ODOO_CARGADO = false;
-const fFechaHora = f => f ? new Date(f).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+// fFechaHora está declarada más abajo (bloque de Configuración ML); declararla dos veces rompía toda la página.
 
 async function cargarVentasOdoo() {
   VENTAS_ODOO_CARGADO = true;
