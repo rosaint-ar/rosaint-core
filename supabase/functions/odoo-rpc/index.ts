@@ -17,11 +17,20 @@ const PUB = "sb_publishable_I2b_s6jYVI1Cas3vGHLvbQ_OWXkU0vB";
 const CTX = { allowed_company_ids: [2] };
 
 async function jsonrpc(service: string, method: string, args: unknown[]): Promise<unknown> {
-  const res = await fetch(`${ODOO_URL}/jsonrpc`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method: "call", params: { service, method, args }, id: Math.floor(Math.random() * 1e9) }),
-  });
-  const j = await res.json();
+  // Con varias consultas a la vez, Odoo a veces rechaza alguna con una página HTML (exceso de pedidos):
+  // se reintenta hasta 3 veces con espera creciente antes de dar error.
+  let res: Response | null = null, texto = "";
+  for (let intento = 0; intento < 4; intento++) {
+    if (intento) await new Promise((r) => setTimeout(r, 600 * intento + Math.random() * 400));
+    res = await fetch(`${ODOO_URL}/jsonrpc`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "call", params: { service, method, args }, id: Math.floor(Math.random() * 1e9) }),
+    });
+    texto = await res.text();
+    if (res.ok && texto.trimStart().startsWith("{")) break;
+  }
+  if (!texto.trimStart().startsWith("{")) throw new Error(`Odoo no respondió bien (HTTP ${res?.status}) después de 4 intentos`);
+  const j = JSON.parse(texto);
   if (j.error) throw new Error("Odoo: " + JSON.stringify(j.error?.data?.message || j.error?.message || j.error));
   return j.result;
 }
@@ -34,6 +43,9 @@ async function auth(): Promise<number> {
 }
 
 async function usuarioValido(req: Request): Promise<boolean> {
+  // procesos y conectores con la clave interna (igual que el resto de las funciones de Core)
+  const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
+  if (interna && req.headers.get("x-cron-key") === interna) return true;
   const a = req.headers.get("Authorization") || "";
   if (!a.startsWith("Bearer ")) return false;
   const apikey = req.headers.get("apikey") || PUB || SB_ANON;

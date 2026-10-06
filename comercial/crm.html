@@ -1428,13 +1428,19 @@ async function cargarFichas() {
     const ids = DATA.map(d => d.partner_id);
     const chunks = [];
     for (let i = 0; i < ids.length; i += 300) chunks.push(ids.slice(i, i + 300));
-    // En paralelo (no una tanda tras otra)
-    const results = await Promise.all(chunks.map(ch =>
-      orpc('res.partner', 'search_read', [[['id','in',ch]]], { fields: PF, limit: 0 })));
+    // De a dos tandas a la vez (con todas juntas Odoo rechazaba alguna y se perdía la carga entera).
+    // Si una tanda falla, se muestran las que llegaron y esa se reintenta una vez.
     const nueva = {};
-    results.forEach(parts => (parts || []).forEach(p => { nueva[p.id] = p; }));
+    let fallidas = 0;
+    const traer = async (ch) => {
+      for (let i = 0; i < 2; i++) {
+        try { const parts = await orpc('res.partner', 'search_read', [[['id','in',ch]]], { fields: PF, limit: 0 }); (parts || []).forEach(p => { nueva[p.id] = p; }); return; }
+        catch (e) { if (i) { fallidas++; console.warn('Tanda de fichas sin traer:', e.message); } }
+      }
+    };
+    for (let i = 0; i < chunks.length; i += 2) await Promise.all(chunks.slice(i, i + 2).map(traer));
     FICHA = nueva;
-    if (info) info.textContent = base;
+    if (info) info.textContent = base + (fallidas ? ' · ' + fallidas + ' tanda(s) de fichas sin traer (se piden al abrir el cliente)' : '');
     renderAll();
   } catch (e) {
     console.warn('No pude cargar fichas de Odoo:', e.message);
