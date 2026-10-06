@@ -79,6 +79,10 @@ export async function modoControl() {
   const mos = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "!=", "cancel"], ["date_start", ">=", desde + " 00:00:00"]]],
     { fields: ["name", "product_id", "product_qty", "product_uom_id", "state", "date_start"] }) as Row[];
   const prodM = await productos([...new Set(mos.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
+  // desmontajes terminados (mrp.unbuild): deshacen total o parcialmente una orden → se restan de esa orden
+  const unb = mos.length ? await ex("mrp.unbuild", "search_read", [[["mo_id", "in", mos.map((m) => m.id)], ["state", "=", "done"]]], { fields: ["name", "mo_id", "product_qty", "product_uom_id"] }) as Row[] : [];
+  const desmontadoDe = new Map<number, { q: number; refs: string[] }>();
+  for (const u of unb) { const k = m2o(u.mo_id); const d = desmontadoDe.get(k) || { q: 0, refs: [] }; d.q += aBase(Number(u.product_qty) || 0, m2oName(u.product_uom_id)).q; d.refs.push(u.name); desmontadoDe.set(k, d); }
 
   type Lado = { fecha: string; c: string; nombre: string; q: number; u: string; det: Row[] };
   const H: Record<string, Lado> = {}, OD: Record<string, Lado & { abiertas: Row[] }> = {};
@@ -95,7 +99,12 @@ export async function modoControl() {
     const b = aBase(Number(m.product_qty) || 0, m2oName(m.product_uom_id));
     const k = fecha + "|" + c;
     const x = (OD[k] = OD[k] || { fecha, c, nombre: prodM.get(m2o(m.product_id))?.name || c, q: 0, u: b.u, det: [], abiertas: [] });
-    if (m.state === "done") { x.q += b.q; x.det.push({ mo: m.name, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id) }); }
+    const desm = desmontadoDe.get(m.id);
+    if (m.state === "done") {
+      const neto = Math.max(0, b.q - (desm?.q || 0));
+      x.q += neto;
+      if (neto > 1e-9) x.det.push({ mo: m.name + (desm ? ` (desmontada en parte: ${desm.refs.join(", ")})` : ""), cantidad: neto, unidad: b.u });
+    }
     else x.abiertas.push({ mo: m.name, estado: m.state, cantidad: Number(m.product_qty), unidad: m2oName(m.product_uom_id) });
   }
 
@@ -162,7 +171,10 @@ export async function modoControl() {
     titulo: `Hoy: ${pendHoy.length} producto${pendHoy.length === 1 ? "" : "s"} de la Hoja todavía sin pasar a Odoo`, detalle: pendHoy.map((p) => `${p.nombre} ${p.q} ${p.u}`).join(" · "), datos: { items: pendHoy } });
 
   const ahora = new Date().toISOString();
-  const filas = alertas.map((a) => ({ ...a, area: "produccion", estado: "abierta", ultima_vez: ahora, resuelta_en: null, href: "produccion/control.html" }));
+  // lo que el usuario ya revisó y descartó no se vuelve a abrir
+  const { data: desc } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "descartada");
+  const descartadas = new Set((desc || []).map((d) => d.clave));
+  const filas = alertas.filter((a) => !descartadas.has(a.clave)).map((a) => ({ ...a, area: "produccion", estado: "abierta", ultima_vez: ahora, resuelta_en: null, href: "produccion/control.html" }));
   if (filas.length) { const { error } = await sb.from("control_alertas").upsert(filas, { onConflict: "clave" }); if (error) throw new Error("alertas: " + error.message); }
   // lo que estaba abierto y ya no aparece, se da por resuelto
   const { data: abiertas } = await sb.from("control_alertas").select("clave").eq("area", "produccion").eq("estado", "abierta");

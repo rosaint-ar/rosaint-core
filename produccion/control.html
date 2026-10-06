@@ -33,6 +33,8 @@
     .sev.critico { color:var(--hot); background:color-mix(in srgb, var(--hot) 14%, transparent); }
     .sev.warn { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent); }
     .sev.info { color:var(--muted); background:var(--bg); }
+    .btn-desc { font:inherit; font-size:11px; font-weight:600; padding:2px 9px; border-radius:99px; cursor:pointer; background:var(--surface); border:1px solid var(--border); color:var(--muted); margin-left:6px; }
+    .btn-desc:hover { border-color:var(--muted); color:var(--text); }
     details.res summary { padding:11px 16px; cursor:pointer; font-size:12.5px; color:var(--muted); }
     .pg-msg { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--surface); padding:10px 16px; border-radius:var(--radius-sm); font-size:13px; z-index:50; display:none; }
     @media (max-width: 640px) { .al { grid-template-columns:1fr; } .al .det { grid-column:1; } .al .cuando { text-align:left; } }
@@ -73,12 +75,13 @@
 
   async function cargar() {
     const desde = new Date(Date.now() - 7 * 864e5).toISOString();
-    const [ab, res] = await Promise.all([
+    const [ab, res, dsc] = await Promise.all([
       sb.from('control_alertas').select('*').eq('estado', 'abierta').order('fecha_ref', { ascending: false }),
       sb.from('control_alertas').select('*').eq('estado', 'resuelta').gte('resuelta_en', desde).order('resuelta_en', { ascending: false }).limit(60),
+      sb.from('control_alertas').select('*').eq('estado', 'descartada').order('descartada_en', { ascending: false }).limit(100),
     ]);
     if (ab.error) { $('lista').innerHTML = `<div class="ct-bloque"><div class="ct-vacio">No se pudo leer: ${esc(ab.error.message)}</div></div>`; return; }
-    const A = ab.data, R = res.data || [];
+    const A = ab.data, R = res.data || [], D = dsc.data || [];
     const n = (tipos) => A.filter((a) => tipos.includes(a.tipo)).length;
     const ultima = A.concat(R).reduce((m, a) => (a.ultima_vez > m ? a.ultima_vez : m), '');
     $('cuando').textContent = ultima ? `Última revisión: ${cuando(ultima)}` : 'Sin revisiones todavía';
@@ -88,15 +91,32 @@
       <div class="ct-kpi"><div class="k">Faltan materiales</div><div class="v" style="color:${n(['falta_mp']) ? 'var(--hot)' : 'var(--ok)'}">${n(['falta_mp'])}</div><div class="sub">para el plan de hoy</div></div>
       <div class="ct-kpi"><div class="k">Resueltas</div><div class="v">${R.length}</div><div class="sub">últimos 7 días</div></div>`;
     const fila = (a) => `<div class="al"><div><span class="sev ${esc(a.severidad)}">${a.severidad === 'critico' ? 'Urgente' : a.severidad === 'warn' ? 'Revisar' : 'Info'}</span></div>
-      <div class="tit">${esc(a.titulo)}</div><div class="cuando">${a.estado === 'resuelta' ? 'resuelta ' + cuando(a.resuelta_en) : 'desde ' + cuando(a.primera_vez)}</div>
-      ${a.detalle ? `<div class="det">${esc(a.detalle)}</div>` : ''}</div>`;
+      <div class="tit">${esc(a.titulo)}</div><div class="cuando">${a.estado === 'resuelta' ? 'resuelta ' + cuando(a.resuelta_en) : a.estado === 'descartada' ? 'descartada ' + cuando(a.descartada_en) + ' por ' + esc((a.descartada_por || '').split('@')[0]) : 'desde ' + cuando(a.primera_vez)}${a.tipo === 'fecha_distinta' && a.estado === 'abierta' ? ` <button class="btn-desc" data-desc="${esc(a.clave)}">Descartar</button>` : ''}${a.estado === 'descartada' ? ` <button class="btn-desc" data-reabrir="${esc(a.clave)}">Volver a abrir</button>` : ''}</div>
+      ${a.detalle ? `<div class="det">${esc(a.detalle)}${a.nota ? ` · <b>Nota:</b> ${esc(a.nota)}` : ''}</div>` : ''}</div>`;
     $('lista').innerHTML = GRUPOS.map((g) => {
       const xs = A.filter((a) => g.tipos.includes(a.tipo));
       if (!xs.length) return '';
       return `<div class="ct-bloque"><header><h3>${esc(g.titulo)}</h3><span class="meta">${xs.length} · ${esc(g.ayuda)}</span></header>${xs.map(fila).join('')}</div>`;
     }).join('') + (A.length ? '' : '<div class="ct-bloque"><div class="ct-vacio">✓ Todo coincide: la Hoja de Producción y Fabricación en Odoo están iguales.</div></div>')
-      + (R.length ? `<div class="ct-bloque"><details class="res"><summary>Resueltas en los últimos 7 días (${R.length})</summary>${R.map(fila).join('')}</details></div>` : '');
+      + (R.length ? `<div class="ct-bloque"><details class="res"><summary>Resueltas en los últimos 7 días (${R.length})</summary>${R.map(fila).join('')}</details></div>` : '')
+      + (D.length ? `<div class="ct-bloque"><details class="res"><summary>Descartadas (ya revisadas, no vuelven a aparecer) (${D.length})</summary>${D.map(fila).join('')}</details></div>` : '');
   }
+
+  // Descartar un aviso de "fecha distinta" ya revisado: queda registrado quién y cuándo, y el control no lo vuelve a abrir
+  document.addEventListener('click', async (e) => {
+    const d = e.target.closest('[data-desc]'), r = e.target.closest('[data-reabrir]');
+    if (!d && !r) return;
+    const { data: u } = await sb.auth.getUser();
+    let cambios;
+    if (d) {
+      const nota = prompt('Descartar este aviso (ya lo revisaste y está bien). Nota opcional:', '');
+      if (nota === null) return;
+      cambios = { estado: 'descartada', descartada_por: u?.user?.email || null, descartada_en: new Date().toISOString(), nota: nota.trim() || null };
+    } else cambios = { estado: 'abierta', descartada_por: null, descartada_en: null };
+    const { error } = await sb.from('control_alertas').update(cambios).eq('clave', (d || r).dataset.desc || (d || r).dataset.reabrir);
+    if (error) { msg('No se pudo: ' + error.message); return; }
+    await cargar(); msg(d ? 'Aviso descartado: no vuelve a aparecer' : 'Aviso abierto de nuevo');
+  });
 
   $('btn-revisar').addEventListener('click', async () => {
     const b = $('btn-revisar'); b.disabled = true; b.textContent = 'Revisando Odoo…';
