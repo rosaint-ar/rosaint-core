@@ -56,15 +56,57 @@
     } catch (e) { msg('No se pudo empezar: ' + e.message, true); b.disabled = false; b.textContent = 'Empezar conteo'; }
   }
 
-  async function guardar(codigo, valor, input) {
-    const v = valor === '' ? null : Number(String(valor).replace(',', '.'));
-    if (v != null && !(v >= 0)) { msg('La cantidad tiene que ser un número de 0 en adelante', true); return; }
+  // Cada valor tipeado queda primero en un respaldo local (sobrevive a recargar o cerrar la página)
+  // y se manda a la base al dejar de tipear. Si falla, se reintenta solo cada 5 s.
+  const PEND = {};                      // codigo -> valor todavía no confirmado por la base
+  const timers = {};
+  const claveResp = () => 'conteo.pendiente.' + S.conteo.id;
+  function respaldar() { try { localStorage.setItem(claveResp(), JSON.stringify(PEND)); } catch { /* */ } }
+  function estado(t, tipo) { const e = $('estado-guardado'); if (e) { e.textContent = t; e.className = 'guardado ' + (tipo || ''); } }
+  function parsear(valor) {
+    const t = String(valor).trim(); if (t === '') return null;
+    const v = Number(t.replace(',', '.')); return v >= 0 ? v : NaN;
+  }
+  function guardarPronto(codigo, valor, demora = 600) {
+    const v = parsear(valor);
+    if (Number.isNaN(v)) { estado('⚠ Número inválido en ' + codigo, 'err'); return; }
+    PEND[codigo] = v; respaldar(); estado('Guardando…', 'pend');
+    clearTimeout(timers[codigo]); timers[codigo] = setTimeout(() => enviar(codigo), demora);
+  }
+  let reintento = null;
+  async function enviar(codigo) {
+    if (!(codigo in PEND)) return;
+    const v = PEND[codigo];
     const quien = await usuario();
     const { error } = await sb.from('inv_conteo_lineas').update({ contado: v, actualizado: new Date().toISOString(), actualizado_por: quien }).eq('conteo_id', S.conteo.id).eq('codigo', codigo);
-    if (error) { msg('No se guardó: ' + error.message, true); return; }
-    const l = S.lineas.find((x) => x.codigo === codigo); if (l) l.contado = v;
-    const tr = input.closest('tr'); tr.classList.toggle('contado', v != null);
+    if (error) {
+      estado('Sin conexión: quedó guardado en este equipo, reintentando…', 'err');
+      clearTimeout(reintento); reintento = setTimeout(() => Object.keys(PEND).forEach(enviar), 5000);
+      return;
+    }
+    if (PEND[codigo] === v) delete PEND[codigo];   // si mientras tanto se tipeó otro valor, queda pendiente
+    respaldar();
+    const l = S.lineas.find((x) => x.codigo === codigo); if (l) { l.contado = v; refrescarFila(l); }
+    pintarKpis();
+    if (!Object.keys(PEND).length) estado('Guardado ✓ ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'ok');
+  }
+  function refrescarFila(l) {
+    const i = document.querySelector(`table.cn input[data-cod="${CSS.escape(l.codigo)}"]`); if (!i) return;
+    const tr = i.closest('tr'); tr.classList.toggle('contado', l.contado != null);
     tr.querySelector('.difcell').innerHTML = difHtml(l);
+    if (document.activeElement !== i && !(l.codigo in PEND)) i.value = l.contado == null ? '' : String(l.contado);
+  }
+  // Trae lo que cargaron otros (cada 15 s) sin pisar lo que se está escribiendo acá
+  async function sincronizar() {
+    if (!S.conteo || document.hidden) return;
+    const { data, error } = await sb.from('inv_conteo_lineas').select('codigo,contado').eq('conteo_id', S.conteo.id).range(0, 1999);
+    if (error) { estado('Sin conexión: reintentando…', 'err'); return; }
+    for (const r of data) {
+      if (r.codigo in PEND) continue;
+      const l = S.lineas.find((x) => x.codigo === r.codigo);
+      const v = r.contado == null ? null : Number(r.contado);
+      if (l && l.contado !== v) { l.contado = v; refrescarFila(l); }
+    }
     pintarKpis();
   }
 
@@ -94,7 +136,8 @@
     const visible = (l) => (!f || l.codigo.toLowerCase().includes(f) || String(l.nombre).toLowerCase().includes(f)) && (!S.soloFaltan || l.contado == null);
     $('cuerpo').innerHTML = `
       <div class="cn-top"><div class="cn-kpis" id="kpis"></div>
-        <div class="cn-acc"><div class="txt">Imprimí la planilla para contar y cargá acá lo contado (se guarda solo al salir de cada casilla).</div>
+        <div class="cn-acc"><div class="txt">Imprimí la planilla para contar y cargá acá lo contado: <b>se guarda solo mientras escribís</b> y se actualiza con lo que cargan otros.</div>
+          <div class="guardado ok" id="estado-guardado">Guardado ✓</div>
           <button class="btn primary" id="btn-imprimir">🖨️ Imprimir planilla</button>
           <button class="btn secondary" id="btn-dif">Ver diferencias</button></div></div>
       <div class="cn-tools">
@@ -110,7 +153,7 @@
           <table class="cn"><thead><tr><th class="cod">Código</th><th>Producto</th><th class="num ${S.verOdoo ? '' : 'oculto'}">Odoo</th><th class="num">Contado (${g.u})</th><th class="num ${S.verOdoo ? '' : 'oculto'}">Diferencia</th></tr></thead><tbody>
           ${vis.map((l) => `<tr class="${l.contado != null ? 'contado' : ''}"><td class="cod">${esc(l.codigo)}</td><td>${esc(l.nombre)}</td>
             <td class="num ${S.verOdoo ? '' : 'oculto'}">${fmt(l.odoo_qty, 3)}</td>
-            <td class="num"><input class="inp" inputmode="decimal" data-cod="${esc(l.codigo)}" value="${l.contado == null ? '' : esc(String(l.contado))}" aria-label="Contado ${esc(l.nombre)}"></td>
+            <td class="num"><input class="inp" inputmode="decimal" data-cod="${esc(l.codigo)}" value="${l.codigo in PEND ? esc(PEND[l.codigo] == null ? '' : String(PEND[l.codigo])) : l.contado == null ? '' : esc(String(l.contado))}" aria-label="Contado ${esc(l.nombre)}"></td>
             <td class="num difcell ${S.verOdoo ? '' : 'oculto'}">${difHtml(l)}</td></tr>`).join('') || '<tr><td colspan="5" class="cn-vacio">Nada para mostrar con este filtro.</td></tr>'}
           </tbody></table></div>`;
       }).join('')}
@@ -122,7 +165,8 @@
     $('btn-imprimir').addEventListener('click', imprimir);
     $('btn-dif').addEventListener('click', verDiferencias);
     for (const i of document.querySelectorAll('table.cn input')) {
-      i.addEventListener('change', () => guardar(i.dataset.cod, i.value.trim(), i));
+      i.addEventListener('input', () => guardarPronto(i.dataset.cod, i.value));
+      i.addEventListener('change', () => guardarPronto(i.dataset.cod, i.value, 0));
       i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const todos = [...document.querySelectorAll('table.cn input')]; const sig = todos[todos.indexOf(i) + 1]; i.blur(); if (sig) sig.focus(); } });
     }
   }
@@ -166,5 +210,17 @@
     w.document.open(); w.document.write(html); w.document.close();
   }
 
-  cargar().catch((e) => { $('cuerpo').innerHTML = `<div class="cn-bloque"><div class="cn-vacio">No se pudo cargar: ${esc(e.message)}</div></div>`; });
+  async function recuperarRespaldo() {
+    if (!S.conteo) return;
+    let r = {}; try { r = JSON.parse(localStorage.getItem(claveResp()) || '{}'); } catch { /* */ }
+    const cods = Object.keys(r).filter((c) => S.lineas.some((l) => l.codigo === c));
+    if (!cods.length) return;
+    for (const c of cods) { PEND[c] = r[c]; const l = S.lineas.find((x) => x.codigo === c); if (l) { l.contado = r[c]; refrescarFila(l); } }
+    estado('Recuperando ' + cods.length + ' valor(es) que no se habían guardado…', 'pend');
+    for (const c of cods) await enviar(c);
+  }
+  setInterval(sincronizar, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sincronizar(); });
+  window.addEventListener('beforeunload', (e) => { if (Object.keys(PEND).length) { respaldar(); e.preventDefault(); e.returnValue = ''; } });
+  cargar().then(recuperarRespaldo).catch((e) => { $('cuerpo').innerHTML = `<div class="cn-bloque"><div class="cn-vacio">No se pudo cargar: ${esc(e.message)}</div></div>`; });
 })();
