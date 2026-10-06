@@ -520,3 +520,30 @@ export async function modoEtiquetar(body: Row) {
   const [desp] = await ex("sale.order", "read", [[soId]], { fields: ["tag_ids"] }) as Row[];
   return { ok: true, numero: so.name, antes: so.tag_ids, despues: desp.tag_ids };
 }
+
+// ====== Recetas de Odoo (solo lectura) ======
+// Todas las listas de materiales de VELAZQUEZ con sus componentes, para comparar con las fórmulas
+// y presentaciones de Core. No escribe nada.
+export async function modoRecetasOdoo() {
+  const boms = await ex("mrp.bom", "search_read", [[["company_id", "in", [2, false]], ["active", "=", true]]],
+    { fields: ["id", "product_tmpl_id", "product_id", "product_qty", "product_uom_id", "type", "code"] }) as Row[];
+  const lineas = boms.length ? await ex("mrp.bom.line", "search_read", [[["bom_id", "in", boms.map((b) => b.id)]]],
+    { fields: ["bom_id", "product_id", "product_qty", "product_uom_id"] }) as Row[] : [];
+  const tmplIds = [...new Set(boms.map((b) => m2o(b.product_tmpl_id)).filter(Boolean))];
+  const tmpl = new Map<number, Row>();
+  for (let i = 0; i < tmplIds.length; i += 300) {
+    const r = await ex("product.template", "read", [tmplIds.slice(i, i + 300)], { fields: ["id", "default_code", "name"] }) as Row[];
+    for (const t of r) tmpl.set(t.id, t);
+  }
+  const prod = await productos([...new Set([...lineas.map((l) => m2o(l.product_id)), ...boms.map((b) => m2o(b.product_id))].filter(Boolean))] as number[]);
+  const porBom = new Map<number, Row[]>();
+  for (const l of lineas) {
+    const p = prod.get(m2o(l.product_id));
+    const k = m2o(l.bom_id); if (!porBom.has(k)) porBom.set(k, []);
+    porBom.get(k)!.push({ c: p?.default_code || null, n: p?.name || m2oName(l.product_id), q: Number(l.product_qty), u: m2oName(l.product_uom_id) });
+  }
+  return { ok: true, recetas: boms.map((b) => {
+    const t = tmpl.get(m2o(b.product_tmpl_id)); const v = b.product_id ? prod.get(m2o(b.product_id)) : null;
+    return { id: b.id, c: v?.default_code || t?.default_code || null, n: v?.name || t?.name, tipo: b.type, q: Number(b.product_qty), u: m2oName(b.product_uom_id), ref: b.code || null, variante: !!b.product_id, lineas: porBom.get(b.id) || [] };
+  }) };
+}

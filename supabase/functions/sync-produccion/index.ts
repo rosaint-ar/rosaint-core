@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { modoPlan, modoControl, modoConteoSync, modoEtiquetar, modoPostergar, modoEntregaHoy, usuarioValido } from "./plan.ts";
+import { modoPlan, modoControl, modoConteoSync, modoEtiquetar, modoPostergar, modoEntregaHoy, modoRecetasOdoo, usuarioValido } from "./plan.ts";
 
 const ODOO_URL = Deno.env.get("ODOO_URL")!;
 const ODOO_DB = Deno.env.get("ODOO_DB")!;
@@ -290,13 +290,14 @@ Deno.serve(async (req: Request) => {
     // Todos los modos piden sesión de Core. Las excepciones son lo que corre el cron: el control
     // y la foto de Odoo (plan), que se identifican con una clave propia (CONTROL_CRON_KEY) en vez de un usuario.
     const cronKey = Deno.env.get("CONTROL_CRON_KEY") || "";
-    const esCron = (modo === "control" || modo === "plan") && !!cronKey && req.headers.get("x-cron-key") === cronKey;
+    const esCron = (modo === "control" || modo === "plan" || modo === "recetas_odoo") && !!cronKey && req.headers.get("x-cron-key") === cronKey;
     const usuario = esCron ? null : await usuarioValido(req);
     if (!esCron && !usuario) return new Response(JSON.stringify({ ok: false, error: "No autorizado: iniciá sesión en Core" }), { headers: cors });
 
     // Programador de producción (ver plan.ts)
     if (modo === "plan") return new Response(JSON.stringify(await modoPlan()), { headers: cors });
     if (modo === "control") return new Response(JSON.stringify(await modoControl()), { headers: cors });
+    if (modo === "recetas_odoo") return new Response(JSON.stringify(await modoRecetasOdoo()), { headers: cors });
     if (modo === "etiquetar" || modo === "postergar" || modo === "entrega_hoy" || modo === "conteo_sync") {
       const r = modo === "etiquetar" ? await modoEtiquetar(body) : modo === "postergar" ? await modoPostergar(body, usuario!) : modo === "conteo_sync" ? await modoConteoSync(body) : await modoEntregaHoy(body, usuario!);
       return new Response(JSON.stringify(r), { headers: cors });
