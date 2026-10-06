@@ -163,6 +163,9 @@
     .grupo-head .n { font-weight: 600; font-size: 13.5px; }
     .grupo-head .c { font-size: 12px; color: var(--muted); }
     .grupo table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    /* misma grilla en todas las familias: con ancho automático cada tabla calculaba sus columnas y no quedaban alineadas */
+    .grupo table.grilla-precios { table-layout: fixed; min-width: 1000px; }
+    .grupo:has(table.grilla-precios) { overflow-x: auto; }
     .grupo th {
       text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
       color: var(--muted); padding: 8px 12px; background: var(--surface);
@@ -626,7 +629,8 @@ function renderDirGrid() {
   $('#dir-grid').innerHTML = grupos.map(g => `
     <div class="grupo">
       <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU${g.rows.length !== 1 ? 's' : ''}</div></div>
-      <table>
+      <table class="grilla-precios">
+        <colgroup><col style="width:76px"><col><col style="width:70px"><col style="width:88px"><col style="width:98px"><col style="width:80px"><col style="width:98px"><col style="width:80px"><col style="width:92px"><col style="width:92px"><col style="width:92px"></colgroup>
         <thead><tr>
           <th>Código</th><th>Nombre</th><th class="num">Tam.</th><th class="num">Costo</th>
           <th class="num col-l1">L1 c/IVA</th><th class="num col-l1">Rent L1</th>
@@ -816,7 +820,8 @@ function renderGrillaTN() {
   $('#tn-grid').innerHTML = grupos.map(g => `
     <div class="grupo">
       <div class="grupo-head"><div class="n">${esc(g.nombre)}</div><div class="c">${g.rows.length} SKU · ${esc(g.rows[0]?.medio_pago || '')}</div></div>
-      <table>
+      <table class="grilla-precios">
+        <colgroup><col style="width:76px"><col><col style="width:98px"><col style="width:98px"><col style="width:98px"><col style="width:96px"><col style="width:98px"><col style="width:96px"><col style="width:104px"></colgroup>
         <thead><tr>
           <th>Código</th><th>Nombre</th><th class="num">L1 c/IVA</th>
           <th class="num col-tn">Lista</th><th class="num col-tn">Transf.</th><th class="num">Rent Transf.</th>
