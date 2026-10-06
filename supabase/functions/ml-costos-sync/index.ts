@@ -85,14 +85,20 @@ async function tarifa(tk: string, precio: number, categoria: string, tipo: strin
 }
 
 // Precio exacto donde cambia el cargo fijo, entre `lo` y `hi`.
+// Si una consulta a ML falla se corta todo (antes un fallo se tomaba como "cambió el cargo" y podía
+// guardarse un corte falso, ej. $25.001). Si en todo el rango el cargo no cambia, no hay corte.
 async function corte(tk: string, lo: number, hi: number, categoria: string, tipo: string) {
   const base = await tarifa(tk, lo, categoria, tipo);
-  if (!base) return null;
+  if (!base) throw new Error(`ML no respondió la tarifa para $${lo}: no se cambió nada`);
+  const tope = await tarifa(tk, hi, categoria, tipo);
+  if (!tope) throw new Error(`ML no respondió la tarifa para $${hi}: no se cambió nada`);
+  if (tope.fijo === base.fijo) return null;
   let a = lo, b = hi;
   while (b - a > 1) {
     const m = Math.floor((a + b) / 2);
     const t = await tarifa(tk, m, categoria, tipo);
-    if (t && t.fijo === base.fijo) a = m; else b = m;
+    if (!t) throw new Error(`ML no respondió la tarifa para $${m}: no se cambió nada`);
+    if (t.fijo === base.fijo) a = m; else b = m;
   }
   return b;
 }
@@ -200,7 +206,9 @@ _servirConGuardia(async (req) => {
     const { data: pUmbral } = await sb.from("ml_parametros")
       .select("valor").eq("clave", "umbral_envio_gratis").single();
     registrar("Umbral de envío gratis", pUmbral?.valor, c3, "precio donde el cargo fijo pasa a $0");
-    if (aplicar && c3 && Number(pUmbral?.valor) !== c3) {
+    // el umbral solo se guarda si en ese precio el cargo fijo de verdad es $0
+    const enC3 = c3 ? await tarifa(tk, c3, categoria, "gold_special") : null;
+    if (aplicar && c3 && enC3 && enC3.fijo === 0 && Number(pUmbral?.valor) !== c3) {
       await sb.from("ml_parametros").update({ valor: c3, actualizado_en: new Date().toISOString() })
         .eq("clave", "umbral_envio_gratis");
     }

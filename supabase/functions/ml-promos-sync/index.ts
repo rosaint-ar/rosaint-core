@@ -49,7 +49,8 @@ async function traerItemsDePromo(promoId: string, tipo: string, headers: any): P
   for (let page = 0; page < 20; page++) {
     const url = `${ML_API}/seller-promotions/promotions/${promoId}/items?promotion_type=${encodeURIComponent(tipo)}&app_version=v2&limit=50&offset=${offset}`;
     const r = await fetch(url, { headers });
-    if (!r.ok) break;
+    // si falla una página se corta: con la lista a medias se borrarían productos que siguen en la promo
+    if (!r.ok) throw new Error(`items de ${promoId} página ${page + 1}: HTTP ${r.status} (se dejan los que estaban)`);
     const data = await r.json();
     const results: any[] = data?.results || [];
     for (const it of results) {
@@ -118,6 +119,8 @@ _servirConGuardia(async (req) => {
     if (!rc.ok) throw new Error(`seller-promotions/users HTTP ${rc.status}`);
     const campData = await rc.json();
     const campanias: any[] = campData?.results || [];
+    // si ML devolvió la lista incompleta, no se borra ninguna campaña "que ya no está"
+    const listaCompleta = (campData?.paging?.total ?? campanias.length) <= campanias.length;
 
     const idsVigentes: string[] = [];
     let itemsGuardados = 0;
@@ -141,8 +144,8 @@ _servirConGuardia(async (req) => {
       // 2) Productos de la campaña (best-effort)
       try {
         const mapa = await traerItemsDePromo(c.id, c.type, headers);
-        // Reemplazo limpio de los items de esta promo.
-        await supabase.from("ml_promo_items").delete().eq("promo_id", c.id);
+        // Primero se guardan los nuevos y DESPUÉS se sacan los que ya no están (si algo falla en el medio,
+        // la promo no queda vacía).
         if (mapa.size > 0) {
           const filas = Array.from(mapa.entries()).map(([item_id, v]) => ({
             promo_id: c.id,
@@ -151,10 +154,14 @@ _servirConGuardia(async (req) => {
             original_price: v.original_price,
             sincronizado_en: new Date().toISOString(),
           }));
-          const { error: eIt } = await supabase.from("ml_promo_items").insert(filas);
-          if (eIt) errores.push(`${c.id} items: ${eIt.message}`);
-          else itemsGuardados += filas.length;
+          const { error: eIt } = await supabase.from("ml_promo_items").upsert(filas, { onConflict: "promo_id,item_id" });
+          if (eIt) { errores.push(`${c.id} items: ${eIt.message}`); continue; }
+          itemsGuardados += filas.length;
         }
+        const vigentesIt = Array.from(mapa.keys());
+        let del = supabase.from("ml_promo_items").delete().eq("promo_id", c.id);
+        if (vigentesIt.length) del = del.not("item_id", "in", `(${vigentesIt.map((x) => `"${x}"`).join(",")})`);
+        await del;
       } catch (e) {
         errores.push(`${c.id} items: ${(e as Error).message}`);
       }
@@ -164,7 +171,7 @@ _servirConGuardia(async (req) => {
     let eliminadas = 0;
     const { data: existentes } = await supabase.from("ml_promos").select("id");
     const aBorrar = (existentes || []).map((p: any) => p.id).filter((id: string) => !idsVigentes.includes(id));
-    if (aBorrar.length > 0) {
+    if (aBorrar.length > 0 && listaCompleta) {
       await supabase.from("ml_promos").delete().in("id", aBorrar);
       eliminadas = aBorrar.length;
     }

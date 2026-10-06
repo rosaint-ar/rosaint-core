@@ -133,7 +133,8 @@ _servirConGuardia(async (req) => {
     const advertiserId = await obtenerAdvertiserId(headers, supabase);
     const base = `${ML_API}/marketplace/advertising/${SITE_ID}/advertisers/${advertiserId}/product_ads`;
 
-    const hoy = new Date();
+    // fecha de Argentina (UTC-3): a las 21 h del último día del mes todavía es este mes
+    const hoy = new Date(Date.now() - 3 * 3600 * 1000);
     const desdeMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
     const desde7 = new Date(hoy.getTime() - 7 * 24 * 60 * 60 * 1000);
     const periodo = primerDiaMes(hoy);
@@ -157,7 +158,8 @@ _servirConGuardia(async (req) => {
         const url = `${base}/ads/search?date_from=${fISO(dDesde)}&date_to=${fISO(dHasta)}`
           + `&limit=50&offset=${offset}&metrics=${METRICS}`;
         const r = await fetch(url, { headers: { ...headers, "Api-Version": "2" } });
-        if (!r.ok) { if (i === 0) throw new Error(`ads/search HTTP ${r.status}: ${(await r.text()).slice(0,150)}`); break; }
+        // si falla CUALQUIER página se corta: con datos parciales, los anuncios que faltan quedarían con gasto $0
+        if (!r.ok) throw new Error(`ads/search página ${i + 1} HTTP ${r.status}: ${(await r.text()).slice(0,150)} — no se guardó nada`);
         const d = await r.json();
         const res = d.results || [];
         out.push(...res);
