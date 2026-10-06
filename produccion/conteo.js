@@ -314,9 +314,13 @@
         diferencias: xs.map((l) => ({ codigo: l.codigo, nombre: l.nombre, unidad: unidad(l), esperado: esperadoDe(l), contado: Number(l.contado), diferencia: dif(l) })),
       };
       // guardar el esperado final de cada línea (queda como registro)
-      for (let i = 0; i < S.lineas.length; i += 150) {
-        await sb.from('inv_conteo_lineas').upsert(S.lineas.slice(i, i + 150).map((l) => ({ conteo_id: S.conteo.id, codigo: l.codigo, esperado: esperadoDe(l) })), { onConflict: 'conteo_id,codigo' });
-      }
+      // update (no upsert): si la pantalla tenía una lista vieja, no re-crea líneas que se hayan sacado del conteo
+      await sb.from('inv_conteo_lineas').select('codigo').eq('conteo_id', S.conteo.id).range(0, 1999).then(async ({ data }) => {
+        const vivas = new Set((data || []).map((r) => r.codigo));
+        S.lineas = S.lineas.filter((l) => vivas.has(l.codigo));
+        for (let i = 0; i < S.lineas.length; i += 20)
+          await Promise.all(S.lineas.slice(i, i + 20).map((l) => sb.from('inv_conteo_lineas').update({ esperado: esperadoDe(l) }).eq('conteo_id', S.conteo.id).eq('codigo', l.codigo)));
+      });
       const { error } = await sb.from('inv_conteos').update({ estado: 'cerrado', codigo, inicio: inicio.toISOString(), fin: ahora.toISOString(), cerrado_por: await usuario(), resumen }).eq('id', S.conteo.id);
       if (error) throw new Error(error.message);
       try { localStorage.removeItem(claveResp()); } catch { /* */ }
