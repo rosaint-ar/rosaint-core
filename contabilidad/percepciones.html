@@ -6,7 +6,7 @@
   <title>Percepciones · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     /* ---- Zona de drop del PDF ---- */
@@ -130,6 +130,8 @@
     .actions-row {
       display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;
     }
+    /* celular (auditoría 6-oct): nada se sale de la pantalla */
+    @media (max-width: 640px) { .totales .row .lbl, .totales .row .val { min-width: 0; } .totales .row { gap: 8px; } .group, .card { overflow-x: auto; } }
   </style>
 </head>
 <body data-page="percepciones" data-title="Reconocedor de percepciones" data-subtitle="Leé la factura PDF · mapea · agrupa · aplica en Odoo">
@@ -183,7 +185,7 @@ function norm(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]
 function parseImpuesto(name) {
   const n = name || '';
   if (/IVA/i.test(n) && !/IIBB/i.test(n)) {
-    return { tipo:'IVA', prov:null, res:null, alcance: /especial/i.test(n)?'especial':'general' };
+    return { tipo:'IVA', prov:null, res:null, alcance: /5319/.test(n) ? 'especial' : /2408/.test(n) ? 'general' : /especial/i.test(n) ? 'especial' : 'general' };
   }
   const m = n.match(/IIBB\s+(.+?)\s*[–-]\s*(.+)$/);
   if (m) {
@@ -294,14 +296,18 @@ async function extraerTextoPdf(arrayBuffer) {
 }
 
 // ─── Parseo de encabezado y líneas con monto ───
+// "1.234,56" / "1234,56" (formato argentino) · "1234.56" (punto decimal) · con "-" adelante si es negativo
+function parseImporte(t){
+  t = String(t || '').trim(); const neg = /^-/.test(t); t = t.replace(/^-\s*/, '');
+  let v = null;
+  if (/^(\d{1,3}(\.\d{3})+|\d+),\d{1,2}$/.test(t)) v = parseFloat(t.replace(/\./g, '').replace(',', '.'));
+  else if (/^\d+\.\d{1,2}$/.test(t)) v = parseFloat(t);
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t) || /^\d+$/.test(t)) v = parseFloat(t.replace(/\./g, ''));
+  return v == null || isNaN(v) ? null : (neg ? -v : v);
+}
 function parseMontoFinal(s){
-  let m = s.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/);
-  if(m) return parseFloat(m[1].replace(/\./g,'').replace(',','.'));
-  m = s.match(/(\d+\.\d{2})\s*$/);
-  if(m) return parseFloat(m[1]);
-  m = s.match(/(\d+),(\d{2})\s*$/);
-  if(m) return parseFloat(m[1]+'.'+m[2]);
-  return null;
+  const m = String(s || '').match(/(?:^|[^\d.,-])(-?\s?[\d.,]*\d)\s*$/);
+  return m ? parseImporte(m[1]) : null;
 }
 function detectarTipoComprobante(texto, lineas) {
   // Letra: A / B / C / E / M — buscar palabra suelta en las primeras 20 líneas
@@ -369,7 +375,7 @@ function parsearFactura(lineas) {
     }
     const m2 = l.match(/\btotal(?:\s+a\s+pagar)?\s*[:\-]?\s*\$?\s*([\d.,]+)\s*$/i);
     if (m2) {
-      const val = parseFloat(m2[1].replace(/\./g, '').replace(',', '.')) || parseFloat(m2[1]);
+      const val = parseImporte(m2[1]);
       if (!isNaN(val) && val > 0) { total = val; break; }
     }
   }
@@ -504,8 +510,7 @@ function esPercepcion(concepto) {
 // Busca impuesto Odoo que matchee: provincia + (resolución si la hay) + alcance
 function matchImpuesto(attr) {
   if (attr.tipo === 'IVA') {
-    return impuestosParseados.find(t => t.tipo==='IVA' && t.alcance===attr.alcance)
-        || impuestosParseados.find(t => t.tipo==='IVA' && t.alcance==='general') || null;
+    return impuestosParseados.find(t => t.tipo==='IVA' && t.alcance===attr.alcance) || null;
   }
   const cands = impuestosParseados.filter(t => t.tipo==='IIBB' && attr.prov && norm(t.prov)===norm(attr.prov));
   if (!cands.length) {
@@ -525,7 +530,7 @@ function matchImpuesto(attr) {
 function clasificarReglas(concepto) {
   const n = norm(concepto);
   if (/(PERC?\.?|PERCEP\w*|RET\.?)\s*\.?\s*(IVA|VALOR AGREGADO)|(IVA|VALOR AGREGADO)\s*[-.]?\s*(PERC|RET|RG)/.test(n) && !/IIBB|INGRESOS BRUTOS|ING\.? BRUTOS/.test(n)) {
-    return { tipo:'IVA', prov:null, res:null, alcance: /ESPECIAL/.test(n)?'especial':'general' };
+    return { tipo:'IVA', prov:null, res:null, alcance: /5319/.test(n) ? 'especial' : /2408/.test(n) ? 'general' : /ESPECIAL/.test(n) ? 'especial' : 'general' };
   }
   // Detectar jurisdicción usando el diccionario global de sinónimos.
   const provincias = [...new Set(impuestosParseados.filter(t=>t.prov).map(t=>t.prov))];
@@ -654,7 +659,7 @@ function renderPreview(fac, percLineas, grupos) {
     } else {
       chip = `<span class="tax-chip warn">⚠ No reconocida — asignar a mano</span>`;
     }
-    h += `<tr><td>${p.concepto}</td><td>${chip}</td><td class="num">${money(p.monto)}</td></tr>`;
+    h += `<tr><td>${esc(p.concepto)}</td><td>${chip}</td><td class="num">${money(p.monto)}</td></tr>`;
   });
   h += `</tbody></table>`;
 
@@ -667,7 +672,7 @@ function renderPreview(fac, percLineas, grupos) {
     h += `<div class="row"><span class="lbl">IVA:</span><span class="val" style="color:var(--hot);">no detectado</span></div>`;
   } else {
     (fac.ivas || []).forEach(v => {
-      h += `<div class="row"><span class="lbl">IVA ${v.alicuota}%:</span><span class="val">${money(v.monto)}</span></div>`;
+      h += `<div class="row"><span class="lbl">IVA ${Number(v.alicuota).toLocaleString("es-AR")}%:</span><span class="val">${money(v.monto)}</span></div>`;
     });
   }
   // Separador visual antes de percepciones
@@ -718,7 +723,7 @@ function renderPreview(fac, percLineas, grupos) {
     h += `<div class="alerta err"><b>Faltan crear ${faltantes.length} impuesto(s) en Odoo:</b><br>`;
     faltantes.forEach(p => {
       const fc = p.faltaCrear;
-      h += `· <b>Percepción IIBB ${fc.jurisdiccion} – ${fc.res?'RG '+fc.res:fc.alcance}</b> (de "${p.concepto}" = ${money(p.monto)}). No tenés ningún impuesto de esa provincia en tu sistema.<br>`;
+      h += `· <b>Percepción IIBB ${fc.jurisdiccion} – ${fc.res?'RG '+fc.res:fc.alcance}</b> (de "${esc(p.concepto)}" = ${money(p.monto)}). No tenés ningún impuesto de esa provincia en tu sistema.<br>`;
     });
     h += `Creala en Odoo y volvé a procesar.</div>`;
   }
@@ -729,7 +734,15 @@ function renderPreview(fac, percLineas, grupos) {
   window._gruposActuales = gruposArr.filter(g=>!g.sinMapeo);
   window._facActual = fac;
   // Ahora se puede aplicar aunque no haya percepciones (solo neto + IVA).
-  const puedeConfirmar = !!fac.cuitProv && !!fac.comprobante && !grupos['_SIN_MAPEO'] && !faltantes.length;
+  const alicuotas = new Set((fac.ivas || []).map(x => x.alicuota ?? x.pct ?? x.tasa));
+  const motivosNo = [];
+  if (!(fac.neto > 0)) motivosNo.push('no se pudo leer el neto');
+  if (!(fac.total > 0)) motivosNo.push('no se pudo leer el total');
+  if (!(fac.ivas || []).length && !['B', 'C'].includes(fac.tipoComp?.letra)) motivosNo.push('no se pudo leer el IVA');
+  if (alicuotas.size > 1) motivosNo.push('la factura tiene más de una alícuota de IVA (cargala a mano)');
+  if (fac.tipoComp?.tipo === 'NC') motivosNo.push('es una nota de crédito (todavía se cargan a mano)');
+  const puedeConfirmar = !!fac.cuitProv && !!fac.comprobante && !grupos['_SIN_MAPEO'] && !faltantes.length && !motivosNo.length;
+  if (motivosNo.length) h += `<div class="alerta">No se puede aplicar automáticamente: ${motivosNo.join(' · ')}.</div>`;
   const btnTxt = percLineas.length
     ? 'Buscar borrador en Odoo y aplicar'
     : 'Buscar borrador en Odoo y aplicar solo neto + IVA';
@@ -788,7 +801,7 @@ async function confirmarEnOdoo() {
     // 1 línea: aplicar directo
     await aplicarAOdoo(match.id, null);
   } catch (e) {
-    out.innerHTML = `<div class="alerta err">Error: ${e.message}</div>`;
+    out.innerHTML = `<div class="alerta err">Error: ${esc(e.message)}</div>`;
     btn.disabled = false;
   }
 }
@@ -971,6 +984,7 @@ async function aplicarAOdoo(moveId, lineasDistribucion) {
   }
   const payload = { modo: 'aplicar_percepciones', move_id: moveId, percepciones };
   if (iva_tax_id) payload.iva_tax_id = iva_tax_id;
+  else if (['B', 'C'].includes(fac.tipoComp?.letra)) payload.sin_iva = true; // factura sin IVA discriminado: el servidor lo exige explícito
   // Mandamos el total del comprobante: el backend valida que lo que quedó en Odoo cuadre.
   if (fac.total != null) payload.total_esperado = Math.round(fac.total*100)/100;
   if (lineasDistribucion) {

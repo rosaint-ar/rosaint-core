@@ -6,7 +6,7 @@
   <title>Contraste Percepciones · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
@@ -49,6 +49,8 @@
     .veredicto.ok { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
     .veredicto.mal { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
     .val-info { font-size: 12px; color: var(--muted); margin: 6px 2px 10px; }
+    /* celular (auditoría 6-oct): nada se sale de la pantalla */
+    @media (max-width: 640px) { .group, .cuadre { overflow-x: auto; } }
   </style>
 </head>
 <body data-page="percepcionesarca" data-title="Contraste de Percepciones" data-subtitle="Cruce Odoo ⇄ ARCA · archivo IMP_PER_RET de percepciones/retenciones">
@@ -78,6 +80,7 @@
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // ═══════════════════════════════════════════════════════════════════════════
 // Contraste de Percepciones · ARCA (IMP_PER_RET) ⇄ Odoo
 // Cruza por comprobante + régimen. Solo compara los regímenes presentes en el
@@ -205,7 +208,7 @@ function render() {
     h += `<div class="val-info">El comprobante no está cargado en Odoo, o no tiene la percepción. Cargalo/corregilo en Odoo.</div>`;
     h += `<table><thead><tr><th>Comprobante</th><th>Agente (CUIT)</th><th>Régimen</th><th class="num">Importe ARCA</th></tr></thead><tbody>`;
     r.faltan.forEach(a => { Object.keys(a.por).forEach(reg => {
-      h += `<tr class="warn"><td class="mono">${a.comprobante}</td><td>${a.agente}</td><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(a.por[reg])}</td></tr>`;
+      h += `<tr class="warn"><td class="mono">${esc(a.comprobante)}</td><td>${esc(a.agente)}</td><td>${esc(REG_LABEL[reg]||reg)}</td><td class="num">${money(a.por[reg])}</td></tr>`;
     });});
     h += `</tbody></table>`;
   }
@@ -216,7 +219,7 @@ function render() {
   else {
     h += `<table><thead><tr><th>Comprobante</th><th>Proveedor</th><th>Régimen</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Dif.</th></tr></thead><tbody>`;
     r.difieren.forEach(d => {
-      h += `<tr class="warn"><td class="mono">${d.comprobante}</td><td>${d.proveedor||''}</td><td>${REG_LABEL[d.regimen]||d.regimen}</td>
+      h += `<tr class="warn"><td class="mono">${esc(d.comprobante)}</td><td>${esc(d.proveedor||'')}</td><td>${esc(REG_LABEL[d.regimen]||d.regimen)}</td>
         <td class="num">${money(d.af)}</td><td class="num">${money(d.od)}</td><td class="num dif-mal">${money(d.af-d.od)}</td></tr>`;
     });
     h += `</tbody></table>`;
@@ -228,7 +231,7 @@ function render() {
     h += `<div class="val-info">El agente informó la percepción con una numeración propia, distinta a la del comprobante fiscal. Se encontró en Odoo por CUIT e importe exacto. Revisá que sea el comprobante correcto.</div>`;
     h += `<table><thead><tr><th>Nº en ARCA</th><th>Comprobante en Odoo</th><th>Proveedor</th><th>Régimen</th><th class="num">Importe</th></tr></thead><tbody>`;
     r.porCuit.forEach(p => { Object.keys(p.por).forEach(reg => {
-      h += `<tr><td class="mono">${p.arca}</td><td class="mono">${p.odoo}</td><td>${p.proveedor||''}</td><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(p.por[reg])}</td></tr>`;
+      h += `<tr><td class="mono">${p.arca}</td><td class="mono">${p.odoo}</td><td>${p.proveedor||''}</td><td>${esc(REG_LABEL[reg]||reg)}</td><td class="num">${money(p.por[reg])}</td></tr>`;
     });});
     h += `</tbody></table></div>`;
   }
@@ -245,15 +248,17 @@ function render() {
   r.regimenesEnArchivo.forEach(reg => {
     const a = sumArca[reg]||0, o = sumOdoo[reg]||0, dif = a-o; totA+=a; totO+=o;
     if (Math.abs(dif) >= 1) allOk = false;
-    filas += `<tr><td>${REG_LABEL[reg]||reg}</td><td class="num">${money(a)}</td><td class="num">${money(o)}</td><td class="num ${Math.abs(dif)<1?'dif-ok':'dif-mal'}">${money(dif)}</td></tr>`;
+    filas += `<tr><td>${esc(REG_LABEL[reg]||reg)}</td><td class="num">${money(a)}</td><td class="num">${money(o)}</td><td class="num ${Math.abs(dif)<1?'dif-ok':'dif-mal'}">${money(dif)}</td></tr>`;
   });
-  const okFinal = allOk && r.faltan.length === 0;
+  // "coinciden" solo si hay datos leídos, no falta nada y no quedan comprobantes con montos distintos
+  const okFinal = allOk && r.faltan.length === 0 && r.difieren.length === 0 && (arcaRows || []).length > 0;
   h += `<div class="group"><div class="cuadre"><h2>Cuadre de percepciones · ${r.periodo}</h2>
     <table><thead><tr><th>Régimen</th><th class="num">ARCA</th><th class="num">Odoo</th><th class="num">Diferencia</th></tr></thead><tbody>
     ${filas}
     <tr style="font-weight:700;"><td>Total</td><td class="num">${money(totA)}</td><td class="num">${money(totO)}</td><td class="num ${Math.abs(totA-totO)<1?'dif-ok':'dif-mal'}">${money(totA-totO)}</td></tr>
     </tbody></table>`;
   if (r.faltan.length) h += `<div class="veredicto mal">⚠ Faltan ${r.faltan.length} comprobante(s) en Odoo. Cargalos antes de dar por cerrado.</div>`;
+  else if (!(arcaRows || []).length) h += `<div class="veredicto mal">⚠ El archivo de ARCA no trajo percepciones reconocibles: revisá que sea el correcto.</div>`;
   else if (okFinal) h += `<div class="veredicto ok">✓ Las percepciones de Odoo coinciden con ARCA.</div>`;
   else h += `<div class="veredicto mal">⚠ Hay diferencias de montos. Revisá las filas en rojo y corregí en Odoo.</div>`;
   h += `<div class="val-info" style="padding:0 18px 14px;">Se comparan solo los regímenes presentes en el archivo. Las percepciones de IIBB por jurisdicción (que Odoo también tiene) no se contrastan acá: van en otro reporte de ARCA por provincia.</div>`;
@@ -261,6 +266,8 @@ function render() {
 
   $('results').innerHTML = h;
 }
+// el período arranca en el mes anterior (antes estaba fijo en el código)
+(() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); document.getElementById('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
 </script>
 </body>
 </html>

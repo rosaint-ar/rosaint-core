@@ -495,3 +495,5 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 /* Los códigos nunca se parten en dos renglones (ej. 10211-AD) */
 td.codigo, td.code, td.cod, td.sku, th.codigo, th.cod { white-space: nowrap; }
+/* Los títulos de columnas numéricas se alinean igual que sus números */
+th.num { text-align: right; }

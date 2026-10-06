@@ -72,7 +72,8 @@ _servirConGuardia(async (req: Request) => {
     const mailId = await execKw(uid, "mail.mail", "create", [vals]) as number;
     // leer como quedo guardado (diagnostico de encoding)
     const stored = await execKw(uid, "mail.mail", "read", [[mailId], ["subject", "body_html"]]) as Rec[];
-    if (diag) { return new Response(JSON.stringify({ ok: true, diag: true, mail_id: mailId, subject_guardado: stored[0]?.subject, body_guardado: String(stored[0]?.body_html || "").slice(0, 200) }), { headers: cors }); }
+    // diagnóstico: el mail de prueba se cancela enseguida (antes quedaba en la cola de Odoo y el cron lo mandaba)
+    if (diag) { try { await execKw(uid, "mail.mail", "write", [[mailId], { state: "cancel" }]); } catch (_) { /* */ } return new Response(JSON.stringify({ ok: true, diag: true, mail_id: mailId, subject_guardado: stored[0]?.subject, body_guardado: String(stored[0]?.body_html || "").slice(0, 200) }), { headers: cors }); }
     try { await execKw(uid, "mail.mail", "send", [[mailId]]); } catch (e) { /* */ }
     const est = await execKw(uid, "mail.mail", "read", [[mailId], ["state", "failure_reason"]]) as Rec[];
     return new Response(JSON.stringify({ ok: est[0]?.state === "sent", mail_id: mailId, estado: est[0]?.state, motivo_falla: est[0]?.failure_reason || null, adjuntos: attIds.length, subject_guardado: stored[0]?.subject }), { headers: cors });

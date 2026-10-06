@@ -6,7 +6,7 @@
   <title>Conciliador IVA · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     /* ---- Controles del panel superior ---- */
@@ -161,6 +161,8 @@
     .veredicto.mal { background: color-mix(in srgb, var(--hot) 12%, transparent); color: var(--hot); }
 
     .chk { width: 17px; height: 17px; cursor: pointer; accent-color: var(--ok); }
+    /* celular (auditoría 6-oct): nada se sale de la pantalla */
+    @media (max-width: 640px) { .group, .cuadre { overflow-x: auto; } }
   </style>
 </head>
 <body data-page="conciliador" data-title="Conciliador IVA Compras" data-subtitle="Cruce Odoo ⇄ ARCA · notas de crédito · cuadre para el libro">
@@ -222,10 +224,12 @@ async function cargarGraficoCredito() {
   try {
     const j = await fetch(FN_IVA_SERIE, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY }, body: JSON.stringify({ meses: 12 }) }).then(r => r.json());
     if (!j.ok) throw new Error(j.error || 'error');
-    const rows = (j.meses || []).filter(m => m.credito > 0);
+    // IVA de las facturas de compra (sin percepciones), que es lo que se compara con los comprobantes de ARCA
+    const credFact = (m) => m.credito_alicuotas != null ? m.credito_alicuotas : m.credito;
+    const rows = (j.meses || []).filter(m => credFact(m) > 0);
     if (!rows.length) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">Sin datos todavía</div>'; return; }
     const labels = rows.map(m => { const p = m.mes.split('-'); return M3C[(+p[1]) - 1] + "'" + p[0].slice(2); });
-    Charts.area($('cred-chart'), { labels, prefix: '$', fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series: [{ name: 'IVA crédito', values: rows.map(m => m.credito), color: 'var(--accent)', fill: true }] });
+    Charts.area($('cred-chart'), { labels, prefix: '$', fmt: v => '$' + Math.round(v).toLocaleString('es-AR'), series: [{ name: 'IVA crédito (facturas)', values: rows.map(credFact), color: 'var(--accent)', fill: true }] });
   } catch (e) { $('cred-chart').innerHTML = '<div class="muted" style="font-size:13px;padding:16px 4px;">No se pudo cargar la evolución</div>'; }
 }
 cargarGraficoCredito();
@@ -262,7 +266,8 @@ const HEADERS_ARCA = {
 
 // Códigos AFIP de Notas de Crédito: A (3), B (8), C (13), E (23),
 // M (53), Ticket (110/112), MiPyme FCE (203, 208, 213, 233 crédito).
-const CODIGOS_NC = new Set(['3', '8', '13', '23', '53', '110', '112', '203', '208', '213', '233']);
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const CODIGOS_NC = new Set(['3', '8', '13', '23', '53', '110', '112', '113', '114', '203', '208', '213', '233']);
 
 $('fileArca').addEventListener('change', (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -311,6 +316,7 @@ $('fileArca').addEventListener('change', (e) => {
       arcaRows = [];
       arcaDescartadas = [];
       let totalFilas = 0;
+      window._sinTC = 0; // comprobantes en moneda extranjera sin tipo de cambio (se cuentan abajo)
       for (let i = headerIdx + 1; i < raw.length; i++) {
         const r = raw[i];
         if (!r || r.every(v => v == null || String(v).trim() === '')) continue; // fila totalmente vacía
@@ -329,13 +335,16 @@ $('fileArca').addEventListener('change', (e) => {
         const tipoStr = (r[c.tipo] || '').toString().trim();
         // Detectar NC por texto o por código AFIP al inicio ("3 - Nota de Crédito A", "203 - NC MiPyme A")
         const codMatch = tipoStr.match(/^(\d{1,3})\b/);
-        const cod = codMatch ? codMatch[1] : null;
+        const cod = codMatch ? String(parseInt(codMatch[1], 10)) : null;
         const esNC = /cr[eé]dito/i.test(tipoStr) || (cod && CODIGOS_NC.has(cod));
         const signo = esNC ? -1 : 1;
         // Moneda extranjera: ARCA da montos en la moneda original + tipo de cambio.
         const monedaCode = c.moneda >= 0 ? (r[c.moneda] || '').toString().trim() : 'PES';
-        const tc = (c.tc >= 0 && +r[c.tc] > 0) ? +r[c.tc] : 1;
         const esExtranjera = monedaCode && !/^(pes|ars|\$)$/i.test(monedaCode);
+        const tcLeido = c.tc >= 0 ? parseFloat(String(r[c.tc]).replace(/\./g, '').replace(',', '.')) : NaN;
+        const tcNum = c.tc >= 0 && +r[c.tc] > 0 ? +r[c.tc] : tcLeido;
+        if (esExtranjera && !(tcNum > 0)) { window._sinTC = (window._sinTC || 0) + 1; }
+        const tc = tcNum > 0 ? tcNum : 1;
         const conv = esExtranjera ? tc : 1;
         // neto = gravado + no gravado + exento (Odoo los junta en base imponible;
         // ARCA los separa). El total sí incluye todo.
@@ -399,7 +408,7 @@ function renderPreExcel() {
       </tr></thead><tbody>
       ${arcaDescartadas.map(d => `<tr>
         <td class="mono">${d.fila}</td>
-        <td class="perc">${d.motivo}</td>
+        <td class="perc">${esc(d.motivo)}</td>
         <td style="font-size:11px;color:var(--muted);">${d.datos.map(x => x == null ? '—' : String(x).slice(0, 30)).join(' · ')}</td>
       </tr>`).join('')}
       </tbody></table>
@@ -413,8 +422,8 @@ function setStatus(dot, msg, isErr) {
   $('status').className = 'status-bar' + (isErr?' err':'');
 }
 const money = (n) => '$' + (n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-function claveArca(x){ return `${x.cuit}|${String(x.pv).padStart(5,'0')}-${String(x.num).padStart(8,'0')}`; }
-function claveOdoo(x){ return `${x.cuit}|${x.comprobante}`; }
+function claveArca(x){ return `${esc(x.cuit)}|${String(x.pv).padStart(5,'0')}-${String(x.num).padStart(8,'0')}`; }
+function claveOdoo(x){ return `${esc(x.cuit)}|${esc(x.comprobante)}`; }
 
 async function traerOdoo(periodo) {
   const r = await fetch(window.ODOO_FN_URL, {
@@ -445,14 +454,14 @@ $('btnConciliar').addEventListener('click', async () => {
   const odooLax = new Map();
   odoo.forEach(o => {
     const np = (o.comprobante.split('-')[1]||'').replace(/^0+/,'');
-    odooLax.set(`${o.cuit}|${np}`, o);
+    odooLax.set(`${esc(o.cuit)}|${np}`, o);
   });
 
   const faltan = [], casiMatch = [];
   arcaRows.forEach(a => {
     const k = claveArca(a);
     if (odooIdx.has(k)) return;
-    const lax = odooLax.get(`${a.cuit}|${String(a.num)}`);
+    const lax = odooLax.get(`${esc(a.cuit)}|${String(a.num)}`);
     if (lax) casiMatch.push({ arca:a, odoo:lax });
     else faltan.push(a);
   });
@@ -525,7 +534,7 @@ function render() {
       h += `<tr class="${a.esNC?'nc':''}">
         <td>${a.fecha}</td>
         <td>${a.denom}${a.esNC?'<span class="nc-tag">NC</span>':''}</td>
-        <td>${a.tipo}</td>
+        <td>${esc(a.tipo)}</td>
         <td class="mono">${String(a.pv).padStart(5,'0')}-${String(a.num).padStart(8,'0')}</td>
         <td class="num">${money(a.neto)}</td>
         <td class="num">${money(a.iva)}</td>
@@ -547,8 +556,8 @@ function render() {
     r.sobran.forEach((o,i) => {
       h += `<tr class="${o.es_nc?'nc':''}">
         <td><input type="checkbox" class="chk" data-sobra="${i}" ${r.validadas.has('s'+i)?'checked':''}></td>
-        <td>${o.proveedor}${o.es_nc?'<span class="nc-tag">NC</span>':''}</td>
-        <td class="mono">${o.comprobante}</td>
+        <td>${esc(o.proveedor)}${o.es_nc?'<span class="nc-tag">NC</span>':''}</td>
+        <td class="mono">${esc(o.comprobante)}</td>
         <td class="num">${money(o.total)}</td>
       </tr>`;
     });
@@ -668,6 +677,8 @@ function renderCuadre() {
   // El neto es informativo: difiere por clasificación (B/C, combustible) sin ser error.
   const ok = Math.abs(dif.iva) < tol && Math.abs(dif.total) < tol;
   const faltanCount = r.faltan.length + r.casiMatch.length;
+  const sobranSinRevisar = r.sobran.length - sobranValidadas.length;
+  const sinTC = window._sinTC || 0;
 
   const fila = (lbl, va, vo, vd) => `<tr>
     <td>${lbl}</td>
@@ -705,6 +716,10 @@ function renderCuadre() {
 
   if (faltanCount > 0) {
     h += `<div class="veredicto mal">⚠ Faltan cargar ${faltanCount} comprobante(s) en Odoo. El cuadre no cerrará hasta resolverlas.</div>`;
+  } else if (sinTC) {
+    h += `<div class="veredicto mal">⚠ Hay ${sinTC} comprobante(s) en moneda extranjera sin tipo de cambio en el archivo de ARCA: no se pueden comparar.</div>`;
+  } else if (sobranSinRevisar > 0) {
+    h += `<div class="veredicto mal">⚠ Hay ${sobranSinRevisar} comprobante(s) en Odoo que no están en ARCA y no marcaste como revisados. Revisalos antes de dar el libro por listo.</div>`;
   } else if (ok) {
     h += `<div class="veredicto ok">✓ Odoo y ARCA cuadran. El libro de IVA está listo para entregar al contador.</div>`;
   } else {
@@ -714,6 +729,8 @@ function renderCuadre() {
   h += `</div></div>`;
   $('cuadreBox').innerHTML = h;
 }
+// el período arranca en el mes anterior (antes estaba fijo en el código)
+(() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); document.getElementById('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
 </script>
 </body>
 </html>

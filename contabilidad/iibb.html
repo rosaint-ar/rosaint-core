@@ -6,7 +6,7 @@
   <title>IIBB por jurisdicción · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061904">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
@@ -85,6 +85,7 @@
 <script src="../shared/charts.js"></script>
 <script src="../shell/shell.js?v=202610061841"></script>
 <script>
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // ═══════════════════════════════════════════════════════════════════════════
 // IIBB · Ventas por jurisdicción
 // Llama a la edge function odoo-iibb-ventas, muestra el detalle por provincia
@@ -188,7 +189,7 @@ function render(d) {
       <th>Provincia</th><th class="num">Total imponible</th><th class="num">Total en moneda</th>
     </tr></thead><tbody>`;
   for (const p of netas.provincias) {
-    h += `<tr><td>${p.provincia}</td><td class="num">${money(p.imponible)}</td><td class="num">${money(p.total)}</td></tr>`;
+    h += `<tr><td>${esc(p.provincia)}</td><td class="num">${money(p.imponible)}</td><td class="num">${money(p.total)}</td></tr>`;
   }
   h += `<tr class="total"><td>TOTAL</td><td class="num">${money(netas.total_imponible)}</td><td class="num">${money(netas.total_con_iva)}</td></tr>`;
   h += `</tbody></table></div>`;

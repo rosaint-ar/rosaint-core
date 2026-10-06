@@ -211,8 +211,16 @@ _servirConGuardia(async(req:Request)=>{
       const totalEsperado = (body.total_esperado!=null) ? Number(body.total_esperado) : null;
       const dist = (body.lineas_distribucion as Array<{line_id:number;price_unit:number}>|undefined) || null;
 
-      const cab=await execKw(uid,"account.move","read",[[moveId]],{fields:["state","invoice_line_ids"]}) as Array<Record<string,unknown>>;
+      const cab=await execKw(uid,"account.move","read",[[moveId]],{fields:["state","invoice_line_ids","company_id","move_type","currency_id"]}) as Array<Record<string,unknown>>;
       if(cab[0]?.state!=="draft")return new Response(JSON.stringify({ok:false,error:"No es borrador"}),{headers:cors});
+      // Controles (auditoría 6-oct-2026): solo facturas de compra de VELAZQUEZ en pesos.
+      // Una NC o una factura en otra moneda se cargan a mano (el importe del PDF no se puede escribir tal cual).
+      if((cab[0]?.company_id as unknown[])?.[0]!==COMPANY_ID)return new Response(JSON.stringify({ok:false,error:"El comprobante no es de VELAZQUEZ"}),{headers:cors});
+      if(cab[0]?.move_type!=="in_invoice")return new Response(JSON.stringify({ok:false,error:"Solo facturas de compra (las notas de crédito se cargan a mano)"}),{headers:cors});
+      const mon=String((cab[0]?.currency_id as unknown[])?.[1]||"");
+      if(mon && mon!=="ARS")return new Response(JSON.stringify({ok:false,error:`La factura está en ${mon}: se carga a mano`}),{headers:cors});
+      // sin IVA indicado no se tocan los impuestos de las líneas (antes podía borrar el IVA del borrador)
+      if(ivaTaxId==null && !(body.sin_iva===true))return new Response(JSON.stringify({ok:false,error:"Falta el IVA de la factura: no se aplicó nada"}),{headers:cors});
       const invLineIds=(cab[0]?.invoice_line_ids as number[])||[];
       const invLines=await execKw(uid,"account.move.line","read",[invLineIds],{fields:["id","display_type","tax_ids","price_unit","quantity"]}) as Array<Record<string,unknown>>;
       const gastos=invLines.filter(l=>l.display_type==="product");

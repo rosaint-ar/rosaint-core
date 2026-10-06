@@ -57,29 +57,73 @@ _servirConGuardia(async (req: Request) => {
     const now = new Date();
     const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (meses - 1), 1));
     const desde = start.toISOString().slice(0, 10);
-    // lineas de impuesto (tax_line_id set) = IVA. Ventas vs compras por move_type.
-    async function serie(moveTypes: string[]) {
-      const lines = await ex(uid, "account.move.line", "search_read", [[
+    // Consulta (solo lectura): comprobantes de compra de un mes con su IVA, para cruzar contra el libro de ARCA
+    if (body.comprobantes_compra) {
+      const mes = String(body.comprobantes_compra); const [y, mm] = mes.split("-").map(Number);
+      const hasta = new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 10);
+      const movs = await ex(uid, "account.move", "search_read", [[["company_id", "=", C], ["state", "=", "posted"], ["move_type", "in", ["in_invoice", "in_refund"]], ["date", ">=", mes + "-01"], ["date", "<", hasta]]],
+        { fields: ["name", "move_type", "date", "invoice_date", "partner_id", "l10n_latam_document_type_id", "l10n_latam_document_number", "journal_id", "amount_tax", "amount_total", "currency_id", "l10n_latam_use_documents"], limit: 2000, context: ctx }) as Rec[];
+      const pids = [...new Set(movs.map((m) => (m.partner_id as unknown[])?.[0]).filter(Boolean))] as number[];
+      const ps = pids.length ? await ex(uid, "res.partner", "read", [pids], { fields: ["vat"], context: ctx }) as Rec[] : [];
+      const vat: Record<number, string> = {}; for (const p of ps) vat[p.id as number] = String(p.vat || "");
+      return new Response(JSON.stringify({ ok: true, comprobantes: movs.map((m) => ({ ...m, cuit: vat[(m.partner_id as unknown[])?.[0] as number] || "" })) }), { headers: cors });
+    }
+    // Solo IVA (auditoría 6-oct-2026). Antes se sumaba TODA línea de impuesto en valor absoluto: entraban las
+    // percepciones de Ingresos Brutos como si fueran crédito de IVA y las notas de crédito sumaban en vez de restar.
+    // Ahora: cada línea con su signo, y clasificada por el grupo de impuesto de Odoo (l10n_ar):
+    //   - IVA por alícuota (grupo con código de IVA de AFIP) → débito (ventas) / crédito (compras)
+    //   - percepción de IVA (pago a cuenta, también se descuenta del saldo) → aparte
+    //   - lo demás (IIBB, municipales, etc.) → no es IVA, solo se informa
+    async function lineas(moveTypes: string[]) {
+      return await ex(uid, "account.move.line", "search_read", [[
         ["tax_line_id", "!=", false],
         ["parent_state", "=", "posted"],
         ["company_id", "=", C],
         ["date", ">=", desde],
         ["move_id.move_type", "in", moveTypes],
-      ]], { fields: ["date", "balance"], limit: 20000, context: ctx }) as Rec[];
-      const m: Record<string, number> = {};
-      for (const l of lines) { const k = (l.date as string || "").slice(0, 7); if (!k) continue; m[k] = (m[k] || 0) + Math.abs((l.balance as number) || 0); }
-      return m;
+      ]], { fields: ["date", "balance", "tax_line_id"], limit: 20000, context: ctx }) as Rec[];
     }
-    const deb = await serie(["out_invoice", "out_refund"]);   // IVA debito (ventas)
-    const cred = await serie(["in_invoice", "in_refund"]);     // IVA credito (compras)
-    // armar los ultimos N meses en orden
+    const lv = await lineas(["out_invoice", "out_refund"]);
+    const lc = await lineas(["in_invoice", "in_refund"]);
+    const taxIds = [...new Set([...lv, ...lc].map((l) => (l.tax_line_id as unknown[])?.[0]).filter(Boolean))] as number[];
+    const taxes = taxIds.length ? await ex(uid, "account.tax", "read", [taxIds], { fields: ["name", "tax_group_id"], context: ctx }) as Rec[] : [];
+    const grupoIds = [...new Set(taxes.map((t) => (t.tax_group_id as unknown[])?.[0]).filter(Boolean))] as number[];
+    let grupos: Rec[] = [];
+    try { grupos = grupoIds.length ? await ex(uid, "account.tax.group", "read", [grupoIds], { fields: ["name", "l10n_ar_vat_afip_code", "l10n_ar_tribute_afip_code"], context: ctx }) as Rec[] : []; }
+    catch { grupos = grupoIds.length ? await ex(uid, "account.tax.group", "read", [grupoIds], { fields: ["name"], context: ctx }) as Rec[] : []; }
+    const grupoDe: Record<number, Rec> = {}; for (const g of grupos) grupoDe[g.id as number] = g;
+    const claseDe: Record<number, string> = {};
+    const nombreDe: Record<number, string> = {};
+    for (const t of taxes) {
+      const g = grupoDe[(t.tax_group_id as unknown[])?.[0] as number] || {};
+      const nom = String(t.name || "") + " " + String(g.name || "");
+      nombreDe[t.id as number] = String(t.name || "");
+      if (g.l10n_ar_vat_afip_code || (!("l10n_ar_vat_afip_code" in g) && /^IVA\s*\d/i.test(String(t.name)))) claseDe[t.id as number] = "iva";
+      else if (/percep[a-z]*\s.*\biva\b|\biva\b.*percep/i.test(nom) || String(g.l10n_ar_tribute_afip_code || "") === "06") claseDe[t.id as number] = "percepcion_iva";
+      else claseDe[t.id as number] = "otro";
+    }
+    const acum = (ls: Rec[], signo: number) => {
+      const m: Record<string, Record<string, number>> = {}; const det: Record<string, Record<string, number>> = {};
+      for (const l of ls) {
+        const k = String(l.date || "").slice(0, 7); if (!k) continue;
+        const id = (l.tax_line_id as unknown[])?.[0] as number; const cl = claseDe[id] || "otro";
+        const v = signo * Number(l.balance || 0);
+        (m[k] ||= {})[cl] = ((m[k] ||= {})[cl] || 0) + v;
+        (det[k] ||= {})[nombreDe[id] || String(id)] = ((det[k] ||= {})[nombreDe[id] || String(id)] || 0) + v;
+      }
+      return { m, det };
+    };
+    const V = acum(lv, -1);   // ventas: el IVA va al haber (balance negativo) → débito positivo; NC lo resta
+    const Cc = acum(lc, 1);   // compras: el IVA va al debe (positivo) → crédito positivo; NC lo resta
+    const r2 = (x: number) => Math.round((x || 0) * 100) / 100;
     const out = [] as Rec[];
     for (let i = 0; i < meses; i++) {
       const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
       const k = d.toISOString().slice(0, 7);
-      const dv = Math.round((deb[k] || 0) * 100) / 100;
-      const cv = Math.round((cred[k] || 0) * 100) / 100;
-      out.push({ mes: k, debito: dv, credito: cv, saldo: Math.round((dv - cv) * 100) / 100 });
+      const dv = r2(V.m[k]?.iva), cv = r2(Cc.m[k]?.iva), pv = r2(Cc.m[k]?.percepcion_iva);
+      out.push({ mes: k, debito: dv, credito: r2(cv + pv), credito_alicuotas: cv, percepciones_iva: pv,
+        otros_impuestos_compras: r2(Cc.m[k]?.otro), saldo: r2(dv - cv - pv),
+        ...(body.detalle ? { detalle_ventas: V.det[k] || {}, detalle_compras: Cc.det[k] || {} } : {}) });
     }
     return new Response(JSON.stringify({ ok: true, desde, meses: out }), { headers: cors });
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: cors, status: 200 }); }
