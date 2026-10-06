@@ -81,7 +81,7 @@
     return { lote, tanda, patrones, ultimaEntrega, entregasHechas };
   }
 
-  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [], entregas = [] }) {
+  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [], entregas = [], hoja = [] }) {
     const capU = Number(cfg.cap_u_dia), capKg = Number(cfg.cap_kg_dia);
     const umbral = Number(cfg.umbral_pedido_grande || 10);
     const diaAnterior = new Set(cfg.graneles_dia_anterior || []);
@@ -222,7 +222,39 @@
     // ---------- estado del día ----------
     const dispPT = {}; for (const s of snap.stock) dispPT[s.c] = Math.max(0, s.disp);
     const dispGr = {}; for (const s of snap.stock) if (s.c.startsWith('9')) dispGr[s.c] = Math.max(0, s.libre);
+    // ---------- lo que ya se hizo hoy según la Hoja de Producción de Core ----------
+    // Los chicos cargan en la hoja y después eso pasa a Odoo como orden de fabricación (coinciden
+    // día por día). Lo cargado hoy que TODAVÍA no está en Odoo se suma como hecho: sube el stock de
+    // lo producido y baja el granel que se usó. Lo que ya está en Odoo no se cuenta dos veces.
+    // Todo lo hecho hoy (esté o no en Odoo) ya ocupó capacidad del día.
+    const hoyIso = iso(hoy);
+    const enOdooHoy = {}; for (const m of snap.mo || []) if (m.f === hoyIso) enOdooHoy[m.c] = (enOdooHoy[m.c] || 0) + m.q;
+    const hechoPor = {};
+    for (const h of hoja) {
+      let q = Number(h.cantidad) || 0;
+      if (h.unidad === 'g' && q >= 5) q = q / 1000;   // cargado en gramos
+      const c = String(h.producto_sku || '').trim(); if (!c || q <= 0) continue;
+      const x = (hechoPor[c] = hechoPor[c] || { c, q: 0, tipo: h.tipo, cargas: [] });
+      x.q += q; x.cargas.push({ hora: String(h.hora || '').slice(0, 5), q, quien: h.iniciales || '' });
+    }
+    const hechoHoy = [];
     const carga = { u: 0, kg: 0 };
+    for (const x of Object.values(hechoPor)) {
+      const enOdoo = Math.min(x.q, enOdooHoy[x.c] || 0), falta = x.q - enOdoo;
+      const esGranel = x.c.startsWith('9');
+      if (esGranel) carga.kg += x.q; else carga.u += x.q;
+      if (falta > 1e-9) {
+        if (esGranel) {
+          dispGr[x.c] = (dispGr[x.c] || 0) + falta;
+          for (const sg of subDe[x.c] || []) dispGr[sg.c] = Math.max(0, (dispGr[sg.c] || 0) - falta * sg.pct / 100);
+        } else {
+          dispPT[x.c] = (dispPT[x.c] || 0) + falta;
+          const pr = presDe[x.c]; if (pr) dispGr[pr.g] = Math.max(0, (dispGr[pr.g] || 0) - falta * pr.kg);
+        }
+      }
+      hechoHoy.push({ c: x.c, q: r2(x.q), unidad: esGranel ? 'kg' : 'u', en_odoo: r2(enOdoo), cargas: x.cargas });
+    }
+    const hechoU = carga.u, hechoKg = carga.kg;
     const deStock = [], fraccionar = {}, elaborar = {}, preparar = {}, postergado = [];
 
     // ¿Qué hay que elaborar para tener `kg` de granel g? Devuelve el plan sin aplicarlo.
@@ -364,12 +396,13 @@
     for (const x of postergado) if (x.prio === '23d' || x.prio === 'sin') { postPorSo[x.so_id] = postPorSo[x.so_id] || { ...x, q: 0 }; postPorSo[x.so_id].q += x.q; }
     for (const x of Object.values(postPorSo)) if (x.q >= capU / 2)
       alertas.push({ tipo: 'sugerir_parcial', so_id: x.so_id, numero: x.numero, cliente: x.cliente, texto: `${x.numero} (${x.cliente}) tiene ${x.q} unidades que no entran en el día: si se entrega de a partes, conviene marcarlo 🔄 Entrega parcial.` });
-    if (carga.u > capU) alertas.push({ tipo: 'excede', texto: `Lo urgente suma ${carga.u} unidades a fraccionar y el tope del día es ${capU}.` });
-    if (carga.kg > capKg) alertas.push({ tipo: 'excede', texto: `Lo urgente pide elaborar ${r2(carga.kg)} kg y el tope del día es ${capKg} kg.` });
+    if (carga.u > capU) alertas.push({ tipo: 'excede', texto: `Entre lo hecho (${r2(hechoU)} u) y lo urgente se fraccionan ${r2(carga.u)} unidades y el tope del día es ${capU}.` });
+    if (carga.kg > capKg) alertas.push({ tipo: 'excede', texto: `Entre lo hecho (${r2(hechoKg)} kg) y lo urgente se elaboran ${r2(carga.kg)} kg y el tope del día es ${capKg} kg.` });
 
     return {
       fecha: iso(hoy), generado: snap.generado,
-      carga: { u: carga.u, cap_u: capU, kg: r2(carga.kg), cap_kg: capKg },
+      carga: { u: carga.u, cap_u: capU, kg: r2(carga.kg), cap_kg: capKg, hecho_u: r2(hechoU), hecho_kg: r2(hechoKg) },
+      hecho_hoy: hechoHoy.map((h) => ({ ...h, nombre: nombre[h.c] || h.c })),
       fraccionar: tareasFracc, elaborar: tareasElab, preparar: tareasPrep,
       de_stock: deStock.map(conNombre), postergado: postergado.map(conNombre), mas_adelante: masAdelante.map(conNombre),
       a_confirmar: aConfirmar.map((p) => ({ so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, estado: p.estado, monto: p.monto, lineas: p.lineas })),

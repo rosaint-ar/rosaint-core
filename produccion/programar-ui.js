@@ -6,7 +6,7 @@
   'use strict';
   const FN = window.SUPABASE_URL + '/functions/v1/sync-produccion';
   const P = window.PROGRAMADOR;
-  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], entregas: [], plan: null };
+  const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], entregas: [], hoja: [], plan: null };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const fmt = (n, d = 1) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: d });
@@ -42,6 +42,14 @@
     if (error) throw new Error('plan del día: ' + error.message);
     S.dia = data;
   }
+  // lo que los chicos van cargando hoy en la Hoja de Producción
+  async function cargarHoja() {
+    const { data, error } = await sb.from('prod_hoja_diaria').select('producto_sku,producto_nombre,cantidad,unidad,tipo,hora,iniciales').eq('fecha', isoLocal(new Date())).order('hora');
+    if (error) throw new Error('hoja de producción: ' + error.message);
+    const firma = JSON.stringify(data);
+    const cambio = firma !== S._hojaFirma; S._hojaFirma = firma; S.hoja = data;
+    return cambio;
+  }
   async function cargarEntregas() {
     const { data, error } = await sb.from('prod_plan_entregas').select('*').gte('fecha', isoLocal(new Date())).order('hora');
     if (error) throw new Error('entregas: ' + error.message);
@@ -71,13 +79,13 @@
 
   async function actualizarOdoo() {
     const b = $('btn-actualizar'); b.disabled = true; b.textContent = 'Leyendo Odoo…';
-    try { await fn('plan'); await cargarSnap(); calcular(); msg('Datos de Odoo actualizados'); }
+    try { await fn('plan'); await Promise.all([cargarSnap(), cargarHoja()]); calcular(); msg('Datos de Odoo y de la hoja actualizados'); }
     catch (e) { msg('No se pudo actualizar: ' + e.message, true); }
     finally { b.disabled = false; b.textContent = 'Actualizar desde Odoo'; }
   }
 
   function calcular() {
-    S.plan = P.programar({ snap: S.snap, cfg: S.cfg, parciales: S.parciales, clientes: S.clientes, postergados: S.postergados, entregas: S.entregas, pres: S.pres, subg: S.subg, hoy: new Date() });
+    S.plan = P.programar({ snap: S.snap, cfg: S.cfg, parciales: S.parciales, clientes: S.clientes, postergados: S.postergados, entregas: S.entregas, hoja: S.hoja, pres: S.pres, subg: S.subg, hoy: new Date() });
     pintar();
   }
 
@@ -105,11 +113,11 @@
     const barra = (v, cap) => { const pct = cap ? v / cap : 0; return `<div class="barra ${pct > 1 ? 'pasada' : pct >= 0.95 ? 'llena' : ''}"><i style="width:${Math.min(100, pct * 100)}%"></i></div>`; };
     const confirmados = S.snap.pedidos.filter((p) => !esPresupuesto(p));
     const fl = filasDelDia();
-    const uHoy = fl.filter((x) => x.tipo === 'fraccionar').reduce((a, x) => a + x.cantidad, 0);
-    const kgHoy = fl.filter((x) => x.tipo === 'elaborar').reduce((a, x) => a + x.cantidad, 0);
+    const uHoy = pl.carga.hecho_u + fl.filter((x) => x.tipo === 'fraccionar').reduce((a, x) => a + x.cantidad, 0);
+    const kgHoy = pl.carga.hecho_kg + fl.filter((x) => x.tipo === 'elaborar').reduce((a, x) => a + x.cantidad, 0);
     $('kpis').innerHTML = `
-      <div class="pg-kpi"><div class="k">Fraccionar hoy</div><div class="v">${fmt(uHoy, 0)} <small>/ ${fmt(pl.carga.cap_u, 0)} u</small></div>${barra(uHoy, pl.carga.cap_u)}</div>
-      <div class="pg-kpi"><div class="k">Elaborar hoy</div><div class="v">${fmt(kgHoy, 0)} <small>/ ${fmt(pl.carga.cap_kg, 0)} kg</small></div>${barra(kgHoy, pl.carga.cap_kg)}</div>
+      <div class="pg-kpi"><div class="k">Fraccionar hoy</div><div class="v">${fmt(uHoy, 0)} <small>/ ${fmt(pl.carga.cap_u, 0)} u</small></div>${barra(uHoy, pl.carga.cap_u)}<div class="sub">ya hecho ${fmt(pl.carga.hecho_u, 0)} · falta ${fmt(uHoy - pl.carga.hecho_u, 0)}</div></div>
+      <div class="pg-kpi"><div class="k">Elaborar hoy</div><div class="v">${fmt(kgHoy, 0)} <small>/ ${fmt(pl.carga.cap_kg, 0)} kg</small></div>${barra(kgHoy, pl.carga.cap_kg)}<div class="sub">ya hecho ${fmt(pl.carga.hecho_kg, 0)} · falta ${fmt(kgHoy - pl.carga.hecho_kg, 0)}</div></div>
       <div class="pg-kpi"><div class="k">Pedidos abiertos</div><div class="v">${confirmados.length}</div><div class="sub">${pl.a_confirmar.length} presupuestos a confirmar</div></div>
       <div class="pg-kpi"><div class="k">Avisos</div><div class="v" style="color:${pl.alertas.length ? 'var(--warn)' : 'var(--ok)'}">${pl.alertas.length}</div><div class="sub">${pl.postergados.length} cosas postergadas a mano</div></div>`;
     $('n-pedidos').textContent = confirmados.length;
@@ -181,6 +189,14 @@
     for (const fr of pl.fraccionar) for (const m of fr.motivos) if (m.so_id === so && m.entrega) add(fr.c, 'fracc', m.q);
     for (const d of pl.postergado) if (d.so_id === so && d.entrega) add(d.c, 'falta', d.q);
     return Object.values(por);
+  }
+  function bloqueHecho() {
+    const h = S.plan.hecho_hoy;
+    if (!h.length) return '';
+    const sinOdoo = h.filter((x) => x.q > x.en_odoo).length;
+    return `<div class="pg-bloque hecho"><header><h3>Ya hecho hoy</h3><span class="meta">Según la Hoja de Producción · ${fmt(S.plan.carga.hecho_kg, 0)} kg elaborados · ${fmt(S.plan.carga.hecho_u, 0)} u fraccionadas${sinOdoo ? ` · ${sinOdoo} todavía sin pasar a Odoo (ya se cuentan)` : ''}</span></header>
+      <table class="pg-tabla"><tbody>${h.map((x) => `<tr><td class="cod">${esc(x.c)}</td><td>${esc(x.nombre)}</td><td class="num"><b>${fmt(x.q)} ${x.unidad}</b></td>
+        <td class="muted">${x.cargas.map((c) => `${esc(c.hora)} ${esc(c.quien)}`).join(' · ')}</td><td class="muted">${x.q > x.en_odoo ? 'falta en Odoo' : 'en Odoo'}</td></tr>`).join('')}</tbody></table></div>`;
   }
   function bloqueEntregas() {
     const hoy = isoLocal(new Date());
@@ -297,7 +313,7 @@
 
     $('tab-hoy').innerHTML = `
       <div class="pg-nota">Orden de la fila: <b>Mercado Libre y 🟥 Hoy</b> → <b>🟧 1 día</b> → <b>la entrega que le toca</b> a clientes que se entregan de a partes → <b>🟨 2-3 días</b> → <b>🔄 cuota de los parciales</b> → <b>sin etiqueta</b> → <b>próximas entregas</b> → <b>stock</b> con el lugar que sobra. Lo urgente entra siempre, aunque pase el tope.</div>
-      ${bloqueEntregas()}${alertas}${barraHoja}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
+      ${bloqueEntregas()}${alertas}${barraHoja}${bloqueHecho()}${prep}${elab}${fracc}${deStock}${noEntraHtml}`;
   }
 
   function pintarPedidos() {
@@ -476,9 +492,10 @@
       footer { margin-top: 14px; display: flex; justify-content: space-between; font-size: 10.5px; color: #444; }
     </style></head><body>
       <header><div><div class="marca">ROSAINT</div><h1>Plan de producción</h1><div>${esc(fechaLarga.charAt(0).toUpperCase() + fechaLarga.slice(1))}</div></div>
-        <div class="der">Elaborar: <b>${fmt(de('elaborar').reduce((a, x) => a + x.cantidad, 0), 0)} kg</b><br>Fraccionar: <b>${fmt(de('fraccionar').reduce((a, x) => a + x.cantidad, 0), 0)} u</b><br>Impreso ${hoy.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div></header>
+        <div class="der">Falta elaborar: <b>${fmt(de('elaborar').reduce((a, x) => a + x.cantidad, 0), 0)} kg</b><br>Falta fraccionar: <b>${fmt(de('fraccionar').reduce((a, x) => a + x.cantidad, 0), 0)} u</b><br>Impreso ${hoy.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div></header>
       ${tabla('Entregas de hoy', '<th></th><th>Hora</th><th>Cliente</th><th>Qué se lleva</th>', es.map((e) => `<tr>${caja}<td><b>${esc(e.hora || '')}</b></td><td><b>${esc(e.cliente || '')}</b><div class="det">${esc(e.numero)}</div></td>
         <td>${(e.items || []).map((i) => `${esc(i.n || nombreDe(i.c))} × <b>${fmt(i.q, 0)}</b>`).join('<br>')}${e.nota ? `<div class="det">${esc(e.nota)}</div>` : ''}</td></tr>`).join(''))}
+      ${S.plan.hecho_hoy.length ? tabla('Ya hecho hoy (según la Hoja de Producción)', '<th>Producto</th><th class="num">Cantidad</th><th>Cargado</th>', S.plan.hecho_hoy.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> ${esc(x.nombre)}</td><td class="num">${fmt(x.q)} ${x.unidad}</td><td class="det">${x.cargas.map((c) => `${esc(c.hora)} ${esc(c.quien)}`).join(' · ')}</td></tr>`).join('')) : ''}
       ${tabla('Preparar hoy para mañana', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Hecho por</th>', de('preparar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> ${esc(x.nombre)}</td><td class="cant">${fmt(x.cantidad)} kg</td><td class="firma"></td></tr>`).join(''))}
       ${tabla('Elaborar', '<th></th><th>Granel</th><th class="num">Cantidad</th><th>Para</th><th>Hecho por</th>', de('elaborar').map((x) => `<tr>${caja}<td><span class="cod">${esc(x.codigo)}</span> <b>${esc(x.nombre)}</b>${x.x ? `<div class="det">lote habitual ${fmt(x.x.lote)} kg</div>` : ''}</td>
         <td class="cant">${fmt(x.cantidad)} kg</td><td class="det">${x.x ? x.x.para.map((c) => esc(nombreDe(c))).join(', ') : 'agregado a mano'}</td><td class="firma"></td></tr>`).join(''))}
@@ -589,11 +606,17 @@
   }
   for (const b of document.querySelectorAll('.pg-tab')) b.addEventListener('click', () => abrirTab(b.dataset.tab));
   $('btn-actualizar').addEventListener('click', actualizarOdoo);
+  setInterval(async () => {
+    if (!S.plan || document.hidden) return;
+    const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT')) return;
+    if (document.querySelector('dialog[open]')) return;
+    try { if (await cargarHoja()) { calcular(); msg('Se actualizó con lo nuevo cargado en la Hoja de Producción'); } } catch { /* */ }
+  }, 3 * 60000);
 
   (async function inicio() {
     try {
       try { const t = localStorage.getItem('programar.tab'); if (t) abrirTab(t); } catch { /* */ }
-      await Promise.all([cargarConfig(), cargarRecetas(), cargarDia(), cargarEntregas()]);
+      await Promise.all([cargarConfig(), cargarRecetas(), cargarDia(), cargarEntregas(), cargarHoja()]);
       const hay = await cargarSnap();
       if (!hay) { await actualizarOdoo(); return; }
       calcular();
