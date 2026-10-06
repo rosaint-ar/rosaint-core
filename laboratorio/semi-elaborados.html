@@ -6,7 +6,7 @@
   <title>Semi-elaborados · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
     .toolbar .search { flex: 1; min-width: 220px; }
@@ -148,7 +148,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // Semi-elaborados — items tipo=SE. Costo se calcula desde la fórmula (RPC calcular_costo_formula).
 let ITEMS = [], COSTOS = {};
@@ -285,6 +285,11 @@ async function eliminarItem() {
   if (!confirm('¿Eliminar este semi-elaborado? Si está usado en otra fórmula, la operación fallará.')) return;
   const btn = $('#miBtnDel'); btn.disabled = true;
   try {
+    // Antes de tocar nada: si el SE está en otra fórmula, no se puede borrar (antes se borraban sus
+    // fórmulas primero y recién después fallaba el ítem, perdiéndolas)
+    const { data: usos, error: eUso } = await sb.from('formula_componentes').select('formula_id').eq('codigo_componente', editando).limit(1);
+    if (eUso) throw eUso;
+    if (usos && usos.length) throw new Error('está usado como componente en otra fórmula');
     // Borrar fórmulas y componentes asociados
     const { data: formulas } = await sb.from('formulas').select('id').eq('codigo_granel', editando);
     const fIds = (formulas || []).map(f => f.id);

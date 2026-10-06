@@ -169,6 +169,9 @@ const FX = (() => {
       </div>`);
 
     box.querySelector('[data-m="guardar"]').addEventListener('click', async ev => {
+      // el botón se toma ANTES de cualquier await: después ev.currentTarget es null y fallaba sin guardar
+      const btn = ev.currentTarget;
+      if (btn.disabled) return;
       const titulo = box.querySelector('#fp-tit').value.trim();
       if (!titulo) { toast('Escribí qué pasa: es lo que se ve en la lista.', 'err'); box.querySelector('#fp-tit').focus(); return; }
       const estado = box.querySelector('#fp-est').value;
@@ -185,11 +188,11 @@ const FX = (() => {
       if (cerrado && !p.resuelta_en) Object.assign(datos, { resuelta_en: new Date().toISOString(), resuelta_por: email });
       if (!cerrado) Object.assign(datos, { resuelta_en: null, resuelta_por: null });
 
-      ev.currentTarget.disabled = true;
+      btn.disabled = true;
       let error;
       if (nuevo) ({ error } = await sb.from('fichas_pendientes').insert({ ...datos, tipo: 'duda', creado_por: email }));
       else ({ error } = await sb.from('fichas_pendientes').update(datos).eq('id', p.id));
-      if (error) { ev.currentTarget.disabled = false; toast('No se pudo guardar: ' + error.message, 'err'); return; }
+      if (error) { btn.disabled = false; toast('No se pudo guardar: ' + error.message, 'err'); return; }
       cerrar();
       toast(nuevo ? 'Duda anotada' : 'Guardado', 'ok');
       alCambiar && alCambiar();
@@ -239,12 +242,13 @@ const FX = (() => {
       r.addEventListener('change', () => { wrap.hidden = box.querySelector('input[name="fr-sig"]:checked').value !== 'por_corregir'; }));
 
     box.querySelector('[data-m="guardar"]').addEventListener('click', async ev => {
+      const btn = ev.currentTarget; // antes de cualquier await (después es null)
       const resolucion = box.querySelector('#fr-res').value.trim();
       const sig = box.querySelector('input[name="fr-sig"]:checked').value;
       const accion = box.querySelector('#fr-acc').value.trim();
       if (!resolucion) { toast('Contá qué se decidió: es lo que queda de registro.', 'err'); return; }
       if (sig === 'por_corregir' && !accion) { toast('Contá qué hay que corregir.', 'err'); return; }
-      ev.currentTarget.disabled = true;
+      btn.disabled = true;
       const ok = await actualizar(p.id, {
         resolucion,
         fuente_correcta: box.querySelector('#fr-fuente').value || null,
@@ -253,7 +257,7 @@ const FX = (() => {
         resuelta_por: await usuario(),
         resuelta_en: new Date().toISOString(),
       });
-      if (!ok) { ev.currentTarget.disabled = false; return; }
+      if (!ok) { btn.disabled = false; return; }
       cerrar();
       toast(sig === 'hecho' ? 'Resuelto' : 'Pasó a «Por corregir»', 'ok');
       alCambiar && alCambiar();

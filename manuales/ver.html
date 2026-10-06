@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manual · Rosaint CORE</title>
   <meta name="app-root" content="../">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <link rel="stylesheet" href="manuales.css">
   <style>
     .modal-fondo {
@@ -64,9 +64,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script src="../shared/markdown.js"></script>
-<script src="config.js"></script>
+<script src="config.js?v=202610061931"></script>
 <script>
 const { ESTADOS, areaDe, tipoDe } = window.MANUALES_CFG;
 const $ = (s) => document.querySelector(s);
@@ -87,7 +87,8 @@ function topbarTexto(titulo, sub, intento) {
     if ((intento || 0) < 25) requestAnimationFrame(() => topbarTexto(titulo, sub, (intento || 0) + 1));
     return;
   }
-  const t = cont.querySelector('span:not([class])');
+  // el título es el span suelto del topbar, no el de adentro del enlace "Volver"
+  const t = [...cont.querySelectorAll(':scope > span:not([class])')][0];
   if (t) t.textContent = titulo;
   const s = cont.querySelector('.sub');
   if (s) s.textContent = sub || '';

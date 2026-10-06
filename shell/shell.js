@@ -344,6 +344,8 @@ async function requireSession() {
 
 async function cerrarSesion() {
   if (typeof window.sb !== 'undefined') {
+    // el historial del Asistente puede tener datos de clientes: no se deja en el navegador al salir
+    try { Object.keys(localStorage).filter((k) => k.startsWith("rosaint-asistente-chat")).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* */ }
     await window.sb.auth.signOut();
   }
   const root = rootPath();

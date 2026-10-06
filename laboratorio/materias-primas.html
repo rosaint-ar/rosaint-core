@@ -6,7 +6,7 @@
   <title>Materias primas · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .status-bar {
       display: flex; gap: 24px; padding: 12px 18px; flex-wrap: wrap;
@@ -308,7 +308,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Materias primas — CRUD
@@ -677,8 +677,8 @@ async function eliminarItem() {
   if (!confirm('¿Eliminar esta MP? Si está usada en una fórmula, la operación fallará (la base rechaza el borrado por FK).')) return;
   const btn = $('#miBtnDel'); btn.disabled = true;
   try {
-    // Borrar precios primero (histórico), después el item
-    await sb.from('precios_items').delete().eq('codigo_item', editando);
+    // Solo el ítem: sus precios se borran solos (cascada). Si la MP está en una fórmula, la base rechaza
+    // el borrado y no se pierde nada (antes se borraban los precios primero y quedaban perdidos).
     const { error } = await sb.from('items').delete().eq('codigo', editando);
     if (error) throw error;
     cerrarItem();

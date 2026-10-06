@@ -33,6 +33,9 @@ async function rpc(service: string, method: string, args: unknown[]): Promise<un
   const j = await res.json(); if (j.error) throw new Error("Odoo: " + JSON.stringify(j.error?.data?.message || j.error)); return j.result;
 }
 async function usuarioValido(req: Request): Promise<boolean> {
+  // procesos con la clave interna (igual que el resto de las funciones de Core)
+  const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
+  if (interna && req.headers.get("x-cron-key") === interna) return true;
   const a = req.headers.get("Authorization") || "";
   if (!a.startsWith("Bearer ")) return false;
   const apikey = req.headers.get("apikey") || PUB;

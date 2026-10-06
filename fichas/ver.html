@@ -6,7 +6,7 @@
   <title>Ficha técnica · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <link rel="stylesheet" href="fichas.css">
 </head>
 <body data-page="fichas" data-title="Ficha técnica" data-subtitle="Contenido, INCI, datos técnicos y rótulo del producto">
@@ -26,8 +26,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
-<script src="fichas.js"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script src="fichas.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Ficha técnica de un producto (granel)
@@ -415,16 +415,17 @@ function abrirAprobar() {
     </div>`);
 
   box.querySelector('[data-m="aprobar"]').addEventListener('click', async ev => {
+    const btn = ev.currentTarget; // antes de cualquier await (después es null)
     const revision = box.querySelector('#fa-rev').value.trim();
     if (!revision) { FX.toast('Poné la revisión: es lo que identifica esta versión de la ficha.', 'err'); return; }
-    ev.currentTarget.disabled = true;
+    btn.disabled = true;
     const ahora = new Date().toISOString();
     const { error } = await sb.from('fichas').update({
       estado: 'aprobada', revision,
       aprobada_por: await FX.usuario(), aprobada_en: ahora,
       inci_aprobado: EST.inci_declarado, inci_aprobado_en: ahora,
     }).eq('codigo_granel', COD);
-    if (error) { ev.currentTarget.disabled = false; FX.toast('No se pudo aprobar: ' + error.message, 'err'); return; }
+    if (error) { btn.disabled = false; FX.toast('No se pudo aprobar: ' + error.message, 'err'); return; }
     FX.cerrar();
     await cargar();
     FX.toast('Ficha aprobada', 'ok');
@@ -483,7 +484,7 @@ function renderHoja() {
     .filter(Boolean).join('\n\n');
 
   $('#hoja').innerHTML = `
-    ${F.estado !== 'aprobada' ? '<div class="h-borrador">BORRADOR</div>' : ''}
+    ${F.estado !== 'aprobada' ? '<div class="h-borrador">BORRADOR</div>' : EST?.inci_desactualizado ? '<div class="h-borrador">DESACTUALIZADA — la fórmula cambió después de aprobar</div>' : ''}
     <header class="h-cab">
       <div class="h-marca"><img src="../shell/logo.svg" alt=""><div><b>ROSAINT</b><span>Cosmética profesional</span></div></div>
       <div class="h-doc"><b>Ficha técnica</b><span>${esc(F.revision || 'Sin aprobar')}</span><span>${new Date().toLocaleDateString('es-AR')}</span></div>

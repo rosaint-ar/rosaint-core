@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manuales · Rosaint CORE</title>
   <meta name="app-root" content="../">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <link rel="stylesheet" href="manuales.css">
 </head>
 <body data-page="manuales" data-title="Manuales" data-subtitle="Cómo se hace cada cosa en Rosaint">
@@ -58,8 +58,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
-<script src="config.js"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script src="config.js?v=202610061931"></script>
 <script>
 const { AREAS, ESTADOS, areaDe, tipoDe } = window.MANUALES_CFG;
 
@@ -90,7 +90,7 @@ async function cargar() {
       .select('id,codigo,titulo,area,tipo,resumen,tags,estado,responsable,vistas,actualizado_en')
       .order('actualizado_en', { ascending: false }),
     window.sb.from('manual_dudas')
-      .select('id,pregunta,area,quien,estado,nota,creado_en')
+      .select('id,pregunta,area,quien,estado,nota,creado_en,origen')
       .order('creado_en', { ascending: false }),
   ]);
   if (e1) { console.error(e1); $('#resultados').innerHTML = '<div class="msg msg--err">No se pudieron cargar los manuales: ' + esc(e1.message) + '</div>'; return; }
@@ -276,18 +276,6 @@ async function agregarDuda() {
   await cargar();
 }
 
-// ---- Botón "Nuevo manual" en el topbar ---------------------------------
-function botonNuevo() {
-  const host = document.querySelector('.app-topbar') || document.querySelector('#app-content');
-  const b = document.createElement('a');
-  b.className = 'btn primary no-print';
-  b.href = 'editar.html?nuevo=1';
-  b.textContent = '+ Nuevo manual';
-  b.style.marginLeft = 'auto';
-  if (host && host.classList.contains('app-topbar')) host.appendChild(b);
-  else document.querySelector('.buscador').insertAdjacentElement('beforebegin', b);
-}
-
 // ---- Arranque ----------------------------------------------------------
 $('#duda-area').innerHTML = '<option value="">Área…</option>' +
   AREAS.map((a) => '<option value="' + a.key + '">' + a.ico + ' ' + a.nom + '</option>').join('');
@@ -301,8 +289,7 @@ $('#ver-resueltas').addEventListener('click', () => {
 });
 
 (async () => {
-  // Espera a que el shell monte el topbar antes de colgarle el botón.
-  setTimeout(botonNuevo, 300);
+  // (el botón "Nuevo manual" ya está en la página; antes se agregaba un segundo igual)
   await cargar();
   $('#q').focus();
 })();

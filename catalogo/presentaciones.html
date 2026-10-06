@@ -6,7 +6,7 @@
   <title>Presentaciones · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
     .toolbar .search { flex: 1; min-width: 220px; }
@@ -227,7 +227,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Presentaciones — CRUD
@@ -567,11 +567,11 @@ async function eliminar() {
 
   const btn = $('#mpBtnDel'); btn.disabled = true;
   try {
-    // Borrar item_canales primero (más seguro)
-    await sb.from('item_canales').delete().eq('codigo_item', sku);
-    // Borrar presentación
-    const { error: eP } = await sb.from('presentaciones').delete().eq('codigo_sku', sku);
-    if (eP) throw new Error(eP.message);
+    // Antes de tocar nada: si está en un pack o combo no se borra. Después se borra solo el ítem:
+    // presentación, canales y precios se van en cascada, y si la base rechaza no queda nada a medias.
+    const { data: enPacks, error: eUso } = await sb.from('pack_componentes').select('codigo_pack').eq('codigo_sku', sku).limit(1);
+    if (eUso) throw new Error(eUso.message);
+    if (enPacks && enPacks.length) throw new Error('está dentro del pack/combo ' + enPacks[0].codigo_pack);
     // Borrar item
     const { error: eI } = await sb.from('items').delete().eq('codigo', sku);
     if (eI) throw new Error('El SKU está referenciado en otra tabla (precios, packs, etc.). ' + eI.message);

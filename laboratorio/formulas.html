@@ -6,7 +6,7 @@
   <title>Editor de fórmula · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     /* ---- Utilidades ---- */
     .hidden { display: none !important; }
@@ -733,7 +733,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shared/charts.js"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Editor de fórmula — cliente Supabase compartido
@@ -1117,7 +1117,7 @@ function fpRow(f, maxKg) {
     : (esSE ? `<span class="fp-badge">base</span>` : '');
   return `<div class="fp-row" onclick="abrirFormula('${f.codigo}')">
       <span class="fp-ico" style="color:${meta.color}">${meta.ico}</span>
-      <span class="fp-body"><div class="fp-name">${f.nombre}</div><div class="fp-desc">${desc}</div></span>
+      <span class="fp-body"><div class="fp-name">${escH(f.nombre)}</div><div class="fp-desc">${desc}</div></span>
       <span class="fp-meta">
         ${bar}
         <span class="fp-cost${hi ? ' hi' : ''}"><div class="v">${fpMoney(costo)}</div><div class="u">por kg</div></span>
@@ -1476,8 +1476,10 @@ function recalcularComposicion() {
   state.sumaPct = sumaPct;
   state.costoKgTotal = costoTotal;
 
+  // componentes con % pero sin costo (el agua 20000 no tiene costo y está bien): el total no es completo
+  state.costoFaltante = state.componentes.filter(c => c.pct > 0 && c.costoKg == null && c.codigo !== '20000').map(c => c.codigo);
   document.getElementById('f-costo-kg').textContent =
-    state.costoKgTotal ? fmt.ars(state.costoKgTotal) + ' / Kg' : '—';
+    state.costoKgTotal ? fmt.ars(state.costoKgTotal) + ' / Kg' + (state.costoFaltante.length ? ' (incompleto: falta el costo de ' + state.costoFaltante.join(', ') + ')' : '') : '—';
 }
 
 // ─── Drag & drop reordenar componentes ───
@@ -1532,7 +1534,7 @@ function renderComposicion() {
         ondragend="dragComponenteEnd(event)"
         class="${c.completa ? 'fila-completa' : ''}">
       <td class="codigo"><span class="drag-asa" title="Arrastrá para reordenar">⠿</span>${c.codigo}</td>
-      <td>${c.nombre} <span class="badge ${c.tipo === 'MP' ? 'ok' : 'warn'}" style="margin-left:6px">${c.tipo}</span>${c.completa ? ' <span class="badge info" style="margin-left:4px" title="Completa automáticamente hasta 100%">↑100%</span>' : ''}</td>
+      <td>${escH(c.nombre)} <span class="badge ${c.tipo === 'MP' ? 'ok' : 'warn'}" style="margin-left:6px">${c.tipo}</span>${c.completa ? ' <span class="badge info" style="margin-left:4px" title="Completa automáticamente hasta 100%">↑100%</span>' : ''}</td>
       <td class="num">
         <input class="cell" type="number" step="0.0001" value="${c.pct}"
                ${c.completa ? 'readonly title="Se calcula solo para completar hasta 100%"' : ''}
@@ -1594,6 +1596,8 @@ function refrescarDatalistComponentes() {
     .join('');
 }
 
+// texto de la base dentro de HTML: siempre escapado (nombres/INCI con < > & o comillas)
+function escH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 function escapeAttr(s) {
   return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -1683,14 +1687,22 @@ async function descartarCambiosComposicion() {
   toast('Cambios descartados');
 }
 
+let guardandoComposicion = false;
 async function guardarComposicion() {
+  if (guardandoComposicion) return; // doble clic: un solo guardado
+  // porcentajes válidos: números, no negativos (un -10% y un 110% sumaban 100 y pasaban)
+  const malo = state.componentes.find(c => !(Number.isFinite(Number(c.pct)) && Number(c.pct) >= 0));
+  if (malo) { toast('El % de ' + (malo.codigo || 'un componente') + ' no es válido (tiene que ser 0 o más).', 'error'); return; }
   if (Math.abs(state.sumaPct - 100) > 0.01) {
-    if (!confirm('La suma de % es ' + state.sumaPct.toFixed(2) + '%, no 100%. ¿Guardar igual?')) return;
+    if (!confirm('La suma de % es ' + state.sumaPct.toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '%, no 100%. ¿Guardar igual?')) return;
   }
+  guardandoComposicion = true;
   try {
     const formulaId = await asegurarFormula();
-    const { error: delErr } = await sb.from('formula_componentes').delete().eq('formula_id', formulaId);
-    if (delErr) throw delErr;
+    // Primero se guardan los componentes nuevos y DESPUÉS se borran los viejos: si algo falla en el
+    // medio, la fórmula no queda vacía (antes se borraba todo y recién después se insertaba).
+    const { data: viejos, error: leerErr } = await sb.from('formula_componentes').select('id').eq('formula_id', formulaId);
+    if (leerErr) throw leerErr;
 
     const rows = state.componentes.map((c, i) => ({
       formula_id: formulaId,
@@ -1702,6 +1714,11 @@ async function guardarComposicion() {
 
     const { error: insErr } = await sb.from('formula_componentes').insert(rows);
     if (insErr) throw insErr;
+    const idsViejos = (viejos || []).map(v => v.id);
+    if (idsViejos.length) {
+      const { error: delErr } = await sb.from('formula_componentes').delete().in('id', idsViejos);
+      if (delErr) throw new Error('Se guardó la composición nueva pero no se pudo borrar la anterior (quedó duplicada): ' + delErr.message);
+    }
 
     state.composicionSucia = false;
     document.getElementById('btn-guardar-composicion').disabled = true;
@@ -1727,6 +1744,8 @@ async function guardarComposicion() {
     await cargarComponentes();
   } catch (err) {
     toast('Error al guardar: ' + err.message, 'error');
+  } finally {
+    guardandoComposicion = false;
   }
 }
 
@@ -1942,7 +1961,7 @@ function renderPrecios() {
     return `
       <tr data-sku="${p.codigo_sku}">
         <td class="codigo">${p.codigo_sku}</td>
-        <td>${p.nombre}
+        <td>${escH(p.nombre)}
           <button class="btn ghost btn-sm" style="padding:1px 6px; font-size:12px;"
                   title="Duplicar esta presentación (para éste u otro producto)"
                   onclick="duplicarPresentacion('${p.codigo_sku}')">⧉</button>
@@ -2176,7 +2195,7 @@ function renderDesgloseGranel(sku) {
     const aporteSku = costoMPporKgGranel * tamañoKg;
     html += `
       <tr>
-        <td style="padding:3px 8px;">${c.nombre}</td>
+        <td style="padding:3px 8px;">${escH(c.nombre)}</td>
         <td style="padding:3px 8px; text-align:right; color:var(--muted);">${(c.pct ?? 0).toFixed(1)}%</td>
         <td style="padding:3px 8px; text-align:right; color:var(--muted);">${fmt.num2(costoMPporKgGranel)}</td>
         <td style="padding:3px 8px; text-align:right;">${fmt.num2(aporteSku)}</td>
@@ -2375,7 +2394,7 @@ function renderPanelRelaciones() {
     const derivados = listarDescendientes(skuAncla);
     return `
       <div class="panel-relaciones" data-ancla="${skuAncla}">
-        <h3>⚓ ${skuAncla} · ${nombre} <span style="font-size:11px; font-weight:400; color:var(--muted)">es un ancla maestra</span></h3>
+        <h3>⚓ ${escH(skuAncla)} · ${escH(nombre)} <span style="font-size:11px; font-weight:400; color:var(--muted)">es un ancla maestra</span></h3>
         <div class="subtitle">
           ${derivados.length} SKUs derivan de este precio.
           Al cambiar L1 c/IVA y aplicar, se recalculan automáticamente (salvo los desvinculados).
@@ -2617,6 +2636,7 @@ async function guardarPrecios() {
       ? `Guardado: ${rows.length} precio(s) y ${skusPres.length} presentación(es)`
       : `Precios guardados (${rows.length} filas)`;
     toast(msg, 'success');
+    await cargarCachePreciosL1(); // la memoria de precios de anclas queda igual a lo guardado
   } catch (err) {
     toast('Error al guardar: ' + err.message, 'error');
   }
@@ -2904,7 +2924,16 @@ async function guardarNuevaPresentacion() {
       };
       // Propagar desde el ancla raíz para calcular el precio del SKU nuevo
       const raiz = rootAncla(origen);
-      const precioRaiz = raiz != null ? state.preciosAnclasCache[raiz] : null;
+      // el precio del ancla se lee de la base en este momento (el guardado en memoria podía ser viejo
+      // y re-propagaba a toda la familia un precio anterior)
+      let precioRaiz = null;
+      if (raiz != null && state.listas.publico) {
+        const { data: pr, error: ePrecio } = await sb.from('items_lista_precio').select('precio_iva_incl')
+          .eq('lista_id', state.listas.publico.id).eq('codigo_vendible', raiz).maybeSingle();
+        if (ePrecio) throw new Error('No se pudo leer el precio del ancla: ' + ePrecio.message);
+        precioRaiz = pr && pr.precio_iva_incl != null ? Number(pr.precio_iva_incl) : null;
+        state.preciosAnclasCache[raiz] = precioRaiz;
+      }
       if (raiz != null && precioRaiz != null && state.listas.publico) {
         const { error: ePr } = await sb.rpc('propagar_precio_ancla', {
           p_sku_ancla: raiz, p_precio_iva_incl: precioRaiz, p_lista_id: state.listas.publico.id,

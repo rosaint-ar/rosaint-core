@@ -6,7 +6,7 @@
   <title>Combos · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .toolbar {
       display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
@@ -207,7 +207,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Combos — CRUD
@@ -377,8 +377,11 @@ function recalcularCosto() {
   const det = [];
   filas.forEach(f => {
     const sku = codigoDeInput(f.querySelector('.comp-sku').value);
-    const cant = parseInt(f.querySelector('.comp-cant').value, 10) || 1;
+    const crudo = f.querySelector('.comp-cant').value.trim();
+    const cant = Number(crudo);
     if (!sku) return;
+    // cantidad entera y positiva (antes 0 o 1,9 pasaban como 1 sin avisar)
+    if (!Number.isInteger(cant) || cant < 1) { invalidos.push(texto + ' (cantidad ' + (crudo || 'vacía') + ')'); return; }
     const c = COSTOS_SKU[sku];
     if (c != null) { total += c * cant; det.push(`${cant}×${fmtARS(c)}`); }
   });
@@ -453,7 +456,7 @@ async function guardar() {
     comps.push({ codigo_sku: sku, cantidad: cant });
   });
 
-  if (invalidos.length) { toast('SKU no reconocido: ' + invalidos.join(', '), 'err'); return; }
+  if (invalidos.length) { toast('Revisá: ' + invalidos.join(', '), 'err'); return; }
   if (comps.length < 2) { toast('Un combo necesita al menos 2 productos válidos.', 'err'); return; }
 
   const canalesMarcados = { odoo: true };
@@ -475,11 +478,18 @@ async function guardar() {
       if (error) throw new Error('Item: ' + error.message);
     }
 
-    await sb.from('pack_componentes').delete().eq('codigo_pack', codigo);
-    const { error: eComp } = await sb.from('pack_componentes').insert(
-      comps.map(c => ({ codigo_pack: codigo, codigo_sku: c.codigo_sku, cantidad: c.cantidad }))
+    // Primero se guardan los componentes nuevos (o se actualiza la cantidad) y después se sacan los que ya
+    // no van: si algo falla en el medio, el combo no queda vacío (antes se borraba todo primero).
+    const { error: eComp } = await sb.from('pack_componentes').upsert(
+      comps.map(c => ({ codigo_pack: codigo, codigo_sku: c.codigo_sku, cantidad: c.cantidad })),
+      { onConflict: 'codigo_pack,codigo_sku' }
     );
     if (eComp) throw new Error('Componentes: ' + eComp.message);
+    const quedan = comps.map(c => c.codigo_sku);
+    let qSacar = sb.from('pack_componentes').delete().eq('codigo_pack', codigo);
+    if (quedan.length) qSacar = qSacar.not('codigo_sku', 'in', '(' + quedan.map(x => '"' + x + '"').join(',') + ')');
+    const { error: eSacar } = await qSacar;
+    if (eSacar) throw new Error('Componentes viejos: ' + eSacar.message);
 
     for (const [canal, activo] of Object.entries(canalesMarcados)) {
       const { error: eC } = await sb.from('item_canales').upsert({

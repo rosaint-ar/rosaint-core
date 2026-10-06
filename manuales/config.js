@@ -4,6 +4,9 @@
    Para sumar un área nueva: agregá una entrada a AREAS y listo.
    ========================================================================= */
 
+// Todo va dentro de una función: si las constantes quedaban globales, chocaban con las que cada pantalla
+// declara al leer MANUALES_CFG ("Identifier AREAS has already been declared") y Manuales no cargaba.
+(function () {
 const AREAS = [
   { key: 'produccion',     nom: 'Producción',            ico: '🏭', desc: 'Fabricación, fraccionado, envasado y control de la hoja diaria' },
   { key: 'laboratorio',    nom: 'Laboratorio',           ico: '⚗️', desc: 'Fórmulas, materias primas, desarrollos y semielaborados' },
@@ -34,3 +37,4 @@ const areaDe = (k) => AREAS.find((a) => a.key === k) || { key: k, nom: k || '—
 const tipoDe = (k) => TIPOS.find((t) => t.key === k) || { key: k, nom: k || '—', desc: '' };
 
 window.MANUALES_CFG = { AREAS, TIPOS, ESTADOS, areaDe, tipoDe };
+})();

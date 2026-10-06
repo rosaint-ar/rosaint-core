@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Rosaint">
   <link rel="apple-touch-icon" href="shell/favicon.png">
-  <link rel="stylesheet" href="shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="shell/shell.css?v=202610061943">
   <style>
     /* Hero */
     .hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-bottom: 22px; flex-wrap: wrap; }
@@ -212,7 +212,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/supabase.js?v=202610061904"></script>
 <script src="shared/charts.js"></script>
-<script src="shell/shell.js?v=202610061841"></script>
+<script src="shell/shell.js?v=202610061943"></script>
 <script src="produccion/programador.js?v=202610061443"></script>
 <script src="produccion/plan-del-dia.js?v=202610061443"></script>
 <script>
@@ -241,7 +241,8 @@ document.getElementById('hoy').textContent = fmtFechaLarga(new Date());
 const HOY = new Date().toLocaleDateString('en-CA');
 
 async function cargarTodo(manual) {
-  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  _planP = null; // cada actualización calcula el plan de nuevo
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
   await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion()]);
   firstLoad = false;
 }
@@ -255,7 +256,7 @@ async function cargarUSD() {
   const delta = prev ? Number(hoy.venta_oficial) - Number(prev.venta_oficial) : 0;
   const pct = prev ? (delta / Number(prev.venta_oficial)) * 100 : 0;
   const el = document.getElementById('kpi-usd-delta');
-  el.textContent = (delta >= 0 ? '▲ +' : '▼ ') + fmt(delta, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%) · ' + tiempoRelativo(dias);
+  el.textContent = (delta >= 0 ? '▲ +' : '▼ ') + fmt(delta, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' (' + (pct >= 0 ? '+' : '') + pct.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%) · ' + tiempoRelativo(dias);
   el.className = 'd ' + (delta > 0 ? 'up' : delta < 0 ? 'down' : '');
   if (window.Charts) Charts.sparkline(document.getElementById('spark-usd'), data.map(d => Number(d.venta_oficial)).reverse(), { color: 'var(--cyan)' });
 }
@@ -337,10 +338,13 @@ async function cargarGraficoProduccion() {
       ],
       fmt: v => Math.round(v).toLocaleString('es-AR')
     });
-    const first = j.meses[0], last = j.meses[j.meses.length - 1];
-    if (first && last && first.kg > 0) {
-      const pct = Math.round((last.kg - first.kg) / first.kg * 100);
-      document.getElementById('chart-trend').textContent = (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '% vs ' + labels[0];
+    // se compara el último mes CERRADO contra el anterior (el mes en curso va por la mitad y siempre "baja")
+    const mesActual = new Date().toLocaleDateString('en-CA').slice(0, 7);
+    let iu = j.meses.length - 1; if (j.meses[iu] && j.meses[iu].mes === mesActual) iu--;
+    const last = j.meses[iu], prev = j.meses[iu - 1];
+    if (last && prev && prev.kg > 0) {
+      const pct = Math.round((last.kg - prev.kg) / prev.kg * 100);
+      document.getElementById('chart-trend').textContent = (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '% ' + labels[iu] + ' vs ' + labels[iu - 1];
       document.getElementById('chart-trend').style.color = pct >= 0 ? 'var(--ok)' : 'var(--hot)';
     }
   } catch (e) {
@@ -436,22 +440,23 @@ async function cargarTransferencias() {
 
 async function cargarAlertas() {
   const alertas = [];
-  const { data: mpsSinInci } = await sb.from('v_mps_sin_inci_en_uso').select('codigo');
+  const _fallos = []; // controles que no se pudieron hacer
+  const { data: mpsSinInci, error: _e_mpsSinInci } = await sb.from('v_mps_sin_inci_en_uso').select('codigo'); if (_e_mpsSinInci) _fallos.push('v_mps_sin_inci_en_uso');
   if (mpsSinInci && mpsSinInci.length) alertas.push({ cls: 'critico', texto: '<strong>' + mpsSinInci.length + ' materia' + (mpsSinInci.length === 1 ? '' : 's') + ' prima' + (mpsSinInci.length === 1 ? '' : 's') + '</strong> sin INCI y en uso', cnt: mpsSinInci.length, href: 'laboratorio/materias-primas.html' });
-  const { data: packsVig } = await sb.from('items').select('codigo').eq('tipo', 'PACK').eq('estado', 'vigente');
-  const { data: packComp } = await sb.from('pack_componentes').select('codigo_pack');
+  const { data: packsVig, error: _e_packsVig } = await sb.from('items').select('codigo').eq('tipo', 'PACK').eq('estado', 'vigente'); if (_e_packsVig) _fallos.push('items');
+  const { data: packComp, error: _e_packComp } = await sb.from('pack_componentes').select('codigo_pack'); if (_e_packComp) _fallos.push('pack_componentes');
   const conComp = new Set((packComp || []).map(p => p.codigo_pack));
   const sinComp = (packsVig || []).filter(p => !conComp.has(p.codigo));
   if (sinComp.length) alertas.push({ cls: 'warn', texto: '<strong>' + sinComp.length + ' pack' + (sinComp.length === 1 ? '' : 's') + '</strong> sin componente asignado', cnt: sinComp.length, href: 'catalogo/index.html' });
-  const { data: usd } = await sb.from('cotizaciones_dolar').select('fecha').order('fecha', { ascending: false }).limit(1);
+  const { data: usd, error: _e_usd } = await sb.from('cotizaciones_dolar').select('fecha').order('fecha', { ascending: false }).limit(1); if (_e_usd) _fallos.push('cotizaciones_dolar');
   if (usd && usd[0]) { const dias = (Date.now() - new Date(usd[0].fecha).getTime()) / 864e5; if (dias > 2) alertas.push({ cls: 'warn', texto: '<strong>Cotización USD vieja</strong> — hace ' + Math.floor(dias) + ' días', cnt: Math.floor(dias) + 'd', href: 'precios/cotizacion.html' }); }
   // pedidos confirmados con fecha de entrega prometida ya pasada (foto de Odoo del plan del día)
-  const plan = await planDelDia().catch(() => null);
+  const plan = await planDelDia().catch(() => null); if (!plan) _fallos.push('plan del día');
   const pedVenc = (plan?.pedidos || []).filter(p => p.compromiso && p.compromiso < HOY);
   if (pedVenc.length) alertas.push({ cls: 'critico', texto: '<strong>' + pedVenc.length + ' pedido' + (pedVenc.length === 1 ? '' : 's') + '</strong> con fecha de entrega prometida vencida', cnt: pedVenc.length, href: 'produccion/index.html' });
 
   // Control Hoja de Producción ↔ Fabricación en Odoo + materiales del plan del día (control_alertas)
-  const { data: ctrl } = await sb.from('control_alertas').select('tipo, severidad').eq('estado', 'abierta');
+  const { data: ctrl, error: _e_ctrl } = await sb.from('control_alertas').select('tipo, severidad').eq('estado', 'abierta'); if (_e_ctrl) _fallos.push('control_alertas');
   if (ctrl && ctrl.length) {
     const de = (tipos) => ctrl.filter(a => tipos.includes(a.tipo));
     const pend = de(['pendiente_odoo', 'sin_validar']), inc = de(['distinto', 'solo_odoo', 'fecha_distinta']), mat = de(['falta_mp']);
@@ -463,6 +468,8 @@ async function cargarAlertas() {
   if (transfPendientes) alertas.push({ cls: transfViejas ? 'critico' : 'warn', texto: '<strong>' + transfPendientes + ' transferencia' + (transfPendientes === 1 ? '' : 's') + '</strong> sin confirmar en Tienda Nube', cnt: transfPendientes, href: '#transferencias' });
   document.getElementById('alertas-count').textContent = alertas.length ? '(' + alertas.length + ')' : '';
   const cont = document.getElementById('alertas-list');
+  // si algún control no se pudo hacer, se dice: no es lo mismo que "todo en orden"
+  if (_fallos.length) alertas.push({ cls: 'warn', texto: '<strong>No se pudieron revisar ' + _fallos.length + ' control(es)</strong> (' + _fallos.join(', ').replace(/[<>&]/g, '') + '). Refrescá en un rato.', cnt: '!' });
   if (!alertas.length) { cont.innerHTML = '<div class="pend-ok">✓ Sin pendientes. Todo en orden.</div>'; return; }
   cont.innerHTML = alertas.map(a => `<a href="${a.href}"><span class="ic ${a.cls}">${a.cls === 'critico' ? '!' : '⚠'}</span><span class="tx">${a.texto}</span><span class="cnt">${escapeHTML(String(a.cnt))}</span></a>`).join('');
 }

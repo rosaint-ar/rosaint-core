@@ -6,7 +6,7 @@
   <title>Insumos y envases · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .status-bar {
       display: flex; gap: 24px; padding: 12px 18px; flex-wrap: wrap;
@@ -212,7 +212,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // Insumos y envases — mismo patrón que Materias primas, pero tipo=IN
 // Rango de códigos: 30000-39999. Categorías filtradas por aplica_a='IN'.
@@ -406,7 +406,7 @@ async function eliminarItem() {
   if (!confirm('¿Eliminar este insumo? Si está usado en una presentación o fórmula, la operación fallará.')) return;
   const btn = $('#miBtnDel'); btn.disabled = true;
   try {
-    await sb.from('precios_items').delete().eq('codigo_item', editando);
+    // solo el ítem: sus precios se borran solos (cascada); si la base rechaza, no se pierde nada
     const { error } = await sb.from('items').delete().eq('codigo', editando); if (error) throw error;
     cerrarItem(); await cargar(); toast('Insumo eliminado', 'ok');
   } catch (err) { toast('No se pudo eliminar: ' + err.message, 'err'); }

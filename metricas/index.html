@@ -6,7 +6,7 @@
   <title>Métricas · Rosaint CORE</title>
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
-  <link rel="stylesheet" href="../shell/shell.css?v=202610061919">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
     .bar-top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .bar-top .sp { flex: 1; }
@@ -123,7 +123,7 @@
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shared/charts.js"></script>
 <script src="../shared/ar-provincias.js"></script>
-<script src="../shell/shell.js?v=202610061841"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
 <script>
 (function () {
   const FN = window.SUPABASE_URL + '/functions/v1/odoo-metricas';
@@ -195,13 +195,13 @@
     const ok = cv && cc && cpOk && composicionOk();
     const h = new Date(D.generado);
     $('status').className = 'status';
-    $('status').innerHTML = `Odoo · VELAZQUEZ · leído ${h.toLocaleDateString('es-AR')} ${h.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} · ${fmtN(D.control.comprobantes_venta)} comprobantes de venta y ${fmtN(D.control.comprobantes_compra)} de compra · ` +
+    $('status').innerHTML = `Odoo · VELAZQUEZ · leído ${h.toLocaleDateString('es-AR')} ${h.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} · ${fmtN(D.control.comprobantes_venta)} comprobantes de venta y ${fmtN(D.control.comprobantes_compra)} de compra · ` +
       (ok ? '<span class="ok">✔ Cuadra al centavo</span>' : '<span class="bad">✖ Hay una diferencia de cuadre — ver el control al pie</span>');
   }
   function composicionOk() {
     return D.serie.every((s, i) => {
       const prod = D.productos.reduce((a, p) => a + p.neto[i], 0);
-      return Math.abs(prod + s.ingresos_envio + s.descuentos + (s.otros_servicios || 0) - s.ventas_netas) < 0.05;
+      return Math.abs(prod + s.ingresos_envio + s.descuentos + (s.otros_servicios || 0) - s.ventas_netas) < 0.01;
     });
   }
 
@@ -246,7 +246,7 @@
         ${kpi('Pedidos confirmados', fmt$(PC), `<span class="d">${fmtN(PN)} pedidos · <b>${fmtP(PC ? PF / PC : NaN)}</b> ya facturado</span>`, '', fmt$c(PC) + ' · pedidos de venta confirmados en el período, sin IVA', 'pedidos')}
         ${kpi('Sin facturar', `<span class="${PSF > 0.5 ? '' : 'pos'}">${fmt$(PSF)}</span>`, `<span class="d">${nPend ? fmtN(nPend) + ' pedido' + (nPend === 1 ? '' : 's') + ' con saldo' : 'todo facturado'}</span>`, '', 'Confirmado menos lo ya facturado de esos mismos pedidos · ' + fmt$c(PSF), 'sinfac')}
         ${kpi('Compras netas', fmt$(Cm), delta(Cm, prev?.C, true), '', fmt$c(Cm) + (st.compras === 'oper' ? ' · operativas' : ' · todas las facturas de proveedor') + ', sin IVA', 'compras')}
-        ${kpi('Margen', `<span class="${M < 0 ? 'neg' : ''}">${fmt$(M)}</span>`, `<span class="d">${fmtP(V ? M / V : NaN)} de las ventas ${prev && prev.V ? '· antes ' + fmtP(prev.M / prev.V) : ''}</span>`, '', 'Ventas netas − compras netas · ' + fmt$c(M), 'margen')}
+        ${kpi('Ventas − compras', `<span class="${M < 0 ? 'neg' : ''}">${fmt$(M)}</span>`, `<span class="d">${fmtP(V ? M / V : NaN)} de las ventas ${prev && prev.V ? '· antes ' + fmtP(prev.M / prev.V) : ''}</span>`, '', 'Ventas netas − compras netas · ' + fmt$c(M), 'margen')}
         ${kpi('Unidades', fmtN(U), delta(U, prev?.U), '', 'Unidades de producto facturadas (combos cuentan 1), menos devueltas', 'unidades')}
         ${kpi('Facturas', fmtN(F), delta(F, prev?.F), '', 'Facturas y notas de débito emitidas', 'n_facturas')}
         ${kpi('Ticket promedio', fmt$(F ? V / F : 0), delta(F ? V / F : 0, prev && prev.F ? prev.V / prev.F : 0), '', 'Ventas netas (ya restadas las notas de crédito) divididas por la cantidad de facturas, sin IVA', 'ticket')}
@@ -259,7 +259,7 @@
           <div class="legend" id="leg-main">
             <button data-s="ventas"><i style="background:${COL.ventas}"></i>Ventas netas</button>
             <button data-s="compras"><i style="background:${COL.compras}"></i>Compras netas${st.compras === 'oper' ? ' (operativas)' : ''}</button>
-            <button data-s="margen"><i style="background:${COL.margen}"></i>Margen</button>
+            <button data-s="margen"><i style="background:${COL.margen}"></i>Ventas − compras</button>
             <button data-s="pedidos"><i style="background:${COL.pedidos}"></i>Pedidos confirmados</button>
           </div></div>
         <div class="chart" id="ch-main"></div>
@@ -414,7 +414,7 @@
         tip.innerHTML = `<div class="t">${lblMesLargo(s.mes)}${s.mes === MES_ACTUAL ? ' (en curso)' : ''}</div>
           <div class="r"><span>Ventas netas</span><b>${fmt$(ser.ventas[i])}</b></div>
           <div class="r"><span>Compras netas</span><b>${fmt$(ser.compras[i])}</b></div>
-          <div class="r"><span>Margen</span><b class="${m < 0 ? 'neg' : 'pos'}">${fmt$(m)} · ${fmtP(ser.ventas[i] ? m / ser.ventas[i] : NaN)}</b></div>
+          <div class="r"><span>Ventas − compras</span><b class="${m < 0 ? 'neg' : 'pos'}">${fmt$(m)} · ${fmtP(ser.ventas[i] ? m / ser.ventas[i] : NaN)}</b></div>
           <div class="r"><span>Pedidos confirmados</span><b>${fmt$(ser.pedidos[i])} · ${fmtP(ser.pedidos[i] ? D.pedidos.serie[i].facturado / ser.pedidos[i] : NaN)} facturado</b></div>
           <div class="r"><span>Facturas · unidades</span><b>${fmtN(s.n_facturas)} · ${fmtN(s.unidades)}</b></div>`;
         tip.style.opacity = 1;
@@ -502,10 +502,14 @@
 
   // ---------- donas ----------
   function dona(elD, elL, items, colorDe, centro) {
-    const tot = items.reduce((s, x) => s + Math.max(0, x.value), 0);
+    const tot = items.reduce((s, x) => s + x.value, 0); // neto real, con devoluciones restando
     const segs = items.filter(x => x.value > 0).map((x, i) => ({ label: x.label, value: x.value, color: colorDe ? colorDe(x.label, i) : PALETA[i % PALETA.length] }));
+    const negativos = items.filter(x => x.value < 0);
+    const totPos = segs.reduce((t, x) => t + x.value, 0); // los % se calculan sobre lo positivo
     Charts.donut(elD, { segments: segs, size: 164, centerBig: corto(tot), centerSmall: centro || 'total' });
-    elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(tot ? s.value / tot : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
+    elL.innerHTML = segs.map(s => `<div class="it" title="${esc(s.label)}: ${fmt$c(s.value)}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span><span class="n">${corto(s.value)}</span><span class="p">${fmtP(totPos ? s.value / totPos : 0)}</span></div>`).join('') || '<span class="muted">Sin datos</span>';
+    // devoluciones u otros montos negativos: se listan aparte (restan del total del centro)
+    if (negativos.length) elL.innerHTML += negativos.map(x => `<div class="it" title="${esc(x.label)}: ${fmt$c(x.value)}"><i style="background:transparent;border:1px solid var(--hot)"></i><span>${esc(x.label)}</span><span class="n neg">${corto(x.value)}</span><span class="p">resta</span></div>`).join('');
   }
   function renderDonas(a, b) {
     dona($('d-canal'), $('l-canal'), D.canales.map(c => ({ label: c.canal, value: sum(c.valores, a, b) })).sort((x, y) => y.value - x.value), l => COL_CANAL[l] || 'var(--muted)');

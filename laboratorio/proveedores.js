@@ -79,7 +79,10 @@
         const veces = {};
         for (const c of compras) veces[c.proveedor] = (veces[c.proveedor] || 0) + 1;
         const ranking = Object.entries(veces).sort((a, b) => b[1] - a[1]);
-        const ult = compras[compras.length - 1];
+        // último precio = la última compra AL PROVEEDOR elegido (antes era la última compra a cualquiera,
+        // y se le cargaba en Odoo a ese proveedor el precio que había cobrado otro)
+        const delProv = compras.filter(c => c.proveedor === ranking[0][0]);
+        const ult = delProv[delProv.length - 1];
         REAL[cod] = {
           proveedor: ranking[0][0], veces: ranking[0][1], distintos: ranking.length,
           ultima: ult.fecha, ultimoPrecio: ult.precio, moneda: ult.moneda,
@@ -657,7 +660,8 @@
       telefono: $('#f-telefono').value.trim() || null,
       direccion: $('#f-direccion').value.trim() || null,
       contacto: $('#f-contacto').value.trim() || null,
-      condicion_pago_id: pago ? Number(pago) : null,
+      // si las condiciones de Odoo todavía no cargaron, el selector está vacío: se conserva la que tenía
+      condicion_pago_id: !TERMINOS.length ? ((PROV.find(x => x.id === id) || {}).condicion_pago_id ?? null) : (pago ? Number(pago) : null),
       plazo_entrega_dias: plazo === '' ? null : Number(plazo),
       plazo_confirmado: $('#f-plazo-conf').checked,
       minimo_compra: $('#f-minimo').value.trim() || null,

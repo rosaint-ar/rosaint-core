@@ -187,7 +187,8 @@ async function iniciar(sesion){
   let totIn=0, totOut=0, consultas=0;
 
   /* ── la conversación sobrevive al F5 (se guarda en este navegador) ── */
-  const STORE="rosaint-asistente-chat";
+  // cada usuario tiene su propio historial (antes lo veía quien entrara después en el mismo navegador)
+  const STORE="rosaint-asistente-chat:"+((sesion&&sesion.user&&sesion.user.id)||"anon");
   function guardarChat(){ try{ localStorage.setItem(STORE, JSON.stringify(msgs.slice(-40))); }catch(e){} }
   $("btnNueva").onclick=(e)=>{ e.preventDefault(); localStorage.removeItem(STORE); location.reload(); };
 
@@ -335,7 +336,8 @@ async function iniciar(sesion){
     let s=esc(t||"");
     s=s.replace(/`([^`\n]+)`/g,"<code>$1</code>");
     s=s.replace(/\*\*([^*\n]+)\*\*/g,"<b>$1</b>");
-    s=s.replace(/(https?:\/\/[^\s<)]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+    // la URL termina en espacio, "<", ")" o comillas: una comilla adentro podía cerrar el href y meter código
+    s=s.replace(/(https?:\/\/[^\s<)"']+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
     const lineas=s.split("\n"); let html=""; let enLista=false;
     for(const ln of lineas){
       const li=ln.match(/^\s*[-•*]\s+(.*)$/);

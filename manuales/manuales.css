@@ -257,7 +257,8 @@ label.campo > .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 /* ---- Impresión ------------------------------------------------------- */
 @media print {
-  .app-sidebar, .app-topbar, .no-print, .manual-indice { display: none !important; }
+  .app-sidebar, .app-topbar, #app-sidebar, #app-topbar, .no-print, .manual-indice { display: none !important; }
+  body, #app-shell { display: block !important; grid-template-columns: none !important; } /* una sola columna al imprimir */
   .app-main-column, #app-content { margin: 0 !important; padding: 0 !important; }
   .manual-layout { grid-template-columns: 1fr; }
   .md { max-width: none; font-size: 11.5pt; }
