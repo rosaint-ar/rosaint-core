@@ -163,6 +163,8 @@
       .pg-panel { display:block !important; }
       .pg-panel:not(#tab-hoy) { display:none !important; }
     }
+    /* celular (auditoría 6-oct): nada se sale de la pantalla */
+    @media (max-width: 640px) { .pg-bloque, .pg-bloque details { overflow-x: auto; } }
   </style>
 </head>
 <body data-page="programar" data-title="Programar el día" data-subtitle="Qué elaborar y fraccionar hoy, según pedidos, etiquetas, entregas y stock">

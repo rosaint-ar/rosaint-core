@@ -146,6 +146,8 @@
     .hoja-cta__title { font-size: 17px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
     .hoja-cta__desc { font-size: 13px; opacity: 0.9; margin: 0; }
     .hoja-cta__arrow { font-size: 22px; opacity: 0.8; }
+    /* celular (auditoría 6-oct): nada se sale de la pantalla */
+    @media (max-width: 640px) { .lineas-list .linea { grid-template-columns: 64px minmax(0,1fr) 44px 44px; gap: 6px; } .lineas-list .linea > span { min-width: 0; overflow-wrap: anywhere; } }
   </style>
 </head>
 <body data-page="produccion" data-title="Producción" data-subtitle="Pedidos por entregar · lo que falta elaborar y fraccionar hoy">
