@@ -81,7 +81,7 @@
     return { lote, tanda, patrones, ultimaEntrega, entregasHechas };
   }
 
-  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), quitar = {} }) {
+  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [] }) {
     const capU = Number(cfg.cap_u_dia), capKg = Number(cfg.cap_kg_dia);
     const umbral = Number(cfg.umbral_pedido_grande || 10);
     const diaAnterior = new Set(cfg.graneles_dia_anterior || []);
@@ -106,6 +106,10 @@
       pt.manual = true; if (c.nota) pt.nota = c.nota;
     }
     const manana = proximoHabil(hoy);
+    // postergado a mano desde Core: no entra hasta la fecha elegida; ese día vuelve solo con su prioridad
+    const posDe = {}; for (const x of postergados) if (d0(x.hasta) > d0(hoy)) posDe[`${x.so_id}|${x.sku}`] = x;
+    const postergadoA = (so, c) => posDe[`${so || 0}|${c}`] || (so ? posDe[`${so}|*`] : null);
+    const fechaCorta = (f) => String(f).slice(0, 10).split('-').reverse().slice(0, 2).join('/');
 
     // ---------- 1) pedidos → renglones de demanda ----------
     const aConfirmar = [], demanda = [], masAdelante = [];
@@ -233,7 +237,8 @@
 
     // ---------- 2) atender la demanda en orden ----------
     for (const d of demanda) {
-      if (quitar[`${d.so_id}|${d.c}`]) { postergado.push({ ...d, motivo: 'sacado a mano' }); continue; }
+      const pz = postergadoA(d.so_id, d.c);
+      if (pz) { postergado.push({ ...d, motivo: `postergado a mano hasta el ${fechaCorta(pz.hasta)}`, manual: true, hasta: pz.hasta }); continue; }
       // a) primero el producto terminado que ya está hecho
       const usa = Math.min(dispPT[d.c] || 0, d.q);
       if (usa > 0) { dispPT[d.c] -= usa; deStock.push({ ...d, q: usa }); }
@@ -299,6 +304,7 @@
     // primero los que se hacen con granel que ya está; después los que piden elaborar
     for (const pasada of ['con_granel', 'elaborando']) {
       for (const r of candidatos) {
+        if (postergadoA(0, r.c)) continue;
         const lugar = Math.floor(capU - carga.u);
         if (lugar <= 0) break;
         const ya = fraccionar[r.c]?.motivos.filter((m) => m.prio === 'stock').reduce((a, m) => a + m.q, 0) || 0;
@@ -343,6 +349,7 @@
       de_stock: deStock.map(conNombre), postergado: postergado.map(conNombre), mas_adelante: masAdelante.map(conNombre),
       a_confirmar: aConfirmar.map((p) => ({ so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, estado: p.estado, monto: p.monto, lineas: p.lineas })),
       ritmo, alertas,
+      postergados: Object.values(posDe),
       aprendido: { lotes: ap.lote, tandas: ap.tanda, patrones },
     };
   }

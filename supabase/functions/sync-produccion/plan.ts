@@ -43,11 +43,46 @@ const m2o = (v: any) => (Array.isArray(v) ? v[0] : null);
 const m2oName = (v: any) => (Array.isArray(v) ? String(v[1] ?? "") : "");
 const dia = (s: any) => (s ? String(s).slice(0, 10) : null);
 
-export async function usuarioValido(req: Request): Promise<boolean> {
+// Devuelve el usuario logueado (o null). Valida el token contra Supabase Auth.
+export async function usuarioValido(req: Request): Promise<Row | null> {
   const a = req.headers.get("Authorization") || "";
-  if (!a.startsWith("Bearer ")) return false;
+  if (!a.startsWith("Bearer ")) return null;
   const apikey = req.headers.get("apikey") || PUB;
-  try { const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey, Authorization: a } }); return r.ok; } catch { return false; }
+  try { const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey, Authorization: a } }); return r.ok ? await r.json() : null; } catch { return null; }
+}
+
+// Postergar (o volver a programar) un pedido entero, un producto de un pedido, o algo para stock (so_id 0).
+// Pedido entero → además mueve la fecha prevista de sus entregas pendientes en Odoo.
+export async function modoPostergar(body: Row, usuario: Row) {
+  const soId = Number(body.so_id || 0);
+  const sku = String(body.sku || "*");
+  const hasta = body.hasta ? String(body.hasta).slice(0, 10) : null;   // null = volver a programar
+  if (hasta && !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) throw new Error("Fecha inválida");
+  const sb = createClient(SB_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+
+  let numero: string | null = null;
+  const odoo: Row = {};
+  if (soId) {
+    const [so] = await ex("sale.order", "read", [[soId]], { fields: ["name", "company_id"] }) as Row[];
+    if (!so) throw new Error("Pedido no encontrado");
+    if (m2o(so.company_id) !== 2) throw new Error("El pedido no es de VELAZQUEZ");
+    numero = so.name;
+    if (sku === "*") {
+      const picks = await ex("stock.picking", "search_read", [[["sale_id", "=", soId], ["picking_type_code", "=", "outgoing"], ["state", "not in", ["done", "cancel"]]]], { fields: ["id", "name", "scheduled_date"] }) as Row[];
+      // 12:00 hora Argentina = 15:00 UTC (Odoo guarda en UTC)
+      const fecha = (hasta || new Date().toISOString().slice(0, 10)) + " 15:00:00";
+      if (picks.length) await ex("stock.picking", "write", [picks.map((p) => p.id), { scheduled_date: fecha }]);
+      odoo.entregas = picks.map((p) => ({ nombre: p.name, antes: p.scheduled_date, ahora: fecha }));
+    }
+  }
+  if (hasta) {
+    const { error } = await sb.from("prod_plan_postergados").upsert({ so_id: soId, numero, sku, hasta, motivo: body.motivo || null, creado: new Date().toISOString(), creado_por: usuario?.email || null }, { onConflict: "so_id,sku" });
+    if (error) throw new Error("guardar: " + error.message);
+  } else {
+    const { error } = await sb.from("prod_plan_postergados").delete().eq("so_id", soId).eq("sku", sku);
+    if (error) throw new Error("borrar: " + error.message);
+  }
+  return { ok: true, so_id: soId, numero, sku, hasta, odoo };
 }
 
 // Clasifica las etiquetas de prioridad por nombre (los ids quedan en la foto).
