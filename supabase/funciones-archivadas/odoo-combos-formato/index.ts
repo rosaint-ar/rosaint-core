@@ -1,0 +1,41 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
+const ODOO_URL = Deno.env.get("ODOO_URL")!;
+const ODOO_DB = Deno.env.get("ODOO_DB")!;
+const ODOO_LOGIN = Deno.env.get("ODOO_LOGIN")!;
+const ODOO_KEY = Deno.env.get("ODOO_KEY")!;
+const CTX = { allowed_company_ids: [1, 2], lang: "es_ES" };
+
+async function jsonrpc(service: string, method: string, args: unknown[]): Promise<any> {
+  const res = await fetch(`${ODOO_URL}/jsonrpc`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method: "call", params: { service, method, args }, id: 1 }) });
+  const j = await res.json();
+  if (j.error) throw new Error("Odoo: " + JSON.stringify(j.error?.data?.message || j.error?.message || j.error));
+  return j.result;
+}
+let _uid: number | null = null;
+async function auth(): Promise<number> { if (_uid) return _uid; _uid = await jsonrpc("common", "authenticate", [ODOO_DB, ODOO_LOGIN, ODOO_KEY, {}]); return _uid; }
+async function call(model: string, method: string, args: unknown[], kwargs: Record<string, unknown> = {}): Promise<any> {
+  const uid = await auth(); kwargs.context = { ...CTX, ...((kwargs.context as any) || {}) };
+  return await jsonrpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, model, method, args, kwargs]);
+}
+
+Deno.serve(async (req: Request) => {
+  const cors = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
+  try {
+    const body = await req.json().catch(() => ({}));
+    // renombrar valores de atributo (presentaciones)
+    const valores: Record<string, string> = body.valores || {};
+    for (const [vid, nm] of Object.entries(valores)) await call("product.attribute.value", "write", [[Number(vid)], { name: nm }]);
+    // descripcion de venta por combo (product.product -> delega al template)
+    const desc: Record<string, string> = body.desc || {};
+    for (const [pid, txt] of Object.entries(desc)) await call("product.product", "write", [[Number(pid)], { description_sale: txt }]);
+
+    // verificacion
+    const vals = await call("product.attribute.value", "read", [[7, 8], ["id", "name"]]);
+    const variantes = await call("product.product", "read", [[474, 475, 476, 477], ["default_code", "display_name", "description_sale"]], { context: { active_test: false } });
+    const check = variantes.map((v: any) => ({ code: v.default_code, titulo: v.display_name,
+      desc: v.description_sale, desc_ok: (v.description_sale || "").includes("Termogénico") && !(v.description_sale || "").includes("�") }));
+    return new Response(JSON.stringify({ ok: true, valores: vals, variantes: check }, null, 2), { headers: cors });
+  } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: cors, status: 200 }); }
+});

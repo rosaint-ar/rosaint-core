@@ -52,7 +52,40 @@ async function recalcCliente(db,uid,pid,nombre){
   }
 }
 
-Deno.serve(async(req)=>{
+
+// ===== Control de acceso (auditoría 6-oct-2026) =====
+// Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
+// x-cron-key = secreto CONTROL_CRON_KEY) o el propio servidor (service role). La clave pública que
+// está en las páginas NO alcanza: antes dejaba entrar a cualquiera.
+async function _accesoPermitido(req: Request): Promise<boolean> {
+  const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
+  if (interna && req.headers.get("x-cron-key") === interna) return true;
+  // conectores (Claude / MCP) con su clave propia de Tienda Nube o Mercado Libre
+  const proxy = req.headers.get("x-proxy-secret") || "";
+  if (proxy && [Deno.env.get("TN_PROXY_SECRET"), Deno.env.get("ML_PROXY_SECRET")].some((x) => x && x === proxy)) return true;
+  const a = req.headers.get("Authorization") || "";
+  if (!a.startsWith("Bearer ")) return false;
+  const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (srk && a.slice(7) === srk) return true;
+  const apikey = req.headers.get("apikey") || "sb_publishable_I2b_s6jYVI1Cas3vGHLvbQ_OWXkU0vB";
+  try {
+    const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/user`, { headers: { apikey, Authorization: a } });
+    if (!r.ok) return false;
+    const u = await r.json();
+    return !!(u && u.id);
+  } catch { return false; }
+}
+function _servirConGuardia(...args: any[]) {
+  const h = args[args.length - 1];
+  args[args.length - 1] = async (req: Request, info: any) => {
+    if (req.method === "OPTIONS" || await _accesoPermitido(req)) return h(req, info);
+    return new Response(JSON.stringify({ ok: false, error: "No autorizado: iniciá sesión en Core" }), {
+      status: 401, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+  };
+  return (Deno.serve as any)(...args);
+}
+
+_servirConGuardia(async(req)=>{
   const cors={"Access-Control-Allow-Origin":"*","Content-Type":"application/json"};
   if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
   const db=createClient(SUPABASE_URL,SERVICE_KEY);
