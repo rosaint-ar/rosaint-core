@@ -870,6 +870,7 @@ async function cargarML() {
       <button class="subtab" data-sub="odoo">Ventas → Odoo</button>
       <button class="subtab" data-sub="preguntas">Preguntas</button>
       <button class="subtab" data-sub="precios">Precios sugeridos</button>
+      <button class="subtab" data-sub="facturas">Facturas</button>
       <button class="subtab" data-sub="cfg">Configuración</button>
     </div>
 
@@ -879,17 +880,19 @@ async function cargarML() {
     <div id="sub-odoo" style="display:none;"></div>
     <div id="sub-preguntas" style="display:none;"></div>
     <div id="sub-precios" style="display:none;"></div>
+    <div id="sub-facturas" style="display:none;"></div>
     <div id="sub-cfg" style="display:none;"></div>
   `;
 
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','promos','ads','odoo','preguntas','precios','cfg'].forEach(v => {
+    ['pubs','promos','ads','odoo','preguntas','facturas','precios','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
     if (which === 'odoo' && !VENTAS_ODOO_CARGADO) cargarVentasOdoo();
     if (which === 'preguntas') cargarPreguntasML();
+    if (which === 'facturas' && !FACTURAS_ML_CARGADO) cargarFacturasML();
   }));
 
   // Config y precios sugeridos van despues: leen PUBS para resaltar pesos y umbrales.
@@ -1031,6 +1034,108 @@ async function cargarPreguntasML() {
 // ─────── SUB-TAB VENTAS → ODOO ───────
 // Revisar las ventas de ML (por pack, desde 01/09) y cargarlas en Odoo como borrador.
 // Usa la edge function ml-odoo-cargar (modos listar/preview/cargar). Ver memoria rosaint-ml-odoo-conector.
+// ─────── SUB-TAB FACTURAS (Odoo → Mercado Libre) ───────
+// Mercado Libre exige la factura de cada venta y la pide por su API. El conector la sube solo
+// (modo auto), con piso en el 1/10/2026. Esta pantalla es para VER el estado y empujar a mano.
+// Se carga al abrir la pestaña, no al abrir Canales: consulta a ML venta por venta.
+let FACTURAS_ML_CARGADO = false;
+
+async function cargarFacturasML() {
+  FACTURAS_ML_CARGADO = true;
+  const el = $('#sub-facturas');
+  el.innerHTML = '<div class="empty-box">Consultando facturas…</div>';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'facturas_estado', dias: 20 } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    renderFacturasML(j);
+  } catch (err) {
+    el.innerHTML = '<div class="empty-box" style="color:var(--hot)">No se pudo consultar: ' + esc(err.message) + '</div>';
+  }
+}
+
+function renderFacturasML(j) {
+  const ventas = j.ventas || [];
+  const ROTULO = {
+    subida:       { t: '✓ en Mercado Libre', c: 'var(--ok)' },
+    en_ml:        { t: '✓ en Mercado Libre', c: 'var(--ok)' },
+    pendiente:    { t: 'falta subirla',      c: 'var(--accent)' },
+    sin_facturar: { t: 'sin facturar',       c: 'var(--muted)' },
+    sin_cae:      { t: 'sin CAE',            c: 'var(--hot)' },
+    no_cuadra:    { t: 'no cuadra',          c: 'var(--hot)' },
+    varias:       { t: 'varias facturas',    c: 'var(--warn)' },
+    sin_revisar:  { t: 'sin revisar',        c: 'var(--muted)' },
+  };
+  const cuenta = (e) => ventas.filter(v => v.estado === e).length;
+  const pendientes = cuenta('pendiente');
+  const listas = cuenta('subida') + cuenta('en_ml');
+  const fila = (v) => {
+    const r = ROTULO[v.estado] || { t: v.estado, c: 'var(--muted)' };
+    const acc = v.estado === 'pendiente'
+      ? '<button class="btn primary" onclick="subirFacturaML(\'' + esc(v.so) + '\', this)">Subir factura</button>'
+      : '<span style="font-size:12px;color:' + r.c + '">' + r.t + '</span>';
+    return '<div class="vo-fila"><div class="vo-cab">' +
+      '<span class="vo-info">' + fFechaHora(v.fecha) + ' · <b>' + esc(v.cliente || '—') + '</b> · ' + fmtARS(v.total) +
+      ' · ' + esc(v.so) + (v.factura ? ' · ' + esc(v.factura) : '') +
+      (v.motivo ? ' <span style="color:' + r.c + '">(' + esc(v.motivo) + ')</span>' : '') + '</span>' +
+      '<span class="vo-acc">' + acc + '</span></div></div>';
+  };
+  const orden = { pendiente: 0, sin_cae: 1, no_cuadra: 1, varias: 1, sin_revisar: 2, sin_facturar: 3, subida: 4, en_ml: 4 };
+  const lista = ventas.slice().sort((a, b) =>
+    (orden[a.estado] ?? 9) - (orden[b.estado] ?? 9) || (b.fecha || '').localeCompare(a.fecha || ''));
+  $('#sub-facturas').innerHTML = `
+    <div class="main-section">
+      <div class="head">
+        <div>
+          <h3>🧾 Facturas en Mercado Libre</h3>
+          <div class="sub">Mercado Libre pide la factura de cada venta. El conector la sube <b>solo</b>, con cada venta nueva, desde el ${esc(j.desde)}. Al subirla, Mercado Libre le avisa al comprador por mail.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          ${pendientes ? '<button class="btn primary" onclick="subirPendientesML(this)">' + (pendientes === 1 ? 'Subir la factura pendiente' : 'Subir las ' + pendientes + ' facturas pendientes') + '</button>' : ''}
+          <button class="btn secondary" onclick="FACTURAS_ML_CARGADO=false;cargarFacturasML()">↻ Actualizar</button>
+        </div>
+      </div>
+      <div class="sub" style="margin-bottom:10px">
+        <b style="color:var(--ok)">${listas}</b> con factura cargada ·
+        <b style="color:var(--accent)">${pendientes}</b> ${pendientes === 1 ? 'pendiente' : 'pendientes'} ·
+        <b style="color:var(--muted)">${cuenta('sin_facturar')}</b> sin facturar en Odoo
+      </div>
+      ${lista.map(fila).join('')}
+    </div>`;
+}
+
+async function subirFacturaML(so, btn) {
+  const NL = String.fromCharCode(10);
+  if (!confirm(['Subir la factura de ' + so + ' a Mercado Libre.', '', 'Mercado Libre le va a avisar al comprador por mail.'].join(NL))) return;
+  const antes = btn.textContent; btn.disabled = true; btn.textContent = 'Subiendo…';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'factura_ml', so: so, confirmar: true } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    FACTURAS_ML_CARGADO = false; await cargarFacturasML();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = antes;
+    alert('No se pudo subir la factura de ' + so + ':' + String.fromCharCode(10) + String.fromCharCode(10) + err.message);
+  }
+}
+
+async function subirPendientesML(btn) {
+  const NL = String.fromCharCode(10);
+  if (!confirm(['Subir a Mercado Libre todas las facturas pendientes.', '', 'Mercado Libre le avisa por mail a cada comprador.'].join(NL))) return;
+  const antes = btn.textContent; btn.disabled = true; btn.textContent = 'Subiendo…';
+  try {
+    const { data: j, error } = await sb.functions.invoke('ml-odoo-cargar', { body: { modo: 'facturas_pendientes', dias: 20, tope: 10 } });
+    if (error) throw new Error(error.message);
+    if (!j || j.ok === false) throw new Error((j && j.error) || 'Error');
+    if (j.skip) alert('Hay otra corrida en curso: probá de nuevo en un minuto.');
+    else if (j.fallos && j.fallos.length) alert('Subidas: ' + j.subidas + String.fromCharCode(10) + 'Con problemas: ' + j.fallos.join(String.fromCharCode(10)));
+    FACTURAS_ML_CARGADO = false; await cargarFacturasML();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = antes;
+    alert('No se pudieron subir: ' + err.message);
+  }
+}
+
 let VENTAS_ODOO_CARGADO = false;
 // fFechaHora está declarada más abajo (bloque de Configuración ML); declararla dos veces rompía toda la página.
 
