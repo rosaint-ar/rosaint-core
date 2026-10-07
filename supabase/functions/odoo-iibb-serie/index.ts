@@ -71,11 +71,21 @@ _servirConGuardia(async (req: Request) => {
     const partners = pids.length ? await ex(uid, "res.partner", "read", [pids], { fields: ["state_id"], context: ctx }) as Rec[] : [];
     const provDe: Record<number, string> = {};
     for (const p of partners) provDe[p.id as number] = m2oName(p.state_id) || "(Sin provincia)";
+    // meses ya presentados: manda la provincia fijada al presentar (un cambio de domicilio no los toca)
+    const SB_URL = Deno.env.get("SUPABASE_URL")!, SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const fija: Record<number, string> = {};
+    for (let off = 0; ; off += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/iibb_comprobantes?select=move_id,provincia&mes=gte.${desde.slice(0, 7)}&order=move_id`, { headers: { apikey: SRK, Authorization: `Bearer ${SRK}`, Range: `${off}-${off + 999}` } });
+      if (!r.ok) throw new Error("Supabase: " + await r.text());
+      const filas = await r.json() as Rec[];
+      for (const f of filas) fija[f.move_id as number] = f.provincia as string;
+      if (filas.length < 1000) break;
+    }
     // agregacion prov -> mes -> imponible
     const agg: Record<string, Record<string, number>> = {};
     for (const mv of moves) {
       const mes = (mv.invoice_date as string || "").slice(0, 7); if (!mes) continue;
-      const pid = m2oId(mv.partner_id); const prov = (pid && provDe[pid]) || "(Sin provincia)";
+      const pid = m2oId(mv.partner_id); const prov = fija[mv.id as number] || (pid && provDe[pid]) || "(Sin provincia)";
       const unt = (mv.amount_untaxed_signed as number) || 0;
       (agg[prov] ||= {}); agg[prov][mes] = (agg[prov][mes] || 0) + unt;
     }

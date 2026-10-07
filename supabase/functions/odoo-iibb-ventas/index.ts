@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// odoo-iibb-ventas v3 - SOLO LECTURA
+// odoo-iibb-ventas v4
+// Lee de Odoo. Única escritura: {mes, presentar:true} guarda en Supabase el mes presentado
+// (iibb_presentaciones + iibb_comprobantes). Desde ahí, la provincia de cada comprobante de ese mes
+// queda FIJA aunque el cliente cambie de domicilio en Odoo: lo presentado no se modifica.
 const ODOO_URL = Deno.env.get("ODOO_URL")!;
 const ODOO_DB = Deno.env.get("ODOO_DB")!;
 const ODOO_LOGIN = Deno.env.get("ODOO_LOGIN")!;
@@ -20,6 +23,24 @@ async function authenticate(): Promise<number> { const uid = await rpc("common",
 async function execKw(uid: number, model: string, method: string, args: unknown[], kwargs: Rec = {}) { return await rpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, model, method, args, kwargs]); }
 function lastDay(mes: string): string { const [y, m] = mes.split("-").map(Number); const d = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${mes}-${String(d).padStart(2, "0")}`; }
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Supabase con la clave del servidor (las tablas iibb_* solo se escriben desde acá)
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+async function sb(path: string, init: RequestInit = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, { ...init, headers: { apikey: SRK, Authorization: `Bearer ${SRK}`, "Content-Type": "application/json", ...(init.headers || {}) } });
+  const t = await r.text();
+  if (!r.ok) throw new Error("Supabase: " + t);
+  return t ? JSON.parse(t) : null;
+}
+async function usuarioDe(req: Request): Promise<string | null> {
+  const a = req.headers.get("Authorization") || "";
+  if (!a.startsWith("Bearer ")) return null;
+  try {
+    const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: req.headers.get("apikey") || "", Authorization: a } });
+    if (!r.ok) return null; const u = await r.json(); return u?.email || null;
+  } catch { return null; }
+}
 
 
 // ===== Control de acceso (auditoría 6-oct-2026) =====
@@ -88,15 +109,29 @@ _servirConGuardia(async (req: Request) => {
     const provDe: Record<number, string> = {};
     for (const p of partners) provDe[p.id as number] = m2oName(p.state_id) || "(Sin provincia)";
 
+    // ¿Ya se presentó este mes? Entonces manda la provincia fijada al presentar.
+    const pres = (await sb(`iibb_presentaciones?mes=eq.${mes}&select=*`))[0] || null;
+    const fija: Record<number, Rec> = {};
+    if (pres) for (const c of await sb(`iibb_comprobantes?mes=eq.${mes}&select=*&limit=10000`)) fija[c.move_id as number] = c;
+    const cambiosDomicilio: Rec[] = [], nuevos: Rec[] = [];
+    const vistos = new Set<number>();
+
     type Acu = { imponible: number; total: number; nFac: number; nNC: number };
     const nueva = (): Acu => ({ imponible: 0, total: 0, nFac: 0, nNC: 0 });
     const soloFac: Record<string, Acu> = {};
     const netas: Record<string, Acu> = {};
     const add = (bag: Record<string, Acu>, prov: string, unt: number, tot: number, esNC: boolean) => { const a = (bag[prov] ||= nueva()); a.imponible += unt; a.total += tot; if (esNC) a.nNC++; else a.nFac++; };
     const detalleNC: Rec[] = [];
+    const filasFijar: Rec[] = [];
     for (const mv of moves) {
       const pid = m2oId(mv.partner_id);
-      const prov = (pid && provDe[pid]) || "(Sin provincia)";
+      const actual = (pid && provDe[pid]) || "(Sin provincia)";
+      const f = fija[mv.id as number];
+      vistos.add(mv.id as number);
+      const prov = f ? f.provincia as string : actual;
+      if (f && f.provincia !== actual) cambiosDomicilio.push({ comprobante: mv.name, cliente: m2oName(mv.partner_id), presentada: f.provincia, actual });
+      if (pres && !f) nuevos.push({ move_id: mv.id, comprobante: mv.name, fecha: mv.invoice_date, cliente: m2oName(mv.partner_id), provincia: actual, imponible: r2((mv.amount_untaxed_signed as number) || 0) });
+      filasFijar.push({ move_id: mv.id, mes, comprobante: mv.name, fecha: mv.invoice_date, tipo: mv.move_type, partner_id: pid, cliente: m2oName(mv.partner_id), provincia: prov, imponible: r2((mv.amount_untaxed_signed as number) || 0), total: r2((mv.amount_total_signed as number) || 0) });
       const unt = (mv.amount_untaxed_signed as number) || 0;
       const tot = (mv.amount_total_signed as number) || 0;
       const esNC = mv.move_type === "out_refund";
@@ -105,6 +140,22 @@ _servirConGuardia(async (req: Request) => {
       if (esNC) detalleNC.push({ comprobante: mv.name, fecha: mv.invoice_date, cliente: m2oName(mv.partner_id), provincia: prov, imponible: r2(Math.abs(unt)), motivo: mv.ref || null });
     }
     const armar = (bag: Record<string, Acu>) => { const filas = Object.entries(bag).map(([prov, a]) => ({ provincia: prov, imponible: r2(a.imponible), total: r2(a.total) })).sort((x, y) => y.imponible - x.imponible); return { total_imponible: r2(filas.reduce((s, f) => s + f.imponible, 0)), total_con_iva: r2(filas.reduce((s, f) => s + f.total, 0)), provincias: filas }; };
-    return new Response(JSON.stringify({ ok: true, mes, desde, hasta, cantidad_comprobantes: moves.length, detalle_notas_credito: detalleNC, solo_facturas: armar(soloFac), netas_de_devoluciones: armar(netas) }, null, 2), { headers: cors });
+    // comprobantes que estaban en lo presentado y hoy ya no están (anulados o cambiados de fecha)
+    const faltantes = Object.values(fija).filter((c) => !vistos.has(c.move_id as number)).map((c) => ({ comprobante: c.comprobante, cliente: c.cliente, provincia: c.provincia, imponible: c.imponible }));
+    const resultado = { ok: true, mes, desde, hasta, cantidad_comprobantes: moves.length, detalle_notas_credito: detalleNC, solo_facturas: armar(soloFac), netas_de_devoluciones: armar(netas) };
+
+    if (body.presentar) {
+      if (pres && !body.reemplazar) throw new Error(`${mes} ya figura como presentado el ${String(pres.presentado_en).slice(0, 10)}`);
+      const quien = await usuarioDe(req);
+      if (!quien) throw new Error("Para marcar como presentado hay que entrar con usuario de Core");
+      if (pres) await sb(`iibb_presentaciones?mes=eq.${mes}`, { method: "DELETE" });
+      const n = resultado.netas_de_devoluciones;
+      await sb("iibb_presentaciones", { method: "POST", body: JSON.stringify({ mes, presentado_por: quien, total_imponible: n.total_imponible, total_con_iva: n.total_con_iva, provincias: n.provincias, comprobantes: moves.length, nota: (body.nota as string) || (pres ? "Rectificativa: reemplaza la presentación anterior" : null) }) });
+      for (let i = 0; i < filasFijar.length; i += 500) await sb("iibb_comprobantes", { method: "POST", body: JSON.stringify(filasFijar.slice(i, i + 500)) });
+      const guardado = (await sb(`iibb_presentaciones?mes=eq.${mes}&select=*`))[0];
+      return new Response(JSON.stringify({ ...resultado, presentado: guardado, cambios_domicilio: [], comprobantes_nuevos: [], comprobantes_faltantes: [] }, null, 2), { headers: cors });
+    }
+
+    return new Response(JSON.stringify({ ...resultado, presentado: pres, cambios_domicilio: cambiosDomicilio, comprobantes_nuevos: nuevos, comprobantes_faltantes: faltantes }, null, 2), { headers: cors });
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: cors, status: 200 }); }
 });

@@ -47,6 +47,10 @@
     .nota { font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; line-height: 1.5; }
     .nota strong { color: var(--text); }
     .actions { display: flex; gap: 10px; margin: 4px 0 18px; flex-wrap: wrap; }
+    .presentado { padding: 12px 14px; border-radius: var(--radius); margin-bottom: 14px; font-size: 13px; line-height: 1.5;
+      background: color-mix(in srgb, var(--ok) 10%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }
+    .presentado.aviso { background: color-mix(in srgb, var(--warn) 10%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+    .presentado ul { margin: 6px 0 0; padding-left: 18px; }
   </style>
 </head>
 <body data-page="iibb" data-title="IIBB · Ventas por jurisdicción" data-subtitle="Informe mensual para el contador · base de Ingresos Brutos">
@@ -63,7 +67,7 @@
       </div>
       <button class="btn primary" id="btnGenerar">Generar informe</button>
     </div>
-    <div class="hint">Trae de Odoo las ventas del mes (facturas menos notas de crédito) agrupadas por provincia según los datos de la factura. El "Total imponible" es la base de IIBB (neto, sin IVA).</div>
+    <div class="hint">Trae de Odoo las ventas del mes (facturas menos notas de crédito) agrupadas por provincia según el domicilio actual del cliente. El "Total imponible" es la base de IIBB (neto, sin IVA). Cuando marcás un mes como <strong>presentado</strong>, la provincia de cada comprobante queda fija: si después un cliente cambia de domicilio, ese mes no cambia.</div>
   </div>
 
   <div class="card" style="margin-bottom:12px;">
@@ -137,7 +141,7 @@ function nombrePeriodo(mes) {
   return capitalizar(MESES[m - 1]) + ' ' + y;
 }
 
-async function consultar(mes) {
+async function consultar(mes, extra) {
   const r = await fetch(FN_URL, {
     method: 'POST',
     headers: {
@@ -145,7 +149,7 @@ async function consultar(mes) {
       'Authorization': 'Bearer ' + window.SUPABASE_KEY,
       'apikey': window.SUPABASE_KEY,
     },
-    body: JSON.stringify({ mes }),
+    body: JSON.stringify(extra ? { mes, ...extra } : { mes }),
   });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error || 'Error consultando Odoo');
@@ -168,6 +172,38 @@ $('btnGenerar').addEventListener('click', async () => {
   $('btnGenerar').disabled = false;
 });
 
+const fechaHora = (iso) => new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+
+function bloquePresentacion(d) {
+  const p = d.presentado;
+  if (!p) return `<div class="actions"><button class="btn" id="btnPresentar">Marcar ${esc(nombrePeriodo(d.mes))} como presentado</button></div>`;
+  const cambios = d.cambios_domicilio || [], nuevos = d.comprobantes_nuevos || [], falt = d.comprobantes_faltantes || [];
+  const difTotal = Math.abs((d.netas_de_devoluciones.total_imponible || 0) - Number(p.total_imponible)) >= 0.01;
+  const hayAviso = nuevos.length || falt.length || difTotal;
+  let h = `<div class="presentado${hayAviso ? ' aviso' : ''}"><strong>Presentado</strong> el ${esc(fechaHora(p.presentado_en))}${p.presentado_por ? ' por ' + esc(p.presentado_por) : ''} · total imponible presentado ${money(p.total_imponible)}. Las provincias de este mes quedaron fijas.`;
+  if (p.nota) h += `<br><span class="muted">${esc(p.nota)}</span>`;
+  if (cambios.length) h += `<br>${cambios.length} comprobante(s) de clientes que después cambiaron de domicilio: se mantiene la provincia presentada.<ul>${cambios.slice(0, 8).map(c => `<li>${esc(c.comprobante)} · ${esc(c.cliente)}: presentado en ${esc(c.presentada)}, hoy ${esc(c.actual)}</li>`).join('')}</ul>`;
+  if (nuevos.length) h += `<br><strong>Atención:</strong> ${nuevos.length} comprobante(s) con fecha de este mes se cargaron en Odoo después de presentar (no están en lo presentado):<ul>${nuevos.map(c => `<li>${esc(c.comprobante)} · ${esc(c.fecha)} · ${esc(c.cliente)} · ${esc(c.provincia)} · ${money(c.imponible)}</li>`).join('')}</ul>`;
+  if (falt.length) h += `<br><strong>Atención:</strong> ${falt.length} comprobante(s) presentados ya no figuran en este mes en Odoo (anulados o con otra fecha):<ul>${falt.map(c => `<li>${esc(c.comprobante)} · ${esc(c.cliente)} · ${esc(c.provincia)} · ${money(c.imponible)}</li>`).join('')}</ul>`;
+  if (hayAviso) h += `<div style="margin-top:8px;"><button class="btn" id="btnRectificar">Rectificar: volver a fijar con lo de hoy</button></div>`;
+  return h + '</div>';
+}
+
+async function presentar(reemplazar) {
+  const d = ultimo; if (!d) return;
+  const txt = reemplazar
+    ? `¿Reemplazar lo presentado de ${nombrePeriodo(d.mes)} por lo que hay hoy en Odoo? Usalo solo si hiciste una declaración rectificativa.`
+    : `¿Marcar ${nombrePeriodo(d.mes)} como presentado? Se guarda la provincia de cada comprobante (total imponible ${money(d.netas_de_devoluciones.total_imponible)}) y ya no cambia aunque un cliente cambie de domicilio.`;
+  if (!confirm(txt)) return;
+  setStatus('load', 'Guardando la presentación…');
+  try {
+    const r = await consultar(d.mes, { presentar: true, reemplazar: !!reemplazar });
+    ultimo = r; render(r);
+    setStatus('on', `${nombrePeriodo(d.mes)} quedó marcado como presentado.`);
+    cargarEvolucion();
+  } catch (err) { setStatus('off', 'Error: ' + err.message, true); }
+}
+
 function render(d) {
   const netas = d.netas_de_devoluciones;
   const solo = d.solo_facturas;
@@ -180,6 +216,7 @@ function render(d) {
     <div class="card"><div class="n">${netas.provincias.length}</div><div class="l">Jurisdicciones</div></div>
   </div>`;
 
+  h += bloquePresentacion(d);
   h += `<div class="actions">
     <button class="btn primary" onclick="descargarExcel()">↓ Descargar Excel para el contador</button>
   </div>`;
@@ -202,12 +239,12 @@ function render(d) {
       </tr></thead><tbody>`;
     for (const n of ncs) {
       h += `<tr>
-        <td>${n.comprobante || ''}</td>
-        <td>${n.fecha || ''}</td>
-        <td>${n.cliente || ''}</td>
-        <td>${n.provincia || ''}</td>
+        <td>${esc(n.comprobante)}</td>
+        <td>${esc(n.fecha)}</td>
+        <td>${esc(n.cliente)}</td>
+        <td>${esc(n.provincia)}</td>
         <td class="num">${money(n.imponible)}</td>
-        <td>${n.motivo || ''}</td>
+        <td>${esc(n.motivo)}</td>
       </tr>`;
     }
     h += `</tbody></table></div>`;
@@ -216,12 +253,16 @@ function render(d) {
   }
 
   $('results').innerHTML = h;
+  $('btnPresentar')?.addEventListener('click', () => presentar(false));
+  $('btnRectificar')?.addEventListener('click', () => presentar(true));
 }
 
 function descargarExcel() {
   if (!ultimo) return;
   const d = ultimo;
-  const netas = d.netas_de_devoluciones;
+  const netas = d.presentado
+    ? { total_imponible: Number(d.presentado.total_imponible), total_con_iva: Number(d.presentado.total_con_iva), provincias: d.presentado.provincias }
+    : d.netas_de_devoluciones;
   const [y, m] = d.mes.split('-').map(Number);
   const nombreMes = MESES[m - 1];
 
