@@ -136,7 +136,8 @@ _servirConGuardia(async (req) => {
     // fecha de Argentina (UTC-3): a las 21 h del último día del mes todavía es este mes
     const hoy = new Date(Date.now() - 3 * 3600 * 1000);
     const desdeMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
-    const desde7 = new Date(hoy.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // 7 días contando hoy: de hoy−6 a hoy (con −7 eran 8 días y el "7d" daba de más, visto el 07-10-2026)
+    const desde7 = new Date(hoy.getTime() - 6 * 24 * 60 * 60 * 1000);
     const periodo = primerDiaMes(hoy);
 
     // ── Campañas: id → estado ────────────────────────────────────────────
