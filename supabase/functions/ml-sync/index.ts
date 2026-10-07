@@ -122,6 +122,17 @@ async function traerEnvio(itemId: string, headers: any): Promise<number | null> 
   } catch { return null; }
 }
 
+// Peso facturable que ML usa para el cargo fijo y el envío (07-10-2026). Antes el peso se cargaba a mano
+// en ml_publicaciones y había errores (Masajes 4 Kg en 0,5 kg cuando ML factura 1,805 kg).
+async function traerPesoFacturable(itemId: string, sellerId: string | number, headers: any): Promise<number | null> {
+  try {
+    const r = await fetch(`${ML_API}/users/${sellerId}/shipping_options/free?item_id=${itemId}`, { headers });
+    if (!r.ok) return null;
+    const g = (await r.json())?.coverage?.all_country?.billable_weight;
+    return g != null && Number(g) > 0 ? Math.round(Number(g)) / 1000 : null;
+  } catch { return null; }
+}
+
 async function traerVisitas(itemId: string, dias: number, headers: any): Promise<number | null> {
   try {
     const hasta = new Date();
@@ -187,7 +198,7 @@ async function sincronizarItem(itemId: string, headers: any, supabase: any, sell
     return null;
   })();
 
-  const [precios, precioPromoRaw, v150, v7, ventas7, envioRaw, comisionRaw] = await Promise.all([
+  const [precios, precioPromoRaw, v150, v7, ventas7, envioRaw, comisionRaw, pesoML] = await Promise.all([
     traerPrecios(itemId, headers),
     traerMayorDescuento(itemId, headers),
     traerVisitas(itemId, 150, headers),
@@ -195,6 +206,7 @@ async function sincronizarItem(itemId: string, headers: any, supabase: any, sell
     traerVentas7d(itemId, headers, sellerId),
     envioGratis ? traerEnvio(itemId, headers) : Promise.resolve(0),
     comisionPromise,
+    traerPesoFacturable(itemId, sellerId, headers),
   ]);
 
   // Precio de lista REAL = standard de /prices; si no está, fallback al viejo criterio.
@@ -233,6 +245,7 @@ async function sincronizarItem(itemId: string, headers: any, supabase: any, sell
   if (v7 != null) row.visitas_7d = v7;
   if (ventas7 != null) row.ventas_7d = ventas7;
   if (envioRaw != null) row.envio_real = envioRaw;
+  if (pesoML != null) row.peso_kg = pesoML;
   if (comisionRaw && comisionRaw.pct != null) {
     row.comision_pct_real = Number(comisionRaw.pct);
     row.comision_real = comisionRaw.monto != null ? Number(comisionRaw.monto) : null;
