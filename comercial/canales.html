@@ -1522,6 +1522,7 @@ async function cargarPublicaciones() {
     $('#pub-act').addEventListener('change', renderPubs);
     $('#btnSyncPubs').addEventListener('click', sincronizarPubs);
     $('#btnSyncAds').addEventListener('click', sincronizarAdsGasto);
+    autoSyncAds();
   } catch (err) {
     $('#pub-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
   }
@@ -1927,6 +1928,25 @@ async function sincronizarPubs() {
     await cargarPublicaciones();
   } catch (err) { toast('Error: ' + err.message, 'err'); }
   finally { btn.classList.remove('spin'); btn.disabled = false; btn.innerHTML = prev; }
+}
+
+// Al abrir la pantalla se trae la publicidad al día (ML + Vendra) sin tocar ningún botón. Una sola vez
+// por visita, y no si se trajo hace menos de 5 minutos (abrir y cerrar la pestaña no dispara de nuevo).
+let AUTO_ADS_HECHO = false;
+async function autoSyncAds() {
+  if (AUTO_ADS_HECHO) return;
+  AUTO_ADS_HECHO = true;
+  const ult = VENDRA_PUB.mes && VENDRA_PUB.mes.traido_en ? new Date(VENDRA_PUB.mes.traido_en).getTime() : 0;
+  if (Date.now() - ult < 5 * 60 * 1000) return;
+  const btn = $('#btnSyncAds');
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Actualizando ADS…'; }
+  try {
+    const { data, error } = await sb.functions.invoke('ml-ads-sync', { body: {} });
+    if (error || (data && data.ok === false)) return; // silencioso: quedan los últimos números y el botón sigue disponible
+    if ($('#panel-ads-ml')) await cargarPublicaciones();
+  } catch (_) { /* silencioso */ }
+  finally { const b = $('#btnSyncAds'); if (b) { b.disabled = false; b.textContent = prev || 'Sincronizar gasto ADS'; } }
 }
 
 async function sincronizarAdsGasto() {
