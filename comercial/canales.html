@@ -1506,9 +1506,14 @@ async function cargarPublicaciones() {
   `;
 
   try {
-    const { data, error } = await sb.from('v_rentabilidad_ml').select('*');
+    const [{ data, error }, vr] = await Promise.all([
+      sb.from('v_rentabilidad_ml').select('*'),
+      // Publicidad completa que manda Vendra (Product Ads + Display), la guarda ml-ads-sync.
+      sb.from('ml_vendra_resumen').select('clave,desde,hasta,publicidad,product_ads,display,traido_en,error'),
+    ]);
     if (error) throw error;
     PUBS = data || [];
+    VENDRA_PUB = {}; for (const r of (vr.data || [])) VENDRA_PUB[r.clave] = r;
     actualizarSyncInfo(PUBS.length);
     renderPubs();
     $('#pub-search').addEventListener('input', renderPubs);
@@ -1597,12 +1602,19 @@ function agruparPubs(rows) {
 
 // Panel superior: alertas accionables sobre publicidad + ADS.
 // Categoriza los productos: plata tirada / optimizar / variantes desbalanceadas / candidatos a pautar.
+let VENDRA_PUB = {};
 function renderPanelAdsML(pubs) {
   const conAds = pubs.filter(p => parseFloat(p.ads_total || 0) > 0);
   if (conAds.length === 0) return '';
 
-  const gastoTotal = conAds.reduce((a,p) => a + parseFloat(p.ads_total || 0), 0);
-  const gasto7d = pubs.reduce((a,p) => a + parseFloat(p.ads_7d || 0), 0);
+  // Total de publicidad: el de Vendra (Product Ads + Display, al centavo con ML) si llegó; si no,
+  // la suma por anuncio de Product Ads, que no incluye Display.
+  const vMes = VENDRA_PUB.mes, vSem = VENDRA_PUB['7d'];
+  const gastoTotal = vMes && vMes.publicidad != null ? Number(vMes.publicidad) : conAds.reduce((a,p) => a + parseFloat(p.ads_total || 0), 0);
+  const gasto7d = vSem && vSem.publicidad != null ? Number(vSem.publicidad) : pubs.reduce((a,p) => a + parseFloat(p.ads_7d || 0), 0);
+  const tipVendra = vMes && vMes.publicidad != null
+    ? `Fuente Vendra (sin IVA). Mes: Product Ads ${fmtARS(vMes.product_ads)} + Display ${fmtARS(vMes.display)}. 7 días: ${vSem ? fmtARS(vSem.product_ads) + ' + ' + fmtARS(vSem.display) : '—'}. Actualizado ${new Date(vMes.traido_en).toLocaleString('es-AR')}${vMes.error ? ' · último intento con error: ' + vMes.error : ''}`
+    : 'Solo Product Ads (sin Display): el resumen de Vendra todavía no llegó';
   const limpio = (t) => esc((t || '').replace(/ - Rosaint.*$/i,'').replace(/Rosaint®?\s*Profesional/i,'').trim());
 
   const v7 = (p) => Number(p.ventas_7d || 0);
@@ -1761,7 +1773,7 @@ function renderPanelAdsML(pubs) {
       <summary style="cursor:pointer; padding:9px 14px; display:flex; align-items:center; gap:10px; font-size:13px; list-style:none; user-select:none;">
         <span style="font-weight:600;">📊 Publicidad</span>
         ${badge}
-        <span style="color:var(--muted); font-weight:400;">gasto mes ${fmtARS(gastoTotal)} · 7d ${fmtARS(gasto7d)} · ${conAds.length} con ADS</span>
+        <span style="color:var(--muted); font-weight:400;" title="${esc(tipVendra)}">gasto mes ${fmtARS(gastoTotal)} · 7d ${fmtARS(gasto7d)} · ${conAds.length} con ADS${vMes && vMes.display ? ` · incluye Display ${fmtARS(vMes.display)}` : ''}</span>
         <span style="color:var(--muted); margin-left:auto; font-size:11px;">ver detalle ▾</span>
       </summary>
       <div style="padding:12px 14px; background:var(--surface);">

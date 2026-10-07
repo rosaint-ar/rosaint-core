@@ -83,6 +83,40 @@ function primerDiaMes(d: Date): string {
 }
 const fISO = (d: Date) => d.toISOString().slice(0, 10);
 
+// ===== Puente con Vendra (07-10-2026) =====
+// Vendra tiene la publicidad completa al centavo: Product Ads (API de Ads, día por día) + Display (sale de
+// la facturación de ML, corrida un día), que esta función no puede leer por anuncio. Se le pide el resumen
+// a ml-ganancias de Vendra con la clave del puente (sirve solo para la cuenta ROSAINT.AR) y se guarda en
+// ml_vendra_resumen. Si Vendra no responde, se anota el error y el resto de la sincronización sigue igual.
+async function traerDeVendra(supabase: any, clave: string, desde: string, hasta: string): Promise<string | null> {
+  const url = Deno.env.get("VENDRA_URL"), anon = Deno.env.get("VENDRA_ANON_KEY"), key = Deno.env.get("VENDRA_BRIDGE_KEY");
+  if (!url || !anon || !key) return "puente con Vendra sin configurar";
+  try {
+    const r = await fetch(`${url}/functions/v1/ml-ganancias`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${anon}`, apikey: anon, "x-core-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: desde, to: hasta }),
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.error) throw new Error(`Vendra ${r.status}: ${JSON.stringify(j?.error ?? j).slice(0, 150)}`);
+    const m = j.marketing || {};
+    const pubs = (m.publicaciones || []).map((p: any) => ({ item_id: p.itemId, gasto: p.gasto, atribuido: p.atribuido, unidades: p.unidades, acos: p.acos, techo: p.techo, estado: p.estado }));
+    const { error } = await supabase.from("ml_vendra_resumen").upsert({
+      clave, desde, hasta,
+      publicidad: j.publicidadNeta ?? j.publicidad, product_ads: m.productAds ?? null, display: m.display ?? null,
+      cupones: j.cuponesMarketing ?? null, ventas: j.facturacion ?? null, cargos: j.cargosML ?? null, ganancia: j.gananciaNeta ?? null,
+      fuente: m.fuente ?? null, por_dia: m.porDia ?? null, publicaciones: pubs, traido_en: new Date().toISOString(), error: null,
+    });
+    if (error) throw new Error(error.message);
+    return null;
+  } catch (e) {
+    const msg = String((e as Error).message || e);
+    // Se conservan los últimos números buenos; solo se anota el error.
+    await supabase.from("ml_vendra_resumen").update({ error: msg, traido_en: new Date().toISOString() }).eq("clave", clave);
+    return msg;
+  }
+}
+
 
 // ===== Control de acceso (auditoría 6-oct-2026) =====
 // Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
@@ -240,9 +274,15 @@ _servirConGuardia(async (req) => {
     }
 
     const gastoMes = Math.round(rows.reduce((s, r) => s + r.costo, 0));
+    // Publicidad completa (con Display) desde Vendra: mes en curso y últimos 7 días.
+    const vendra = {
+      mes: await traerDeVendra(supabase, "mes", fISO(desdeMes), fISO(hoy)),
+      "7d": await traerDeVendra(supabase, "7d", fISO(desde7), fISO(hoy)),
+    };
     return new Response(JSON.stringify({
       ok: true, advertiserId, periodo, anuncios: adsMes.length,
       guardadas, conGasto, gastoMes, campañas: campEstado, errores: errores.slice(0, 10),
+      vendra: { mes: vendra.mes ?? "ok", "7d": vendra["7d"] ?? "ok" },
     }), { status: 200, headers: { ...cors, "content-type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), {
