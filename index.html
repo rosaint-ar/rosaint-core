@@ -31,6 +31,18 @@
     .kpi .v { font-size: 25px; }
     .kpi .spark { height: 30px; margin-top: 6px; }
 
+    /* Tarjeta de WhatsApp: verde de la marca WhatsApp para reconocerla de un vistazo */
+    #app-content .kpi.wa { --wa: #25D366; --wa-dark: #128C7E; background: color-mix(in srgb, var(--wa) 9%, var(--surface)); border-color: color-mix(in srgb, var(--wa) 35%, var(--border)); }
+    #app-content .kpi.wa::after { background: linear-gradient(90deg, var(--wa), transparent); }
+    #app-content .kpi.wa:hover { box-shadow: var(--shadow), 0 0 26px -12px color-mix(in srgb, var(--wa) 70%, transparent); }
+    .kpi.wa .l { display: flex; align-items: center; gap: 6px; color: var(--wa-dark); }
+    .kpi.wa .l svg { width: 14px; height: 14px; fill: var(--wa-dark); flex-shrink: 0; }
+    .kpi.wa .v { color: var(--wa-dark); }
+    .kpi.wa.hay .v { color: var(--hot); }
+    .kpi.wa .d b { color: var(--text); font-weight: 650; }
+    .kpi.wa .pulso { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 8px var(--hot); animation: pulse-ring 1.8s infinite; margin-left: auto; }
+    .kpi.wa.hay .pulso { display: inline-block; }
+
     /* Paneles (usan .card de shell + estos detalles) */
     .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
     .panel-head h2 { font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
@@ -125,6 +137,11 @@
       <span class="l">A fraccionar hoy (u.)</span>
       <span class="v" id="kpi-fraccionar" style="color:var(--warn)">—</span>
       <span class="d" id="kpi-fraccionar-sub">—</span>
+    </a>
+    <a href="comercial/whatsapp.html" class="kpi wa" id="kpi-wa-card" title="Consultas de WhatsApp donde el último mensaje es del cliente">
+      <span class="l"><svg viewBox="0 0 24 24"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z"/></svg>WhatsApp sin responder<span class="pulso"></span></span>
+      <span class="v" id="kpi-wa">—</span>
+      <span class="d" id="kpi-wa-sub">—</span>
     </a>
     <a href="produccion/hoja.html" class="kpi">
       <span class="l">Actividades del día</span>
@@ -243,9 +260,30 @@ const HOY = new Date().toLocaleDateString('en-CA');
 async function cargarTodo(manual) {
   _planP = null; // cada actualización calcula el plan de nuevo
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion()]);
+  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp()]);
   firstLoad = false;
 }
+
+// WhatsApp sin responder: misma vista que el módulo (comercial/whatsapp.html), en vivo por Realtime
+async function cargarWhatsApp() {
+  const { data, error } = await sb.from('wsp_pendientes').select('nombre, telefono, horas_esperando, categoria').order('ultimo_mensaje', { ascending: true });
+  const card = document.getElementById('kpi-wa-card'), sub = document.getElementById('kpi-wa-sub');
+  if (error) { sub.textContent = 'No se pudo leer'; return; }
+  const filas = (data || []).filter(f => f.categoria !== 'no_requiere');
+  setNum('kpi-wa', filas.length);
+  card.classList.toggle('hay', filas.length > 0);
+  if (!filas.length) { sub.textContent = '✓ Todo respondido'; return; }
+  const viejo = filas[0], h = Number(viejo.horas_esperando);
+  const espera = h < 1 ? Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? Math.round(h) + ' h' : Math.round(h / 24) + ' días';
+  const viejos = filas.filter(f => f.horas_esperando >= 24).length;
+  sub.innerHTML = '<b>' + escapeHTML(viejo.nombre || viejo.telefono) + '</b> espera ' + espera + (viejos ? ' · ' + viejos + ' de +24 h' : '');
+}
+
+let _waTimer = null;
+sb.channel('inicio-wsp')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wsp_mensajes' },
+      () => { clearTimeout(_waTimer); _waTimer = setTimeout(cargarWhatsApp, 1500); })
+  .subscribe();
 
 async function cargarUSD() {
   const { data } = await sb.from('cotizaciones_dolar').select('venta_oficial, fecha').order('fecha', { ascending: false }).limit(12);
