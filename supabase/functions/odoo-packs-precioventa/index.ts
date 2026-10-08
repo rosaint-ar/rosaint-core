@@ -345,6 +345,24 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: out.every((o) => !o.error), dry_run: dry, costos: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo vincular_nc: marca a qué factura de proveedor corrige una NC cargada suelta ----
+    // { vincular_nc: { nc: "NC-A 00002-00000369", factura: "FA-A 00002-00007607" }, dry_run }
+    // Solo escribe reversed_entry_id en la NC: no toca importes, asientos, stock ni el pedido de compra.
+    if (body.vincular_nc && typeof body.vincular_nc === "object") {
+      const dry = body.dry_run !== false;
+      const { nc, factura } = body.vincular_nc as { nc: string; factura: string };
+      const campos = ["id", "name", "move_type", "state", "partner_id", "invoice_date", "amount_untaxed", "reversed_entry_id"];
+      const [n] = await call("account.move", "search_read", [[["name", "=", String(nc)]], campos]);
+      const [f] = await call("account.move", "search_read", [[["name", "=", String(factura)]], campos]);
+      if (!n || !f) throw new Error(`No encontré ${!n ? nc : factura}`);
+      if (n.move_type !== "in_refund" || f.move_type !== "in_invoice") throw new Error("La NC tiene que ser NC de proveedor y la factura, factura de proveedor");
+      if (n.partner_id?.[0] !== f.partner_id?.[0]) throw new Error("La NC y la factura son de proveedores distintos");
+      if (n.reversed_entry_id && n.reversed_entry_id[0] !== f.id) throw new Error(`La NC ya está vinculada a ${n.reversed_entry_id[1]}`);
+      if (!dry) await call("account.move", "write", [[n.id], { reversed_entry_id: f.id }]);
+      const [d] = await call("account.move", "read", [[n.id], campos]);
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, factura: f, nc_antes: n, nc_ahora: d }, null, 2), { headers: cors });
+    }
+
     // ---- Modo cambiar_componente: en UNA orden de fabricación no terminada, cambia un componente por otro ----
     // { cambiar_componente: { orden: "WH/MO/xxxxx", de: "cod", a: "cod" }, dry_run }
     if (body.cambiar_componente) {

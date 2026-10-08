@@ -232,7 +232,15 @@ async function relevarCostos(codigosExtra: string[] = []) {
     [[["purchase_line_id", "in", plIds], ["parent_state", "=", "posted"]]],
     { fields: ["move_id", "purchase_line_id", "product_id", "price_unit", "discount", "quantity", "product_uom_id", "currency_id", "price_subtotal", "balance", "date"] }) as Row[] : [];
   const movIds = [...new Set(factLineas.map((l) => m2oId(l.move_id)).filter((x) => x != null))] as number[];
-  const facturas = movIds.length ? await call("account.move", "read", [movIds, ["name", "invoice_date", "partner_id", "currency_id", "invoice_currency_rate", "move_type"]]) as Row[] : [];
+  const facturas = movIds.length ? await call("account.move", "read", [movIds, ["name", "invoice_date", "partner_id", "currency_id", "invoice_currency_rate", "move_type", "payment_state", "invoice_payments_widget"]]) as Row[] : [];
+
+  // Notas de crédito de proveedor sobre estos productos (con o sin pedido vinculado).
+  // reversed_entry_id dice a qué factura corrigen.
+  const ncLineas = await call("account.move.line", "search_read",
+    [[["product_id", "in", pids], ["move_id.move_type", "=", "in_refund"], ["parent_state", "=", "posted"]]],
+    { fields: ["move_id", "purchase_line_id", "product_id", "price_unit", "quantity", "product_uom_id", "currency_id", "price_subtotal", "balance", "date"] }) as Row[];
+  const ncIds = [...new Set(ncLineas.map((l) => m2oId(l.move_id)).filter((x) => x != null))] as number[];
+  const ncs = ncIds.length ? await call("account.move", "read", [ncIds, ["name", "invoice_date", "partner_id", "currency_id", "reversed_entry_id", "ref"]]) as Row[] : [];
 
   // Costos en destino (flete, despacho, etc. prorrateados a la recepción). Si el módulo
   // no estuviera instalado, se informa el error y sigue el resto.
@@ -245,7 +253,7 @@ async function relevarCostos(codigosExtra: string[] = []) {
       { fields: ["cost_id", "product_id", "move_id", "quantity", "former_cost", "additional_landed_cost", "cost_line_id"] }) as Row[];
   } catch (e) { costos_destino_error = String((e as Error).message ?? e); }
 
-  return { productos: prods, uoms, capas, moves, facturas_lineas: factLineas, facturas,
+  return { productos: prods, uoms, capas, moves, facturas_lineas: factLineas, facturas, nc_lineas: ncLineas, ncs,
     costos_destino, costos_destino_lineas, costos_destino_error, duracion_ms: Date.now() - t0 };
 }
 
