@@ -257,6 +257,105 @@ async function relevarCostos(codigosExtra: string[] = []) {
     costos_destino, costos_destino_lineas, costos_destino_error, duracion_ms: Date.now() - t0 };
 }
 
+// --- Modo "costos_sync": actualiza el precio en USD de Core con la última compra real de Odoo ---
+// Reglas (acordadas con Dirección, 08-10-2026):
+//  costo = (renglón de factura − NC que la revierte + flete en destino) ÷ cantidad que entró (kg o unidades),
+//          pasado a USD con el BNA (cotizaciones_dolar) de la fecha de factura. Sin IVA ni percepciones.
+//  Factura pagada con el diario "Pagos internos" = mercadería sin costo: se ignora y vale la compra anterior.
+//  Recepción todavía sin factura: precio del pedido (origen odoo-pedido); se corrige cuando entra la factura.
+//  Un precio cargado a mano en Core después de la última compra se respeta hasta que entre una compra nueva.
+async function sincronizarCostos(sb: ReturnType<typeof createClient>, aplicar: boolean) {
+  const d = await relevarCostos() as Record<string, any>;
+  const { data: cot } = await sb.from("cotizaciones_dolar").select("fecha,venta_oficial").order("fecha");
+  const fechas = (cot || []).map((c: any) => [String(c.fecha), Number(c.venta_oficial)] as [string, number]);
+  const bna = (f: string) => { let r: number | null = null; for (const [x, v] of fechas) { if (x <= f) r = v; else break; } return r; };
+
+  const mv = new Map<number, Row>(d.moves.map((m: Row) => [m.id as number, m]));
+  const fac = new Map<number, Row>(d.facturas.map((f: Row) => [f.id as number, f]));
+  const interna = (f: Row) => ((f.invoice_payments_widget as any)?.content || []).some((p: any) => /pagos internos/i.test(String(p.journal_name)));
+  const hijos: Record<number, Row[]> = {};
+  for (const c of d.capas) { const p = m2oId(c.stock_valuation_layer_id); if (p != null) (hijos[p] = hijos[p] || []).push(c); }
+
+  // Por renglón de pedido: cantidad que entró, valor de la recepción y flete en destino
+  const pl: Record<number, { pid: number; cant: number; valRec: number; flete: number; fechaRec: string }> = {};
+  for (const c of d.capas) {
+    if (m2oId(c.stock_valuation_layer_id) != null || !c.stock_move_id || Number(c.quantity) <= 0) continue;
+    const m = mv.get(m2oId(c.stock_move_id)!); const k = m2oId(m?.purchase_line_id); if (k == null) continue;
+    const h = hijos[c.id as number] || [];
+    const x = pl[k] = pl[k] || { pid: m2oId(c.product_id)!, cant: 0, valRec: 0, flete: 0, fechaRec: String(c.create_date).slice(0, 10) };
+    x.cant += Number(c.quantity);
+    x.valRec += Number(c.value) + h.filter((y) => !/^LC/.test(String(y.description))).reduce((s, y) => s + Number(y.value), 0);
+    x.flete += h.filter((y) => /^LC/.test(String(y.description))).reduce((s, y) => s + Number(y.value), 0);
+  }
+  const ncPorFac: Record<string, number> = {};
+  const ncById = new Map<number, Row>(d.ncs.map((n: Row) => [n.id as number, n]));
+  for (const l of d.nc_lineas) {
+    const r = m2oId(ncById.get(m2oId(l.move_id)!)?.reversed_entry_id); if (r == null) continue;
+    const k = `${r}|${m2oId(l.product_id)}`; ncPorFac[k] = (ncPorFac[k] || 0) + Math.abs(Number(l.balance));
+  }
+
+  const compras: Row[] = [];
+  for (const [k, x] of Object.entries(pl)) {
+    const fl = d.facturas_lineas.filter((l: Row) => m2oId(l.purchase_line_id) === Number(k));
+    const fs = [...new Set(fl.map((l: Row) => m2oId(l.move_id)))].map((id) => fac.get(id as number)).filter(Boolean) as Row[];
+    let ars: number, fecha = x.fechaRec, origen = "odoo", factura: string | null = null, proveedor = "", nota = "";
+    if (!fl.length) { ars = x.valRec; origen = "odoo-pedido"; nota = "recepción sin factura: precio del pedido"; }
+    else {
+      if (fs.some(interna)) continue;
+      const nc = fs.reduce((s, f) => s + (ncPorFac[`${f.id}|${x.pid}`] || 0), 0);
+      ars = fl.reduce((s: number, l: Row) => s + Number(l.balance), 0) - nc;
+      if (ars <= 0.01) continue; // anulada por NC
+      const f = fs[0]; fecha = String(f.invoice_date || fecha); factura = fs.map((f) => f.name).join(" + "); proveedor = m2oName(f.partner_id);
+      if (nc) nota = `menos NC por $${nc.toFixed(2)}`;
+    }
+    const tc = bna(fecha); if (!tc) continue;
+    compras.push({ linea: Number(k), pid: x.pid, fecha, cant: x.cant, ars, flete: x.flete, tc, origen, factura, proveedor, nota,
+      usd: (ars + x.flete) / x.cant / tc });
+  }
+
+  const { data: items } = await sb.from("items").select("codigo,tipo,unidad").in("tipo", ["MP", "IN"]);
+  const { data: precios } = await sb.from("precios_items").select("*").order("vigente_desde", { ascending: false }).order("id", { ascending: false }).limit(5000);
+  const ultimo: Record<string, any> = {}; const lineasVistas = new Set<number>();
+  for (const p of precios || []) { if (!ultimo[p.codigo_item]) ultimo[p.codigo_item] = p; if (p.odoo_linea_compra) lineasVistas.add(p.odoo_linea_compra); }
+  const prodPorCod = new Map<string, Row>(d.productos.map((p: Row) => [String(p.default_code ?? "").trim(), p]));
+
+  const cambios: any[] = [], avisos: any[] = [];
+  for (const it of items || []) {
+    const p = prodPorCod.get(it.codigo); if (!p) continue;
+    const uOdoo = m2oName(p.uom_id).toLowerCase(), uCore = String(it.unidad).toLowerCase();
+    if (!((uCore === "kg" && uOdoo === "kg") || (uCore === "unidad" && uOdoo === "unidades"))) { avisos.push({ codigo: it.codigo, aviso: `unidad distinta (Core ${it.unidad} / Odoo ${m2oName(p.uom_id)})` }); continue; }
+    const c = compras.filter((x) => x.pid === p.id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || Number(b.linea) - Number(a.linea))[0];
+    if (!c) continue;
+    const u = ultimo[it.codigo]; const usd = Math.round(Number(c.usd) * 10000) / 10000;
+    if (u && u.odoo_linea_compra === c.linea) {
+      // misma compra: solo se corrige si cambió el importe (llegó la factura, una NC o el flete)
+      if (u.origen === c.origen && Math.abs(Number(u.usd_unidad) / usd - 1) < 0.005) continue;
+    } else if (u && u.origen === "manual" && lineasVistas.has(c.linea)) {
+      // esta compra ya se había tomado y después alguien cargó un precio a mano:
+      // manda el manual hasta que entre una compra nueva
+      continue;
+    }
+    const vig = u && String(u.vigente_desde) > String(c.fecha) ? String(u.vigente_desde) : String(c.fecha);
+    cambios.push({
+      codigo_item: it.codigo, usd_unidad: usd, flete_pct: 0, iva_pct: 21, vigente_desde: vig,
+      origen: c.origen, odoo_linea_compra: c.linea, factura: c.factura, proveedor: c.proveedor, fecha_compra: c.fecha,
+      cantidad_recibida: Math.round(Number(c.cant) * 10000) / 10000,
+      costo_ars_unidad: Math.round(Number(c.ars) / Number(c.cant) * 100) / 100,
+      flete_ars_unidad: Math.round(Number(c.flete) / Number(c.cant) * 100) / 100, tc_bna: c.tc,
+      notas: `Auto desde Odoo: ${c.factura || "pedido sin factura"}${c.nota ? " (" + c.nota + ")" : ""}`,
+      _antes_usd: u ? Number(u.usd_unidad) : null, _antes_origen: u?.origen ?? null,
+    });
+  }
+  let insertados = 0;
+  if (aplicar && cambios.length) {
+    const filas = cambios.map(({ _antes_usd, _antes_origen, ...r }) => r);
+    const { error } = await sb.from("precios_items").insert(filas);
+    if (error) throw new Error("No se pudieron guardar los precios: " + error.message);
+    insertados = filas.length;
+  }
+  return { aplicado: aplicar, insertados, cambios, avisos };
+}
+
 
 // ===== Control de acceso (auditoría 6-oct-2026) =====
 // Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
@@ -309,6 +408,11 @@ _servirConGuardia(async (req: Request) => {
         return new Response(JSON.stringify({ ok: false, error: "Todavia no hay ninguna foto guardada" }), { headers: cors });
       }
       return new Response(JSON.stringify({ ok: true, cache: true, generado_en: data[0].generado_en, datos: data[0].datos }), { headers: cors });
+    }
+
+    // { modo: "costos_sync", aplicar: true } guarda; sin aplicar es un ensayo que solo lista los cambios
+    if (body.modo === "costos_sync") {
+      return new Response(JSON.stringify({ ok: true, ...(await sincronizarCostos(sb, body.aplicar === true)) }), { headers: cors });
     }
 
     if (body.modo === "costos") {
