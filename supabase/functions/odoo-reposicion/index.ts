@@ -262,7 +262,8 @@ async function relevarCostos(codigosExtra: string[] = []) {
 //  costo = (renglón de factura − NC que la revierte + flete en destino) ÷ cantidad que entró (kg o unidades),
 //          pasado a USD con el BNA (cotizaciones_dolar) de la fecha de factura. Sin IVA ni percepciones.
 //  Factura pagada con el diario "Pagos internos" = mercadería sin costo: se ignora y vale la compra anterior.
-//  Recepción todavía sin factura: precio del pedido (origen odoo-pedido); se corrige cuando entra la factura.
+//  Recepción todavía sin factura: no reemplaza a una compra facturada. Solo si el ítem no tiene ninguna
+//  factura se usa el precio del pedido (origen odoo-pedido), y se corrige cuando entra la factura.
 //  Un precio cargado a mano en Core después de la última compra se respeta hasta que entre una compra nueva.
 async function sincronizarCostos(sb: ReturnType<typeof createClient>, aplicar: boolean) {
   const d = await relevarCostos() as Record<string, any>;
@@ -324,7 +325,11 @@ async function sincronizarCostos(sb: ReturnType<typeof createClient>, aplicar: b
     const p = prodPorCod.get(it.codigo); if (!p) continue;
     const uOdoo = m2oName(p.uom_id).toLowerCase(), uCore = String(it.unidad).toLowerCase();
     if (!((uCore === "kg" && uOdoo === "kg") || (uCore === "unidad" && uOdoo === "unidades"))) { avisos.push({ codigo: it.codigo, aviso: `unidad distinta (Core ${it.unidad} / Odoo ${m2oName(p.uom_id)})` }); continue; }
-    const c = compras.filter((x) => x.pid === p.id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || Number(b.linea) - Number(a.linea))[0];
+    // Manda la última compra FACTURADA; una recepción sin factura (precio del pedido) solo se usa
+    // si el ítem no tiene ninguna compra facturada. Cuando llega la factura, se corrige sola.
+    const c = compras.filter((x) => x.pid === p.id).sort((a, b) =>
+      Number(a.origen !== "odoo") - Number(b.origen !== "odoo") ||
+      String(b.fecha).localeCompare(String(a.fecha)) || Number(b.linea) - Number(a.linea))[0];
     if (!c) continue;
     const u = ultimo[it.codigo]; const usd = Math.round(Number(c.usd) * 10000) / 10000;
     if (u && u.odoo_linea_compra === c.linea) {

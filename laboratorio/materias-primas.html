@@ -331,6 +331,20 @@ const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&g
 const fmtUSD = n => n == null ? '—' : 'US$ ' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:4});
 const fmtARS = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('es-AR');
 
+
+// De dónde sale el precio: compra de Odoo (se actualiza sola) o carga manual
+function origenPrecioChip(p) {
+  if (!p) return "";
+  const f = (p.fecha_compra || p.vigente_desde || "").split("-").reverse().slice(0, 2).join("/");
+  const txt = p.origen === "odoo" ? "Odoo " + f : p.origen === "odoo-pedido" ? "pedido " + f : "manual " + f;
+  return `<div style="font-size:10px; color:var(--muted); font-weight:400;">${esc(txt)}</div>`;
+}
+function origenPrecioTitulo(p) {
+  if (!p) return "Clic para cargar precio";
+  if (p.origen === "odoo") return `Última compra: ${p.factura || ""} · ${p.proveedor || ""} · ${p.fecha_compra}. ${p.costo_ars_unidad} + flete ${p.flete_ars_unidad} por unidad ÷ BNA ${p.tc_bna}. Se actualiza sola con cada compra. Clic para cargar un precio a mano.`;
+  if (p.origen === "odoo-pedido") return `Recepción sin factura (precio del pedido) del ${p.fecha_compra}. Se corrige cuando entre la factura. Clic para cargar un precio a mano.`;
+  return "Precio cargado a mano el " + p.vigente_desde + ". Se reemplaza solo cuando entre una compra nueva. Clic para actualizar.";
+}
 function calcARSsinIVA(codigo) {
   const p = PRECIOS[codigo]; if (!p || !USD) return null;
   return p.usd_unidad * USD * (1 + (p.flete_pct || 0) / 100);
@@ -345,7 +359,7 @@ async function cargar() {
   try {
     const [items, precios, cats, provs, coti, formulas, comps] = await Promise.all([
       sb.from('items').select('*').eq('tipo', 'MP'),
-      sb.from('precios_items').select('*').order('vigente_desde', { ascending: false }),
+      sb.from('precios_items').select('*').order('vigente_desde', { ascending: false }).order('id', { ascending: false }),
       sb.from('categorias').select('id, nombre, aplica_a'),
       sb.from('proveedores').select('id, nombre').order('nombre'),
       sb.from('cotizaciones_dolar').select('venta_oficial').order('fecha', { ascending: false }).limit(1).single(),
@@ -468,7 +482,7 @@ function render() {
             </td>
             <td style="color:var(--muted);">${esc(nombreCat(i.categoria_id))}</td>
             <td style="color:var(--muted);">${esc(nombreProv(i.proveedor_id))}</td>
-            <td class="num editable" onclick="abrirPrecio('${esc(i.codigo)}')" title="Clic para actualizar precio">${fmtUSD(p?.usd_unidad)}</td>
+            <td class="num editable" onclick="abrirPrecio('${esc(i.codigo)}')" title="${esc(origenPrecioTitulo(p))}">${fmtUSD(p?.usd_unidad)}${origenPrecioChip(p)}</td>
             <td class="num" style="color:var(--muted);">${fmtARS(calcARSsinIVA(i.codigo))}</td>
             <td class="num" style="font-weight:600;">${fmtARS(calcARS(i.codigo))}</td>
             <td style="text-align:center;">
