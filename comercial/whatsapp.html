@@ -72,10 +72,14 @@
   <section id="tab-conector" hidden>
     <div class="wa-grid">
       <div class="wa-card">
-        <h3>Conectar el número de Rosaint</h3>
-        <p>Abre la ventana de Meta para vincular el WhatsApp Business existente (coexistencia): se sigue usando la app en el celular. Al terminar, Meta desvincula las computadoras; después se vuelven a vincular.</p>
-        <button class="btn primary" id="cx-btn" onclick="conectarNumero()">Conectar con Meta</button>
-        <div class="wa-res" id="cx-res"></div>
+        <h3>Mensajes del número de Rosaint</h3>
+        <p>+54 9 341 664-4887 ya está conectado a Meta. Conectar hace que sus mensajes lleguen al Core; desconectar lo deja de hacer. El número sigue igual en el celular y en la PC en los dos casos.</p>
+        <p id="sx-estado"><b>Consultando…</b></p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="sx-on" onclick="suscripcion(true)" disabled>Conectar al Core</button>
+          <button class="btn secondary" id="sx-off" onclick="suscripcion(false)" disabled>Desconectar</button>
+        </div>
+        <div class="wa-res" id="sx-res"></div>
       </div>
 
       <div class="wa-card">
@@ -251,41 +255,43 @@ async function crearPlantilla(){
   b.disabled = false;
 }
 
-// ---------------- Conexión del número (registro insertado de Meta, modo coexistencia)
-const META_APP_ID = '1634017348240006';
-const META_CONFIG_ID = '1105694595478836'; // "ES Config" de la app Rosaint Conector
+// ---------------- Mensajes del número real: suscripción de la app "Rosaint Conector" a su cuenta de WhatsApp
+// El número ya está en la API en coexistencia (cuenta "Rosaint" 560822184352705); suscribirse solo agrega
+// a la app como destinataria de los avisos de Meta. No registra ni da de baja el número.
+const WABA_ROSAINT = '560822184352705';
+const APP_ID = '1634017348240006';
 
-window.fbAsyncInit = function(){
-  FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: false, version: 'v26.0' });
-};
+async function estadoSuscripcion(){
+  const el = document.getElementById('sx-estado');
+  try {
+    const r = await api({ accion: 'waba', waba: WABA_ROSAINT });
+    if (!r.ok) throw new Error(r.error);
+    const apps = (r.apps_suscriptas && r.apps_suscriptas.data) || [];
+    const on = apps.some(a => (a.whatsapp_business_api_data || {}).id === APP_ID);
+    const num = ((r.numeros && r.numeros.data) || [])[0] || {};
+    el.innerHTML = (on ? '🟢 <b>Conectado al Core</b>: los mensajes nuevos llegan a "Sin responder".'
+                       : '⚪ <b>No conectado</b>: los mensajes no llegan al Core.')
+      + `<br><small>Número ${esc(num.display_phone_number || '')} · ${esc(num.status || '')} · también lo reciben: ${esc(apps.filter(a => (a.whatsapp_business_api_data || {}).id !== APP_ID).map(a => a.whatsapp_business_api_data.name).join(', ') || 'nadie más')}</small>`;
+    document.getElementById('sx-on').disabled = on;
+    document.getElementById('sx-off').disabled = !on;
+  } catch (e) {
+    el.textContent = 'No se pudo consultar a Meta: ' + e.message;
+  }
+}
 
-// Meta informa por postMessage cómo terminó la ventana (ids de la cuenta y del número, o en qué paso se cortó)
-window.addEventListener('message', (ev) => {
-  if (!/(^|\.)facebook\.com$/.test(new URL(ev.origin).hostname)) return;
-  let d; try { d = JSON.parse(ev.data); } catch { return; }
-  if (d.type !== 'WA_EMBEDDED_SIGNUP') return;
-  const ok = /^FINISH/.test(d.event);
-  resultado('cx-res', ok, (ok ? '✓ ' : '') + 'Meta: ' + d.event + '\n' + JSON.stringify(d.data || {}, null, 1));
-});
-
-function conectarNumero(){
-  if (!window.FB) return resultado('cx-res', false, 'Todavía no cargó el conector de Meta. Probá de nuevo en unos segundos.');
-  resultado('cx-res', true, 'Ventana de Meta abierta…');
-  FB.login((resp) => {
-    if (!resp.authResponse) {
-      const el = document.getElementById('cx-res');
-      if (!/FINISH/.test(el.textContent)) resultado('cx-res', false, 'La ventana se cerró sin terminar la conexión.');
-    }
-  }, {
-    config_id: META_CONFIG_ID,
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
-  });
+async function suscripcion(conectar){
+  if (!conectar && !confirm('¿Dejar de recibir los mensajes en el Core? El número sigue funcionando igual en el celular y la PC.')) return;
+  document.getElementById('sx-on').disabled = document.getElementById('sx-off').disabled = true;
+  try {
+    const r = await api({ accion: conectar ? 'suscribir' : 'desuscribir', waba: WABA_ROSAINT });
+    if (!r.ok) throw new Error(r.error);
+    resultado('sx-res', true, conectar ? '✓ Conectado. Los mensajes nuevos van a empezar a llegar.' : '✓ Desconectado. Ya no llegan mensajes al Core.');
+  } catch (e) { resultado('sx-res', false, e.message); }
+  estadoSuscripcion();
 }
 
 cargarPendientes();
+estadoSuscripcion();
 </script>
-<script async defer crossorigin="anonymous" src="https://connect.facebook.net/es_LA/sdk.js"></script>
 </body>
 </html>
