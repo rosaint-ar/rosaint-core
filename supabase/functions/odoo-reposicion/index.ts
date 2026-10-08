@@ -198,6 +198,57 @@ async function relevar() {
   return { datos, duracion_ms: Date.now() - t0 };
 }
 
+// --- Modo "costos" (SOLO LECTURA, no guarda nada) ---
+// Para auditar de dónde sale el costo de cada materia prima y envase:
+// unidades (stock / compra), capas de valuación de las recepciones (incluye el ajuste
+// por precio de factura) y renglones de factura vinculados a cada pedido.
+async function relevarCostos(codigosExtra: string[] = []) {
+  const t0 = Date.now();
+  // Materias primas y envases + códigos sueltos que Core usa y no aparecen en esas categorías.
+  const dom = codigosExtra.length
+    ? ["|", ["categ_id", "in", CATEGORIAS_COMPRA], ["default_code", "in", codigosExtra]]
+    : [["categ_id", "in", CATEGORIAS_COMPRA]];
+  const prods = await call("product.product", "search_read", [dom], {
+    fields: ["id", "default_code", "name", "categ_id", "uom_id", "uom_po_id", "standard_price", "qty_available", "active"],
+    context: { active_test: false },
+  }) as Row[];
+  const pids = prods.map((p) => p.id as number);
+
+  const uomIds = [...new Set(prods.flatMap((p) => [m2oId(p.uom_id), m2oId(p.uom_po_id)]).filter((x) => x != null))];
+  const uoms = await call("uom.uom", "read", [uomIds, ["name", "factor", "factor_inv", "category_id"]]) as Row[];
+
+  const capas = await call("stock.valuation.layer", "search_read",
+    [[["company_id", "=", COMPANY_ID], ["product_id", "in", pids]]],
+    { fields: ["id", "product_id", "quantity", "value", "unit_cost", "create_date", "stock_move_id", "stock_valuation_layer_id", "account_move_id", "description"] }) as Row[];
+
+  const moveIds = [...new Set(capas.map((c) => m2oId(c.stock_move_id)).filter((x) => x != null))] as number[];
+  const moves: Row[] = [];
+  for (let i = 0; i < moveIds.length; i += 200) {
+    moves.push(...await call("stock.move", "read", [moveIds.slice(i, i + 200), ["date", "reference", "purchase_line_id", "product_uom", "product_uom_qty", "quantity"]]) as Row[]);
+  }
+
+  const plIds = [...new Set(moves.map((m) => m2oId(m.purchase_line_id)).filter((x) => x != null))] as number[];
+  const factLineas = plIds.length ? await call("account.move.line", "search_read",
+    [[["purchase_line_id", "in", plIds], ["parent_state", "=", "posted"]]],
+    { fields: ["move_id", "purchase_line_id", "product_id", "price_unit", "discount", "quantity", "product_uom_id", "currency_id", "price_subtotal", "balance", "date"] }) as Row[] : [];
+  const movIds = [...new Set(factLineas.map((l) => m2oId(l.move_id)).filter((x) => x != null))] as number[];
+  const facturas = movIds.length ? await call("account.move", "read", [movIds, ["name", "invoice_date", "partner_id", "currency_id", "invoice_currency_rate", "move_type"]]) as Row[] : [];
+
+  // Costos en destino (flete, despacho, etc. prorrateados a la recepción). Si el módulo
+  // no estuviera instalado, se informa el error y sigue el resto.
+  let costos_destino: Row[] = [], costos_destino_lineas: Row[] = [], costos_destino_error: string | null = null;
+  try {
+    costos_destino = await call("stock.landed.cost", "search_read", [[["company_id", "=", COMPANY_ID], ["state", "=", "done"]]],
+      { fields: ["id", "name", "date", "amount_total", "picking_ids", "vendor_bill_id", "target_model"] }) as Row[];
+    costos_destino_lineas = await call("stock.valuation.adjustment.lines", "search_read",
+      [[["cost_id", "in", costos_destino.map((c) => c.id as number)]]],
+      { fields: ["cost_id", "product_id", "move_id", "quantity", "former_cost", "additional_landed_cost", "cost_line_id"] }) as Row[];
+  } catch (e) { costos_destino_error = String((e as Error).message ?? e); }
+
+  return { productos: prods, uoms, capas, moves, facturas_lineas: factLineas, facturas,
+    costos_destino, costos_destino_lineas, costos_destino_error, duracion_ms: Date.now() - t0 };
+}
+
 
 // ===== Control de acceso (auditoría 6-oct-2026) =====
 // Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
@@ -250,6 +301,10 @@ _servirConGuardia(async (req: Request) => {
         return new Response(JSON.stringify({ ok: false, error: "Todavia no hay ninguna foto guardada" }), { headers: cors });
       }
       return new Response(JSON.stringify({ ok: true, cache: true, generado_en: data[0].generado_en, datos: data[0].datos }), { headers: cors });
+    }
+
+    if (body.modo === "costos") {
+      return new Response(JSON.stringify({ ok: true, ...(await relevarCostos(Array.isArray(body.codigos) ? (body.codigos as string[]) : [])) }), { headers: cors });
     }
 
     const { datos, duracion_ms } = await relevar();
