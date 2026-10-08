@@ -373,6 +373,24 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, productos: prods, lineas_por_metodo: resumen }, null, 2), { headers: cors });
     }
 
+    // ---- Modo metodo_flete: método de reparto de los productos de costo en destino ----
+    // { metodo_flete: { codigos: ["GP01","GP03"], metodo: "by_current_cost_price" }, dry_run }
+    // Solo escribe split_method_landed_cost (vale para los costos en destino NUEVOS; los validados no cambian).
+    if (body.metodo_flete && typeof body.metodo_flete === "object") {
+      const dry = body.dry_run !== false;
+      const { codigos, metodo } = body.metodo_flete as { codigos: string[]; metodo: string };
+      if (!["equal", "by_quantity", "by_current_cost_price", "by_weight", "by_volume"].includes(metodo)) throw new Error(`Método no válido: ${metodo}`);
+      const out: any[] = [];
+      for (const cod of (codigos || []).map(String)) {
+        const [v] = await call("product.product", "search_read", [[["default_code", "=", cod], ["landed_cost_ok", "=", true]], ["id", "product_tmpl_id", "name", "split_method_landed_cost"]], { context: { active_test: false } });
+        if (!v) { out.push({ codigo: cod, error: "no es un producto de costo en destino" }); continue; }
+        if (!dry) await call("product.template", "write", [[v.product_tmpl_id[0]], { split_method_landed_cost: metodo }]);
+        const [d] = await call("product.product", "read", [[v.id], ["split_method_landed_cost"]]);
+        out.push({ codigo: cod, nombre: v.name, antes: v.split_method_landed_cost, ahora: d.split_method_landed_cost });
+      }
+      return new Response(JSON.stringify({ ok: out.every((o) => !o.error), dry_run: dry, productos: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo revaluar_costo: lleva el costo de un producto con stock al valor indicado ----
     // { revaluar_costo: { codigo: costo_unitario_en_pesos }, dry_run }
     // Usa el asistente nativo de revaluación (contrapartida 923 Stock intermedio (entrada), diario 40),
