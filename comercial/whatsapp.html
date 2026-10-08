@@ -31,6 +31,7 @@
     .wa-meta b { color: var(--text); }
     .wa-acciones { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
     .wa-cat { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--muted); margin-left: 6px; }
+    .wa-vivo { font-size: 12px; color: var(--muted); margin: -6px 0 12px; }
     .wa-vacio { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 
     .wa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
@@ -64,7 +65,9 @@
       <div class="wa-chip hot"><span class="n" id="r-viejos">—</span><span class="l">Más de 24 h</span></div>
       <div class="wa-chip warn"><span class="n" id="r-hoy">—</span><span class="l">Menos de 24 h</span></div>
       <div class="wa-chip ok"><span class="n" id="r-total">—</span><span class="l">Chats sin responder</span></div>
+      <div class="wa-chip"><span class="n" id="r-hoy-in">—</span><span class="l">Recibidos hoy</span></div>
     </div>
+    <p class="wa-vivo" id="vivo">Conectando…</p>
     <div class="wa-lista" id="lista"><div class="wa-vacio">Cargando…</div></div>
   </section>
 
@@ -175,8 +178,16 @@ async function cargarPendientes(){
   const tp = document.getElementById('t-pend');
   tp.textContent = filas.length; tp.hidden = !filas.length;
 
+  // Mensajes de clientes recibidos desde las 0 h de hoy (hora de Argentina)
+  const desde = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }) + 'T00:00:00-03:00';
+  const { count } = await sb.from('wsp_mensajes').select('wamid', { count: 'exact', head: true })
+    .eq('sentido', 'in').gte('ts', desde);
+  document.getElementById('r-hoy-in').textContent = count ?? '—';
+  document.getElementById('vivo').textContent = (VIVO ? '🟢 En vivo' : '🔄 Se actualiza cada minuto')
+    + ' · última actualización ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
   if (!filas.length){
-    lista.innerHTML = '<div class="wa-vacio">No hay consultas sin responder. 🎉<br><small>Cuando WhatsApp esté conectado, acá aparece cada chat donde el último mensaje es del cliente.</small></div>';
+    lista.innerHTML = '<div class="wa-vacio">No hay consultas sin responder. 🎉<br><small>Cuando un cliente escribe y nadie le contestó todavía, el chat aparece acá solo.</small></div>';
     return;
   }
   lista.innerHTML = filas.map(f => {
@@ -289,6 +300,19 @@ async function suscripcion(conectar){
   } catch (e) { resultado('sx-res', false, e.message); }
   estadoSuscripcion();
 }
+
+// ---------------- Actualización en vivo
+// Cada mensaje nuevo (del cliente o nuestro) llega por Realtime y recarga la lista; además se refresca
+// cada minuto y al volver a la pestaña, por si la conexión en vivo se cae.
+let VIVO = false, RECARGA = null;
+function recargarPronto(){ clearTimeout(RECARGA); RECARGA = setTimeout(cargarPendientes, 1500); }
+
+sb.channel('wsp-mensajes')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wsp_mensajes' }, recargarPronto)
+  .subscribe((st) => { VIVO = st === 'SUBSCRIBED'; recargarPronto(); });
+
+setInterval(cargarPendientes, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) cargarPendientes(); });
 
 cargarPendientes();
 estadoSuscripcion();
