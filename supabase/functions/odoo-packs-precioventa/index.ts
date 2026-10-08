@@ -363,6 +363,38 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, factura: f, nc_antes: n, nc_ahora: d }, null, 2), { headers: cors });
     }
 
+    // ---- Modo flete_config (solo lectura): cómo está armado el costo en destino ----
+    // Productos marcados como costo en destino + cómo reparte cada línea de los costos en destino ya hechos.
+    if (body.flete_config) {
+      const prods = await call("product.product", "search_read", [[["landed_cost_ok", "=", true]], ["id", "default_code", "name", "split_method_landed_cost", "property_account_expense_id", "categ_id", "type"]], { context: { active_test: false } });
+      const lineas = await call("stock.landed.cost.lines", "search_read", [[["cost_id.company_id", "=", 2]], ["cost_id", "product_id", "split_method", "price_unit", "account_id"]]);
+      const resumen: Record<string, number> = {};
+      for (const l of lineas) { const k = `${l.product_id?.[1]} | ${l.split_method}`; resumen[k] = (resumen[k] || 0) + 1; }
+      return new Response(JSON.stringify({ ok: true, productos: prods, lineas_por_metodo: resumen }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo revaluar_costo: lleva el costo de un producto con stock al valor indicado ----
+    // { revaluar_costo: { codigo: costo_unitario_en_pesos }, dry_run }
+    // Usa el asistente nativo de revaluación (contrapartida 923 Stock intermedio (entrada), diario 40),
+    // igual que la jojoba el 18-09. En ensayo crea el asistente, lee el resultado y NO lo valida.
+    if (body.revaluar_costo && typeof body.revaluar_costo === "object") {
+      const dry = body.dry_run !== false; const out: any[] = [];
+      for (const [cod, valor] of Object.entries(body.revaluar_costo)) {
+        const [v] = await call("product.product", "search_read", [[["default_code", "=", cod]], ["id", "name", "qty_available", "value_svl", "standard_price", "categ_id"]]);
+        if (!v) { out.push({ codigo: cod, error: "no está en Odoo" }); continue; }
+        if (!(v.qty_available > 0)) { out.push({ codigo: cod, error: "sin stock: no hay nada que revaluar" }); continue; }
+        const added = Math.round((v.qty_available * Number(valor) - v.value_svl) * 100) / 100;
+        const wid = await call("stock.valuation.layer.revaluation", "create", [{
+          product_id: v.id, added_value: added, company_id: 2, account_id: 923, account_journal_id: 40,
+          reason: `Costo inicial (inventario de marzo cargado en $0): ${Number(valor).toFixed(2)}/unidad según precio en USD de Core` }]);
+        const [w] = await call("stock.valuation.layer.revaluation", "read", [[wid], ["current_value_svl", "current_quantity_svl", "added_value", "new_value", "new_value_by_qty", "account_id", "account_journal_id"]]);
+        if (!dry) await call("stock.valuation.layer.revaluation", "action_validate_revaluation", [[wid]]);
+        const [d] = await call("product.product", "read", [[v.id], ["standard_price", "value_svl"]]);
+        out.push({ codigo: cod, nombre: v.name, stock: v.qty_available, costo_antes: v.standard_price, valor_antes: v.value_svl, asistente: w, costo_ahora: d.standard_price, valor_ahora: d.value_svl });
+      }
+      return new Response(JSON.stringify({ ok: out.every((o) => !o.error), dry_run: dry, revaluaciones: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo cambiar_componente: en UNA orden de fabricación no terminada, cambia un componente por otro ----
     // { cambiar_componente: { orden: "WH/MO/xxxxx", de: "cod", a: "cod" }, dry_run }
     if (body.cambiar_componente) {
