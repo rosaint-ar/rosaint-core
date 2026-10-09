@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finanzas · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css">
+  <style>
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tabs button { font: inherit; font-size: 13px; font-weight: 650; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; box-shadow: var(--shadow-card); }
+    .tabs button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); box-shadow: 0 3px 10px var(--accent-glow); }
+    .tabs button .n { font-size: 11px; opacity: .8; margin-left: 4px; }
+    .status { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; min-height: 18px; }
+    .status.err { color: var(--hot); }
+    .status .ok { color: var(--ok); font-weight: 700; }
+    .status .bad { color: var(--hot); font-weight: 700; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .kpi .v { font-size: 23px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .kpi .spark { height: 26px; margin-top: 2px; }
+    .kpi.main .v { color: var(--accent); }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: 16px 18px; margin-bottom: 16px; min-width: 0; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .panel-head h2 { font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 0; }
+    .panel-head .hint { font-size: 12px; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    .grid2 > .panel { margin-bottom: 0; }
+    .row-gap { margin-bottom: 16px; }
+    .nota { font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
+    .nota b { color: var(--text-2); }
+    .chart { position: relative; }
+    .tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-size: 12px; padding: 8px 11px; border-radius: 9px; opacity: 0; transition: opacity .12s; white-space: nowrap; box-shadow: var(--shadow); z-index: 5; }
+    .tip .t { font-weight: 750; margin-bottom: 4px; }
+    .tip .r { display: flex; justify-content: space-between; gap: 16px; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); align-items: center; }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+    .alertas { display: flex; flex-direction: column; gap: 8px; }
+    .alerta { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.45; }
+    .alerta .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; }
+    .alerta.hot .ic { background: var(--hot); } .alerta.warn .ic { background: var(--warn); } .alerta.ok .ic { background: var(--ok); } .alerta.info .ic { background: var(--structure); }
+    .alerta b { color: var(--text); }
+    .alerta .m { font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cuentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .cta { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow-card); cursor: pointer; transition: transform .15s, box-shadow .15s; }
+    .cta:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .cta.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint), var(--shadow); }
+    .cta .n { font-weight: 750; font-size: 14px; }
+    .cta .s { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .cta .v { font-size: 21px; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .cta .spark { height: 28px; margin-top: 6px; }
+    .cta.rara { border-style: dashed; }
+    .tbl-wrap { max-height: 520px; overflow: auto; }
+    .tbl-wrap thead th { position: sticky; top: 0; z-index: 1; }
+    .tbl td, .tbl th { padding: 9px 11px; }
+    .tbl td.num, .tbl th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tbl .sub { display: block; font-size: 11px; color: var(--muted); }
+    .tbl tr.grupo td { background: var(--surface-2); font-weight: 750; }
+    #tbl-flujo td:first-child, #tbl-res td:first-child { min-width: 190px; }
+    .tbl tr.total td { font-weight: 800; border-top: 2px solid var(--border-2); }
+    .neg { color: var(--hot); } .pos { color: var(--ok); } .muted { color: var(--muted); }
+    .chip-s { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+    .chip-s.hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
+    .chip-s.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+    .chip-s.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+    .chip-s.info { color: var(--structure); background: color-mix(in srgb, var(--structure) 13%, transparent); }
+    .buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    @media (max-width: 760px) { .buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .bk { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+    .bk .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 650; }
+    .bk .v { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .bk .c { font-size: 11.5px; color: var(--muted); }
+    .bk.hot .v { color: var(--hot); } .bk.warn .v { color: var(--warn); }
+    .seg-mini { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+    .seg-mini button { font: inherit; font-size: 12px; font-weight: 650; padding: 5px 11px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+    .seg-mini button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); }
+    .loading { padding: 60px 20px; text-align: center; color: var(--muted); }
+    .vacio { padding: 18px; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body data-page="finanzas" data-title="Finanzas" data-subtitle="Dinero, cobranzas, pagos, deudas y resultado · datos de Odoo (VELAZQUEZ)">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="tabs" id="tabs">
+    <button data-t="resumen" class="on">Resumen</button>
+    <button data-t="cuentas">Cuentas</button>
+    <button data-t="flujo">Flujo de fondos</button>
+    <button data-t="cobrar">A cobrar</button>
+    <button data-t="pagar">A pagar</button>
+    <button data-t="resultado">Resultado</button>
+    <button data-t="balance">Balance</button>
+  </div>
+  <div class="status" id="status">Leyendo Odoo…</div>
+  <div id="root"><div class="loading">Leyendo cuentas, cobros y pagos de Odoo…</div></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/charts.js"></script>
+<script src="../shell/shell.js"></script>
+<script>
+(function () {
+  const FN = window.SUPABASE_URL + '/functions/v1/odoo-metricas';
+  const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const INTERNOS = 'Pagos internos';                 // diario que no es una cuenta real de dinero
+  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
+
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const $ = id => document.getElementById(id);
+  const fmt$ = v => (v < -0.004 ? '−$ ' : '$ ') + Math.abs(Math.round(v)).toLocaleString('es-AR');
+  const fmt$c = v => (v < -0.004 ? '−$ ' : '$ ') + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtN = v => Math.round(v).toLocaleString('es-AR');
+  const fmtP = v => isFinite(v) ? (v * 100).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : '—';
+  const corto = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; if (a >= 1e6) return s + '$' + (a / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + 'M'; if (a >= 1e3) return s + '$' + Math.round(a / 1e3) + 'k'; return s + '$' + Math.round(a); };
+  const lblMes = m => { const [y, mm] = m.split('-'); return MES_TXT[+mm - 1] + ' ' + y.slice(2); };
+  const lblMesLargo = m => { const [y, mm] = m.split('-'); return MES_LARGO[+mm - 1] + ' ' + y; };
+  const fecha = f => f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(2, 4) : '';
+  const sum = a => a.reduce((s, x) => s + (x || 0), 0);
+
+  let D = null;
+  const st = { tab: (location.hash || '#resumen').slice(1), cuenta: null, internos: false, flujoModo: 'mes' };
+  const OBS = [];
+
+  async function cargar() {
+    try {
+      const { data } = await window.sb.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) throw new Error('Sesión vencida: volvé a ingresar.');
+      const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'apikey': window.SUPABASE_KEY }, body: JSON.stringify({ modo: 'finanzas_tablero' }) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Error al leer Odoo');
+      D = j; prepararDatos(); render();
+    } catch (e) {
+      $('status').className = 'status err'; $('status').textContent = 'No se pudieron leer los datos: ' + e.message; $('root').innerHTML = '';
+    }
+  }
+
+  // ---------- derivados ----------
+  let X = {};
+  function prepararDatos() {
+    const reales = D.cuentas.filter(c => c.diario !== INTERNOS);
+    const internos = D.cuentas.find(c => c.diario === INTERNOS);
+    const dinero = sum(reales.map(c => c.saldo));
+    const aCobrar = sum(D.a_cobrar.map(x => x.saldo));
+    const vencidoCobrar = sum(D.a_cobrar.filter(x => x.dias_vencido > 0).map(x => x.saldo));
+    const aPagar = sum(D.a_pagar.map(x => x.saldo));
+    const vencidoPagar = sum(D.a_pagar.filter(x => x.dias_vencido > 0).map(x => x.saldo));
+    const prox7 = sum(D.a_pagar.filter(x => x.dias_vencido <= 0 && x.dias_vencido >= -7).map(x => x.saldo));
+    const credProv = sum((D.creditos_proveedores || []).map(x => x.saldo));
+    const credCli = sum((D.creditos_clientes || []).map(x => x.saldo));
+    const sc = c => (D.saldos_cuentas.find(x => x.codigo === c) || {}).saldo || 0;
+    const ivaDeb = -sc('2.1.3.03.010'), ivaCred = sc('1.1.4.04.010'), percIva = sc('1.1.4.04.020');
+    const percIibb = sum(D.saldos_cuentas.filter(x => String(x.codigo).startsWith('1.1.4.02')).map(x => x.saldo));
+    const N = D.meses.length;
+    const dineroMes = D.meses.map((_, i) => sum(reales.map(c => c.cierre_mes[i])));
+    const ent = D.meses.map((_, i) => sum(D.flujo.filter(f => f.cuenta !== INTERNOS).map(f => f.entradas[i])));
+    const sal = D.meses.map((_, i) => sum(D.flujo.filter(f => f.cuenta !== INTERNOS).map(f => f.salidas[i])));
+    X = { reales, internos, dinero, aCobrar, vencidoCobrar, aPagar, vencidoPagar, prox7, credProv, credCli, ivaDeb, ivaCred, percIva, percIibb, dineroMes, ent, sal, N };
+  }
+
+  function renderStatus() {
+    const c = D.control;
+    const ok = Math.abs(c.dinero.dif) < 0.01 && Math.abs(c.flujo.suma_flujo - c.flujo.variacion_desde_marzo) < 0.05 && Math.abs(c.a_cobrar.dif) < 0.01 && Math.abs(c.a_pagar.dif) < 0.01;
+    $('status').className = 'status';
+    $('status').innerHTML = `Odoo · VELAZQUEZ · al ${fecha(D.hoy)} · ${fmtN(c.asientos_dinero)} movimientos de dinero · ` + (ok ? '<span class="ok" title="Saldos de cuentas = balance; flujo = variación del dinero; a cobrar y a pagar = cuentas de clientes y proveedores">✔ Cuadra al centavo</span>' : '<span class="bad">✖ Hay una diferencia de cuadre (ver Balance)</span>');
+  }
+
+  function render() {
+    OBS.splice(0).forEach(o => o.disconnect());
+    renderStatus();
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === st.tab));
+    const fn = { resumen: tResumen, cuentas: tCuentas, flujo: tFlujo, cobrar: tCobrar, pagar: tPagar, resultado: tResultado, balance: tBalance }[st.tab] || tResumen;
+    fn();
+  }
+  document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { st.tab = b.dataset.t; history.replaceState(null, '', '#' + st.tab); if (D) render(); }));
+
+  const kpi = (l, v, d, cls, title, spark) => `<div class="kpi ${cls || ''}" title="${esc(title || '')}"><span class="l">${l}</span><span class="v">${v}</span><span class="d">${d || ''}</span>${spark ? `<div class="spark" data-spark="${spark}"></div>` : ''}</div>`;
+
+  // ================= RESUMEN =================
+  function tResumen() {
+    const posicion = X.dinero + X.aCobrar - X.aPagar;
+    const ivaSaldo = X.ivaDeb - X.ivaCred - X.percIva;
+    $('root').innerHTML = `
+      <div class="kpis">
+        ${kpi('Dinero según Odoo', fmt$(X.dinero), `${X.reales.map(c => esc(c.diario.replace('Banco ', '')) + ' ' + corto(c.saldo)).join(' · ')}`, 'main', fmt$c(X.dinero) + ' · Efectivo + bancos + Mercado Pago, según lo registrado en Odoo (sin conciliar con extractos)', 'dinero')}
+        ${kpi('A cobrar', fmt$(X.aCobrar), `${D.a_cobrar.length} comprobantes · <span class="${X.vencidoCobrar > 0 ? 'neg' : ''}">${fmt$(X.vencidoCobrar)} vencido</span>`, '', 'Facturas de clientes con saldo pendiente')}
+        ${kpi('A pagar', fmt$(X.aPagar), `<span class="${X.vencidoPagar > 0 ? 'neg' : ''}">${fmt$(X.vencidoPagar)} vencido</span> · ${fmt$(X.prox7)} en 7 días`, '', 'Facturas de proveedores con saldo pendiente')}
+        ${kpi('Posición neta', fmt$(posicion), 'dinero + a cobrar − a pagar', '', 'Lo que quedaría si se cobra y paga todo lo pendiente hoy')}
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Salud financiera · lo que hay que mirar</h2></div><div class="alertas" id="alertas"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Entradas y salidas de dinero por mes</h2>
+          <div class="legend"><span><i style="background:var(--ok)"></i>entró</span><span><i style="background:var(--structure)"></i>salió</span><span><i style="background:var(--accent)"></i>saldo a fin de mes</span></div></div>
+          <div class="chart" id="ch-es"></div>
+          <div class="nota">Efectivo + bancos + Mercado Pago, según Odoo. No incluye "Pagos internos" (pagos que no salieron de estas cuentas). Tocá un mes para ver el detalle en Flujo de fondos.</div></div>
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Próximos vencimientos a pagar</h2><a class="hint" href="#pagar" data-go="pagar">Ver todos →</a></div><div id="prox-pagar"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Impuestos según Odoo</h2></div><div id="imp"></div></div>
+      </div>`;
+    // alertas
+    const al = [];
+    al.push({ c: 'hot', t: `<b>Odoo no tiene extractos bancarios cargados.</b> Los saldos son lo registrado en Odoo, no lo que hay de verdad en cada cuenta. Mercado Pago figura con <b>${fmt$(X.reales.find(c => c.diario === 'Mercado Pago')?.saldo || 0)}</b>: falta registrar transferencias a otras cuentas, retiros y pagos de impuestos.`, m: '' });
+    if (X.internos && Math.abs(X.internos.saldo) > 1) al.push({ c: 'warn', t: `<b>Pagos internos:</b> facturas de proveedores pagadas por fuera de Efectivo, bancos y Mercado Pago (${X.internos.movimientos} pagos). Hay que definir de dónde salió esa plata.`, m: fmt$(-X.internos.saldo) });
+    if (X.vencidoPagar > 0) al.push({ c: 'warn', t: `<b>Facturas de proveedores vencidas:</b> ${D.a_pagar.filter(x => x.dias_vencido > 0).map(x => esc(x.contacto)).join(', ')}.`, m: fmt$(X.vencidoPagar) });
+    if (X.vencidoCobrar > 0) al.push({ c: 'warn', t: `<b>Clientes con facturas vencidas:</b> ${D.a_cobrar.filter(x => x.dias_vencido > 0).map(x => esc(x.contacto)).join(', ')}.`, m: fmt$(X.vencidoCobrar) });
+    const ivaTxt = X.ivaDeb - X.ivaCred - X.percIva;
+    al.push({ c: 'info', t: `<b>Impuestos sin pagos registrados en Odoo:</b> el IVA y los anticipos no tienen asientos de pago, por eso el saldo de IVA se acumula desde marzo.`, m: fmt$(ivaTxt) });
+    if ((D.sin_vincular || []).length) al.push({ c: 'ok', t: `<b>Sueldos y cadeterías al día:</b> ${D.sin_vincular.map(x => esc(x.contacto.split(' ')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')} con saldo cero. Los pagos están cargados pero sin vincular a cada devengamiento.`, m: '' });
+    if ((D.borradores || []).length) al.push({ c: 'info', t: `<b>${D.borradores.length} comprobantes en borrador</b> (no cuentan): ${D.borradores.slice(0, 4).map(b => esc(b.comprobante) + ' ' + esc(b.contacto)).join(' · ')}${D.borradores.length > 4 ? '…' : ''}.`, m: '' });
+    $('alertas').innerHTML = al.map(a => `<div class="alerta ${a.c}"><span class="ic">${a.c === 'ok' ? '✓' : a.c === 'info' ? 'i' : '!'}</span><span>${a.t}</span><span class="m">${a.m}</span></div>`).join('');
+    // gráfico entradas/salidas + saldo
+    barrasConLinea($('ch-es'), D.meses, [{ name: 'Entró', color: 'var(--ok)', values: X.ent }, { name: 'Salió', color: 'var(--structure)', values: X.sal }], { name: 'Saldo a fin de mes', color: 'var(--accent)', values: X.dineroMes }, i => { st.tab = 'flujo'; st.mesFlujo = i; history.replaceState(null, '', '#flujo'); render(); });
+    // próximos vencimientos
+    const prox = D.a_pagar.slice(0, 8);
+    $('prox-pagar').innerHTML = prox.length ? tablaPagar(prox, true) : '<div class="vacio">No hay facturas de proveedores pendientes.</div>';
+    // impuestos
+    $('imp').innerHTML = `<table class="tbl"><tbody>
+      <tr><td>IVA débito fiscal (ventas)<span class="sub">acumulado desde marzo</span></td><td class="num">${fmt$(X.ivaDeb)}</td></tr>
+      <tr><td>IVA crédito fiscal (compras)</td><td class="num">− ${fmt$(X.ivaCred)}</td></tr>
+      <tr><td>Percepciones de IVA sufridas</td><td class="num">− ${fmt$(X.percIva)}</td></tr>
+      <tr class="total"><td>Saldo de IVA según Odoo</td><td class="num">${fmt$(ivaSaldo)}</td></tr>
+      <tr><td>Percepciones de IIBB sufridas<span class="sub">a favor, para descontar de Ingresos Brutos</span></td><td class="num">${fmt$(X.percIibb)}</td></tr>
+    </tbody></table>
+    <div class="nota">Odoo no tiene registrados los pagos de las declaraciones juradas de IVA ni de Ingresos Brutos: estos saldos son lo acumulado, no lo que se debe hoy. Lo mensual exacto está en Contabilidad → Cierre mensual.</div>`;
+    document.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); st.tab = a.dataset.go; history.replaceState(null, '', '#' + st.tab); render(); }));
+    sparks({ dinero: X.dineroMes });
+  }
+
+  // ================= CUENTAS =================
+  function tCuentas() {
+    if (!st.cuenta) st.cuenta = (X.reales[0] || D.cuentas[0]).id;
+    const c = D.cuentas.find(x => x.id === st.cuenta) || D.cuentas[0];
+    $('root').innerHTML = `
+      <div class="cuentas">${D.cuentas.map(k => `<div class="cta ${k.id === c.id ? 'on' : ''} ${k.diario === INTERNOS ? 'rara' : ''}" data-id="${k.id}">
+        <div class="n">${esc(k.diario)}</div><div class="s">${esc(k.cuenta)}${k.cbu ? '<br>CBU ' + esc(String(k.cbu).split(' ')[0]) : ''}</div>
+        <div class="v ${k.saldo < 0 ? 'neg' : ''}">${fmt$(k.saldo)}</div>
+        <div class="s">${fmtN(k.movimientos)} movimientos · último ${fecha(k.ultimo_movimiento)}</div>
+        <div class="spark" data-spark="c${k.id}"></div></div>`).join('')}</div>
+      ${c.diario === INTERNOS ? `<div class="panel"><div class="alerta warn"><span class="ic">!</span><span><b>"Pagos internos" no es una cuenta de dinero.</b> Odoo la usa cuando una factura de proveedor se marca como pagada sin que la plata salga de Efectivo, bancos o Mercado Pago. El saldo negativo es lo pagado así desde marzo.</span><span></span></div></div>` : ''}
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>${esc(c.diario)} · entradas y salidas por mes</h2></div><div class="chart" id="ch-cta"></div></div>
+        <div class="panel"><div class="panel-head"><h2>${esc(c.diario)} · de dónde entra y a dónde va</h2></div><div id="cta-cat"></div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>${esc(c.diario)} · últimos movimientos</h2><span class="hint">según Odoo</span></div>
+        <div class="table-wrap tbl-wrap"><table class="tbl" id="cta-mov"></table></div></div>`;
+    document.querySelectorAll('.cta').forEach(el => el.addEventListener('click', () => { st.cuenta = +el.dataset.id; render(); }));
+    const sp = {}; D.cuentas.forEach(k => sp['c' + k.id] = k.cierre_mes); sparks(sp);
+    barrasConLinea($('ch-cta'), D.meses, [{ name: 'Entró', color: 'var(--ok)', values: c.entradas }, { name: 'Salió', color: 'var(--structure)', values: c.salidas }], { name: 'Saldo a fin de mes', color: 'var(--accent)', values: c.cierre_mes });
+    const fl = D.flujo.filter(f => f.cuenta === c.diario).map(f => ({ cat: f.categoria, e: sum(f.entradas), s: sum(f.salidas) }));
+    $('cta-cat').innerHTML = fl.length ? `<table class="tbl"><thead><tr><th>Concepto</th><th class="num">Entró</th><th class="num">Salió</th></tr></thead><tbody>${fl.sort((a, b) => (b.e + b.s) - (a.e + a.s)).map(f => `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COL_CAT[f.cat] || 'var(--muted)'};margin-right:6px"></i>${esc(f.cat)}</td><td class="num">${f.e ? fmt$(f.e) : ''}</td><td class="num">${f.s ? fmt$(f.s) : ''}</td></tr>`).join('')}<tr class="total"><td>Total desde marzo</td><td class="num">${fmt$(sum(fl.map(f => f.e)))}</td><td class="num">${fmt$(sum(fl.map(f => f.s)))}</td></tr></tbody></table>` : '<div class="vacio">Sin movimientos.</div>';
+    const movs = D.movimientos_recientes.filter(m => String(m.cuenta).includes(c.diario));
+    $('cta-mov').innerHTML = movs.length ? `<thead><tr><th>Fecha</th><th>Detalle</th><th>Concepto</th><th class="num">Importe</th></tr></thead><tbody>${movs.map(m => `<tr><td style="white-space:nowrap">${fecha(m.fecha)}</td><td>${esc(m.contacto || m.detalle)}<span class="sub">${esc(m.asiento)}${m.detalle && m.contacto ? ' · ' + esc(m.detalle) : ''}</span></td><td class="muted" style="font-size:12px">${esc(m.categoria)}</td><td class="num ${m.importe < 0 ? 'neg' : 'pos'}">${fmt$c(m.importe)}</td></tr>`).join('')}</tbody>` : '<tbody><tr><td class="vacio">Sin movimientos recientes.</td></tr></tbody>';
+  }
+
+  // ================= FLUJO =================
+  function tFlujo() {
+    const fl = D.flujo.filter(f => st.internos || f.cuenta !== INTERNOS);
+    const cats = {}; fl.forEach(f => { const c = (cats[f.categoria] ||= { e: new Array(X.N).fill(0), s: new Array(X.N).fill(0) }); f.entradas.forEach((v, i) => c.e[i] += v); f.salidas.forEach((v, i) => c.s[i] += v); });
+    const ent = Object.entries(cats).filter(([, c]) => sum(c.e) > 0.5), sal = Object.entries(cats).filter(([, c]) => sum(c.s) > 0.5);
+    const proy = proyeccion();
+    $('root').innerHTML = `
+      <div class="panel"><div class="panel-head"><h2>Flujo de fondos realizado · por mes</h2>
+        <div class="seg-mini" id="seg-int"><button data-v="0" class="${st.internos ? '' : 'on'}">Solo cuentas reales</button><button data-v="1" class="${st.internos ? 'on' : ''}">Incluir pagos internos</button></div></div>
+        <div class="grid2"><div><div class="legend" style="margin-bottom:6px">${sal.map(([k]) => `<span><i style="background:${COL_CAT[k] || 'var(--muted)'}"></i>${esc(k)}</span>`).join('')}</div><div class="chart" id="ch-sal"></div><div class="nota">Salidas por concepto.</div></div>
+        <div><div class="chart" id="ch-neto"></div><div class="nota">Entró − salió en cada mes (lo que creció o bajó el dinero).</div></div></div>
+        <div class="table-wrap tbl-wrap" style="margin-top:14px"><table class="tbl" id="tbl-flujo"></table></div>
+        <div class="nota">El concepto sale de la contrapartida de cada movimiento en Odoo: cobro de una factura de cliente, pago de una factura de proveedor, sueldo, etc. Las transferencias entre cuentas propias no cuentan como entrada ni salida.</div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Proyección · próximas 8 semanas</h2><span class="hint">con lo que Odoo ya sabe</span></div>
+        <div class="chart" id="ch-proy"></div>
+        <div class="table-wrap" style="margin-top:12px"><table class="tbl" id="tbl-proy"></table></div>
+        <div class="nota"><b>Qué incluye:</b> el dinero según Odoo hoy + las facturas de clientes por cobrar − las de proveedores por pagar, en la semana de su vencimiento (lo vencido va a esta semana). Las facturas en dólares se toman al tipo de cambio con que se cargaron. <b>Qué falta para que sea una proyección real:</b> el saldo real de cada cuenta (extractos), las ventas que todavía no se facturaron, los sueldos, el alquiler, los impuestos y los demás gastos fijos. Lo vamos sumando.</div>
+      </div>`;
+    document.querySelectorAll('#seg-int button').forEach(b => b.addEventListener('click', () => { st.internos = b.dataset.v === '1'; render(); }));
+    apiladas($('ch-sal'), D.meses, sal.map(([k, c]) => ({ name: k, color: COL_CAT[k] || 'var(--muted)', values: c.s })));
+    const neto = D.meses.map((_, i) => sum(ent.map(([, c]) => c.e[i])) - sum(sal.map(([, c]) => c.s[i])));
+    barrasSigno($('ch-neto'), D.meses, neto);
+    // tabla conceptos × meses
+    const th = D.meses.map((m, i) => `<th class="num" style="${st.mesFlujo === i ? 'color:var(--accent)' : ''}">${lblMes(m)}</th>`).join('');
+    const fila = (k, arr, signo) => `<tr><td>${esc(k)}</td>${arr.map((v, i) => `<td class="num ${st.mesFlujo === i ? 'pos' : ''}">${v ? fmt$(signo * v) : ''}</td>`).join('')}<td class="num"><b>${fmt$(signo * sum(arr))}</b></td></tr>`;
+    const totE = D.meses.map((_, i) => sum(ent.map(([, c]) => c.e[i]))), totS = D.meses.map((_, i) => sum(sal.map(([, c]) => c.s[i])));
+    $('tbl-flujo').innerHTML = `<thead><tr><th>Concepto</th>${th}<th class="num">Total</th></tr></thead><tbody>
+      <tr class="grupo"><td colspan="${X.N + 2}">Entró</td></tr>${ent.map(([k, c]) => fila(k, c.e, 1)).join('')}
+      <tr class="grupo"><td colspan="${X.N + 2}">Salió</td></tr>${sal.map(([k, c]) => fila(k, c.s, -1)).join('')}
+      <tr class="total"><td>Entró − salió</td>${neto.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${fmt$(v)}</td>`).join('')}<td class="num">${fmt$(sum(neto))}</td></tr>
+      <tr><td class="muted">Total entró / salió</td>${totE.map((v, i) => `<td class="num muted" style="font-size:11.5px">${corto(v)} / ${corto(totS[i])}</td>`).join('')}<td></td></tr>
+    </tbody>`;
+    // proyección
+    barrasConLinea($('ch-proy'), proy.map(p => p.key), [{ name: 'A cobrar', color: 'var(--ok)', values: proy.map(p => p.cobrar) }, { name: 'A pagar', color: 'var(--structure)', values: proy.map(p => p.pagar) }], { name: 'Dinero proyectado', color: 'var(--accent)', values: proy.map(p => p.saldo) }, null, proy.map(p => p.label));
+    $('tbl-proy').innerHTML = `<thead><tr><th>Semana</th><th class="num">Entra (a cobrar)</th><th class="num">Sale (a pagar)</th><th class="num">Dinero al final</th></tr></thead><tbody>
+      <tr><td class="muted">Hoy</td><td></td><td></td><td class="num"><b>${fmt$(X.dinero)}</b></td></tr>
+      ${proy.map(p => `<tr><td>${esc(p.label)}<span class="sub">${esc(p.detalle)}</span></td><td class="num pos">${p.cobrar ? fmt$(p.cobrar) : ''}</td><td class="num neg">${p.pagar ? fmt$(-p.pagar) : ''}</td><td class="num ${p.saldo < 0 ? 'neg' : ''}"><b>${fmt$(p.saldo)}</b></td></tr>`).join('')}</tbody>`;
+  }
+  function proyeccion() {
+    const hoy = new Date(D.hoy + 'T12:00:00Z');
+    const lunes = new Date(hoy); lunes.setUTCDate(hoy.getUTCDate() - ((hoy.getUTCDay() + 6) % 7));
+    const sem = []; let saldo = X.dinero;
+    for (let k = 0; k < 8; k++) {
+      const ini = new Date(lunes); ini.setUTCDate(lunes.getUTCDate() + 7 * k); const fin = new Date(ini); fin.setUTCDate(ini.getUTCDate() + 6);
+      const a = ini.toISOString().slice(0, 10), b = fin.toISOString().slice(0, 10);
+      const enSem = x => (k === 0 ? x.vence <= b : x.vence >= a && x.vence <= b);
+      const cob = D.a_cobrar.filter(enSem), pag = D.a_pagar.filter(enSem);
+      const cobrar = sum(cob.map(x => x.saldo)), pagar = sum(pag.map(x => x.saldo));
+      saldo += cobrar - pagar;
+      sem.push({ key: a.slice(0, 7), label: (k === 0 ? 'Esta semana' : 'Semana del ' + fecha(a)), detalle: [...cob.map(x => '+ ' + x.contacto), ...pag.map(x => '− ' + x.contacto)].slice(0, 4).join(' · ') + ((cob.length + pag.length) > 4 ? '…' : ''), cobrar, pagar, saldo });
+    }
+    return sem;
+  }
+
+  // ================= A COBRAR =================
+  function tCobrar() {
+    const L = D.a_cobrar;
+    const b = [['Por vencer', x => x.dias_vencido <= 0, ''], ['1 a 30 días', x => x.dias_vencido >= 1 && x.dias_vencido <= 30, 'warn'], ['31 a 60', x => x.dias_vencido > 30 && x.dias_vencido <= 60, 'hot'], ['61 a 90', x => x.dias_vencido > 60 && x.dias_vencido <= 90, 'hot'], ['Más de 90', x => x.dias_vencido > 90, 'hot']];
+    $('root').innerHTML = `
+      <div class="panel"><div class="panel-head"><h2>A cobrar · antigüedad</h2><span class="hint">Total ${fmt$(X.aCobrar)} en ${L.length} comprobantes</span></div>
+        <div class="buckets">${b.map(([l, f, c]) => { const it = L.filter(f); return `<div class="bk ${it.length ? c : ''}"><div class="l">${l}</div><div class="v">${fmt$(sum(it.map(x => x.saldo)))}</div><div class="c">${it.length} comprobante${it.length === 1 ? '' : 's'}</div></div>`; }).join('')}</div>
+        <div class="table-wrap tbl-wrap"><table class="tbl">${tablaDocs(L, 'Cliente')}</table></div>
+        ${(D.creditos_clientes || []).length ? `<div class="nota"><b>A favor de clientes</b> (notas de crédito o pagos sin aplicar): ${D.creditos_clientes.map(x => esc(x.contacto) + ' ' + fmt$(x.saldo)).join(' · ')}.</div>` : ''}
+        <div class="nota">Casi todas las ventas se cobran al momento (Mercado Pago / Mercado Libre / Tienda Nube), por eso a cobrar es chico. Vencimiento = el de la factura según su condición de pago.</div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Cobros por mes</h2></div><div class="chart" id="ch-cob"></div></div>`;
+    const cob = D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === 'Cobros de clientes').map(f => f.entradas[i])));
+    barrasSimple($('ch-cob'), D.meses, cob, 'var(--ok)', 'Cobrado');
+  }
+
+  // ================= A PAGAR =================
+  function tPagar() {
+    const L = D.a_pagar;
+    const b = [['Vencido', x => x.dias_vencido > 0, 'hot'], ['Próximos 7 días', x => x.dias_vencido <= 0 && x.dias_vencido >= -7, 'warn'], ['8 a 30 días', x => x.dias_vencido < -7 && x.dias_vencido > -30, ''], ['31 a 60 días', x => x.dias_vencido <= -30 && x.dias_vencido > -60, ''], ['Más adelante', x => x.dias_vencido <= -60, '']];
+    $('root').innerHTML = `
+      <div class="panel"><div class="panel-head"><h2>A pagar · por vencimiento</h2><span class="hint">Total ${fmt$(X.aPagar)} en ${L.length} comprobantes</span></div>
+        <div class="buckets">${b.map(([l, f, c]) => { const it = L.filter(f); return `<div class="bk ${it.length ? c : ''}"><div class="l">${l}</div><div class="v">${fmt$(sum(it.map(x => x.saldo)))}</div><div class="c">${it.length} comprobante${it.length === 1 ? '' : 's'}</div></div>`; }).join('')}</div>
+        <div class="table-wrap tbl-wrap">${tablaPagar(L)}</div>
+        ${(D.creditos_proveedores || []).filter(x => x.saldo >= 1).length ? `<div class="nota"><b>A favor nuestro</b> (notas de crédito de proveedores sin aplicar): ${D.creditos_proveedores.filter(x => x.saldo >= 1).map(x => esc(x.contacto) + ' ' + fmt$(x.saldo)).join(' · ')}.</div>` : ''}
+        <div class="nota">Las facturas en dólares muestran el importe en dólares y su equivalente en pesos al tipo de cambio de la factura; al pagarlas cambia según el día.</div>
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Sueldos y cadeterías</h2></div><div id="sueldos"></div></div>
+      </div>`;
+    const cats = ['Pagos a proveedores', 'Sueldos y honorarios', 'Cadeterías'];
+    apiladas($('ch-pag'), D.meses, cats.map(k => ({ name: k, color: COL_CAT[k], values: D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === k && f.cuenta !== INTERNOS).map(f => f.salidas[i]))) })));
+    const sv = D.sin_vincular || [];
+    $('sueldos').innerHTML = sv.length ? `<table class="tbl"><thead><tr><th>Persona</th><th>Cuenta</th><th class="num">Devengado = pagado</th><th class="num">Saldo</th></tr></thead><tbody>${sv.map(x => `<tr><td>${esc(x.contacto)}</td><td class="muted" style="font-size:12px">${esc(x.cuenta)}</td><td class="num">${fmt$(x.importe)}</td><td class="num pos">$ 0</td></tr>`).join('')}</tbody></table>
+      <div class="nota">Todo lo devengado está pagado. En Odoo los pagos parciales quedaron sin vincular a cada mes: por eso Odoo los muestra "abiertos" aunque el saldo de cada persona es cero.</div>` : '<div class="vacio">Sin sueldos pendientes.</div>';
+  }
+
+  // ================= RESULTADO =================
+  function tResultado() {
+    const R = D.resultado;
+    const grupos = [['Ingresos', r => r.codigo.startsWith('4')], ['Producción', r => r.codigo.startsWith('5.1')], ['Comerciales', r => r.codigo.startsWith('5.2')], ['Administrativos', r => r.codigo.startsWith('5.3')], ['Financieros', r => r.codigo.startsWith('5.5')], ['No operativos', r => r.codigo.startsWith('5.9')]];
+    const N = X.N, th = D.meses.map(m => `<th class="num">${lblMes(m)}</th>`).join('');
+    let rows = '';
+    const tot = new Array(N).fill(0);
+    grupos.forEach(([g, f]) => {
+      const it = R.filter(f); if (!it.length) return;
+      const sub = new Array(N).fill(0); it.forEach(r => r.valores.forEach((v, i) => { sub[i] += v; tot[i] += v; }));
+      rows += `<tr class="grupo"><td>${g}</td>${sub.map(v => `<td class="num">${fmt$(v)}</td>`).join('')}<td class="num">${fmt$(sum(sub))}</td></tr>`;
+      rows += it.map(r => `<tr><td style="padding-left:22px">${esc(r.cuenta)}<span class="sub">${esc(r.codigo)}</span></td>${r.valores.map(v => `<td class="num">${Math.abs(v) >= 0.5 ? fmt$(v) : ''}</td>`).join('')}<td class="num">${fmt$(sum(r.valores))}</td></tr>`).join('');
+    });
+    rows += `<tr class="total"><td>Resultado registrado</td>${tot.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${fmt$(v)}</td>`).join('')}<td class="num">${fmt$(sum(tot))}</td></tr>`;
+    $('root').innerHTML = `
+      <div class="panel"><div class="alerta warn"><span class="ic">!</span><span><b>Falta el costo de la mercadería vendida.</b> En Odoo los productos terminados tienen costo cero, así que las materias primas y envases quedan como stock y nunca pasan a gasto. Este resultado es ventas menos gastos registrados: <b>no descuenta lo que costó fabricar lo vendido</b>. El paso siguiente es sumar ese costo desde el Escandallo del Core.</span><span></span></div></div>
+      <div class="panel"><div class="panel-head"><h2>Resultado por mes · según la contabilidad</h2><span class="hint">sin IVA · ingresos en positivo, gastos en negativo</span></div>
+        <div class="chart" id="ch-res"></div>
+        <div class="table-wrap tbl-wrap" style="margin-top:14px"><table class="tbl" id="tbl-res"><thead><tr><th>Cuenta</th>${th}<th class="num">Total</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </div>`;
+    barrasSigno($('ch-res'), D.meses, tot);
+  }
+
+  // ================= BALANCE =================
+  function tBalance() {
+    const S = D.saldos_cuentas.filter(x => !/^[45]/.test(String(x.codigo)));
+    const res = -sum(D.saldos_cuentas.filter(x => /^[45]/.test(String(x.codigo))).map(x => x.saldo));
+    const act = S.filter(x => String(x.codigo).startsWith('1')), pas = S.filter(x => String(x.codigo).startsWith('2')), pn = S.filter(x => String(x.codigo).startsWith('3'));
+    const tA = sum(act.map(x => x.saldo)), tP = -sum(pas.map(x => x.saldo)), tPN = -sum(pn.map(x => x.saldo));
+    const fila = (x, signo) => `<tr><td>${esc(x.cuenta)}<span class="sub">${esc(x.codigo)}</span></td><td class="num ${signo * x.saldo < 0 ? 'neg' : ''}">${fmt$c(signo * x.saldo)}</td></tr>`;
+    const c = D.control;
+    $('root').innerHTML = `
+      <div class="kpis">
+        ${kpi('Activo', fmt$(tA), 'lo que hay y lo que se tiene a favor')}
+        ${kpi('Pasivo', fmt$(tP), 'lo que se debe')}
+        ${kpi('Patrimonio cargado', fmt$(tPN), tPN === 0 ? 'nunca se cargó el capital inicial' : '')}
+        ${kpi('Resultado acumulado', fmt$(res), 'ventas − gastos registrados')}
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Activo</h2><span class="hint">${fmt$c(tA)}</span></div><div class="table-wrap tbl-wrap"><table class="tbl"><tbody>${act.map(x => fila(x, 1)).join('')}</tbody></table></div></div>
+        <div class="panel"><div class="panel-head"><h2>Pasivo y patrimonio</h2><span class="hint">${fmt$c(tP + tPN + res)}</span></div><div class="table-wrap tbl-wrap"><table class="tbl"><tbody>${pas.map(x => fila(x, -1)).join('')}${pn.map(x => fila(x, -1)).join('')}<tr class="total"><td>Resultado acumulado (no cerrado)</td><td class="num">${fmt$c(res)}</td></tr></tbody></table></div>
+          <div class="nota">Activo ${fmt$c(tA)} = Pasivo ${fmt$c(tP)} + Patrimonio ${fmt$c(tPN)} + Resultado ${fmt$c(res)} → diferencia ${fmt$c(tA - tP - tPN - res)}.</div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Control de cuadre</h2></div>
+        <table class="tbl"><thead><tr><th>Qué se compara</th><th class="num">Camino 1</th><th class="num">Camino 2</th><th class="num">Diferencia</th></tr></thead><tbody>
+          <tr><td>Dinero: suma de movimientos vs saldos del balance</td><td class="num">${fmt$c(c.dinero.renglones)}</td><td class="num">${fmt$c(c.dinero.balance)}</td><td class="num ${Math.abs(c.dinero.dif) < 0.01 ? 'pos' : 'neg'}">${fmt$c(c.dinero.dif)}</td></tr>
+          <tr><td>Flujo: entradas − salidas por concepto vs variación del dinero</td><td class="num">${fmt$c(c.flujo.suma_flujo)}</td><td class="num">${fmt$c(c.flujo.variacion_desde_marzo)}</td><td class="num ${Math.abs(c.flujo.suma_flujo - c.flujo.variacion_desde_marzo) < 0.05 ? 'pos' : 'neg'}">${fmt$c(c.flujo.suma_flujo - c.flujo.variacion_desde_marzo)}</td></tr>
+          <tr><td>A cobrar: comprobantes abiertos vs cuenta de clientes</td><td class="num">${fmt$c(c.a_cobrar.abiertos)}</td><td class="num">${fmt$c(c.a_cobrar.cuenta_clientes)}</td><td class="num ${Math.abs(c.a_cobrar.dif) < 0.01 ? 'pos' : 'neg'}">${fmt$c(c.a_cobrar.dif)}</td></tr>
+          <tr><td>A pagar: comprobantes abiertos vs cuentas de proveedores y sueldos</td><td class="num">${fmt$c(c.a_pagar.abiertos)}</td><td class="num">${fmt$c(c.a_pagar.cuenta_proveedores)}</td><td class="num ${Math.abs(c.a_pagar.dif) < 0.01 ? 'pos' : 'neg'}">${fmt$c(c.a_pagar.dif)}</td></tr>
+        </tbody></table>
+        <div class="nota">"Stock intermedio" y "Valoración de inventario" son cuentas técnicas que Odoo usa al recibir mercadería y al fabricar. El patrimonio en cero confirma que nunca se cargó el asiento de apertura con el capital inicial: es una tarea para el contador.</div>
+      </div>`;
+  }
+
+  // ---------- tablas ----------
+  function tablaDocs(L, quien) {
+    if (!L.length) return '<tbody><tr><td class="vacio">No hay comprobantes pendientes.</td></tr></tbody>';
+    return `<thead><tr><th>Comprobante</th><th>${quien}</th><th>Vence</th><th class="num">Total</th><th class="num">Saldo</th></tr></thead><tbody>${L.map(x => `<tr><td class="code" style="white-space:nowrap">${esc(x.comprobante)}<span class="sub">${fecha(x.fecha)}${x.origen ? ' · ' + esc(x.origen) : ''}</span></td><td>${esc(x.contacto)}</td><td style="white-space:nowrap">${fecha(x.vence)} ${estadoVence(x.dias_vencido)}</td><td class="num">${x.total ? fmt$(x.total) : ''}</td><td class="num"><b>${fmt$(x.saldo)}</b></td></tr>`).join('')}</tbody>`;
+  }
+  function tablaPagar(L, corta) {
+    return `<table class="tbl"><thead><tr><th>Proveedor</th>${corta ? '' : '<th>Comprobante</th>'}<th>Vence</th><th class="num">Saldo</th></tr></thead><tbody>${L.map(x => `<tr><td>${esc(x.contacto)}${corta ? `<span class="sub">${esc(x.comprobante)}</span>` : ''}</td>${corta ? '' : `<td class="code" style="white-space:nowrap">${esc(x.comprobante)}<span class="sub">${fecha(x.fecha)}</span></td>`}<td style="white-space:nowrap">${fecha(x.vence)} ${estadoVence(x.dias_vencido)}</td><td class="num"><b>${fmt$(x.saldo)}</b>${x.moneda ? `<span class="sub">${esc(x.moneda)} ${Number(x.saldo_moneda).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
+  }
+  function estadoVence(d) {
+    if (d > 0) return `<span class="chip-s hot">hace ${d} d</span>`;
+    if (d === 0) return '<span class="chip-s warn">hoy</span>';
+    if (d >= -7) return `<span class="chip-s warn">en ${-d} d</span>`;
+    return `<span class="chip-s info">en ${-d} d</span>`;
+  }
+
+  // ---------- gráficos ----------
+  function sparks(map) { document.querySelectorAll('[data-spark]').forEach(el => { const v = map[el.dataset.spark]; if (v) Charts.sparkline(el, v, { color: 'var(--accent)' }); }); }
+  function observar(el, draw) { if (!window.ResizeObserver) return; let lw = el.clientWidth, t = 0; const ro = new ResizeObserver(() => { const w = el.clientWidth; if (Math.abs(w - lw) < 6) return; lw = w; clearTimeout(t); t = setTimeout(draw, 90); }); ro.observe(el); OBS.push(ro); }
+  function escala(vals) {
+    let mx = Math.max(0, ...vals), mn = Math.min(0, ...vals);
+    const r = (mx - mn) || 1, p = Math.pow(10, Math.floor(Math.log10(r / 4))), m = r / 4 / p, paso = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+    return { mx: Math.ceil(mx / paso) * paso || paso, mn: Math.floor(mn / paso) * paso, paso };
+  }
+  function lienzo(el, H, labels, vals, dibujar, tipFn, onClick, etiquetas) {
+    const n = labels.length;
+    const draw = () => {
+      const W = Math.max(300, el.clientWidth || 600), mL = 52, mR = 10, mT = 12, mB = 26, iw = W - mL - mR, ih = H - mT - mB;
+      const e = escala(vals); const y = v => mT + ih * (e.mx - v) / ((e.mx - e.mn) || 1); const slot = iw / n; const xc = i => mL + slot * (i + .5);
+      let g = '';
+      for (let v = e.mn; v <= e.mx + 1e-6; v += e.paso) g += `<line x1="${mL}" x2="${W - mR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-opacity="${Math.abs(v) < 1e-6 ? 1 : .5}"/><text x="${mL - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${corto(v)}</text>`;
+      const body = dibujar({ W, H, mL, mT, iw, ih, y, slot, xc });
+      const xl = labels.map((m, i) => `<text x="${xc(i)}" y="${H - 7}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${esc(etiquetas ? etiquetas[i].replace('Semana del ', '') : (/^\d{4}-\d{2}$/.test(m) ? (slot < 46 ? MES_TXT[+m.slice(5) - 1] : lblMes(m)) : m))}</text>`).join('');
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:100%;height:${H}px;display:block${onClick ? ';cursor:pointer' : ''}">${g}${body}${xl}</svg><div class="tip"></div>`;
+      const svg = el.querySelector('svg'), tip = el.querySelector('.tip');
+      const idxDe = ev => { const r = svg.getBoundingClientRect(); return Math.max(0, Math.min(n - 1, Math.floor(((ev.clientX - r.left) / r.width * W - mL) / slot))); };
+      svg.addEventListener('mousemove', ev => { const i = idxDe(ev), r = svg.getBoundingClientRect(); tip.innerHTML = tipFn(i); tip.style.opacity = 1; tip.style.left = Math.min(r.width - tip.offsetWidth - 4, Math.max(4, (ev.clientX - r.left) + 14)) + 'px'; tip.style.top = '4px'; });
+      svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
+      if (onClick) svg.addEventListener('click', ev => onClick(idxDe(ev)));
+    };
+    draw(); observar(el, draw);
+  }
+  const nombreX = (labels, i, etiquetas) => etiquetas ? etiquetas[i] : (/^\d{4}-\d{2}$/.test(labels[i]) ? lblMesLargo(labels[i]) : labels[i]);
+  const filaTip = (c, n, v) => `<div class="r"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${c};margin-right:5px"></i>${esc(n)}</span><b>${fmt$(v)}</b></div>`;
+  function barrasConLinea(el, labels, barras, linea, onClick, etiquetas) {
+    const vals = [...barras.flatMap(b => b.values), ...(linea ? linea.values : [])];
+    lienzo(el, 260, labels, vals, ({ y, slot, xc }) => {
+      const bw = Math.min(26, slot * .3); let s = '';
+      labels.forEach((_, i) => barras.forEach((b, k) => { const off = (k - (barras.length - 1) / 2) * (bw + 3); const v = b.values[i] || 0; s += `<rect x="${xc(i) + off - bw / 2}" y="${Math.min(y(0), y(v))}" width="${bw}" height="${Math.max(1, Math.abs(y(0) - y(v)))}" rx="3" fill="${b.color}" opacity=".9"/>`; }));
+      if (linea) { const pts = linea.values.map((v, i) => [xc(i), y(v)]); s += `<path d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join('')}" fill="none" stroke="${linea.color}" stroke-width="2.4" stroke-linejoin="round" style="filter:drop-shadow(0 0 5px color-mix(in srgb, ${linea.color} 45%, transparent))"/>` + pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3.6" fill="var(--surface)" stroke="${linea.color}" stroke-width="2.2"/>`).join(''); }
+      return s;
+    }, i => `<div class="t">${esc(nombreX(labels, i, etiquetas))}</div>` + barras.map(b => filaTip(b.color, b.name, b.values[i] || 0)).join('') + (linea ? filaTip(linea.color, linea.name, linea.values[i]) : ''), onClick, etiquetas);
+  }
+  function barrasSigno(el, labels, vals) {
+    lienzo(el, 230, labels, vals, ({ y, slot, xc }) => { const bw = Math.min(34, slot * .5); return vals.map((v, i) => `<rect x="${xc(i) - bw / 2}" y="${Math.min(y(0), y(v))}" width="${bw}" height="${Math.max(1, Math.abs(y(0) - y(v)))}" rx="3" fill="${v < 0 ? 'var(--hot)' : 'var(--ok)'}" opacity=".88"/>`).join(''); },
+      i => `<div class="t">${esc(nombreX(labels, i))}</div>` + filaTip(vals[i] < 0 ? 'var(--hot)' : 'var(--ok)', 'Neto', vals[i]));
+  }
+  function barrasSimple(el, labels, vals, color, nombre) {
+    lienzo(el, 220, labels, vals, ({ y, slot, xc }) => { const bw = Math.min(34, slot * .5); return vals.map((v, i) => `<rect x="${xc(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${Math.max(1, y(0) - y(v))}" rx="3" fill="${color}" opacity=".88"/>`).join(''); },
+      i => `<div class="t">${esc(nombreX(labels, i))}</div>` + filaTip(color, nombre, vals[i]));
+  }
+  function apiladas(el, labels, series) {
+    const tot = labels.map((_, i) => sum(series.map(s => Math.max(0, s.values[i] || 0))));
+    lienzo(el, 240, labels, tot, ({ y, slot, xc }) => {
+      const bw = Math.min(34, slot * .55); let s = '';
+      labels.forEach((_, i) => { let acc = 0; series.forEach(sr => { const v = Math.max(0, sr.values[i] || 0); if (!v) return; s += `<rect x="${xc(i) - bw / 2}" y="${y(acc + v)}" width="${bw}" height="${Math.max(0, y(acc) - y(acc + v))}" fill="${sr.color}" opacity=".9"/>`; acc += v; }); });
+      return s;
+    }, i => `<div class="t">${esc(nombreX(labels, i))}</div>` + series.filter(s => (s.values[i] || 0) > 0.5).map(s => filaTip(s.color, s.name, s.values[i])).join('') + `<div class="r" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span>Total</span><b>${fmt$(tot[i])}</b></div>`);
+  }
+
+  cargar();
+})();
+</script>
+</body>
+</html>

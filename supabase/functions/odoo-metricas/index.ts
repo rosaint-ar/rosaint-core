@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { finanzas } from "./finanzas.ts";
 
 // ====== odoo-metricas — tablero de Métricas del Core (solo lectura) ======
 // Todo sale de Odoo, empresa VELAZQUEZ (company 2), desde marzo 2026 (mes 1).
@@ -99,6 +100,9 @@ _servirConGuardia(async (req: Request) => {
     if (!uid || typeof uid !== "number") throw new Error("Auth Odoo fallida");
     const ctx = { lang: "es_ES", allowed_company_ids: [C] };
     const ex = (model: string, method: string, args: unknown[], kw: Rec = {}) => rpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, model, method, args, { ...kw, context: ctx }]) as Promise<Rec[]>;
+    // módulo Finanzas (modo finanzas_*): misma guardia y misma conexión, respuesta propia
+    let body: Rec = {}; try { body = await req.json(); } catch { /* sin cuerpo */ }
+    if (String(body.modo || "").startsWith("finanzas")) return new Response(JSON.stringify(await finanzas(body, ex, ctx)), { headers: cors });
 
     const now = new Date(Date.now() - 3 * 3600 * 1000);   // hora de Argentina (UTC-3)
     const meses: string[] = [];

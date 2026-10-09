@@ -47,6 +47,9 @@ const MENU = [
   { type: 'item', id: 'rentabilidad', label: 'Rentabilidad', href: 'precios/rentabilidad.html', status: 'ready' },
   { type: 'item', id: 'actualizar-canales', label: 'Actualizar canales', href: 'precios/actualizar-canales.html', status: 'ready' },
 
+  { type: 'group', label: 'Finanzas' },
+  { type: 'item', id: 'finanzas', label: 'Finanzas', href: 'finanzas/index.html', status: 'ready' },
+
   { type: 'group', label: 'Contabilidad' },
   { type: 'item', id: 'cierre',           label: 'Cierre mensual',        href: 'contabilidad/cierre.html',            status: 'ready' },
   { type: 'item', id: 'conciliador',      label: 'Conciliador IVA',       href: 'contabilidad/conciliador.html',       status: 'ready' },
@@ -121,6 +124,7 @@ const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // La CSS (.nav-item .nav-icon svg) fija fill/stroke/grosor; acá solo el trazado.
 const MODULE_ICONS = {
   dashboard:      '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  finanzas:       '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M16 14.5h2"/><path d="M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>',
   metricas:       '<svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/><circle cx="19" cy="8" r="1.3"/></svg>',
   asistente:      '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><ellipse cx="12" cy="12" rx="9" ry="4"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(75 12 12)"/></svg>',
   laboratorio:    '<svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-8V3"/></svg>',
