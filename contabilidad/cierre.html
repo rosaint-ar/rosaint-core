@@ -74,7 +74,7 @@
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="field">
         <span class="label">Para (contador)</span>
-        <input type="text" id="para" value="cplucianoruani@gmail.com">
+        <input type="text" id="para" value="mariabelen@latinifiorito.com.ar">
       </div>
       <div class="field">
         <span class="label">Asunto</span>
@@ -168,7 +168,7 @@ function textoManuales(){
 function actualizarTextos(){
   const p = nombrePeriodo($('periodo').value);
   $('asunto').value = `Cierre de IVA ${p} — VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)`;
-  $('cuerpo').value = `Estimado Luciano,\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n• Percepciones de IIBB sufridas por jurisdicción\n\nLas percepciones de IVA fueron conciliadas con ARCA.${textoManuales()}\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
+  $('cuerpo').value = `Hola María Belén, ¿cómo estás?\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n• Percepciones de IIBB sufridas por jurisdicción\n\nLas compras están conciliadas contra Mis Comprobantes Recibidos de ARCA.${textoManuales()}\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
 }
 
 async function blobToB64(blob){
