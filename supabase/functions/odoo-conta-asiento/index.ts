@@ -320,6 +320,38 @@ const COMPRAS_B: Record<string, ParB> = {
   // Frances Gustavo César: FA-B 00005-00000881 y NC-B 00005-00000034 del 14/09 (después hizo la FA-A 00005-00007425). Importes de ARCA.
   "frances_sep": { partner_vat: "20-18215120-4", producto: "GP02", fa: { numero: "00005-00000881", fecha: "2026-09-14", total: 34955.71 }, nc: { numero: "00005-00000034", fecha: "2026-09-14", total: 34955.72 } },
 };
+// Lote "personales": facturas B de compras del titular. Mismo criterio que FA-B 00003-00004125 (Bertolino):
+// producto GN01 "Gastos varios no operativos" (5.9.1.01.010), IVA No Aplica (178), pagada por "Pagos internos" (55).
+type Personal = { proveedor: { name: string; vat: string }; numero: string; fecha: string; total: number };
+const PERSONALES: Record<string, Personal> = {
+  "graells_108173": { proveedor: { name: "Graells Nelson Antonio", vat: "20-05410060-5" }, numero: "00338-00108173", fecha: "2026-09-13", total: 200000 },
+  "indumentaria_5810": { proveedor: { name: "Industria Argentina de la Indumentaria S.A.", vat: "30-59990459-6" }, numero: "00065-00005810", fecha: "2026-09-13", total: 87000 },
+  "indumentaria_5811": { proveedor: { name: "Industria Argentina de la Indumentaria S.A.", vat: "30-59990459-6" }, numero: "00065-00005811", fecha: "2026-09-13", total: 84000 },
+};
+async function personales(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const p = PERSONALES[String(body.nombre || "")];
+  if (!p) return { ok: false, error: "comprobante fuera de la tabla" };
+  const ya = await ex("res.partner", "search_read", [[["vat", "in", [p.proveedor.vat, p.proveedor.vat.replace(/\D/g, "")]]]], { fields: ["id", "name"], context: { active_test: false } }) as Rec[];
+  let partner = ya.length ? ya[0].id as number : null;
+  if (partner) {
+    const dup = await ex("account.move", "search_read", [[["partner_id", "=", partner], ["name", "ilike", p.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (dup.length) return { ok: false, error: "ya está cargado", dup };
+  }
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", "GN01"]]], { fields: ["id"] }) as Rec[];
+  if (dry) return { ok: true, dry_run: true, proveedor: partner ? ya[0].name : "crear " + p.proveedor.name, p };
+  if (!partner) partner = await ex("res.partner", "create", [{ name: p.proveedor.name, vat: p.proveedor.vat, is_company: /S\.A\./.test(p.proveedor.name), country_id: 10, l10n_latam_identification_type_id: 4, l10n_ar_afip_responsibility_type_id: 1, supplier_rank: 1 }]) as number;
+  const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: partner, journal_id: 33, l10n_latam_document_type_id: 6, l10n_latam_document_number: p.numero,
+    invoice_date: p.fecha, date: p.fecha, company_id: C, invoice_line_ids: [[0, 0, { product_id: prod[0].id, quantity: 1, price_unit: p.total, tax_ids: [[6, 0, [178]]] }]] }]) as number;
+  const m = (await ex("account.move", "read", [[id], ["amount_total", "amount_tax"]]) as Rec[])[0];
+  if (m.amount_total !== p.total || m.amount_tax !== 0) return { ok: false, error: "no cerró; quedó en BORRADOR", id, m };
+  await ex("account.move", "action_post", [[id]]);
+  const ctx = { active_model: "account.move", active_ids: [id] };
+  const nm = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name;
+  const wid = await ex("account.payment.register", "create", [{ journal_id: 55, payment_date: p.fecha, amount: p.total, communication: nm }], { context: ctx }) as number;
+  await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+  return { ok: true, comprobante: (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0] };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -357,6 +389,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "personales") return new Response(JSON.stringify(await personales(body)), { headers: h });
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
