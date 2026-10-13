@@ -128,7 +128,7 @@ const HEADERS = { 'Content-Type': 'application/json', 'Authorization': 'Bearer '
 const FN_IVA = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iva-serie';
 const M3 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 // percepciones de IIBB que SIFERE no importa (jurisdicciones fuera de SIRCAR); se completa al preparar los adjuntos.
-// Tiene que estar declarada ANTES de init(): init llama a actualizarTextos(), que la lee.
+// Se declara arriba de todo porque los textos de los mails (textoManuales) la leen al iniciar.
 let manualesMes = null;
 
 (function init(){
