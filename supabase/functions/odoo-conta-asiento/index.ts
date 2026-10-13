@@ -177,7 +177,23 @@ async function combustible_internos(body: Rec): Promise<Rec> {
     const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_untaxed", "amount_tax", "payment_state"]]) as Rec[])[0];
     return { ok: fin.state === "posted", chk, comprobante: fin };
   }
-  if (body.paso !== "ticket") return { ok: false, error: "paso desconocido (config | productos | ticket | cargar)" };
+  // paso "pagar" {nombre}: registra el pago de un ticket de NUEVOS como los demás tickets de combustible:
+  // diario Mercado Pago (42), método Manual, fecha del ticket, por el total, memo = número del comprobante.
+  if (body.paso === "pagar") {
+    const n = NUEVOS[String(body.nombre || "")];
+    if (!n) return { ok: false, error: "ticket fuera de la tabla de nuevos" };
+    const mv = await ex("account.move", "search_read", [[["partner_id", "=", n.partner], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "=", "posted"]]], { fields: ["id", "name", "amount_total", "amount_residual", "payment_state"] }) as Rec[];
+    if (mv.length !== 1) return { ok: false, error: "no encuentro el ticket validado", mv };
+    if (mv[0].payment_state !== "not_paid" || mv[0].amount_residual !== n.total) return { ok: false, error: "el ticket ya tiene pagos o no está por el total", ticket: mv[0] };
+    if (dry) return { ok: true, dry_run: true, ticket: mv[0], pago: { diario: "Mercado Pago", fecha: n.fecha, importe: n.total } };
+    const ctx = { active_model: "account.move", active_ids: [mv[0].id] };
+    const wid = await ex("account.payment.register", "create", [{ journal_id: 42, payment_method_line_id: 22, payment_date: n.fecha, amount: n.total, communication: mv[0].name }], { context: ctx }) as number;
+    await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+    const fin = (await ex("account.move", "read", [[mv[0].id], ["name", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
+    const pagos = await ex("account.payment", "search_read", [[["memo", "=", mv[0].name], ["journal_id", "=", 42]]], { fields: ["name", "date", "amount", "state"] }) as Rec[];
+    return { ok: fin.amount_residual === 0, ticket: fin, pagos };
+  }
+  if (body.paso !== "ticket") return { ok: false, error: "paso desconocido (config | productos | ticket | cargar | pagar)" };
   const nombre = String(body.nombre || ""); const e = TICKETS[nombre];
   if (!e) return { ok: false, error: "ticket fuera del lote: " + nombre };
   const mv = await ex("account.move", "search_read", [[["name", "=", nombre], ["company_id", "=", C], ["move_type", "=", "in_invoice"]]], { fields: ["id", "state", "amount_total", "payment_state"] }) as Rec[];
