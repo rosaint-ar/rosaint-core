@@ -473,13 +473,20 @@ $('btnConciliar').addEventListener('click', async () => {
   });
   const difs = [];
   const descuadres = []; // mismo comprobante, total ok pero el IVA difiere (error real)
+  const redondeosUSD = []; // moneda extranjera que coincide en dólares: la diferencia en pesos es redondeo
   arcaRows.forEach(a => {
     const o = odooIdx.get(claveArca(a));
     if (!o) return;
-    if (Math.abs(a.total-o.total) > 0.5) difs.push({ arca:a, odoo:o });
+    // Moneda extranjera: ARCA da los importes en dólares y los pasa a pesos multiplicando por el tipo de
+    // cambio; Odoo (y la factura impresa) calculan el IVA en pesos como 21% del neto en pesos. Esa
+    // diferencia de redondeo (unos pesos) no es un error: se compara en la moneda del comprobante.
+    const ext = o.moneda_extranjera && o.total_moneda != null && a.tc > 1;
+    const totalDifiere = ext ? Math.abs(a.total / a.tc - o.total_moneda) > 0.005 : Math.abs(a.total - o.total) > 0.5;
+    if (totalDifiere) difs.push({ arca:a, odoo:o });
     else {
+      if (ext) redondeosUSD.push({ arca:a, odoo:o, total: a.total - o.total, iva: a.iva - (o.iva||0) });
       const difNeto = a.neto - o.neto;
-      const difIva  = a.iva - (o.iva||0);
+      const difIva  = ext ? (Math.abs(a.iva / a.tc - (o.iva_moneda||0)) > 0.005 ? a.iva - (o.iva||0) : 0) : a.iva - (o.iva||0);
       // Solo es error real si difiere el IVA. El neto puede diferir por clasificación
       // (facturas B/C sin discriminar, combustible con impuestos internos separados,
       // percepciones) sin que sea un error — el crédito fiscal se juega en el IVA.
@@ -490,7 +497,7 @@ $('btnConciliar').addEventListener('click', async () => {
 
   estado = {
     periodo, odoo, arca: arcaRows,
-    faltan, sobran, casiMatch, difs, descuadres, coinciden,
+    faltan, sobran, casiMatch, difs, descuadres, coinciden, redondeosUSD,
     validadas: new Set(),
   };
   render();
@@ -666,11 +673,13 @@ function renderCuadre() {
     if (r.validadas.has('d'+i)) { ajusteNeto += d.difNeto; ajusteIva += d.difIva; }
   });
 
+  // Redondeo de facturas en moneda extranjera que coinciden en dólares (no es error): se descuenta.
+  const red = (r.redondeosUSD || []).reduce((a, x) => ({ total: a.total + x.total, iva: a.iva + x.iva }), { total: 0, iva: 0 });
   const dif = {
     neto:  (sumArca.neto  - sumOdoo.neto)  - ajusteNeto,
-    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva,
+    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva - red.iva,
     otros: sumArca.otros  - sumOdoo.otros,
-    total: sumArca.total  - sumOdoo.total,
+    total: sumArca.total  - sumOdoo.total - red.total,
   };
   const tol = 1.0;
   // El cuadre valida IVA y Total (lo que define el crédito fiscal y el control con AFIP).
@@ -713,6 +722,9 @@ function renderCuadre() {
     ${fila('Otros tributos / percepciones', sumArca.otros, sumOdoo.otros, dif.otros)}
     ${fila('Total', sumArca.total, sumOdoo.total, dif.total)}
     </tbody></table>`;
+  if ((r.redondeosUSD || []).length) {
+    h += `<div class="val-info" style="padding:8px 18px 0;">Facturas en dólares que coinciden en dólares con ARCA: ${r.redondeosUSD.map(x => esc(x.arca.denom) + ' ' + String(x.arca.pv).padStart(5,'0') + '-' + String(x.arca.num).padStart(8,'0')).join(' · ')}. ARCA pasa a pesos multiplicando el total por el tipo de cambio; Odoo usa el IVA en pesos impreso en la factura (21% del neto en pesos). La diferencia en pesos (${money(red.total)}) es redondeo, no un error, y ya está descontada del cuadre.</div>`;
+  }
 
   if (faltanCount > 0) {
     h += `<div class="veredicto mal">⚠ Faltan cargar ${faltanCount} comprobante(s) en Odoo. El cuadre no cerrará hasta resolverlas.</div>`;

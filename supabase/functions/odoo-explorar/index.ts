@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// ====== odoo-explorar (v27) ======
+// ====== odoo-explorar (v28) ======
+// v28 (13-oct-2026): conciliador IVA — en facturas en moneda extranjera devuelve también total_moneda e
+//   iva_moneda (en la moneda del comprobante), para comparar contra ARCA en dólares y no en pesos.
 // v27: control de aplicacion en aplicar_percepciones.
 // - Devuelve "no_aplicadas": percepciones que no encontraron su linea de impuesto
 //   (pasa cuando el account.tax calcula 0 y Odoo no genera la linea).
@@ -59,14 +61,14 @@ async function conciliarPeriodo(uid:number,periodo:string){
   const pids=[...new Set(moves.map(m=>Array.isArray(m.partner_id)?(m.partner_id as unknown[])[0] as number:null).filter((x):x is number=>x!==null))];
   let pmap:Record<number,string>={};
   if(pids.length){const ps=await execKw(uid,"res.partner","read",[pids],{fields:["id","vat"]}) as Array<Record<string,unknown>>;pmap=Object.fromEntries(ps.map(p=>[p.id as number,(p.vat as string)||""]));}
-  const ivaPorMove:Record<number,number>={}, percPorMove:Record<number,number>={};
+  const ivaPorMove:Record<number,number>={}, percPorMove:Record<number,number>={}, ivaMonPorMove:Record<number,number>={};
   if(moveIds.length){
-    const taxLines=await execKw(uid,"account.move.line","search_read",[[["move_id","in",moveIds],["display_type","=","tax"]]],{fields:["move_id","balance","tax_group_id"]}) as Array<Record<string,unknown>>;
+    const taxLines=await execKw(uid,"account.move.line","search_read",[[["move_id","in",moveIds],["display_type","=","tax"]]],{fields:["move_id","balance","amount_currency","tax_group_id"]}) as Array<Record<string,unknown>>;
     for(const l of taxLines){
       const mid=Array.isArray(l.move_id)?(l.move_id as unknown[])[0] as number:null; if(mid===null)continue;
       const gname=Array.isArray(l.tax_group_id)?(l.tax_group_id as unknown[])[1] as string:"";
       const bal=Math.abs((l.balance as number)||0);
-      if(esGrupoIVAReal(gname)) ivaPorMove[mid]=(ivaPorMove[mid]||0)+bal;
+      if(esGrupoIVAReal(gname)){ ivaPorMove[mid]=(ivaPorMove[mid]||0)+bal; ivaMonPorMove[mid]=(ivaMonPorMove[mid]||0)+Math.abs((l.amount_currency as number)||0); }
       else percPorMove[mid]=(percPorMove[mid]||0)+bal;
     }
   }
@@ -81,7 +83,8 @@ async function conciliarPeriodo(uid:number,periodo:string){
     const neto = monedaExtranjera ? Math.abs((m.amount_untaxed_signed as number)||0) : (m.amount_untaxed as number);
     const total = monedaExtranjera ? Math.abs((m.amount_total_signed as number)||0) : (m.amount_total as number);
     const ivaReal=(ivaPorMove[id]||0); const perc=(percPorMove[id]||0);
-    return{id,proveedor:Array.isArray(m.partner_id)?(m.partner_id as unknown[])[1]:"",cuit:String(pid!==null?(pmap[pid]||""):"").replace(/\D/g,""),comprobante:m.l10n_latam_document_number||"",tipo_doc_codigo:dt[0],tipo_doc_nombre:dt[1],es_nc:esNC,moneda_extranjera:monedaExtranjera,fecha_factura:m.invoice_date,fecha_contable:m.date,neto:neto*signo,iva:ivaReal*signo,percepciones:perc*signo,total:total*signo};
+    return{id,proveedor:Array.isArray(m.partner_id)?(m.partner_id as unknown[])[1]:"",cuit:String(pid!==null?(pmap[pid]||""):"").replace(/\D/g,""),comprobante:m.l10n_latam_document_number||"",tipo_doc_codigo:dt[0],tipo_doc_nombre:dt[1],es_nc:esNC,moneda_extranjera:monedaExtranjera,fecha_factura:m.invoice_date,fecha_contable:m.date,neto:neto*signo,iva:ivaReal*signo,percepciones:perc*signo,total:total*signo,
+      total_moneda:monedaExtranjera?((m.amount_total as number)||0)*signo:null, iva_moneda:monedaExtranjera?(ivaMonPorMove[id]||0)*signo:null};
   });
   return{periodo,desde,hasta,company_id:COMPANY_ID,cantidad:facturas.length,facturas};
 }
