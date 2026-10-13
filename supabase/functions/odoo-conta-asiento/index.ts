@@ -111,6 +111,12 @@ const TICKETS: Record<string, T> = {
   "TF-A 00046-00016396": { neto: 34578.9, iva: 7261.57, interno: 8159.56, perc: 0, total: 50000.03 },
   "TF-A 00019-00042776": { neto: 34621.83, iva: 7270.58, interno: 8107.65, perc: 0, total: 50000.06 },
 };
+// Tickets nuevos a cargar con el método nuevo (datos del ticket impreso)
+type N = { partner: number; diario: number; tipo_doc: number; numero: string; fecha: string; neto: number; iva: number; interno: number; perc: number; total: number };
+const NUEVOS: Record<string, N> = {
+  // Pan American, foto del 13-oct-2026: neto 35.543,11 · IVA 7.464,05 · "10 Impuesto interno" 6.992,82 · "09 IVA RI" 1.066,29 · total 51.066,27
+  "TF-A 05422-00002555": { partner: 892, diario: 33, tipo_doc: 56, numero: "05422-00002555", fecha: "2026-10-01", neto: 35543.11, iva: 7464.05, interno: 6992.82, perc: 1066.29, total: 51066.27 },
+};
 const TAX_IVA = 188, TAX_INT = 149, TAX_PERC = 195, PROD_GRAV = 256, CTA_MOVILIDAD = 766;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const m2o = (v: unknown) => Array.isArray(v) ? (v as unknown[])[0] as number : null;
@@ -140,7 +146,38 @@ async function combustible_internos(body: Rec): Promise<Rec> {
     const despues = await ex("product.product", "read", [[PROD_GRAV, 388], ["display_name", "supplier_taxes_id", "active"]], { context: { active_test: false } }) as Rec[];
     return { ok: true, antes, despues };
   }
-  if (body.paso !== "ticket") return { ok: false, error: "paso desconocido (config | productos | ticket)" };
+  // paso "cargar" {nombre}: carga un ticket NUEVO con el método nuevo, desde la tabla fija NUEVOS (datos
+  // tomados del ticket impreso). Controla duplicado, IVA = 21% del neto y total = el del ticket.
+  if (body.paso === "cargar") {
+    const n = NUEVOS[String(body.nombre || "")];
+    if (!n) return { ok: false, error: "ticket fuera de la tabla de nuevos" };
+    const dup = await ex("account.move", "search_read", [[["partner_id", "=", n.partner], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["name", "state"] }) as Rec[];
+    if (dup.length) return { ok: false, error: "ya está cargado", dup };
+    if (r2(n.neto * 0.21) !== n.iva || r2(n.neto + n.iva + n.interno + n.perc) !== n.total) return { ok: false, error: "los importes del ticket no cierran", n };
+    if (dry) return { ok: true, dry_run: true, a_cargar: n };
+    const taxes = [TAX_IVA, TAX_INT, ...(n.perc ? [TAX_PERC] : [])];
+    const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: n.partner, journal_id: n.diario, l10n_latam_document_type_id: n.tipo_doc,
+      l10n_latam_document_number: n.numero, invoice_date: n.fecha, date: n.fecha, company_id: C,
+      invoice_line_ids: [[0, 0, { product_id: PROD_GRAV, name: "[GA06] Combustible – Neto gravado", quantity: 1, price_unit: n.neto, tax_ids: [[6, 0, taxes]] }]] }]) as number;
+    const leerN = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
+    let ls = await leerN();
+    const cmds: unknown[] = [];
+    const li = ls.find(l => m2o(l.tax_line_id) === TAX_INT); if (!li) return { ok: false, error: "Odoo no generó la línea de internos; quedó en BORRADOR", id };
+    cmds.push([1, li.id, { balance: n.interno, amount_currency: n.interno }]);
+    if (n.perc) { const lp = ls.find(l => m2o(l.tax_line_id) === TAX_PERC); if (!lp) return { ok: false, error: "Odoo no generó la percepción; quedó en BORRADOR", id }; cmds.push([1, lp.id, { balance: n.perc, amount_currency: n.perc }]); }
+    const tt = ls.find(l => l.display_type === "payment_term")!;
+    cmds.push([1, tt.id, { balance: -n.total, amount_currency: -n.total }]);
+    await ex("account.move", "write", [[id], { line_ids: cmds }]);
+    ls = await leerN();
+    const sum = (tid: number) => r2(ls.filter(l => m2o(l.tax_line_id) === tid).reduce((a, l) => a + (l.balance as number), 0));
+    const chk = { iva: sum(TAX_IVA), interno: sum(TAX_INT), perc: sum(TAX_PERC), total: r2(-ls.filter(l => l.display_type === "payment_term").reduce((a, l) => a + (l.balance as number), 0)),
+      debe: r2(ls.reduce((a, l) => a + (l.debit as number), 0)), haber: r2(ls.reduce((a, l) => a + (l.credit as number), 0)) };
+    if (chk.iva !== n.iva || chk.interno !== n.interno || chk.perc !== n.perc || chk.total !== n.total || chk.debe !== chk.haber) return { ok: false, error: "no cerró exacto; quedó en BORRADOR para revisar", id, chk, n };
+    await ex("account.move", "action_post", [[id]]);
+    const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_untaxed", "amount_tax", "payment_state"]]) as Rec[])[0];
+    return { ok: fin.state === "posted", chk, comprobante: fin };
+  }
+  if (body.paso !== "ticket") return { ok: false, error: "paso desconocido (config | productos | ticket | cargar)" };
   const nombre = String(body.nombre || ""); const e = TICKETS[nombre];
   if (!e) return { ok: false, error: "ticket fuera del lote: " + nombre };
   const mv = await ex("account.move", "search_read", [[["name", "=", nombre], ["company_id", "=", C], ["move_type", "=", "in_invoice"]]], { fields: ["id", "state", "amount_total", "payment_state"] }) as Rec[];
