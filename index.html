@@ -196,14 +196,14 @@
        imponen; para Tienda Nube y las manuales no hay tal fecha: lo que importa es lo pendiente. -->
   <div class="card" style="margin-bottom:14px">
     <div class="panel-head">
-      <h2>🛒 Por entregar · Tienda Nube <span id="tn-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+      <h2>🛒 Para hoy · Tienda Nube <span id="tn-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
     </div>
     <div class="lista-mini" id="tn-lista"><div class="empty-mini">Cargando…</div></div>
   </div>
 
   <div class="card" style="margin-bottom:14px">
     <div class="panel-head">
-      <h2>📝 Por entregar · Ventas manuales <span id="manual-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+      <h2>📝 Para hoy · Ventas manuales <span id="manual-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
     </div>
     <div class="lista-mini" id="manual-lista"><div class="empty-mini">Cargando…</div></div>
   </div>
@@ -326,7 +326,7 @@ const planDelDia = () => (_planP = _planP || PLAN_DEL_DIA.cargar(sb));
 // Desglose de productos por canal, con los pedidos de la foto de Odoo (los mismos que cuenta la
 // tarjeta "Pedidos por entregar"). Cada pedido trae sus lineas con lo que falta entregar (pend),
 // y el canal viene marcado: ml / tn / ninguno de los dos = venta manual.
-function renderDesglose(elId, subId, pedidos, vacio) {
+function renderDesglose(elId, subId, pedidos, fuera, vacio) {
   const cont = document.getElementById(elId), sub = document.getElementById(subId);
   if (!cont) return;
   const porProd = {};
@@ -338,17 +338,30 @@ function renderDesglose(elId, subId, pedidos, vacio) {
   }
   const filas = Object.values(porProd).sort((a, b) => b.qty - a.qty);
   const unidades = filas.reduce((a, x) => a + x.qty, 0);
-  if (!filas.length) { cont.innerHTML = '<div class="empty-mini">✓ ' + vacio + '</div>'; if (sub) sub.textContent = ''; return; }
-  if (sub) sub.textContent = '\u00b7 ' + pedidos.length + ' pedido' + (pedidos.length === 1 ? '' : 's') + ' \u00b7 ' + fmt(unidades) + ' u.';
+  // Lo que quedo afuera por no estar marcado para hoy se dice igual: un pedido pendiente no
+  // puede desaparecer de la pantalla sin que se note.
+  const resto = fuera ? ' \u00b7 ' + fuera + ' sin marcar para hoy' : '';
+  if (!filas.length) { cont.innerHTML = '<div class="empty-mini">✓ ' + vacio + (fuera ? ' (' + fuera + ' pendiente' + (fuera === 1 ? '' : 's') + ' sin marcar para hoy)' : '') + '</div>'; if (sub) sub.textContent = ''; return; }
+  if (sub) sub.textContent = '\u00b7 ' + pedidos.length + ' pedido' + (pedidos.length === 1 ? '' : 's') + ' \u00b7 ' + fmt(unidades) + ' u.' + resto;
   cont.innerHTML = filas.map((x) =>
     '<div class="item"><span class="item__nombre">' + escapeHTML(x.nombre) +
     '</span><span class="item__qty despacho">' + fmt(x.qty) + '</span></div>').join('');
 }
 
+// Manda la ETIQUETA: en estas listas solo entra lo marcado 🟥 Hoy. Un pedido pendiente que
+// nadie marco para hoy NO es para hoy (ej: los pedidos grandes de venta manual, que se entregan
+// escalonados). Igual se informa cuantos quedaron afuera.
+const ETIQUETA_HOY = 2;   // crm.tag 🟥 Hoy en Odoo
+const esDeHoy = (p) => Array.isArray(p.tag_ids) && p.tag_ids.indexOf(ETIQUETA_HOY) >= 0;
+
 function cargarPedidosCanal(r) {
   const peds = (r && r.pedidos) || [];
-  renderDesglose('tn-lista', 'tn-sub', peds.filter((p) => p.tn), 'Nada pendiente de Tienda Nube');
-  renderDesglose('manual-lista', 'manual-sub', peds.filter((p) => !p.ml && !p.tn), 'Nada pendiente de venta manual');
+  const bloque = (elId, subId, deCanal, vacio) => {
+    const hoy = deCanal.filter(esDeHoy);
+    renderDesglose(elId, subId, hoy, deCanal.length - hoy.length, vacio);
+  };
+  bloque('tn-lista', 'tn-sub', peds.filter((p) => p.tn), 'Nada de Tienda Nube para hoy');
+  bloque('manual-lista', 'manual-sub', peds.filter((p) => !p.ml && !p.tn), 'Ninguna venta manual para hoy');
 }
 
 async function cargarProduccion() {
