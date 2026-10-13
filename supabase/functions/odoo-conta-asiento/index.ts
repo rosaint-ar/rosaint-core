@@ -430,6 +430,36 @@ const PERSONAL_A: Record<string, { borrador: number; neto: number; iva: number; 
   // J y O Rodamientos, tapafugas para el auto (PDF invoice-2000018325729788): neto 24.565,08 · IVA 5.158,67 · total 29.723,75
   "FA-A 00011-00001002": { borrador: 44536, neto: 24565.08, iva: 5158.67, total: 29723.75 },
 };
+// Facturas A personales que no estaban en Odoo (datos de Mis Comprobantes de ARCA): se crean con el mismo criterio.
+const PERSONAL_A_NUEVAS: Record<string, { proveedor: { name: string; vat: string }; numero: string; fecha: string; neto: number; iva: number; total: number }> = {
+  // Yanani Martín Ramón: no se identificó la compra; Dirección decidió cargarlas como gasto personal (13-oct-2026).
+  "FA-A 00004-00013539": { proveedor: { name: "Yanani Martín Ramón", vat: "23-25430261-9" }, numero: "00004-00013539", fecha: "2026-09-03", neto: 27271.90, iva: 5727.10, total: 32999.00 },
+  "FA-A 00004-00013541": { proveedor: { name: "Yanani Martín Ramón", vat: "23-25430261-9" }, numero: "00004-00013541", fecha: "2026-09-03", neto: 27271.90, iva: 5727.10, total: 32999.00 },
+};
+async function personal_a_nueva(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const nombre = String(body.nombre || ""); const p = PERSONAL_A_NUEVAS[nombre];
+  if (!p) return { ok: false, error: "fuera de la tabla" };
+  if (r2(p.neto * 0.21) !== p.iva || r2(p.neto + p.iva) !== p.total) return { ok: false, error: "los importes no cierran" };
+  const ya = await ex("res.partner", "search_read", [[["vat", "in", [p.proveedor.vat, p.proveedor.vat.replace(/\D/g, "")]]]], { fields: ["id", "name"], context: { active_test: false } }) as Rec[];
+  let partner = ya.length ? ya[0].id as number : null;
+  if (partner) {
+    const dup = await ex("account.move", "search_read", [[["partner_id", "=", partner], ["name", "ilike", p.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (dup.length) return { ok: false, error: "ya está cargado", dup };
+  }
+  if (dry) return { ok: true, dry_run: true, proveedor: partner ? ya[0].name : "crear " + p.proveedor.name, p };
+  if (!partner) partner = await ex("res.partner", "create", [{ name: p.proveedor.name, vat: p.proveedor.vat, is_company: false, country_id: 10, l10n_latam_identification_type_id: 4, l10n_ar_afip_responsibility_type_id: 1, supplier_rank: 1 }]) as number;
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", "GN01"]]], { fields: ["id"] }) as Rec[];
+  const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: partner, journal_id: 33, l10n_latam_document_type_id: 1, l10n_latam_document_number: p.numero,
+    invoice_date: p.fecha, date: p.fecha, company_id: C, invoice_line_ids: [[0, 0, { product_id: prod[0].id, quantity: 1, price_unit: p.neto, tax_ids: [[6, 0, [TAX_IVA]]] }]] }]) as number;
+  const mm = (await ex("account.move", "read", [[id], ["amount_total", "amount_tax"]]) as Rec[])[0];
+  if (mm.amount_total !== p.total || mm.amount_tax !== p.iva) return { ok: false, error: "no cerró; quedó en BORRADOR", id, mm };
+  await ex("account.move", "action_post", [[id]]);
+  const ctx = { active_model: "account.move", active_ids: [id] };
+  const wid = await ex("account.payment.register", "create", [{ journal_id: 55, payment_date: p.fecha, amount: p.total, communication: nombre }], { context: ctx }) as number;
+  await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+  return { ok: true, comprobante: (await ex("account.move", "read", [[id], ["name", "state", "amount_untaxed", "amount_tax", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0] };
+}
+
 async function personal_a(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const nombre = String(body.nombre || ""); const p = PERSONAL_A[nombre];
   if (!p) return { ok: false, error: "fuera de la tabla" };
@@ -485,6 +515,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
     if (body.lote === "first_label_anulada") return new Response(JSON.stringify(await first_label_anulada(body)), { headers: h });
     if (body.lote === "tipo_cambio") return new Response(JSON.stringify(await tipo_cambio(body)), { headers: h });
