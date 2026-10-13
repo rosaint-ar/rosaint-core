@@ -268,6 +268,8 @@ const HEADERS_ARCA = {
 // M (53), Ticket (110/112), MiPyme FCE (203, 208, 213, 233 crédito).
 const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const CODIGOS_NC = new Set(['3', '8', '13', '23', '53', '110', '112', '113', '114', '203', '208', '213', '233']);
+// Comprobantes B y C (facturas, ND, NC, recibos, tiques B/C y MiPyME B/C): ARCA no discrimina el neto.
+const COD_B_C = new Set(['6', '7', '8', '9', '11', '12', '13', '15', '82', '83', '111', '206', '207', '208', '211', '212', '213']);
 
 $('fileArca').addEventListener('change', (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -348,10 +350,15 @@ $('fileArca').addEventListener('change', (e) => {
         const conv = esExtranjera ? tc : 1;
         // neto = gravado + no gravado + exento (Odoo los junta en base imponible;
         // ARCA los separa). El total sí incluye todo.
-        const netoTotal =
+        let netoTotal =
           (+r[c.neto] || 0) +
           (c.nogravado >= 0 ? (+r[c.nogravado] || 0) : 0) +
           (c.exento    >= 0 ? (+r[c.exento]    || 0) : 0);
+        // Facturas / notas B y C: ARCA no discrimina el neto (queda en cero) y Odoo las carga por el total.
+        // Para comparar lo mismo, el neto de ARCA es el total menos el IVA (los "otros tributos" que ARCA separa
+        // en una B, como en el seguro, Odoo los tiene dentro del renglón).
+        if (!netoTotal && cod && COD_B_C.has(cod))
+          netoTotal = (+r[c.total] || 0) - (+r[c.iva] || 0);
         arcaRows.push({
           fecha: r[c.fecha], tipo: tipoStr, esNC, cod,
           pv: parseInt(r[c.pv]) || 0, num: parseInt(r[c.num]) || 0,
