@@ -352,6 +352,34 @@ async function personales(body: Rec): Promise<Rec> {
   return { ok: true, comprobante: (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0] };
 }
 
+// Lote "tipo_cambio": corrige el TC de una factura en USD al que figura impreso en el comprobante.
+// Solo facturas NO pagadas. Controla que el IVA en pesos quede = IVA en USD × TC (lo que informa ARCA).
+const TC_FACTURAS: Record<string, { tc: number; neto_usd: number; iva_usd: number; total_usd: number }> = {
+  // Invalcos, PDF FAC-A-0004-00002019: "TC: 1.545,00", neto U$s 138,00, IVA U$s 28,98, total U$s 166,98 (Odoo tenía 1.550)
+  "FA-A 00004-00002019": { tc: 1545, neto_usd: 138, iva_usd: 28.98, total_usd: 166.98 },
+};
+async function tipo_cambio(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const nombre = String(body.nombre || ""); const t = TC_FACTURAS[nombre];
+  if (!t) return { ok: false, error: "factura fuera de la tabla" };
+  const mv = await ex("account.move", "search_read", [[["name", "=", nombre], ["move_type", "=", "in_invoice"], ["company_id", "=", C]]], { fields: ["id", "state", "payment_state", "invoice_currency_rate", "amount_total", "amount_tax", "amount_total_signed"] }) as Rec[];
+  if (mv.length !== 1) return { ok: false, error: "no encuentro la factura" };
+  const m = mv[0]; const id = m.id as number;
+  if (m.payment_state !== "not_paid") return { ok: false, error: "la factura tiene pagos; no la toco", m };
+  if (m.amount_total !== t.total_usd || m.amount_tax !== t.iva_usd) return { ok: false, error: "los importes en USD no coinciden con el comprobante", m };
+  const esperado = { iva_ars: r2(t.iva_usd * t.tc), total_ars: r2(t.total_usd * t.tc) };
+  if (dry) return { ok: true, dry_run: true, tc_actual: r2(1 / (m.invoice_currency_rate as number)), tc_nuevo: t.tc, total_ars_actual: m.amount_total_signed, esperado };
+  await ex("account.move", "button_draft", [[id]]);
+  await ex("account.move", "write", [[id], { invoice_currency_rate: 1 / t.tc }]);
+  const ls = await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
+  const iva = r2(ls.filter(l => m2o(l.tax_line_id) === TAX_IVA).reduce((a, l) => a + (l.balance as number), 0));
+  const total = r2(-ls.filter(l => l.display_type === "payment_term").reduce((a, l) => a + (l.balance as number), 0));
+  const debe = r2(ls.reduce((a, l) => a + (l.debit as number), 0)), haber = r2(ls.reduce((a, l) => a + (l.credit as number), 0));
+  if (iva !== esperado.iva_ars || total !== esperado.total_ars || debe !== haber) return { ok: false, error: "no dio exacto; quedó en BORRADOR para revisar", iva, total, debe, haber, esperado };
+  await ex("account.move", "action_post", [[id]]);
+  const fin = (await ex("account.move", "read", [[id], ["name", "state", "invoice_currency_rate", "amount_total", "amount_total_signed", "payment_state"]]) as Rec[])[0];
+  return { ok: fin.state === "posted", iva_ars: iva, total_ars: total, tc: r2(1 / (fin.invoice_currency_rate as number)), comprobante: fin };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -389,6 +417,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "tipo_cambio") return new Response(JSON.stringify(await tipo_cambio(body)), { headers: h });
     if (body.lote === "personales") return new Response(JSON.stringify(await personales(body)), { headers: h });
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
