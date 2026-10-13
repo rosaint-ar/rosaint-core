@@ -250,6 +250,106 @@ async function combustible_internos(body: Rec): Promise<Rec> {
   return { ok: fin.state === "posted" && fin.amount_residual === 0, ticket: nombre, antes: r0, despues: r2_, estado: fin };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Lote "compras": facturas de compra que faltaban en Odoo (cruce con Mis Comprobantes de ARCA).
+// Tabla FIJA con los datos del comprobante; controla duplicado, IVA = 21% del neto y total exacto;
+// pisa los importes de percepción con los del comprobante; valida y registra el pago indicado.
+type Compra = { partner: number | { name: string; vat: string }; tipo_doc: number; numero: string; fecha: string; producto: number;
+  neto: number; iva: number; otros: { tax: number; importe: number }[]; total: number; pago: { diario: number; fecha: string } };
+const COMPRAS: Record<string, Compra> = {
+  // dLocal (Pago Nube), sep-2026, PDF 533877.pdf: neto 104.640,20 · IVA 21.974,44 · Perc IIBB CABA 1% 1.046,40 · total 127.661,04
+  // Igual que la de agosto (FA-A 00007-00264643): GC03 Comisiones Medios de Pago + Perc IIBB CABA (124), pagada por Mercado Pago.
+  "FA-A 00007-00287537": { partner: 975, tipo_doc: 1, numero: "00007-00287537", fecha: "2026-09-30", producto: 0 /* GC03, se busca */,
+    neto: 104640.20, iva: 21974.44, otros: [{ tax: 124, importe: 1046.40 }], total: 127661.04, pago: { diario: 42, fecha: "2026-09-30" } },
+  // Frances Gustavo César (ferretería), FA-A del 14/09 según ARCA. La B 00005-00000881 y su NC B 00005-00000034 se anulan
+  // entre sí y no se cargan. Gastos varios de producción (GP02). Pagada en efectivo.
+  "FA-A 00005-00007425": { partner: { name: "Frances Gustavo César", vat: "20-18215120-4" }, tipo_doc: 1, numero: "00005-00007425", fecha: "2026-09-14", producto: 0 /* GP02 */,
+    neto: 28889.02, iva: 6066.69, otros: [], total: 34955.71, pago: { diario: 38, fecha: "2026-09-14" } },
+};
+const PROD_COMPRA: Record<string, string> = { "FA-A 00007-00287537": "GC03", "FA-A 00005-00007425": "GP02" };
+
+async function compras(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const nombre = String(body.nombre || ""); const c = COMPRAS[nombre];
+  if (!c) return { ok: false, error: "comprobante fuera de la tabla" };
+  if (r2(c.neto * 0.21) !== c.iva || r2(c.neto + c.iva + c.otros.reduce((a, o) => a + o.importe, 0)) !== c.total) return { ok: false, error: "los importes del comprobante no cierran", c };
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", PROD_COMPRA[nombre]]]], { fields: ["id", "display_name"] }) as Rec[];
+  if (prod.length !== 1) return { ok: false, error: "no encuentro el producto " + PROD_COMPRA[nombre] };
+  // proveedor
+  let partner: number | null = typeof c.partner === "number" ? c.partner : null;
+  if (!partner) {
+    const p = c.partner as { name: string; vat: string };
+    const ya = await ex("res.partner", "search_read", [[["vat", "in", [p.vat, p.vat.replace(/\D/g, "")]]]], { fields: ["id", "name"], context: { active_test: false } }) as Rec[];
+    if (ya.length) partner = ya[0].id as number;
+  }
+  const dupDom = partner ? [["partner_id", "=", partner], ["name", "ilike", c.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]] : null;
+  if (dupDom) { const dup = await ex("account.move", "search_read", [dupDom], { fields: ["name", "state"] }) as Rec[]; if (dup.length) return { ok: false, error: "ya está cargado", dup }; }
+  if (dry) return { ok: true, dry_run: true, producto: prod[0].display_name, proveedor: partner || ("crear: " + JSON.stringify(c.partner)), c };
+  if (!partner) {
+    const p = c.partner as { name: string; vat: string };
+    partner = await ex("res.partner", "create", [{ name: p.name, vat: p.vat, is_company: false, country_id: 10, l10n_latam_identification_type_id: 4, l10n_ar_afip_responsibility_type_id: 1, supplier_rank: 1 }]) as number;
+  }
+  const taxes = [TAX_IVA, ...c.otros.map(o => o.tax)];
+  const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: partner, journal_id: 33, l10n_latam_document_type_id: c.tipo_doc,
+    l10n_latam_document_number: c.numero, invoice_date: c.fecha, date: c.fecha, company_id: C,
+    invoice_line_ids: [[0, 0, { product_id: prod[0].id, quantity: 1, price_unit: c.neto, tax_ids: [[6, 0, taxes]] }]] }]) as number;
+  const leerC = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
+  let ls = await leerC();
+  const cmds: unknown[] = [];
+  for (const o of c.otros) { const l = ls.find(x => m2o(x.tax_line_id) === o.tax); if (!l) return { ok: false, error: "Odoo no generó la línea del impuesto " + o.tax + "; quedó en BORRADOR", id }; cmds.push([1, l.id, { balance: o.importe, amount_currency: o.importe }]); }
+  const tt = ls.find(l => l.display_type === "payment_term")!;
+  cmds.push([1, tt.id, { balance: -c.total, amount_currency: -c.total }]);
+  await ex("account.move", "write", [[id], { line_ids: cmds }]);
+  ls = await leerC();
+  const sum = (tid: number) => r2(ls.filter(l => m2o(l.tax_line_id) === tid).reduce((a, l) => a + (l.balance as number), 0));
+  const chk = { iva: sum(TAX_IVA), otros: c.otros.map(o => [o.tax, sum(o.tax)]), total: r2(-ls.filter(l => l.display_type === "payment_term").reduce((a, l) => a + (l.balance as number), 0)),
+    debe: r2(ls.reduce((a, l) => a + (l.debit as number), 0)), haber: r2(ls.reduce((a, l) => a + (l.credit as number), 0)) };
+  if (chk.iva !== c.iva || chk.total !== c.total || chk.debe !== chk.haber || c.otros.some(o => sum(o.tax) !== o.importe)) return { ok: false, error: "no cerró exacto; quedó en BORRADOR para revisar", id, chk };
+  await ex("account.move", "action_post", [[id]]);
+  const ctx = { active_model: "account.move", active_ids: [id] };
+  const mvn = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0];
+  const wid = await ex("account.payment.register", "create", [{ journal_id: c.pago.diario, payment_date: c.pago.fecha, amount: c.total, communication: mvn.name }], { context: ctx }) as number;
+  await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+  const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0];
+  return { ok: fin.state === "posted" && fin.amount_residual === 0, chk, comprobante: fin };
+}
+
+// Lote "compras_b": factura B + su nota de crédito B que la anula (como las carga Dirección siempre:
+// un renglón con "IVA No Aplica" (178), la NC como reversión de la factura, y las dos conciliadas entre sí).
+type ParB = { partner_vat: string; producto: string; fa: { numero: string; fecha: string; total: number }; nc: { numero: string; fecha: string; total: number } };
+const COMPRAS_B: Record<string, ParB> = {
+  // Frances Gustavo César: FA-B 00005-00000881 y NC-B 00005-00000034 del 14/09 (después hizo la FA-A 00005-00007425). Importes de ARCA.
+  "frances_sep": { partner_vat: "20-18215120-4", producto: "GP02", fa: { numero: "00005-00000881", fecha: "2026-09-14", total: 34955.71 }, nc: { numero: "00005-00000034", fecha: "2026-09-14", total: 34955.72 } },
+};
+async function compras_b(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
+  if (!b) return { ok: false, error: "par fuera de la tabla" };
+  const pr = await ex("res.partner", "search_read", [[["vat", "in", [b.partner_vat, b.partner_vat.replace(/\D/g, "")]]]], { fields: ["id", "name"] }) as Rec[];
+  if (pr.length !== 1) return { ok: false, error: "no encuentro el proveedor (cargá primero la factura A)" };
+  const partner = pr[0].id as number;
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", b.producto]]], { fields: ["id"] }) as Rec[];
+  for (const n of [b.fa.numero, b.nc.numero]) {
+    const dup = await ex("account.move", "search_read", [[["partner_id", "=", partner], ["name", "ilike", n], ["move_type", "in", ["in_invoice", "in_refund"]], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (dup.length) return { ok: false, error: "ya está cargado", dup };
+  }
+  if (dry) return { ok: true, dry_run: true, proveedor: pr[0].name, b };
+  const crear = async (tipo: "in_invoice" | "in_refund", doc: number, d: { numero: string; fecha: string; total: number }, revierte?: number) => {
+    const vals: Rec = { move_type: tipo, partner_id: partner, journal_id: 33, l10n_latam_document_type_id: doc, l10n_latam_document_number: d.numero,
+      invoice_date: d.fecha, date: d.fecha, company_id: C, invoice_line_ids: [[0, 0, { product_id: prod[0].id, quantity: 1, price_unit: d.total, tax_ids: [[6, 0, [178]]] }]] };
+    if (revierte) vals.reversed_entry_id = revierte;
+    const id = await ex("account.move", "create", [vals]) as number;
+    const m = (await ex("account.move", "read", [[id], ["amount_total", "amount_tax"]]) as Rec[])[0];
+    if (m.amount_total !== d.total || m.amount_tax !== 0) throw new Error(`${d.numero}: total ${m.amount_total} / impuestos ${m.amount_tax}; quedó en BORRADOR`);
+    await ex("account.move", "action_post", [[id]]);
+    return id;
+  };
+  const fa = await crear("in_invoice", 6, b.fa);
+  const nc = await crear("in_refund", 8, b.nc, fa);
+  const term = await ex("account.move.line", "search_read", [[["move_id", "in", [fa, nc]], ["display_type", "=", "payment_term"]]], { fields: ["id"] }) as Rec[];
+  await ex("account.move.line", "reconcile", [term.map(t => t.id)]);
+  const fin = await ex("account.move", "read", [[fa, nc], ["name", "state", "amount_total", "amount_residual", "payment_state"]]) as Rec[];
+  return { ok: true, comprobantes: fin };
+}
+
 Deno.serve(async (req: Request) => {
   const h = { "Content-Type": "application/json" };
   const clave = Deno.env.get("CONTROL_CRON_KEY") || "";
@@ -257,6 +357,8 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
+    if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
     return new Response(JSON.stringify({ ok: false, error: "lote desconocido" }), { headers: h });
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: h }); }
