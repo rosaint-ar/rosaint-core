@@ -29,12 +29,17 @@
     .adj-list li .sz { color: var(--muted); font-size: 12px; }
     .adj-list li.pend { color: var(--muted); opacity: .7; }
     .adj-list li.done { border-color: var(--ok); }
+    .envio-tit { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+    .envio-tit .paso { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .adj-list li .quitar { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+    .adj-list li .quitar:hover { color: var(--hot); }
+    .adj-list li .tag { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; }
     .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
     /* celular (auditoría 6-oct): nada se sale de la pantalla */
     @media (max-width: 640px) { .field input[type=text] { min-width: 0; width: 100%; } }
   </style>
 </head>
-<body data-page="cierre" data-title="Cierre mensual" data-subtitle="Arma el paquete de IVA e IIBB y lo manda al contador">
+<body data-page="cierre" data-title="Cierre mensual" data-subtitle="Dos mails a la contadora: primero IIBB, después IVA">
 
 <div id="app-shell"></div>
 <main id="app-content">
@@ -60,35 +65,46 @@
         <span class="label">Período</span>
         <input type="month" id="periodo">
       </div>
-      <button class="btn primary" id="btnPreparar">Preparar adjuntos</button>
-    </div>
-    <div class="hint">Regenera los 2 libros de IVA (compras y ventas), las ventas por jurisdicción y las percepciones de IIBB por jurisdicción del período, directo de Odoo. Si hay percepciones que SIFERE no importa (CABA, Tucumán…), el mensaje lo avisa solo.</div>
-  </div>
-
-  <div class="card" style="margin-bottom:14px;">
-    <span class="label" style="display:block;margin-bottom:10px;">Adjuntos del cierre</span>
-    <ul class="adj-list" id="adjuntos"></ul>
-  </div>
-
-  <div class="card" style="margin-bottom:14px;">
-    <div style="display:flex;flex-direction:column;gap:14px;">
-      <div class="field">
-        <span class="label">Para (contador)</span>
+      <div class="field" style="flex:1;">
+        <span class="label">Para (contadora)</span>
         <input type="text" id="para" value="mariabelen@latinifiorito.com.ar">
       </div>
-      <div class="field">
-        <span class="label">Asunto</span>
-        <input type="text" id="asunto" style="min-width:100%;">
-      </div>
-      <div class="field">
-        <span class="label">Mensaje</span>
-        <textarea id="cuerpo"></textarea>
-      </div>
     </div>
+    <div class="hint">Se mandan dos mails por separado: <b>primero Ingresos Brutos</b> (vence antes) y <b>después IVA</b>. Cada uno arma sus archivos directo de Odoo y podés sumarle archivos propios.</div>
   </div>
 
-  <div class="status-bar" id="status"><span class="dot off"></span>Elegí el período y preparó los adjuntos.</div>
-  <button class="btn primary" id="btnEnviar" disabled>Enviar al contador ✉</button>
+  <!-- Los dos envíos comparten la misma estructura; el script los arma con crearEnvio(). -->
+  <div class="card envio" id="envio-iibb" style="margin-bottom:14px;">
+    <div class="envio-tit"><span class="paso">1</span><strong>Ingresos Brutos · Convenio Multilateral</strong></div>
+    <div class="hint" style="margin:4px 0 12px;">Ventas por jurisdicción (base imponible) + percepciones de IIBB por jurisdicción. Si hay percepciones que SIFERE no importa (CABA, Tucumán…), el mensaje lo avisa solo.</div>
+    <div class="controls" style="margin-bottom:12px;">
+      <button class="btn primary" data-acc="preparar">Preparar archivos</button>
+      <label class="btn" style="cursor:pointer;">Agregar archivos…<input type="file" data-acc="extras" multiple style="display:none;"></label>
+    </div>
+    <ul class="adj-list" data-acc="lista"></ul>
+    <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px;">
+      <div class="field"><span class="label">Asunto</span><input type="text" data-acc="asunto" style="min-width:100%;"></div>
+      <div class="field"><span class="label">Mensaje</span><textarea data-acc="cuerpo"></textarea></div>
+    </div>
+    <div class="status-bar" data-acc="status"><span class="dot off"></span>Prepará los archivos.</div>
+    <button class="btn primary" data-acc="enviar" disabled>Enviar IIBB ✉</button>
+  </div>
+
+  <div class="card envio" id="envio-iva" style="margin-bottom:14px;">
+    <div class="envio-tit"><span class="paso">2</span><strong>IVA</strong></div>
+    <div class="hint" style="margin:4px 0 12px;">Libro de IVA Compras + Libro de IVA Ventas (los archivos para importar).</div>
+    <div class="controls" style="margin-bottom:12px;">
+      <button class="btn primary" data-acc="preparar">Preparar archivos</button>
+      <label class="btn" style="cursor:pointer;">Agregar archivos…<input type="file" data-acc="extras" multiple style="display:none;"></label>
+    </div>
+    <ul class="adj-list" data-acc="lista"></ul>
+    <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px;">
+      <div class="field"><span class="label">Asunto</span><input type="text" data-acc="asunto" style="min-width:100%;"></div>
+      <div class="field"><span class="label">Mensaje</span><textarea data-acc="cuerpo"></textarea></div>
+    </div>
+    <div class="status-bar" data-acc="status"><span class="dot off"></span>Prepará los archivos.</div>
+    <button class="btn primary" data-acc="enviar" disabled>Enviar IVA ✉</button>
+  </div>
 
 </main>
 
@@ -99,8 +115,8 @@
 <script src="percep-iibb.js?v=202610131200"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-// Cierre mensual · junta Libros de IVA (compras+ventas) + IIBB y lo manda al
-// contador por mail (vía Odoo, desde contacto@rosaint.com.ar).
+// Cierre mensual · dos envíos a la contadora: 1) IIBB (ventas y percepciones por jurisdicción),
+// 2) IVA (libros de compras y ventas). Por mail vía Odoo, desde contacto@rosaint.com.ar.
 // ═══════════════════════════════════════════════════════════════════════════
 const $ = (id) => document.getElementById(id);
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -108,7 +124,6 @@ const FN_LIBROS = window.SUPABASE_URL.replace('.supabase.co', '.functions.supaba
 const FN_IIBB   = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iibb-ventas';
 const FN_MAIL   = window.SUPABASE_URL + '/functions/v1/odoo-enviar-mail';
 const HEADERS = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY };
-let adjuntos = []; let adjuntosMes = null; // período para el que se prepararon // {filename, base64, mimetype}
 
 const FN_IVA = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-iva-serie';
 const M3 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -119,12 +134,6 @@ let manualesMes = null;
 (function init(){
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); // mes anterior por defecto
   $('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  actualizarTextos();
-  $('periodo').addEventListener('change', () => {
-    actualizarTextos();
-    manualesMes = null; actualizarTextos();
-    if (adjuntos.length) { adjuntos = []; adjuntosMes = null; renderAdjuntos(); $('btnEnviar').disabled = true; setStatus('off', 'Cambiaste el período: prepará los adjuntos de nuevo.', ''); }
-  });
   cargarGraficoIVA();
 })();
 
@@ -157,8 +166,6 @@ async function cargarGraficoIVA(){
 }
 
 function nombrePeriodo(mes){ const [y,m]=mes.split('-').map(Number); return MESES[m-1]+' '+y; }
-// el mensaje va como texto (puede traer errores o el mail escrito a mano)
-function setStatus(dot, msg, cls=''){ const el=$('status'); el.innerHTML = `<span class="dot ${dot}"></span>`; el.appendChild(document.createTextNode(msg)); el.className='status-bar '+cls; }
 function textoManuales(){
   if (!manualesMes) return '';
   if (!manualesMes.length) return '\n\nEste mes no hay percepciones de IIBB de jurisdicciones fuera de SIRCAR.';
@@ -166,11 +173,18 @@ function textoManuales(){
     + manualesMes.map(r => r.nombre + ' $' + r.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).join(' · ')
     + '. El detalle comprobante por comprobante está en la hoja "Cargar a mano en SIFERE" del adjunto de percepciones.';
 }
-function actualizarTextos(){
-  const p = nombrePeriodo($('periodo').value);
-  $('asunto').value = `Cierre de IVA ${p} — VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)`;
-  $('cuerpo').value = `Hola María Belén, ¿cómo estás?\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n• Percepciones de IIBB sufridas por jurisdicción\n\nLas compras están conciliadas contra Mis Comprobantes Recibidos de ARCA.${textoManuales()}\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
-}
+const FIRMA = 'VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)';
+// Textos por defecto de cada mail (si el usuario los editó a mano, no se pisan hasta cambiar el período)
+const TEXTOS = {
+  iibb: (p) => ({
+    asunto: `IIBB Convenio Multilateral ${p} — ${FIRMA}`,
+    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando lo de Ingresos Brutos de ${p}:\n\n• IIBB por jurisdicción (ventas netas por provincia, base imponible)\n• Percepciones de IIBB sufridas por jurisdicción${textoManuales()}\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
+  }),
+  iva: (p) => ({
+    asunto: `IVA ${p} — ${FIRMA}`,
+    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando el cierre de IVA de ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n\nVentas: todas emitidas con factura electrónica desde Odoo (con CAE).\nCompras: conciliadas contra Mis Comprobantes Recibidos de ARCA.\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
+  }),
+};
 
 async function blobToB64(blob){
   const buf = await blob.arrayBuffer(); const bytes = new Uint8Array(buf);
@@ -181,14 +195,7 @@ async function blobToB64(blob){
 function fmtSize(b64){ const bytes = Math.round(b64.length*3/4); return bytes>1048576 ? (bytes/1048576).toFixed(1)+' MB' : Math.round(bytes/1024)+' KB'; }
 const ICO = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/></svg>';
 
-function renderAdjuntos(pendientes){
-  let h = '';
-  const items = adjuntos.length ? adjuntos.map(a=>({nm:a.filename, sz:fmtSize(a.base64), done:true})) : (pendientes||[]).map(nm=>({nm, sz:'', done:false}));
-  if(!items.length){ $('adjuntos').innerHTML = '<li class="pend">Todavía no preparaste los adjuntos.</li>'; return; }
-  for(const it of items){ h += `<li class="${it.done?'done':'pend'}">${ICO}<span class="nm">${it.nm}</span><span class="sz">${it.sz||'pendiente'}</span></li>`; }
-  $('adjuntos').innerHTML = h;
-}
-renderAdjuntos();
+const escH = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 async function libroZip(mes, tipo){
   const r = await fetch(FN_LIBROS, { method:'POST', headers:HEADERS, body: JSON.stringify({ mes, tipo }) });
@@ -210,40 +217,83 @@ async function iibbXlsx(mes){
   return { filename: `IIBB por jurisdicción - ${nombreMes} ${y}.xlsx`, base64: b64, mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 }
 
-$('btnPreparar').addEventListener('click', async () => {
-  const mes = $('periodo').value; if(!mes){ setStatus('off','Elegí un período.','err'); return; }
-  $('btnPreparar').disabled = true; $('btnEnviar').disabled = true; adjuntos = [];
-  renderAdjuntos(['Libro de IVA Compras', 'Libro de IVA Ventas', 'IIBB por jurisdicción', 'Percepciones IIBB por jurisdicción']);
-  try {
-    setStatus('load','Generando Libro de IVA Compras…'); adjuntos.push(await libroZip(mes,'purchase')); renderAdjuntos();
-    setStatus('load','Generando Libro de IVA Ventas…');  adjuntos.push(await libroZip(mes,'sale'));     renderAdjuntos();
-    setStatus('load','Generando análisis de IIBB…');     adjuntos.push(await iibbXlsx(mes));             renderAdjuntos();
-    setStatus('load','Generando percepciones de IIBB…');
-    const pIibb = PercepIIBB.armarXlsx(await PercepIIBB.traerOdoo(mes, mes), mes, mes, null);
-    manualesMes = pIibb.manuales; actualizarTextos();
-    adjuntos.push({ filename: pIibb.filename, base64: pIibb.base64, mimetype: pIibb.mimetype }); renderAdjuntos();
-    adjuntosMes = mes;
-    setStatus('on', `Adjuntos listos (${adjuntos.length}). Revisá el mensaje y enviá.`, 'ok');
-    $('btnEnviar').disabled = false;
-  } catch(err){ setStatus('off','Error: '+err.message,'err'); }
-  $('btnPreparar').disabled = false;
-});
+// ── Un envío (IIBB o IVA): archivos que arma de Odoo + archivos propios + asunto/mensaje + enviar ──
+function crearEnvio(clave, generar, pendientes) {
+  const raiz = $('envio-' + clave);
+  const q = (acc) => raiz.querySelector(`[data-acc="${acc}"]`);
+  const st = { generados: [], extras: [], mes: null, editado: false };
+  const setStatus = (dot, msg, cls = '') => { const el = q('status'); el.innerHTML = `<span class="dot ${dot}"></span>`; el.appendChild(document.createTextNode(msg)); el.className = 'status-bar ' + cls; };
+  const textos = () => { if (st.editado) return; const t = TEXTOS[clave](nombrePeriodo($('periodo').value)); q('asunto').value = t.asunto; q('cuerpo').value = t.cuerpo; };
+  const render = (cargando) => {
+    const items = [
+      ...(cargando ? pendientes.map(nm => `<li class="pend">${ICO}<span class="nm">${escH(nm)}</span><span class="sz">pendiente</span></li>`)
+                   : st.generados.map(a => `<li class="done">${ICO}<span class="nm">${escH(a.filename)}</span><span class="sz">${fmtSize(a.base64)}</span></li>`)),
+      ...st.extras.map((a, i) => `<li class="done">${ICO}<span class="nm">${escH(a.filename)}</span><span class="tag">agregado</span><span class="sz">${fmtSize(a.base64)}</span><button class="quitar" data-i="${i}" title="Quitar">×</button></li>`),
+    ];
+    q('lista').innerHTML = items.length ? items.join('') : '<li class="pend">Todavía no preparaste los archivos.</li>';
+    q('lista').querySelectorAll('.quitar').forEach(b => b.addEventListener('click', () => { st.extras.splice(+b.dataset.i, 1); render(); }));
+  };
+  q('asunto').addEventListener('input', () => { st.editado = true; });
+  q('cuerpo').addEventListener('input', () => { st.editado = true; });
+  q('extras').addEventListener('change', async (e) => {
+    for (const f of [...e.target.files]) st.extras.push({ filename: f.name, base64: await blobToB64(f), mimetype: f.type || 'application/octet-stream' });
+    e.target.value = ''; render();
+  });
+  q('preparar').addEventListener('click', async () => {
+    const mes = $('periodo').value; if (!mes) { setStatus('off', 'Elegí un período.', 'err'); return; }
+    q('preparar').disabled = true; q('enviar').disabled = true; st.generados = []; st.mes = null; render(true);
+    try {
+      st.generados = await generar(mes, (msg) => setStatus('load', msg));
+      st.mes = mes; textos(); render();
+      setStatus('on', `Archivos listos (${st.generados.length + st.extras.length}). Revisá el mensaje y enviá.`, 'ok');
+      q('enviar').disabled = false;
+    } catch (err) { setStatus('off', 'Error: ' + err.message, 'err'); render(); }
+    q('preparar').disabled = false;
+  });
+  q('enviar').addEventListener('click', async () => {
+    const to = $('para').value.trim();
+    if (!to) { setStatus('off', 'Falta el mail de la contadora.', 'err'); return; }
+    if (!st.generados.length) { setStatus('off', 'Prepará los archivos primero.', 'err'); return; }
+    if (st.mes !== $('periodo').value) { setStatus('off', 'Los archivos son de otro período: preparalos de nuevo.', 'err'); return; }
+    const adj = [...st.generados, ...st.extras];
+    if (!confirm(`¿Enviar "${q('asunto').value}" a ${to} con ${adj.length} archivos?`)) return;
+    q('enviar').disabled = true; setStatus('load', 'Enviando por Odoo…');
+    const bodyHtml = '<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;">' + q('cuerpo').value.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>';
+    try {
+      const r = await fetch(FN_MAIL, { method: 'POST', headers: HEADERS, body: JSON.stringify({ to, subject: q('asunto').value, body_html: bodyHtml, attachments: adj }) });
+      const d = await r.json();
+      if (d.ok) { setStatus('on', `✓ Enviado a ${to} desde contacto@rosaint.com.ar.`, 'ok'); st.generados = []; st.extras = []; st.mes = null; render(); }
+      else { setStatus('off', 'No se pudo enviar: ' + (d.motivo_falla || d.error || 'error'), 'err'); q('enviar').disabled = false; }
+    } catch (err) { setStatus('off', 'Error: ' + err.message, 'err'); q('enviar').disabled = false; }
+  });
+  return {
+    alCambiarPeriodo() {
+      st.editado = false; textos();
+      if (st.generados.length) { st.generados = []; st.mes = null; render(); q('enviar').disabled = true; setStatus('off', 'Cambiaste el período: prepará los archivos de nuevo.'); }
+    },
+    iniciar() { textos(); render(); },
+  };
+}
 
-$('btnEnviar').addEventListener('click', async () => {
-  const to = $('para').value.trim();
-  if(!to){ setStatus('off','Falta el mail del contador.','err'); return; }
-  if(!adjuntos.length){ setStatus('off','Prepará los adjuntos primero.','err'); return; }
-  if(adjuntosMes !== $('periodo').value){ setStatus('off','Los adjuntos son de otro período: preparalos de nuevo.','err'); return; }
-  if(!confirm(`¿Enviar el cierre a ${to} con ${adjuntos.length} adjuntos?`)) return;
-  $('btnEnviar').disabled = true; setStatus('load','Enviando por Odoo…');
-  const bodyHtml = '<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;">' + $('cuerpo').value.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
-  try {
-    const r = await fetch(FN_MAIL, { method:'POST', headers:HEADERS, body: JSON.stringify({ to, subject: $('asunto').value, body_html: bodyHtml, attachments: adjuntos }) });
-    const d = await r.json();
-    if(d.ok){ setStatus('on', `✓ Enviado a ${to} desde contacto@rosaint.com.ar.`, 'ok'); adjuntos = []; adjuntosMes = null; renderAdjuntos(); }
-    else { setStatus('off', 'No se pudo enviar: ' + (d.motivo_falla || d.error || 'error'), 'err'); $('btnEnviar').disabled=false; }
-  } catch(err){ setStatus('off','Error: '+err.message,'err'); $('btnEnviar').disabled=false; }
-});
+// 1) Ingresos Brutos: va primero (vence antes que IVA)
+const envioIIBB = crearEnvio('iibb', async (mes, avisar) => {
+  avisar('Generando ventas por jurisdicción…');
+  const ventas = await iibbXlsx(mes);
+  avisar('Generando percepciones de IIBB…');
+  const p = PercepIIBB.armarXlsx(await PercepIIBB.traerOdoo(mes, mes), mes, mes, null);
+  manualesMes = p.manuales;
+  return [ventas, { filename: p.filename, base64: p.base64, mimetype: p.mimetype }];
+}, ['IIBB por jurisdicción (ventas)', 'Percepciones IIBB por jurisdicción']);
+
+// 2) IVA: los dos libros para importar
+const envioIVA = crearEnvio('iva', async (mes, avisar) => {
+  avisar('Generando Libro de IVA Compras…'); const c = await libroZip(mes, 'purchase');
+  avisar('Generando Libro de IVA Ventas…'); const v = await libroZip(mes, 'sale');
+  return [c, v];
+}, ['Libro de IVA Compras', 'Libro de IVA Ventas']);
+
+envioIIBB.iniciar(); envioIVA.iniciar();
+$('periodo').addEventListener('change', () => { manualesMes = null; envioIIBB.alCambiarPeriodo(); envioIVA.alCambiarPeriodo(); });
 </script>
 </body>
 </html>
