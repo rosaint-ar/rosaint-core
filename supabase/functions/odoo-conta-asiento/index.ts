@@ -380,6 +380,50 @@ async function tipo_cambio(body: Rec): Promise<Rec> {
   return { ok: fin.state === "posted", iva_ars: iva, total_ars: total, tc: r2(1 / (fin.invoice_currency_rate as number)), comprobante: fin };
 }
 
+// Lote "first_label_anulada": FA-A 00004-01962205 (07/09, en borrador) y la NC-A 00004-00170958 que la anula.
+// No hay PDF: la factura juntaba las dos compras que después se refacturaron por separado (FA-A 1962909 café +
+// FA-A 1962417 jabón, con PDF). Neto 34.810,24 = 24.991,75 + 9.818,48 y total 43.132,52 = 30.943,78 + 12.188,74,
+// así que las percepciones son la suma de las dos: CABA 242,05+106,06 · Neuquén 242,05+106,06 · Tucumán 219,66+96,26
+// = 1.012,14, exacto contra "Otros tributos" de ARCA. IVA 7.310,14 según ARCA.
+const FL = { borrador: 44582, partner_numero_nc: "00004-00170958", fecha: "2026-09-07", neto: 34810.24, iva: 7310.14, total: 43132.52,
+  perc: [{ tax: 124, importe: 348.11 }, { tax: 143, importe: 348.11 }, { tax: 138, importe: 315.92 }] };
+async function first_label_anulada(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run;
+  const m = (await ex("account.move", "read", [[FL.borrador], ["name", "state", "partner_id", "amount_total", "amount_untaxed"]]) as Rec[])[0];
+  const leerM = async (id: number) => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
+  const ajustar = async (id: number, signo: number) => {
+    const ls = await leerM(id); const cmds: unknown[] = [];
+    for (const p of FL.perc) { const l = ls.find(x => m2o(x.tax_line_id) === p.tax); if (!l) throw new Error("falta la línea del impuesto " + p.tax); cmds.push([1, l.id, { balance: signo * p.importe, amount_currency: signo * p.importe }]); }
+    const li = ls.find(x => m2o(x.tax_line_id) === TAX_IVA)!; cmds.push([1, li.id, { balance: signo * FL.iva, amount_currency: signo * FL.iva }]);
+    const t = ls.find(x => x.display_type === "payment_term")!; cmds.push([1, t.id, { balance: -signo * FL.total, amount_currency: -signo * FL.total }]);
+    await ex("account.move", "write", [[id], { line_ids: cmds }]);
+    const l2 = await leerM(id);
+    const s = (tid: number) => r2(Math.abs(l2.filter(x => m2o(x.tax_line_id) === tid).reduce((a, x) => a + (x.balance as number), 0)));
+    const debe = r2(l2.reduce((a, x) => a + (x.debit as number), 0)), haber = r2(l2.reduce((a, x) => a + (x.credit as number), 0));
+    const ok = s(TAX_IVA) === FL.iva && FL.perc.every(p => s(p.tax) === p.importe) && debe === haber && debe === r2(FL.total);
+    return { ok, iva: s(TAX_IVA), perc: FL.perc.map(p => [p.tax, s(p.tax)]), debe, haber };
+  };
+  if (m.state !== "draft" || m.amount_total !== FL.total || m.amount_untaxed !== FL.neto) return { ok: false, error: "el borrador no está como se esperaba", m };
+  if (dry) return { ok: true, dry_run: true, factura: m.name, ajustes: FL };
+  const cf = await ajustar(FL.borrador, 1);
+  if (!cf.ok) return { ok: false, error: "la factura no cerró; sigue en BORRADOR", cf };
+  await ex("account.move", "action_post", [[FL.borrador]]);
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", "GN01"]]], { fields: ["id"] }) as Rec[];
+  const nc = await ex("account.move", "create", [{ move_type: "in_refund", partner_id: m2o(m.partner_id), journal_id: 33, l10n_latam_document_type_id: 3,
+    l10n_latam_document_number: FL.partner_numero_nc, invoice_date: FL.fecha, date: FL.fecha, company_id: C, reversed_entry_id: FL.borrador,
+    invoice_line_ids: [[0, 0, { product_id: prod[0].id, quantity: 1, price_unit: FL.neto, tax_ids: [[6, 0, [TAX_IVA, 124, 138, 143]]] }]] }]) as number;
+  const cn = await ajustar(nc, -1);
+  if (!cn.ok) return { ok: false, error: "la nota de crédito no cerró; quedó en BORRADOR (la factura ya se validó)", cn, nc };
+  await ex("account.move", "action_post", [[nc]]);
+  let fin = await ex("account.move", "read", [[FL.borrador, nc], ["name", "state", "amount_total", "amount_residual", "payment_state"]]) as Rec[];
+  if (fin.some(x => x.amount_residual !== 0)) {
+    const term = await ex("account.move.line", "search_read", [[["move_id", "in", [FL.borrador, nc]], ["display_type", "=", "payment_term"], ["reconciled", "=", false]]], { fields: ["id"] }) as Rec[];
+    if (term.length === 2) await ex("account.move.line", "reconcile", [term.map(t => t.id)]);
+    fin = await ex("account.move", "read", [[FL.borrador, nc], ["name", "state", "amount_total", "amount_residual", "payment_state"]]) as Rec[];
+  }
+  return { ok: true, factura: cf, nota_credito: cn, comprobantes: fin };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -417,6 +461,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "first_label_anulada") return new Response(JSON.stringify(await first_label_anulada(body)), { headers: h });
     if (body.lote === "tipo_cambio") return new Response(JSON.stringify(await tipo_cambio(body)), { headers: h });
     if (body.lote === "personales") return new Response(JSON.stringify(await personales(body)), { headers: h });
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
