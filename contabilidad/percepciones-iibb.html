@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Percepciones IIBB · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month] { font: inherit; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); min-width: 150px; }
+    .field input[type=month]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-tint); }
+    .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+    .drop { border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: 9px 14px; background: var(--surface); cursor: pointer; font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .drop:hover { border-color: var(--accent); color: var(--accent); }
+    .drop.ok { border-style: solid; border-color: var(--ok); color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+    input[type=file] { display: none; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .status-bar { font-size: 13px; color: var(--muted); margin: 12px 2px 16px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+    .status-bar.err { color: var(--hot); }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .status-bar .dot.load { background: var(--warn); } .status-bar .dot.on { background: var(--ok); } .status-bar .dot.off { background: var(--hot); }
+    .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .summary .card .n { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .summary .card .l { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+    .summary .card.hot .n { color: var(--hot); } .summary .card.ok .n { color: var(--ok); }
+    .group { margin-bottom: 24px; }
+    .group h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .val-info { font-size: 12.5px; color: var(--muted); margin: 0 2px 10px; line-height: 1.5; }
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+    .badge.r { color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
+    .badge.v { color: var(--accent); background: var(--accent-tint); }
+    .badge.g { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+    .tabla { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); padding: 9px 12px; border-bottom: 1px solid var(--border); font-weight: 600; white-space: nowrap; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    td.mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+    tr.manual { background: color-mix(in srgb, var(--hot) 6%, transparent); }
+    tr.tot td { font-weight: 700; }
+    .empty { color: var(--muted); font-style: italic; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+    @media (max-width: 640px) { .summary { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body data-page="percepcionesiibb" data-title="Percepciones IIBB" data-subtitle="Por jurisdicción · qué importa SIFERE solo y qué hay que cargar a mano">
+
+<div id="app-shell"></div>
+<main id="app-content">
+  <div class="card" style="margin-bottom:12px;">
+    <div class="controls">
+      <div class="field"><span class="label">Desde</span><input type="month" id="desde"></div>
+      <div class="field"><span class="label">Hasta</span><input type="month" id="hasta"></div>
+      <div class="field">
+        <span class="label">Archivos de SIRCAR (opcional)</span>
+        <label class="drop" id="dropLabel" for="fileSircar">Seleccionar .xls / .xlsx / .csv…</label>
+        <input type="file" id="fileSircar" accept=".csv,.xlsx,.xls" multiple>
+      </div>
+      <button class="btn primary" id="btnVer">Ver percepciones</button>
+      <button class="btn" id="btnExcel" disabled>Excel para el contador</button>
+    </div>
+    <div class="hint">
+      Sale de Odoo: todas las percepciones de IIBB sufridas, por jurisdicción. Las de <b>CABA, Buenos Aires, Entre Ríos, Mendoza y Tucumán</b> no están en SIRCAR, así que SIFERE no las importa y el contador las tiene que cargar a mano.<br>
+      Para cruzar contra lo que SIFERE sí importa: en ARCA → <i>Convenio Multilateral – SIFERE Web Consultas</i> → <i>SIRCAR → Percepciones</i>, consultá cada jurisdicción del período, bajá el archivo y subilo acá (podés subir varios juntos).
+    </div>
+  </div>
+  <div class="status-bar" id="status"><span class="dot off"></span>Elegí el período y tocá "Ver percepciones".</div>
+  <div id="results"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script src="percep-iibb.js?v=202610131200"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const P = window.PercepIIBB;
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const money = (n) => '$' + (n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function setStatus(dot, msg, err) { const el = $('status'); el.innerHTML = `<span class="dot ${dot}"></span>`; el.appendChild(document.createTextNode(msg)); el.className = 'status-bar' + (err ? ' err' : ''); }
+let sircar = []; let estado = null;
+
+(() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); $('desde').value = m; $('hasta').value = m; })();
+
+$('fileSircar').addEventListener('change', async (e) => {
+  sircar = []; const archivos = [...e.target.files]; const sinFilas = [];
+  try {
+    for (const f of archivos) { const filas = P.leerSircar(await f.arrayBuffer(), f.name); if (!filas.length) sinFilas.push(f.name); sircar.push(...filas); }
+    $('dropLabel').textContent = archivos.length ? `✓ ${archivos.length} archivo(s) · ${sircar.length} percepciones` : 'Seleccionar .xls / .xlsx / .csv…';
+    $('dropLabel').classList.toggle('ok', sircar.length > 0);
+    if (sinFilas.length) setStatus('off', 'No reconocí percepciones en: ' + sinFilas.join(', ') + '. Mandale el archivo a Claude para ajustar el lector.', true);
+    else setStatus('on', `Archivos de SIRCAR leídos: ${sircar.length} percepciones. Tocá "Ver percepciones" para cruzarlas.`);
+  } catch (err) { setStatus('off', 'Error leyendo el archivo: ' + err.message, true); }
+});
+
+$('btnVer').addEventListener('click', async () => {
+  const desde = $('desde').value, hasta = $('hasta').value;
+  if (!desde || !hasta || desde > hasta) { setStatus('off', 'Revisá el período.', true); return; }
+  $('btnVer').disabled = true; $('btnExcel').disabled = true; setStatus('load', 'Leyendo percepciones de Odoo…');
+  try {
+    const lineas = await P.traerOdoo(desde, hasta);
+    estado = { desde, hasta, lineas, cruce: sircar.length ? P.cruzar(lineas, sircar) : null };
+    render();
+    setStatus('on', `Listo: ${lineas.length} percepciones de Odoo` + (estado.cruce ? ` cruzadas contra ${sircar.length} de SIRCAR.` : '.'));
+    $('btnExcel').disabled = false;
+  } catch (err) { setStatus('off', 'Error: ' + err.message, true); }
+  $('btnVer').disabled = false;
+});
+
+$('btnExcel').addEventListener('click', () => {
+  if (!estado) return;
+  const x = P.armarXlsx(estado.lineas, estado.desde, estado.hasta, estado.cruce);
+  const a = document.createElement('a'); a.href = 'data:' + x.mimetype + ';base64,' + x.base64; a.download = x.filename; a.click();
+});
+
+function tablaDetalle(filas, conSircar) {
+  let h = `<div class="tabla"><table><thead><tr><th>Fecha</th><th>Jurisdicción</th><th>Agente</th><th>CUIT</th><th>Comprobante</th><th class="num">Odoo</th>${conSircar ? '<th class="num">SIRCAR</th>' : ''}</tr></thead><tbody>`;
+  for (const f of filas) {
+    const l = f.odoo || f; const s = f.sircar;
+    h += `<tr><td class="mono">${esc(P.fechaAR(l.fecha))}</td><td>${esc(l.jurisdiccion || l.jur_codigo)}</td><td>${esc(l.agente)}</td><td class="mono">${esc(P.cuitFmt(l.cuit))}</td>
+      <td class="mono">${esc((l.tipo ? l.tipo + ' ' : '') + (l.letra ? l.letra + ' ' : '') + (l.pv ? l.pv + '-' : '') + l.numero)}</td>
+      <td class="num">${f.odoo || !conSircar ? money(l.importe) : ''}</td>${conSircar ? `<td class="num">${s ? money(s.importe) : (f.odoo ? '' : money(l.importe))}</td>` : ''}</tr>`;
+  }
+  return h + '</tbody></table></div>';
+}
+
+function render() {
+  const { lineas, cruce, desde, hasta } = estado;
+  const res = P.resumen(lineas);
+  const totManual = res.filter(r => r.manual).reduce((a, r) => a + r.total, 0);
+  const tot = res.reduce((a, r) => a + r.total, 0);
+  let h = `<div class="summary">
+    <div class="card"><div class="n">${money(tot)}</div><div class="l">Percepciones IIBB en Odoo</div></div>
+    <div class="card ok"><div class="n">${money(tot - totManual)}</div><div class="l">Las importa SIFERE (SIRCAR)</div></div>
+    <div class="card hot"><div class="n">${money(totManual)}</div><div class="l">Hay que cargarlas a mano</div></div>
+  </div>`;
+
+  h += `<div class="group"><h2>Por jurisdicción · ${esc(desde === hasta ? P.nombreMes(desde) : P.nombreMes(desde) + ' a ' + P.nombreMes(hasta))}</h2>
+    <div class="tabla"><table><thead><tr><th>Código</th><th>Jurisdicción</th><th class="num">Comprobantes</th><th class="num">Total</th><th>Cómo entra a SIFERE</th></tr></thead><tbody>`;
+  for (const r of res) h += `<tr class="${r.manual ? 'manual' : ''}"><td class="mono">${esc(r.codigo)}</td><td>${esc(r.nombre)}</td><td class="num">${r.cbtes}</td><td class="num">${money(r.total)}</td>
+    <td>${r.manual ? '<span class="badge r">Cargar a mano</span>' : '<span class="badge g">Se importa de SIRCAR</span>'}</td></tr>`;
+  h += `<tr class="tot"><td></td><td>Total</td><td class="num">${lineas.length}</td><td class="num">${money(tot)}</td><td></td></tr></tbody></table></div></div>`;
+
+  const manuales = lineas.filter(l => l.manual);
+  h += `<div class="group"><h2>Cargar a mano en SIFERE <span class="badge r">${manuales.length}</span></h2>
+    <div class="val-info">Jurisdicciones fuera de SIRCAR: SIFERE no las trae. El contador las agrega en Deducciones → Ingreso Manual (o por lotes) con estos datos.</div>`;
+  h += manuales.length ? tablaDetalle(manuales, false) : `<div class="empty">Ninguna en el período.</div>`;
+  h += `</div>`;
+
+  if (cruce) {
+    const alcance = cruce.sinJur ? 'todas las jurisdicciones de SIRCAR' : 'jurisdicciones ' + cruce.jursArchivo.join(', ');
+    h += `<div class="group"><h2>Cruce contra SIRCAR <span class="badge g">${cruce.coinciden.length} coinciden</span></h2>
+      <div class="val-info">Se cruzó Odoo contra los archivos subidos (${esc(alcance)}).</div></div>`;
+    const bloque = (titulo, badge, info, filas, conS) => {
+      h += `<div class="group"><h2>${titulo} <span class="badge ${badge}">${filas.length}</span></h2><div class="val-info">${info}</div>`;
+      h += filas.length ? tablaDetalle(filas, conS) : `<div class="empty">Ninguna.</div>`;
+      h += `</div>`;
+    };
+    bloque('En Odoo pero el agente no la informó en SIRCAR', 'r', 'SIFERE no la va a traer: hay que cargarla a mano (o reclamarle al agente que la informe).', cruce.soloOdoo, true);
+    bloque('Notas de crédito que SIRCAR no descuenta', 'r', 'La percepción original sí entra por SIRCAR, la anulación no: el contador tiene que restarla a mano para no computar de más.', cruce.ncNoDescontadas, true);
+    bloque('En SIRCAR pero no en Odoo', 'v', 'Falta cargar el comprobante o la percepción en Odoo (módulo Percepciones).', cruce.soloSircar.map(s => ({ ...s, jurisdiccion: s.jur_codigo })), true);
+    bloque('Importe distinto', 'v', 'Revisar contra el PDF del comprobante.', cruce.difieren, true);
+  }
+  $('results').innerHTML = h;
+}
+</script>
+</body>
+</html>

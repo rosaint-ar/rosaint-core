@@ -55,6 +55,7 @@ const MENU = [
   { type: 'item', id: 'conciliador',      label: 'Conciliador IVA',       href: 'contabilidad/conciliador.html',       status: 'ready' },
   { type: 'item', id: 'percepciones',     label: 'Percepciones (cargar)', href: 'contabilidad/percepciones.html',      status: 'ready' },
   { type: 'item', id: 'percepcionesarca', label: 'Contraste ARCA',        href: 'contabilidad/percepciones-arca.html', status: 'ready' },
+  { type: 'item', id: 'percepcionesiibb', label: 'Percepciones IIBB',     href: 'contabilidad/percepciones-iibb.html', status: 'ready' },
   { type: 'item', id: 'iibb',             label: 'IIBB por jurisdicción', href: 'contabilidad/iibb.html',              status: 'ready' },
   { type: 'item', id: 'librosiva',        label: 'Libros de IVA (ZIP)',   href: 'contabilidad/libros-iva.html',        status: 'ready' },
 

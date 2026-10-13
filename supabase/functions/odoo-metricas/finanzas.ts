@@ -51,6 +51,17 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
     return out;
   }
 
+  // Percepciones de IIBB sufridas (cuentas 1.1.4.02.*) por mes de factura y cuenta/provincia, con el detalle
+  // de cada comprobante: para cruzar contra lo descontado en cada DDJJ de Convenio Multilateral.
+  if (body.modo === "finanzas_percep_iibb") {
+    const ls = await sr("account.move.line", [...posted, ["account_id.code", "=like", "1.1.4.02%"]], ["move_id", "account_id", "balance", "date", "partner_id"]);
+    const movIds = [...new Set(ls.map(l => m2oId(l.move_id)).filter((x): x is number => !!x))];
+    const movs: Record<number, Rec> = {};
+    if (movIds.length) for (const m of await sr("account.move", [["id", "in", movIds]], ["name", "move_type", "invoice_date", "date", "ref"])) movs[m.id as number] = m;
+    out.lineas = ls.map(l => { const m = movs[m2oId(l.move_id) as number] || {}; return { comprobante: m.name, ref: m.ref || "", tipo: m.move_type, fecha_factura: m.invoice_date || null, fecha_contable: l.date, cuenta: m2oName(l.account_id), contacto: m2oName(l.partner_id), importe: r2((l.balance as number) || 0) }; });
+    return out;
+  }
+
   if (body.modo !== "finanzas_tablero") return { ok: false, error: "modo desconocido" };
 
   // ---------- meses (hora argentina) ----------

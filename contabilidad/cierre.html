@@ -62,7 +62,7 @@
       </div>
       <button class="btn primary" id="btnPreparar">Preparar adjuntos</button>
     </div>
-    <div class="hint">Regenera los 2 libros de IVA (compras y ventas) y el análisis de IIBB por jurisdicción del período, directo de Odoo.</div>
+    <div class="hint">Regenera los 2 libros de IVA (compras y ventas), las ventas por jurisdicción y las percepciones de IIBB por jurisdicción del período, directo de Odoo. Si hay percepciones que SIFERE no importa (CABA, Tucumán…), el mensaje lo avisa solo.</div>
   </div>
 
   <div class="card" style="margin-bottom:14px;">
@@ -96,6 +96,7 @@
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shared/charts.js"></script>
 <script src="../shell/shell.js?v=202610061943"></script>
+<script src="percep-iibb.js?v=202610131200"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Cierre mensual · junta Libros de IVA (compras+ventas) + IIBB y lo manda al
@@ -118,6 +119,7 @@ const M3 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','D
   actualizarTextos();
   $('periodo').addEventListener('change', () => {
     actualizarTextos();
+    manualesMes = null; actualizarTextos();
     if (adjuntos.length) { adjuntos = []; adjuntosMes = null; renderAdjuntos(); $('btnEnviar').disabled = true; setStatus('off', 'Cambiaste el período: prepará los adjuntos de nuevo.', ''); }
   });
   cargarGraficoIVA();
@@ -154,10 +156,19 @@ async function cargarGraficoIVA(){
 function nombrePeriodo(mes){ const [y,m]=mes.split('-').map(Number); return MESES[m-1]+' '+y; }
 // el mensaje va como texto (puede traer errores o el mail escrito a mano)
 function setStatus(dot, msg, cls=''){ const el=$('status'); el.innerHTML = `<span class="dot ${dot}"></span>`; el.appendChild(document.createTextNode(msg)); el.className='status-bar '+cls; }
+// percepciones de IIBB que SIFERE no importa (jurisdicciones fuera de SIRCAR); se completa al preparar los adjuntos
+let manualesMes = null;
+function textoManuales(){
+  if (!manualesMes) return '';
+  if (!manualesMes.length) return '\n\nEste mes no hay percepciones de IIBB de jurisdicciones fuera de SIRCAR.';
+  return '\n\nOjo: estas percepciones de IIBB NO las importa SIFERE (jurisdicciones fuera de SIRCAR) y hay que cargarlas a mano en la DDJJ: '
+    + manualesMes.map(r => r.nombre + ' $' + r.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).join(' · ')
+    + '. El detalle comprobante por comprobante está en la hoja "Cargar a mano en SIFERE" del adjunto de percepciones.';
+}
 function actualizarTextos(){
   const p = nombrePeriodo($('periodo').value);
   $('asunto').value = `Cierre de IVA ${p} — VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)`;
-  $('cuerpo').value = `Estimado Luciano,\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n\nEl IVA y las percepciones fueron conciliados con AFIP (ARCA), sin diferencias.\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
+  $('cuerpo').value = `Estimado Luciano,\n\nAdjunto el cierre del período ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Análisis de IIBB por jurisdicción (ventas)\n• Percepciones de IIBB sufridas por jurisdicción\n\nLas percepciones de IVA fueron conciliadas con ARCA.${textoManuales()}\n\nCualquier cosa quedo a disposición.\n\nSaludos,\nDiego`;
 }
 
 async function blobToB64(blob){
@@ -201,11 +212,15 @@ async function iibbXlsx(mes){
 $('btnPreparar').addEventListener('click', async () => {
   const mes = $('periodo').value; if(!mes){ setStatus('off','Elegí un período.','err'); return; }
   $('btnPreparar').disabled = true; $('btnEnviar').disabled = true; adjuntos = [];
-  renderAdjuntos(['Libro de IVA Compras', 'Libro de IVA Ventas', 'IIBB por jurisdicción']);
+  renderAdjuntos(['Libro de IVA Compras', 'Libro de IVA Ventas', 'IIBB por jurisdicción', 'Percepciones IIBB por jurisdicción']);
   try {
     setStatus('load','Generando Libro de IVA Compras…'); adjuntos.push(await libroZip(mes,'purchase')); renderAdjuntos();
     setStatus('load','Generando Libro de IVA Ventas…');  adjuntos.push(await libroZip(mes,'sale'));     renderAdjuntos();
     setStatus('load','Generando análisis de IIBB…');     adjuntos.push(await iibbXlsx(mes));             renderAdjuntos();
+    setStatus('load','Generando percepciones de IIBB…');
+    const pIibb = PercepIIBB.armarXlsx(await PercepIIBB.traerOdoo(mes, mes), mes, mes, null);
+    manualesMes = pIibb.manuales; actualizarTextos();
+    adjuntos.push({ filename: pIibb.filename, base64: pIibb.base64, mimetype: pIibb.mimetype }); renderAdjuntos();
     adjuntosMes = mes;
     setStatus('on', `Adjuntos listos (${adjuntos.length}). Revisá el mensaje y enviá.`, 'ok');
     $('btnEnviar').disabled = false;
