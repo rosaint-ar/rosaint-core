@@ -123,7 +123,7 @@
       <span class="d" id="kpi-usd-delta">—</span>
       <span class="spark" id="spark-usd"></span>
     </a>
-    <a href="produccion/index.html" class="kpi">
+    <a href="#pedidos-entregar" class="kpi">
       <span class="l">Pedidos por entregar</span>
       <span class="v" id="kpi-pedidos" style="color:var(--accent)">—</span>
       <span class="d" id="kpi-pedidos-sub">—</span>
@@ -175,6 +175,7 @@
     <div class="lista-mini" id="transf-lista"><div class="empty-mini">Cargando…</div></div>
   </div>
 
+  <div id="pedidos-entregar" style="scroll-margin-top:72px"></div>
   <!-- A despachar hoy (Mercado Libre) -->
   <div class="card" style="margin-bottom:14px">
     <div class="panel-head">
@@ -187,6 +188,24 @@
     </div>
     <div class="lista-mini" id="despacho-lista"><div class="empty-mini">Cargando…</div></div>
     <div id="despacho-manana"></div>
+  </div>
+
+  <!-- Tienda Nube y ventas manuales. Salen de la MISMA foto de Odoo que usa el plan del dia,
+       asi que coinciden con la tarjeta "Pedidos por entregar". El bloque de Mercado Libre de
+       arriba sigue saliendo de Mercado Libre, porque ahi manda la fecha de despacho que ellos
+       imponen; para Tienda Nube y las manuales no hay tal fecha: lo que importa es lo pendiente. -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="panel-head">
+      <h2>🛒 Por entregar · Tienda Nube <span id="tn-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+    </div>
+    <div class="lista-mini" id="tn-lista"><div class="empty-mini">Cargando…</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="panel-head">
+      <h2>📝 Por entregar · Ventas manuales <span id="manual-sub" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></h2>
+    </div>
+    <div class="lista-mini" id="manual-lista"><div class="empty-mini">Cargando…</div></div>
   </div>
 
   <div class="row-2">
@@ -304,6 +323,34 @@ let _planP = null;
 const planDelDia = () => (_planP = _planP || PLAN_DEL_DIA.cargar(sb));
 
 // Lo mismo que muestra "Programar el día": pedidos de Odoo (foto) y lo que falta hacer hoy.
+// Desglose de productos por canal, con los pedidos de la foto de Odoo (los mismos que cuenta la
+// tarjeta "Pedidos por entregar"). Cada pedido trae sus lineas con lo que falta entregar (pend),
+// y el canal viene marcado: ml / tn / ninguno de los dos = venta manual.
+function renderDesglose(elId, subId, pedidos, vacio) {
+  const cont = document.getElementById(elId), sub = document.getElementById(subId);
+  if (!cont) return;
+  const porProd = {};
+  for (const p of pedidos) for (const l of (p.lineas || [])) {
+    const q = Number(l.pend || 0); if (q <= 0) continue;
+    const k = l.c || l.n;
+    porProd[k] = porProd[k] || { nombre: l.n || l.c, qty: 0 };
+    porProd[k].qty += q;
+  }
+  const filas = Object.values(porProd).sort((a, b) => b.qty - a.qty);
+  const unidades = filas.reduce((a, x) => a + x.qty, 0);
+  if (!filas.length) { cont.innerHTML = '<div class="empty-mini">✓ ' + vacio + '</div>'; if (sub) sub.textContent = ''; return; }
+  if (sub) sub.textContent = '\u00b7 ' + pedidos.length + ' pedido' + (pedidos.length === 1 ? '' : 's') + ' \u00b7 ' + fmt(unidades) + ' u.';
+  cont.innerHTML = filas.map((x) =>
+    '<div class="item"><span class="item__nombre">' + escapeHTML(x.nombre) +
+    '</span><span class="item__qty despacho">' + fmt(x.qty) + '</span></div>').join('');
+}
+
+function cargarPedidosCanal(r) {
+  const peds = (r && r.pedidos) || [];
+  renderDesglose('tn-lista', 'tn-sub', peds.filter((p) => p.tn), 'Nada pendiente de Tienda Nube');
+  renderDesglose('manual-lista', 'manual-sub', peds.filter((p) => !p.ml && !p.tn), 'Nada pendiente de venta manual');
+}
+
 async function cargarProduccion() {
   let r;
   try { r = await planDelDia(); }
@@ -313,6 +360,7 @@ async function cargarProduccion() {
     return;
   }
   setNum('kpi-pedidos', r.pedidos.length);
+  cargarPedidosCanal(r);
   document.getElementById('kpi-pedidos-sub').textContent = new Set(r.pedidos.map(p => p.cliente)).size + ' clientes · ' + PLAN_DEL_DIA.textoFoto(r.creado);
   const fab = r.pendientes.elaborar.map(f => ({ nombre_producto: f.nombre + (f.tipo === 'preparar' ? ' (para mañana)' : ''), qty_faltante: f.falta }));
   const frac = r.pendientes.fraccionar.map(f => ({ nombre_producto: f.nombre, qty_faltante: f.falta }));
