@@ -390,9 +390,45 @@ async function cargar(){
     document.getElementById('aviso').innerHTML = 'Todas las ventas confirmadas de Odoo, categorizadas por tipo de entrega. El tracking de correo se cruza con Tienda Nube.';
     updateCounts();
     render();
+    enrichFechasDespacho();   // en segundo plano: cambia la fecha del mensaje por la real del correo/Andreani
   } catch (e) {
     salida.innerHTML = '<div class="seg-error">No pude cargar los pedidos: ' + esc(e.message) + '</div>';
   }
+}
+
+// La fecha de despacho del mensaje debe ser la REAL (cuando el paquete se recibió en el punto de
+// despacho), que figura en el seguimiento del transportista — no la fecha en que se validó la
+// salida en Odoo (que es la que trae tn-seguimientos como o.fecha_despacho, y queda de respaldo).
+// La function tracking-despacho la lee de Correo Argentino / Andreani y la cachea. Se resuelve en
+// segundo plano y se vuelve a pintar; si el transportista todavía no registró el ingreso, queda la
+// de Odoo. FDESP recuerda lo ya resuelto para no volver a pedirlo en cada render.
+let FDESP = {};   // tracking_code -> dd/mm/aaaa real
+function aplicarFDESP(){
+  let cambio = false;
+  for (const o of DATA){ const c = String(o.tracking_code||''); if (c && FDESP[c] && o.fecha_despacho !== FDESP[c]){ o.fecha_despacho = FDESP[c]; cambio = true; } }
+  if (cambio) render();
+}
+async function enrichFechasDespacho(){
+  try {
+    const vistos = new Set(); const codes = [];
+    for (const o of DATA){
+      const c = String(o.tracking_code||'');
+      if (!c || o.categoria !== 'correo' || !efDesp(o)) continue;   // solo envíos por correo ya despachados
+      if (vistos.has(c) || FDESP[c]) continue;
+      vistos.add(c); codes.push({ code: c, carrier: carrierName(o) });
+    }
+    if (!codes.length) return;
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    const r = await fetch(window.SUPABASE_URL + '/functions/v1/tracking-despacho', {
+      method: 'POST',
+      headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codes })
+    });
+    const j = await r.json();
+    if (j && j.ok && j.fechas){ for (const c in j.fechas){ const f = j.fechas[c]; if (f && f.fecha_dmy) FDESP[c] = f.fecha_dmy; } }
+    aplicarFDESP();
+  } catch (e) { /* si falla, el mensaje usa la fecha de Odoo */ }
 }
 
 function filtrar(){
@@ -553,6 +589,7 @@ async function cargarTracking(k, odooId){
     if (error) throw error;
   } catch (e) { alert('No se pudo guardar el tracking: ' + (e.message || e)); }
   render();
+  enrichFechasDespacho();   // buscar la fecha real de despacho de este código recién cargado
 }
 
 // ---- Etiqueta de prioridad (sincroniza con Odoo) ----
