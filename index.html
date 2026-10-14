@@ -47,6 +47,31 @@
     .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
     .panel-head h2 { font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
     .panel-head .link { font-size: 12px; color: var(--accent); }
+    /* Calendario de vencimientos (tarjeta cuadrada) */
+    .chart-row.con-cal { grid-template-columns: 1.4fr 1fr 0.95fr; }
+    @media (max-width: 1200px) { .chart-row.con-cal { grid-template-columns: 1fr 1fr; } .chart-row.con-cal #chart-card { grid-column: 1 / -1; } }
+    @media (max-width: 700px) { .chart-row.con-cal { grid-template-columns: 1fr; } }
+    .cal { display: flex; flex-direction: column; aspect-ratio: 1 / 1; min-height: 300px; }
+    @media (max-width: 700px) { .cal { aspect-ratio: auto; } }
+    .cal .panel-head { margin-bottom: 8px; padding-bottom: 8px; }
+    .cal-nav { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text); text-transform: capitalize; }
+    .cal-nav button { border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px; width: 22px; height: 22px; cursor: pointer; line-height: 1; }
+    .cal-nav button:hover { color: var(--accent); border-color: var(--accent); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; flex: 1; }
+    .cal-grid .dow { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; text-transform: uppercase; }
+    .cal-grid .d { position: relative; border-radius: 7px; font-size: 12px; display: flex; align-items: flex-start; justify-content: center; padding-top: 3px; color: var(--text-2); cursor: default; min-height: 26px; }
+    .cal-grid .d.fuera { opacity: .3; }
+    .cal-grid .d.hoy { outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 800; color: var(--accent); }
+    .cal-grid .d.tiene { cursor: pointer; font-weight: 700; color: var(--text); background: var(--surface-2); }
+    .cal-grid .d.tiene:hover, .cal-grid .d.sel { background: var(--accent-tint); }
+    .cal-grid .d .pts { position: absolute; bottom: 3px; left: 0; right: 0; display: flex; justify-content: center; gap: 2px; }
+    .cal-grid .d .pts i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    .cal-grid .d .pts i.vencido { background: var(--hot); } .cal-grid .d .pts i.pronto { background: var(--warn); } .cal-grid .d .pts i.pagado { background: var(--ok); }
+    .cal-det { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; line-height: 1.45; min-height: 56px; }
+    .cal-det .r { display: flex; justify-content: space-between; gap: 8px; }
+    .cal-det .r b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cal-det .f { color: var(--muted); font-size: 11px; }
+    .cal-vencido { font-size: 11.5px; font-weight: 700; color: var(--hot); }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
     @media (max-width: 900px) { .row-2 { grid-template-columns: 1fr; } }
     .chart-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-bottom: 14px; }
@@ -151,7 +176,7 @@
   </div>
 
   <!-- Gráfico de producción + Pendientes -->
-  <div class="chart-row">
+  <div class="chart-row con-cal">
     <div class="card" id="chart-card">
       <div class="panel-head"><h2>Evolución de la producción</h2><span class="link" id="chart-trend"></span></div>
       <div id="ini-chart"><div class="empty-mini">Cargando…</div></div>
@@ -163,6 +188,15 @@
     <div class="card pend">
       <div class="panel-head"><h2>⚠ Pendientes <span id="alertas-count" style="color:var(--accent)"></span></h2></div>
       <div id="alertas-list"><div class="empty-mini">Chequeando…</div></div>
+    </div>
+    <!-- Vencimientos de impuestos (tabla vencimientos; también en el Google Calendar de rosaint.ar@gmail.com) -->
+    <div class="card cal" id="cal-card">
+      <div class="panel-head">
+        <h2>📅 Vencimientos</h2>
+        <div class="cal-nav"><button id="cal-prev" title="Mes anterior">‹</button><span id="cal-mes">—</span><button id="cal-next" title="Mes siguiente">›</button></div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-det" id="cal-det"><span class="f">Cargando…</span></div>
     </div>
   </div>
 
@@ -279,9 +313,60 @@ const HOY = new Date().toLocaleDateString('en-CA');
 async function cargarTodo(manual) {
   _planP = null; // cada actualización calcula el plan de nuevo
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp()]);
+  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp(), cargarVencimientos()]);
   firstLoad = false;
 }
+
+// ── Calendario de vencimientos (tabla vencimientos) ──
+// Puntos: rojo = vencido sin pagar · ámbar = vence en ≤7 días · violeta = más adelante · verde = pagado.
+let _venc = [], _calMes = null, _calSel = null;
+const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const $pesos = (n) => n == null ? 'a calcular' : '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fechaCorta = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
+function claseVenc(v) {
+  if (v.estado === 'pagado') return 'pagado';
+  if (v.estado === 'vencido' || v.fecha < HOY) return 'vencido';
+  const dias = (new Date(v.fecha + 'T12:00:00') - new Date(HOY + 'T12:00:00')) / 864e5;
+  return dias <= 7 ? 'pronto' : '';
+}
+async function cargarVencimientos() {
+  const { data, error } = await sb.from('vencimientos').select('id, fecha, impuesto, concepto, importe, estimado, estado, como, nota').order('fecha');
+  if (error) { document.getElementById('cal-det').innerHTML = '<span class="f">No se pudo leer el calendario.</span>'; return; }
+  _venc = data || [];
+  if (!_calMes) _calMes = HOY.slice(0, 7);
+  pintarCalendario();
+}
+function pintarCalendario() {
+  const [y, m] = _calMes.split('-').map(Number);
+  document.getElementById('cal-mes').textContent = MESES_L[m - 1] + ' ' + y;
+  const primero = new Date(y, m - 1, 1), dias = new Date(y, m, 0).getDate();
+  const offset = (primero.getDay() + 6) % 7; // semana arranca el lunes
+  const porDia = {}; for (const v of _venc) if (v.fecha.startsWith(_calMes)) (porDia[v.fecha] ||= []).push(v);
+  let h = ['L','M','M','J','V','S','D'].map(d => `<div class="dow">${d}</div>`).join('');
+  for (let i = 0; i < offset; i++) h += '<div class="d fuera"></div>';
+  for (let d = 1; d <= dias; d++) {
+    const f = `${_calMes}-${String(d).padStart(2, '0')}`, lst = porDia[f] || [];
+    const cls = ['d', f === HOY ? 'hoy' : '', lst.length ? 'tiene' : '', f === _calSel ? 'sel' : ''].join(' ');
+    const pts = lst.length ? `<span class="pts">${lst.slice(0, 3).map(v => `<i class="${claseVenc(v)}"></i>`).join('')}</span>` : '';
+    h += `<div class="${cls}" data-f="${f}" title="${escapeHTML(lst.map(v => v.concepto + ' · ' + $pesos(v.importe)).join('\n'))}">${d}${pts}</div>`;
+  }
+  const g = document.getElementById('cal-grid'); g.innerHTML = h;
+  g.querySelectorAll('.d.tiene').forEach(el => el.addEventListener('click', () => { _calSel = el.dataset.f; pintarCalendario(); }));
+  pintarDetalle();
+}
+function pintarDetalle() {
+  const el = document.getElementById('cal-det');
+  const vencidos = _venc.filter(v => claseVenc(v) === 'vencido');
+  const totVenc = vencidos.reduce((a, v) => a + Number(v.importe || 0), 0);
+  let lst;
+  if (_calSel) lst = _venc.filter(v => v.fecha === _calSel);
+  else lst = _venc.filter(v => v.estado !== 'pagado' && v.fecha >= HOY).slice(0, 3);
+  const titulo = _calSel ? 'El ' + fechaCorta(_calSel) : 'Próximos';
+  el.innerHTML = `<div class="f">${titulo}</div>` + (lst.length ? lst.map(v => `<div class="r" title="${escapeHTML((v.como || '') + (v.nota ? ' · ' + v.nota : ''))}"><span>${_calSel ? '' : fechaCorta(v.fecha) + ' · '}${escapeHTML(v.concepto)}</span><b>${$pesos(v.importe)}${v.estimado ? '*' : ''}</b></div>`).join('') : '<div class="f">Nada.</div>')
+    + (totVenc ? `<div class="cal-vencido">⚠ Vencido sin pagar: ${$pesos(totVenc)} (${vencidos.length})</div>` : '');
+}
+document.getElementById('cal-prev').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m - 2, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
+document.getElementById('cal-next').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
 
 // WhatsApp sin responder: misma vista que el módulo (comercial/whatsapp.html), en vivo por Realtime
 async function cargarWhatsApp() {
