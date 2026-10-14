@@ -80,16 +80,20 @@ export async function modoControl() {
   if (ea) throw new Error("alertas abiertas: " + ea.message);
   const masVieja = (abiertasAntes || []).map((a) => String(a.fecha_ref || "")).filter((f) => f >= tope60).sort()[0];
   const desde = masVieja && masVieja < desde21 ? masVieja : desde21;
+  // Se leen 7 días más ANTES de la ventana solo para emparejar: si lo de la Hoja de un día está en Odoo
+  // con fecha del día anterior y ese día quedó afuera, sin este margen se avisaba "pendiente de cargar"
+  // (caso Reductora 6 kg: Hoja 23/09, Odoo WH/MO/02023 22/09). Los días del margen no generan avisos propios.
+  const desdeDatos = new Date(new Date(desde + "T12:00:00Z").getTime() - 7 * 864e5).toISOString().slice(0, 10);
 
   // por páginas: la API devuelve como mucho 1.000 filas por consulta
   const hoja: Row[] = [];
   for (let de = 0; ; de += 1000) {
-    const { data, error: eh } = await sb.from("prod_hoja_diaria").select("id,fecha,hora,producto_sku,producto_nombre,cantidad,unidad,tipo,iniciales").gte("fecha", desde).order("id").range(de, de + 999);
+    const { data, error: eh } = await sb.from("prod_hoja_diaria").select("id,fecha,hora,producto_sku,producto_nombre,cantidad,unidad,tipo,iniciales").gte("fecha", desdeDatos).order("id").range(de, de + 999);
     if (eh) throw new Error("hoja: " + eh.message);
     hoja.push(...(data || []));
     if (!data || data.length < 1000) break;
   }
-  const mos = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "!=", "cancel"], ["date_start", ">=", desde + " 00:00:00"]]],
+  const mos = await ex("mrp.production", "search_read", [[["company_id", "=", 2], ["state", "!=", "cancel"], ["date_start", ">=", desdeDatos + " 00:00:00"]]],
     { fields: ["name", "product_id", "product_qty", "product_uom_id", "state", "date_start"] }) as Row[];
   const prodM = await productos([...new Set(mos.map((m) => m2o(m.product_id)).filter(Boolean))] as number[]);
   // desmontajes terminados (mrp.unbuild): deshacen total o parcialmente una orden → se restan de esa orden
@@ -108,7 +112,7 @@ export async function modoControl() {
   }
   for (const m of mos) {
     const c = String(prodM.get(m2o(m.product_id))?.default_code || "").trim(); if (!c) continue;
-    const fecha = fechaAR(m.date_start)!; if (fecha < desde) continue;
+    const fecha = fechaAR(m.date_start)!; if (fecha < desdeDatos) continue;
     const b = aBase(Number(m.product_qty) || 0, m2oName(m.product_uom_id));
     const k = fecha + "|" + c;
     const x = (OD[k] = OD[k] || { fecha, c, nombre: prodM.get(m2o(m.product_id))?.name || c, q: 0, u: b.u, det: [], abiertas: [] });
@@ -141,6 +145,7 @@ export async function modoControl() {
       continue;
     }
     pasados.push(k);
+    if (fecha < desde) continue;                                         // margen: solo para emparejar
     if (o && o.abiertas.length) {
       const atraso = habiles(fecha, hoyAR);
       alertas.push({ fecha_ref: fecha, codigo: o.c, datos: { hoja: h || null, odoo: o }, clave: `sin_validar|${fecha}|${o.c}`, tipo: "sin_validar", severidad: atraso >= 2 ? "critico" : "warn",
@@ -173,7 +178,7 @@ export async function modoControl() {
   }
   // 4) Lo que queda: pendiente de cargar / solo en Odoo / cantidad distinta
   for (const d of difs) {
-    if (d.usado) continue;
+    if (d.usado || d.fecha < desde) continue;                           // margen: solo para emparejar
     const h = d.h, o = d.o, fecha = d.fecha, c = d.c, nombre = d.nombre;
     const base = { fecha_ref: fecha, codigo: c, datos: { hoja: h || null, odoo: o || null } };
     const atraso = habiles(fecha, hoyAR);
