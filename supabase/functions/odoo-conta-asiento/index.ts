@@ -539,6 +539,36 @@ async function iibb_pago(body: Rec): Promise<Rec> {
   return { ok: !!fin[0].reconciled, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidacion: fin[0] };
 }
 
+// Lote "iva_plan": consolidación del plan Mis Facilidades W633513 (09/09/2026): IVA de abril, mayo y junio
+// (saldo a pagar de las F.2051) + intereses resarcitorios = 1.534.447,10 pasan a "Plan IVA a pagar".
+// Las 8 cuotas de $216.292,51 (16/10/2026 → 16/05/2027, débito Santander) se registran al pagarse,
+// separando capital e interés de financiación.
+const PLAN_IVA = { ref: "PLAN-IVA-W633513", fecha: "2026-09-09", meses: ["IVA-2026-04", "IVA-2026-05", "IVA-2026-06"], capital: 1507786.83, intereses: 26660.27, total: 1534447.10 };
+async function iva_plan(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run;
+  const ya = await ex("account.move", "search_read", [[["ref", "=", PLAN_IVA.ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const liq = await ex("account.move.line", "search_read", [[["move_id.ref", "in", PLAN_IVA.meses], ["account_id.code", "=", "2.1.3.03.020"], ["parent_state", "=", "posted"]]], { fields: ["id", "credit", "reconciled", "move_id"] }) as Rec[];
+  const suma = r2(liq.reduce((a, l) => a + (l.credit as number), 0));
+  if (liq.length !== 3 || suma !== PLAN_IVA.capital || liq.some(l => l.reconciled)) return { ok: false, error: "las liquidaciones de abr/may/jun no están como se esperaba", suma, liq };
+  if (r2(PLAN_IVA.capital + PLAN_IVA.intereses) !== PLAN_IVA.total) return { ok: false, error: "el plan no cierra" };
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.03.020", "5.5.1.01.040", "2.1.3.03.050"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id = Object.fromEntries(acc.map(a => [a.code, a.id]));
+  if (dry) return { ok: true, dry_run: true, ...PLAN_IVA };
+  const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
+  const g = "Plan de facilidades ARCA W633513 — IVA abr/may/jun 2026";
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: PLAN_IVA.fecha, ref: PLAN_IVA.ref, company_id: C, line_ids: [
+    [0, 0, { account_id: id["2.1.3.03.020"], name: g + " · IVA saldo a pagar que entra al plan", debit: PLAN_IVA.capital, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+    [0, 0, { account_id: id["5.5.1.01.040"], name: g + " · intereses resarcitorios (abril 11.117,33 + mayo 15.542,94)", debit: PLAN_IVA.intereses, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+    [0, 0, { account_id: id["2.1.3.03.050"], name: g + " · deuda consolidada (8 cuotas de $216.292,51 desde el 16/10/2026)", debit: 0, credit: PLAN_IVA.total, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+  ] }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  const lp = await ex("account.move.line", "search_read", [[["move_id", "=", mid], ["account_id", "=", id["2.1.3.03.020"]]]], { fields: ["id"] }) as Rec[];
+  await ex("account.move.line", "reconcile", [[lp[0].id, ...liq.map(l => l.id)]]);
+  const fin = await ex("account.move.line", "read", [liq.map(l => l.id), ["reconciled", "amount_residual"]]) as Rec[];
+  return { ok: fin.every(f => f.reconciled), asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidaciones: fin };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -576,6 +606,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "iva_plan") return new Response(JSON.stringify(await iva_plan(body)), { headers: h });
     if (body.lote === "iva_liquidacion") return new Response(JSON.stringify(await iva_liquidacion(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
