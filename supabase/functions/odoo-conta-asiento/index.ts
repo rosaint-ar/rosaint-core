@@ -569,6 +569,57 @@ async function iva_plan(body: Rec): Promise<Rec> {
   return { ok: fin.every(f => f.reconciled), asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidaciones: fin };
 }
 
+// Lote "aportes_titular" (14-oct-2026): deuda de Autónomos y Monotributo del titular según la CCMA de ARCA
+// (calculada al 14/10/2026: total deudor 6.790.761,48 = capital 5.704.930,71 + accesorios 1.085.830,77).
+// VELAZQUEZ factura desde el 10/03/2026 (FA-B 00004-00000001):
+//  · todo lo anterior a marzo 2026 (Monotributo completo y Autónomos 08/2023–02/2026, etapa RST Cosmetics) va
+//    contra Ajuste de resultados de ejercicios anteriores, con fecha 28/02/2026;
+//  · Autónomos mar–sep 2026 = gasto del mes (153.985,59 c/u, obligación de la CCMA), y los intereses de esos
+//    meses al 14/10 a Intereses fiscales. Octubre (156.541,75, vence 05/11) se registra al cerrar el mes.
+const CTAS_APORTES = [
+  { code: "2.1.3.05.010", name: "Autónomos a pagar (aportes del titular)", account_type: "liability_payable", reconcile: true },
+  { code: "2.1.3.05.020", name: "Monotributo a pagar (régimen anterior)", account_type: "liability_payable", reconcile: true },
+  { code: "5.3.1.01.150", name: "Aportes previsionales del titular (autónomos)", account_type: "expense", reconcile: false },
+];
+const AUT_MES = 153985.59;
+const APORTES: { ref: string; fecha: string; lineas: { code: string; debe: number; haber: number; nombre: string }[] }[] = [
+  { ref: "APORTES-TITULAR-PREVIOS", fecha: "2026-02-28", lineas: [
+    { code: "3.3.1.01.030", debe: 5683509.12, haber: 0, nombre: "Deuda de Autónomos y Monotributo anterior a VELAZQUEZ (CCMA al 14/10/2026)" },
+    { code: "2.1.3.05.010", debe: 0, haber: 4734639.52, nombre: "Autónomos 08/2023–02/2026 (capital 4.020.712,29 + intereses 713.927,23)" },
+    { code: "2.1.3.05.020", debe: 0, haber: 948869.60, nombre: "Monotributo 07/2021–02/2026, régimen anterior (capital 606.319,29 + intereses 342.550,31)" },
+  ] },
+  ...["03", "04", "05", "06", "07", "08", "09"].map(m => ({ ref: `AUTONOMOS-2026-${m}`, fecha: `2026-${m}-${m === "04" || m === "06" || m === "09" ? "30" : "31"}`, lineas: [
+    { code: "5.3.1.01.150", debe: AUT_MES, haber: 0, nombre: `Aporte de autónomos del titular ${m}/2026` },
+    { code: "2.1.3.05.010", debe: 0, haber: AUT_MES, nombre: `Aporte de autónomos ${m}/2026 (vence el 5 del mes siguiente)` },
+  ] })),
+  { ref: "AUTONOMOS-INTERESES-2026-10-14", fecha: "2026-10-14", lineas: [
+    { code: "5.5.1.01.040", debe: 29353.23, haber: 0, nombre: "Intereses resarcitorios de autónomos mar–sep 2026, calculados por ARCA al 14/10/2026" },
+    { code: "2.1.3.05.010", debe: 0, haber: 29353.23, nombre: "Intereses resarcitorios de autónomos mar–sep 2026 al 14/10/2026" },
+  ] },
+];
+async function aportes_titular(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const log: Rec[] = [];
+  for (const a of CTAS_APORTES) {
+    const ya = await ex("account.account", "search_read", [[["code", "=", a.code], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[];
+    if (!ya.length) { log.push({ crear_cuenta: a.code }); if (!dry) await ex("account.account", "create", [{ ...a, company_ids: [[6, 0, [C]]] }]); }
+  }
+  for (const e of APORTES) {
+    const d = r2(e.lineas.reduce((x, l) => x + l.debe, 0)), h = r2(e.lineas.reduce((x, l) => x + l.haber, 0));
+    if (d !== h) return { ok: false, error: "no balancea " + e.ref };
+    const ya = await ex("account.move", "search_read", [[["ref", "=", e.ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (ya.length) { log.push({ ya_existia: e.ref }); continue; }
+    if (dry) { log.push({ asiento: e.ref, fecha: e.fecha, importe: d }); continue; }
+    const accs = await ex("account.account", "search_read", [[["code", "in", e.lineas.map(l => l.code)], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+    const id = Object.fromEntries(accs.map(x => [x.code, x.id]));
+    const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: e.fecha, ref: e.ref, company_id: C,
+      line_ids: e.lineas.map(l => [0, 0, { account_id: id[l.code], name: l.nombre, debit: l.debe, credit: l.haber, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]) }]) as number;
+    await ex("account.move", "action_post", [[mid]]);
+    log.push({ asiento: e.ref, ...(await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0] });
+  }
+  return { ok: true, dry_run: dry, log };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -606,6 +657,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "aportes_titular") return new Response(JSON.stringify(await aportes_titular(body)), { headers: h });
     if (body.lote === "iva_plan") return new Response(JSON.stringify(await iva_plan(body)), { headers: h });
     if (body.lote === "iva_liquidacion") return new Response(JSON.stringify(await iva_liquidacion(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
