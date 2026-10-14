@@ -481,11 +481,16 @@ async function personal_a(body: Rec): Promise<Rec> {
 // Lote "iibb_liquidacion": asiento mensual de IIBB Convenio Multilateral armado desde la CM03 final de cada mes
 // (script liq_iibb.js). Solo acepta cuentas de IIBB: gasto 5.4.2.01.*, percepciones/retenciones/saldos a favor
 // 1.1.4.02.* e IIBB a pagar 2.1.3.02.010. Debe = haber obligatorio; idempotente por ref.
-async function iibb_liquidacion(body: Rec): Promise<Rec> {
+// Lote "iva_liquidacion": igual, para la DDJJ mensual de IVA (F.2051). Cuentas: IVA débito 2.1.3.03.010,
+// IVA crédito 1.1.4.04.010, percepciones 1.1.4.04.020, saldo de libre disponibilidad 1.1.4.04.050,
+// IVA saldo a pagar 2.1.3.03.020 y ajuste por redondeo 4.2.1.01.030 (diferencias de centavos de facturas en USD).
+const IVA_CTAS = new Set(["2.1.3.03.010", "1.1.4.04.010", "1.1.4.04.020", "1.1.4.04.050", "2.1.3.03.020", "4.2.1.01.030"]);
+const iva_liquidacion = (body: Rec) => liquidacion(body, /^IVA-2026-\d{2}$/, (c) => IVA_CTAS.has(c));
+const iibb_liquidacion = (body: Rec) => liquidacion(body, /^IIBB-CM-2026-\d{2}$/, (c) => c.startsWith("5.4.2.01.") || c.startsWith("1.1.4.02.") || c === "2.1.3.02.010");
+async function liquidacion(body: Rec, refOk: RegExp, permitida: (c: string) => boolean): Promise<Rec> {
   const dry = !!body.dry_run; const ref = String(body.ref || ""), fecha = String(body.fecha || ""), glosa = String(body.glosa || ref);
   const lineas = (body.lineas || []) as { code: string; debe: number; haber: number; nombre?: string }[];
-  if (!/^IIBB-CM-2026-\d{2}$/.test(ref) || !/^2026-\d{2}-\d{2}$/.test(fecha) || !lineas.length) return { ok: false, error: "faltan ref/fecha/lineas" };
-  const permitida = (c: string) => c.startsWith("5.4.2.01.") || c.startsWith("1.1.4.02.") || c === "2.1.3.02.010";
+  if (!refOk.test(ref) || !/^2026-\d{2}-\d{2}$/.test(fecha) || !lineas.length) return { ok: false, error: "faltan ref/fecha/lineas" };
   if (lineas.some(l => !permitida(l.code))) return { ok: false, error: "cuenta no permitida", malas: lineas.filter(l => !permitida(l.code)) };
   const debe = r2(lineas.reduce((a, l) => a + (l.debe || 0), 0)), haber = r2(lineas.reduce((a, l) => a + (l.haber || 0), 0));
   if (debe !== haber || !debe) return { ok: false, error: "no balancea", debe, haber };
@@ -571,6 +576,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "iva_liquidacion") return new Response(JSON.stringify(await iva_liquidacion(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });

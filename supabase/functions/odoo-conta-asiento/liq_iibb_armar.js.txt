@@ -1,0 +1,69 @@
+// Liquidación mensual de IIBB (Convenio Multilateral) en Odoo a partir de las CM03 finales.
+// Por jurisdicción y mes:  Debe gasto IIBB = impuesto + suman · Debe saldo a favor = a favor del mes
+//   Haber saldo a favor = a favor del mes anterior · Haber percepción = percepciones de Odoo imputadas
+//   Haber retención/recaudación = resto de lo que restó la DDJJ (bancos, desfasajes) · Haber IIBB a pagar = a pagar
+const fs = require("fs"), { execFileSync } = require("child_process");
+const D = "C:/Users/diego/Downloads/";
+const DDJJ = { "2026-03": "DDJJ_Mensual_421310401.pdf", "2026-04": "DDJJ_Mensual_424099469.pdf", "2026-05": "DDJJ_Mensual_437304431.pdf",
+  "2026-06": "DDJJ_Mensual_437313416.pdf", "2026-07": "DDJJ_Mensual_437323250.pdf", "2026-08": "DDJJ_Mensual_437336575.pdf", "2026-09": "DDJJ_Mensual_437364683.pdf" };
+const num = (s) => Number(s.replace(/\./g, "").replace(",", "."));
+const r2 = (x) => Math.round(x * 100) / 100;
+const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+function leer(f) {
+  const t = execFileSync("pdftotext", ["-raw", D + f, "-"]).toString("latin1");
+  const sec = /Secuencia: ([^\n]+)/.exec(t)[1].trim(), tx = (/Transacci.n: (\d+)/.exec(t) || [])[1];
+  const bloque = t.slice(t.indexOf("A Pagar"), t.indexOf("TOTALES")).replace(/SANTIAGO DEL\s*\n\s*ESTERO\s*\n/, "SANTIAGO DEL ESTERO ");
+  const filas = {};
+  for (const m of bloque.matchAll(/^([A-Z ]+?) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+)$/gm))
+    filas[norm(m[1])] = { imp: num(m[2]), restan: num(m[3]), suman: num(m[4]), af: num(m[5]), aff: num(m[6]), pagar: num(m[7]) };
+  const tot = /TOTALES \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+) \$ ([\d.,]+)/.exec(t);
+  return { sec, tx, filas, totPagar: num(tot[6]), totImp: num(tot[1]) };
+}
+const PROV = { CABA: "CABA", "BUENOS AIRES": "Buenos Aires", CATAMARCA: "Catamarca", CORDOBA: "Córdoba", CORRIENTES: "Corrientes", CHACO: "Chaco", CHUBUT: "Chubut",
+  "ENTRE RIOS": "Entre Ríos", FORMOSA: "Formosa", JUJUY: "Jujuy", "LA PAMPA": "La Pampa", "LA RIOJA": "La Rioja", MENDOZA: "Mendoza", MISIONES: "Misiones", NEUQUEN: "Neuquén",
+  "RIO NEGRO": "Río Negro", SALTA: "Salta", "SAN JUAN": "San Juan", "SAN LUIS": "San Luis", "SANTA CRUZ": "Santa Cruz", "SANTA FE": "Santa Fe", "SANTIAGO DEL ESTERO": "Santiago del Estero",
+  "TIERRA DEL FUEGO": "Tierra del Fuego", TUCUMAN: "Tucumán" };
+// percepciones de Odoo por mes (fecha del comprobante) y jurisdicción
+const perc = {};
+for (const l of require("./percep_hoy.json").lineas) {
+  const mes = (l.fecha_factura || l.fecha_contable).slice(0, 7);
+  const j = norm(l.cuenta.replace(/^[\d.]+\s+Percepci.n IIBB\s+/i, "").replace(/\s+sufrida.*$/i, ""));
+  ((perc[mes] ||= {})[j] = r2(((perc[mes] || {})[j] || 0) + l.importe));
+}
+// CABA y Tucumán de marzo y abril se imputaron en la CM03 de septiembre
+const IMPUTA = (mes, j) => {
+  if (["CABA", "TUCUMAN"].includes(j)) {
+    if (["2026-03", "2026-04"].includes(mes)) return 0;
+    if (mes === "2026-09") return r2((perc["2026-03"][j] || 0) + (perc["2026-04"][j] || 0) + (perc["2026-09"][j] || 0));
+  }
+  return (perc[mes] || {})[j] || 0;
+};
+const out = []; let afPrev = {};
+for (const [mes, f] of Object.entries(DDJJ)) {
+  const d = leer(f); const lineas = []; let pagar = 0;
+  for (const [J, x] of Object.entries(d.filas)) {
+    const P = PROV[J]; if (!P) throw new Error("jurisdicción desconocida " + J);
+    const saf = afPrev[J] || 0, pi = IMPUTA(mes, J), otros = r2(x.restan - saf - pi);
+    if (x.imp + x.suman) lineas.push({ cta: `gasto:${P}`, debe: r2(x.imp + x.suman), haber: 0 });
+    if (x.af) lineas.push({ cta: `saf:${P}`, debe: x.af, haber: 0 });
+    if (saf) lineas.push({ cta: `saf:${P}`, debe: 0, haber: saf });
+    if (pi) lineas.push({ cta: `perc:${P}`, debe: pi < 0 ? -pi : 0, haber: pi > 0 ? pi : 0 });
+    if (otros) lineas.push({ cta: `ret:${P}`, debe: otros < 0 ? -otros : 0, haber: otros > 0 ? otros : 0 });
+    pagar = r2(pagar + x.pagar);
+  }
+  if (Math.abs(pagar - d.totPagar) > 0.01) throw new Error(mes + " suma de a pagar no da");
+  lineas.push({ cta: "pagar", debe: 0, haber: pagar });
+  const debe = r2(lineas.reduce((a, l) => a + l.debe, 0)), haber = r2(lineas.reduce((a, l) => a + l.haber, 0));
+  out.push({ mes, sec: d.sec, tx: d.tx, debe, haber, pagar, lineas });
+  afPrev = Object.fromEntries(Object.entries(d.filas).map(([J, x]) => [J, x.af]));
+}
+fs.writeFileSync("liq_iibb.json", JSON.stringify(out, null, 1));
+const f2 = (x) => x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+for (const o of out) console.log(o.mes, o.sec.padEnd(18), "| renglones", String(o.lineas.length).padStart(3), "| debe", f2(o.debe).padStart(13), "| haber", f2(o.haber).padStart(13), o.debe === o.haber ? "✓" : "✗", "| IIBB a pagar", f2(o.pagar));
+// saldos finales por cuenta lógica
+const sal = {}; for (const o of out) for (const l of o.lineas) sal[l.cta] = r2((sal[l.cta] || 0) + l.debe - l.haber);
+console.log("\nSaldos al 30/09 (lo que generan estos asientos):");
+for (const k of Object.keys(sal).filter(k => /^(saf|ret):/.test(k) && Math.abs(sal[k]) > 0.005).sort()) console.log(" ", k.padEnd(28), f2(sal[k]).padStart(12));
+const totPerc = {}; for (const m of Object.keys(perc)) if (m <= "2026-09") for (const [j, v] of Object.entries(perc[m])) totPerc[j] = r2((totPerc[j] || 0) + v);
+console.log("\nPercepciones en Odoo que quedan sin imputar (percepción sufrida − imputado):");
+for (const [J, P] of Object.entries(PROV)) { const v = r2((totPerc[J] || 0) + (sal["perc:" + P] || 0)); if (Math.abs(v) > 0.005) console.log(" ", P.padEnd(22), f2(v).padStart(12)); }

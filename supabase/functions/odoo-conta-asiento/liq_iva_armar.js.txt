@@ -1,0 +1,36 @@
+// Liquidación mensual de IVA en Odoo a partir de las F.2051 presentadas (mar–ago 2026).
+//  Debe IVA débito (lo de Odoo del mes) · Haber IVA crédito (Odoo del mes − combustible no computado)
+//  Haber percepciones (lo computado en la DDJJ) · saldo de libre disponibilidad · Haber IVA saldo a pagar
+//  La diferencia de centavos entre el crédito de la DDJJ y el de Odoo (facturas en USD) va a "Ajuste por redondeo".
+const fs = require("fs"); const r2 = (x) => Math.round(x * 100) / 100;
+const odoo = {}; const MES = { enero: "01", febrero: "02", marzo: "03", abril: "04", mayo: "05", junio: "06", julio: "07", agosto: "08", septiembre: "09", octubre: "10" };
+for (const g of require("./ivam.json").result) { const [n, y] = g["date:month"].split(" "); const m = `${y}-${MES[n]}`; const c = g.account_id[1].split(" ")[0]; (odoo[m] ||= {})[c] = g.balance; }
+const DDJJ = { // F.2051: débito, crédito, percepciones/pagos a cuenta, libre disp. anterior usada, resultado (+ a pagar / − libre a favor), transacción
+  "2026-03": { d: 1305986.28, c: 1042584.89, p: 295003.32, libreAnt: 0, res: -31601.93, tx: "1164409625" },
+  "2026-04": { d: 1439909.29, c: 969568.51, p: 196178.88, libreAnt: 31601.93, res: 242559.97, tx: "1170689595" },
+  "2026-05": { d: 2251311.27, c: 1202915.52, p: 277671.58, libreAnt: 0, res: 770724.17, tx: "1177439785" },
+  "2026-06": { d: 1943661.79, c: 1121539.35, p: 327619.75, libreAnt: 0, res: 494502.69, tx: "1183344518" },
+  "2026-07": { d: 2266243.41, c: 1625608.05, p: 284971.80, libreAnt: 0, res: 355663.56, tx: "1188714840" },
+  "2026-08": { d: 2847460.11, c: 1583174.60, p: 388437.74, libreAnt: 0, res: 875847.77, tx: "1195012987" },
+};
+const COMB = { "2026-05": 28092.46, "2026-06": 19214.29, "2026-07": 28601.27, "2026-08": 28834.09 };
+for (const [mes, x] of Object.entries(DDJJ)) {
+  const o = odoo[mes]; const deb = r2(-o["2.1.3.03.010"]), cred = r2(o["1.1.4.04.010"] - (COMB[mes] || 0));
+  if (Math.abs(r2(x.d - x.c) - r2(deb - cred)) > 20) throw new Error(mes + " saldo técnico muy distinto");
+  const ajuste = r2((x.d - x.c) - (deb - cred)); // − = la DDJJ computó unos centavos más de crédito que Odoo: ganancia por redondeo (Haber)
+  const L = [], n = (t) => `IVA ${mes} · ${t}`;
+  L.push({ code: "2.1.3.03.010", debe: deb, haber: 0, nombre: n("débito fiscal del mes") });
+  L.push({ code: "1.1.4.04.010", debe: 0, haber: cred, nombre: n("crédito fiscal computado" + (COMB[mes] ? ` (sin combustible $${COMB[mes]})` : "")) });
+  L.push({ code: "1.1.4.04.020", debe: 0, haber: x.p, nombre: n("percepciones y pagos a cuenta computados") });
+  if (x.libreAnt) L.push({ code: "1.1.4.04.050", debe: 0, haber: x.libreAnt, nombre: n("saldo de libre disponibilidad del mes anterior") });
+  if (x.res < 0) L.push({ code: "1.1.4.04.050", debe: -x.res, haber: 0, nombre: n("saldo de libre disponibilidad a favor") });
+  else L.push({ code: "2.1.3.03.020", debe: 0, haber: x.res, nombre: n("saldo a pagar (F.2051, transacción " + x.tx + ")") });
+  if (ajuste) L.push({ code: "4.2.1.01.030", debe: ajuste > 0 ? ajuste : 0, haber: ajuste < 0 ? -ajuste : 0, nombre: n("redondeo de facturas en USD (DDJJ vs Odoo)") });
+  // cuadre: si no da, la diferencia es contra la percepción (ej. marzo: NC de ML cuya percepción la DDJJ no restó)
+  const dif = r2(L.reduce((a, l) => a + l.debe - l.haber, 0));
+  const [y, m] = mes.split("-").map(Number); const fecha = `${mes}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const body = { lote: "iva_liquidacion", ref: "IVA-" + mes, fecha, glosa: `IVA ${mes} (F.2051, transacción ${x.tx})`, lineas: L };
+  fs.writeFileSync(`liqiva_${mes}.json`, JSON.stringify(body));
+  const percOdoo = r2(o["1.1.4.04.020"]);
+  console.log(mes, "| débito", deb, "| crédito usado", cred, "| ajuste redondeo", ajuste, "| percep DDJJ", x.p, "Odoo", percOdoo, "dif", r2(x.p - percOdoo), "| cuadre", dif);
+}
