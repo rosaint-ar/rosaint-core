@@ -72,8 +72,6 @@
     .cal-det .r b { font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
     .cal-det .f { color: var(--muted); font-size: 11px; }
     .cal-vencido { font-size: 11.5px; font-weight: 700; color: var(--hot); margin-top: 4px; }
-    .cal-ley { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); margin-top: 6px; }
-    .cal-ley i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
     @media (max-width: 900px) { .row-2 { grid-template-columns: 1fr; } }
     .chart-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-bottom: 14px; }
@@ -353,20 +351,20 @@ function pintarCalendario() {
     h += `<div class="${cls}" data-f="${f}" title="${escapeHTML(lst.map(v => v.concepto + ' · ' + $pesos(v.importe)).join('\n'))}">${d}${pts}</div>`;
   }
   const g = document.getElementById('cal-grid'); g.innerHTML = h;
-  g.querySelectorAll('.d.tiene').forEach(el => el.addEventListener('click', () => { _calSel = el.dataset.f; pintarCalendario(); }));
+  g.querySelectorAll('.d.tiene').forEach(el => el.addEventListener('click', () => { _calSel = _calSel === el.dataset.f ? null : el.dataset.f; pintarCalendario(); }));
   pintarDetalle();
 }
+// Sin día elegido: solo un aviso corto si algo vence hoy. Tocando un día con puntos se ve el detalle de ese día.
 function pintarDetalle() {
   const el = document.getElementById('cal-det');
-  const vencidos = _venc.filter(v => claseVenc(v) === 'vencido');
-  const totVenc = vencidos.reduce((a, v) => a + Number(v.importe || 0), 0);
-  let lst;
-  if (_calSel) lst = _venc.filter(v => v.fecha === _calSel);
-  else lst = _venc.filter(v => v.estado === 'pendiente' && v.fecha >= HOY).slice(0, 3); // lo vencido va en la línea roja de abajo
-  const titulo = _calSel ? 'El ' + fechaCorta(_calSel) : 'Próximos';
-  el.innerHTML = `<div class="f">${titulo}</div>` + (lst.length ? lst.map(v => `<div class="r" title="${escapeHTML((v.como || '') + (v.nota ? ' · ' + v.nota : ''))}"><span>${_calSel ? '' : fechaCorta(v.fecha) + ' · '}${escapeHTML(v.concepto)}</span><b>${$pesos(v.importe)}${v.estimado ? '*' : ''}</b></div>`).join('') : '<div class="f">Nada.</div>')
-    + (totVenc ? `<div class="cal-vencido">⚠ Vencido sin pagar: ${$pesos(totVenc)} (${vencidos.length})</div>` : '')
-    + '<div class="cal-ley"><span><i style="background:var(--hot)"></i>vencido</span><span><i style="background:var(--warn)"></i>≤ 7 días</span><span><i style="background:var(--cyan)"></i>más adelante</span><span><i style="background:var(--ok)"></i>pagado</span></div>';
+  if (!_calSel) {
+    const hoy = _venc.filter(v => v.estado === 'pendiente' && v.fecha === HOY);
+    el.innerHTML = hoy.length ? `<div class="cal-vencido">⚠ Hoy vence${hoy.length > 1 ? 'n' : ''} ${hoy.length} pago${hoy.length > 1 ? 's' : ''} · tocá el día</div>` : '<div class="f">Nada vence hoy.</div>';
+    return;
+  }
+  const lst = _venc.filter(v => v.fecha === _calSel);
+  el.innerHTML = `<div class="f">El ${fechaCorta(_calSel)} · <a href="javascript:void(0)" id="cal-cerrar">cerrar</a></div>` + lst.map(v => `<div class="r" title="${escapeHTML((v.como || '') + (v.nota ? ' · ' + v.nota : ''))}"><span>${escapeHTML(v.concepto)}</span><b class="${claseVenc(v) === 'vencido' ? 'cal-vencido' : ''}">${$pesos(v.importe)}${v.estimado ? '*' : ''}</b></div>`).join('');
+  document.getElementById('cal-cerrar').addEventListener('click', () => { _calSel = null; pintarCalendario(); });
 }
 document.getElementById('cal-prev').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m - 2, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
 document.getElementById('cal-next').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
