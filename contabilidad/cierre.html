@@ -209,6 +209,9 @@ async function iibbXlsx(mes){
   const r = await fetch(FN_IIBB, { method:'POST', headers:HEADERS, body: JSON.stringify({ mes }) });
   const d = await r.json(); if(!d.ok) throw new Error(d.error||'Error IIBB');
   const netas = d.netas_de_devoluciones; const [y,m]=mes.split('-').map(Number); const nombreMes = MESES[m-1];
+  // Control: una venta sin provincia no se reparte en el Convenio. Se frena hasta corregir el cliente en Odoo.
+  const sinProv = (netas.provincias || []).filter(p => /sin provincia/i.test(p.provincia || '') && Math.abs(p.imponible || 0) > 0.005);
+  if (sinProv.length) throw new Error(`Hay ventas sin provincia por $${sinProv.reduce((a, p) => a + p.imponible, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} de neto. Cargá la provincia del cliente en Odoo (en IIBB por jurisdicción ves cuáles son) y volvé a preparar.`);
   const aoa = [['','Total',''],['','Total imponible','Total en moneda'],['Total', netas.total_imponible, netas.total_con_iva],['     '+nombreMes+' '+y, netas.total_imponible, netas.total_con_iva]];
   for(const p of netas.provincias){ aoa.push(['          '+p.provincia, p.imponible, p.total]); }
   const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:40},{wch:18},{wch:18}];
