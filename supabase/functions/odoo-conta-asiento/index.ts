@@ -504,6 +504,36 @@ async function iibb_liquidacion(body: Rec): Promise<Rec> {
   return { ok: m.state === "posted", asiento: m };
 }
 
+// Lote "iibb_pago": pago de un VEP de IIBB CM contra "IIBB a pagar" (2.1.3.02.010), conciliado con la
+// liquidación del mes (ref IIBB-CM-AAAA-MM). Tabla fija: importe = total del VEP verificado contra la cuenta
+// corriente de SIFERE; fecha = vencimiento (día de presentación de la CM03); pagado desde Mercado Pago.
+const IIBB_PAGOS: Record<string, { fecha: string; importe: number; diario: number }> = {
+  "2026-03": { fecha: "2026-04-15", importe: 36458.11, diario: 42 },
+  "2026-04": { fecha: "2026-05-15", importe: 25182.18, diario: 42 },
+};
+async function iibb_pago(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const mes = String(body.mes || ""); const p = IIBB_PAGOS[mes];
+  if (!p) return { ok: false, error: "mes fuera de la tabla" };
+  const ref = `IIBB-CM-${mes}-PAGO`;
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const liq = await ex("account.move.line", "search_read", [[["move_id.ref", "=", `IIBB-CM-${mes}`], ["account_id.code", "=", "2.1.3.02.010"], ["parent_state", "=", "posted"]]], { fields: ["id", "credit", "reconciled", "amount_residual"] }) as Rec[];
+  if (liq.length !== 1 || r2(liq[0].credit as number) !== p.importe || liq[0].reconciled) return { ok: false, error: "la liquidación del mes no está como se esperaba", liq };
+  const j = (await ex("account.journal", "read", [[p.diario], ["default_account_id"]]) as Rec[])[0];
+  const acc = await ex("account.account", "search_read", [[["code", "=", "2.1.3.02.010"]]], { fields: ["id"] }) as Rec[];
+  if (dry) return { ok: true, dry_run: true, ref, fecha: p.fecha, importe: p.importe, desde: j.default_account_id };
+  const glosa = `Pago VEP IIBB Convenio Multilateral ${mes}`;
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: p.diario, date: p.fecha, ref, company_id: C, line_ids: [
+    [0, 0, { account_id: acc[0].id, name: glosa, debit: p.importe, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+    [0, 0, { account_id: m2o(j.default_account_id), name: glosa, debit: 0, credit: p.importe, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+  ] }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  const lp = await ex("account.move.line", "search_read", [[["move_id", "=", mid], ["account_id", "=", acc[0].id]]], { fields: ["id"] }) as Rec[];
+  await ex("account.move.line", "reconcile", [[lp[0].id, liq[0].id]]);
+  const fin = await ex("account.move.line", "read", [[liq[0].id], ["reconciled", "amount_residual"]]) as Rec[];
+  return { ok: !!fin[0].reconciled, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidacion: fin[0] };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -541,6 +571,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
