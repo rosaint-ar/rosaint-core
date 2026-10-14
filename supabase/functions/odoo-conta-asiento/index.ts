@@ -478,6 +478,32 @@ async function personal_a(body: Rec): Promise<Rec> {
   return { ok: true, comprobante: (await ex("account.move", "read", [[p.borrador], ["name", "state", "amount_untaxed", "amount_tax", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0] };
 }
 
+// Lote "iibb_liquidacion": asiento mensual de IIBB Convenio Multilateral armado desde la CM03 final de cada mes
+// (script liq_iibb.js). Solo acepta cuentas de IIBB: gasto 5.4.2.01.*, percepciones/retenciones/saldos a favor
+// 1.1.4.02.* e IIBB a pagar 2.1.3.02.010. Debe = haber obligatorio; idempotente por ref.
+async function iibb_liquidacion(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const ref = String(body.ref || ""), fecha = String(body.fecha || ""), glosa = String(body.glosa || ref);
+  const lineas = (body.lineas || []) as { code: string; debe: number; haber: number; nombre?: string }[];
+  if (!/^IIBB-CM-2026-\d{2}$/.test(ref) || !/^2026-\d{2}-\d{2}$/.test(fecha) || !lineas.length) return { ok: false, error: "faltan ref/fecha/lineas" };
+  const permitida = (c: string) => c.startsWith("5.4.2.01.") || c.startsWith("1.1.4.02.") || c === "2.1.3.02.010";
+  if (lineas.some(l => !permitida(l.code))) return { ok: false, error: "cuenta no permitida", malas: lineas.filter(l => !permitida(l.code)) };
+  const debe = r2(lineas.reduce((a, l) => a + (l.debe || 0), 0)), haber = r2(lineas.reduce((a, l) => a + (l.haber || 0), 0));
+  if (debe !== haber || !debe) return { ok: false, error: "no balancea", debe, haber };
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name", "state"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const codes = [...new Set(lineas.map(l => l.code))];
+  const accs = await ex("account.account", "search_read", [[["code", "in", codes], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id = Object.fromEntries(accs.map(a => [a.code, a.id]));
+  const faltan = codes.filter(c => !id[c]); if (faltan.length) return { ok: false, error: "cuentas inexistentes", faltan };
+  if (dry) return { ok: true, dry_run: true, ref, fecha, renglones: lineas.length, debe, haber };
+  const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: fecha, ref, company_id: C,
+    line_ids: lineas.map(l => [0, 0, { account_id: id[l.code], name: l.nombre || glosa, debit: r2(l.debe || 0), credit: r2(l.haber || 0), tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]) }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  const m = (await ex("account.move", "read", [[mid], ["name", "state", "date", "amount_total"]]) as Rec[])[0];
+  return { ok: m.state === "posted", asiento: m };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -515,6 +541,7 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json() as Rec;
     if (body.lote === "iva_combustible") return new Response(JSON.stringify(await iva_combustible(body)), { headers: h });
+    if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
     if (body.lote === "first_label_anulada") return new Response(JSON.stringify(await first_label_anulada(body)), { headers: h });
