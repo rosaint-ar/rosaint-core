@@ -279,7 +279,7 @@ function aplicarPlantilla(tpl,o){
     .replace(/\{titular\}/g, o.titular||o.cliente||'')
     .replace(/\{servicio\}/g, carrierName(o)||o.transportista||'')
     .replace(/\{modalidad\}/g, o.modalidad||'')
-    .replace(/\{fecha_despacho\}/g, hoyDMY())
+    .replace(/\{fecha_despacho\}/g, o.fecha_despacho||hoyDMY())
     .replace(/\{so\}/g, o.odoo_so||'')
     .replace(/\{tracking\}/g, o.tracking_code||'—')
     .replace(/\{link\}/g, trackingUrl(o))
