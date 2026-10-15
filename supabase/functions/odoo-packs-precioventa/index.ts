@@ -258,6 +258,56 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, listas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
+    // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
+    if (body.conta_relevar) {
+      const q = body.conta_relevar; const ctx = { lang: "es_ES", active_test: false }; const out: any = {};
+      const cf = ["id", "code", "name", "account_type", "deprecated", "reconcile"];
+      if (q.cuentas_prefijos || q.cuentas_texto) {
+        const dom: any[] = [["company_ids", "in", [2]]];
+        const todas = await call("account.account", "search_read", [dom, cf], { context: ctx, order: "code" });
+        const pre = (q.cuentas_prefijos || []) as string[]; const tx = q.cuentas_texto ? new RegExp(String(q.cuentas_texto), "i") : null;
+        out.cuentas = todas.filter((c: any) => pre.some((p) => String(c.code || "").startsWith(p)) || (tx && tx.test(c.name || "")));
+      }
+      if (q.diarios) out.diarios = await call("account.journal", "search_read", [[["company_id", "=", 2], ["type", "in", ["bank", "cash", "purchase", "general"]]], ["id", "name", "code", "type", "default_account_id"]], { context: ctx });
+      if (q.contactos) out.contactos = await call("res.partner", "search_read", [[["name", "ilike", String(q.contactos)]], ["id", "name", "vat", "supplier_rank", "property_account_payable_id", "company_id"]], { context: ctx, limit: 40 });
+      if (q.productos) out.productos = await call("product.product", "read", [q.productos.map(Number), ["id", "default_code", "name", "property_account_expense_id", "supplier_taxes_id", "categ_id", "active"]], { context: ctx });
+      if (q.movs_cuenta) {
+        const [ac] = await call("account.account", "search_read", [[["code", "=", String(q.movs_cuenta)], ["company_ids", "in", [2]]], ["id"]], { context: ctx });
+        out.movs = ac ? await call("account.move.line", "search_read", [[["account_id", "=", ac.id], ["parent_state", "!=", "cancel"]], ["date", "move_id", "partner_id", "name", "debit", "credit", "parent_state"]], { context: ctx, order: "date", limit: 200 }) : [];
+      }
+      if (q.extracto_montos) {
+        // renglones de extracto bancario (cualquier diario de banco de company 2) con esos importes
+        out.extracto = await call("account.bank.statement.line", "search_read", [[["company_id", "=", 2], ["amount", "in", q.extracto_montos.map(Number)]],
+          ["date", "journal_id", "amount", "payment_ref", "partner_id", "is_reconciled", "move_id"]], { context: ctx, order: "date", limit: 200 });
+        out.extracto_rango = {};
+        for (const j of [42, 54]) {
+          const p = await call("account.bank.statement.line", "search_read", [[["journal_id", "=", j]], ["date"]], { context: ctx, order: "date asc", limit: 1 });
+          const u = await call("account.bank.statement.line", "search_read", [[["journal_id", "=", j]], ["date"]], { context: ctx, order: "date desc", limit: 1 });
+          out.extracto_rango[j] = { desde: p[0]?.date ?? null, hasta: u[0]?.date ?? null, n: await call("account.bank.statement.line", "search_count", [[["journal_id", "=", j]]]) };
+        }
+      }
+      if (q.movs_contacto) {
+        out.docs = await call("account.move", "search_read", [[["partner_id", "=", Number(q.movs_contacto)], ["company_id", "in", q.todas_empresas ? [1, 2] : [2]], ["state", "!=", "cancel"]],
+          ["name", "date", "invoice_date", "move_type", "state", "amount_total", "amount_residual", "payment_state", "ref", "journal_id", "company_id"]], { context: q.todas_empresas ? { ...ctx, allowed_company_ids: [1, 2] } : ctx, order: "date", limit: 200 });
+        const ids = out.docs.map((d: any) => d.id);
+        out.renglones = ids.length ? await call("account.move.line", "search_read", [[["move_id", "in", ids], ["display_type", "in", ["product", false]], ["account_id.account_type", "not in", ["liability_payable", "asset_receivable"]]],
+          ["move_id", "account_id", "product_id", "name", "debit", "credit"]], { context: ctx, limit: 600 }) : [];
+      }
+      return new Response(JSON.stringify({ ok: true, ...out }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo programas_descuento (solo lectura): promociones automáticas de Odoo (loyalty) con reglas y premios ----
+    if (body.programas_descuento) {
+      const progs = await call("loyalty.program", "search_read", [[], ["id", "name", "active", "program_type", "trigger", "applies_on", "pricelist_ids", "company_id", "date_from", "date_to", "rule_ids", "reward_ids"]], { context: { active_test: false } });
+      for (const p of progs) {
+        p.reglas = p.rule_ids.length ? await call("loyalty.rule", "read", [p.rule_ids, ["minimum_amount", "minimum_amount_tax_mode", "minimum_qty", "product_ids", "product_category_id", "product_domain", "product_tag_id"]]) : [];
+        p.premios = p.reward_ids.length ? await call("loyalty.reward", "read", [p.reward_ids, ["reward_type", "discount", "discount_mode", "discount_applicability", "discount_product_ids", "discount_product_category_id", "discount_product_domain", "discount_max_amount", "description"]]) : [];
+        delete p.rule_ids; delete p.reward_ids;
+      }
+      return new Response(JSON.stringify({ ok: true, programas: progs }, null, 2), { headers: cors });
+    }
+
     // ---- Modo crear_presentacion: producto vendible nuevo copiando otro (categoría, impuestos, rutas) + su lista de materiales ----
     // { crear_presentacion: { codigo, nombre, copiar_de, lineas: [{codigo, cantidad}] }, dry_run }   (15-oct-2026)
     if (body.crear_presentacion) {
