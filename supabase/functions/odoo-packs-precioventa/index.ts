@@ -306,6 +306,41 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, diario: dia?.id ?? null, pasos, creadas }, null, 2), { headers: cors });
     }
 
+    // ---- Modo validar_y_pagar (15-oct-2026): valida facturas de compra y registra pagos parciales/totales con el asistente de Odoo ----
+    // { validar_y_pagar: { diario_pago: 42, facturas: [{ id, pagos: [{ monto, fecha, memo }] }] }, dry_run }
+    // Igual que "Registrar pago" desde la factura: crea el pago en el diario elegido y lo concilia con la factura.
+    // No repite: si la factura ya tiene un pago conciliado con ese mismo memo, lo saltea.
+    if (body.validar_y_pagar) {
+      const q = body.validar_y_pagar; const dry = body.dry_run !== false; const diario = Number(q.diario_pago);
+      const out: any[] = [];
+      for (const f of q.facturas) {
+        const [m] = await call("account.move", "read", [[Number(f.id)], ["name", "state", "partner_id", "amount_total", "amount_residual", "payment_state", "move_type", "company_id", "ref"]]);
+        if (!m || m.move_type !== "in_invoice" || m.company_id[0] !== 2) throw new Error(`Factura ${f.id} inválida`);
+        const fila: any = { id: f.id, ref: m.ref, estado_antes: m.state, total: m.amount_total, pagos: [] };
+        if (m.state === "draft") { fila.validar = true; if (!dry) await call("account.move", "action_post", [[m.id]]); }
+        // memos ya pagados en esta factura (pagos conciliados)
+        let hechos: string[] = [];
+        try {
+          const info = await call("account.move", "read", [[m.id], ["invoice_payments_widget"]]);
+          const w = info[0]?.invoice_payments_widget; const cont = w && (w.content || (typeof w === "string" ? JSON.parse(w).content : []));
+          hechos = (cont || []).map((c: any) => String(c.ref || c.name || ""));
+        } catch (_) { /* sin widget */ }
+        for (const p of (f.pagos || [])) {
+          if (hechos.some((h) => h.includes(String(p.memo)))) { fila.pagos.push({ ...p, estado: "ya registrado" }); continue; }
+          if (dry) { fila.pagos.push({ ...p, estado: "se registraría" }); continue; }
+          const wiz = await call("account.payment.register", "create", [{ amount: Number(p.monto), payment_date: p.fecha, journal_id: diario, communication: String(p.memo), payment_difference_handling: "open" }],
+            { context: { active_model: "account.move", active_ids: [m.id], lang: "es_ES" } });
+          const wid = Array.isArray(wiz) ? wiz[0] : wiz;
+          await call("account.payment.register", "action_create_payments", [[wid]], { context: { active_model: "account.move", active_ids: [m.id] } });
+          fila.pagos.push({ ...p, estado: "registrado" });
+        }
+        const [d] = await call("account.move", "read", [[m.id], ["name", "state", "amount_residual", "payment_state"]]);
+        Object.assign(fila, { numero: d.name, estado: d.state, saldo: d.amount_residual, pago: d.payment_state });
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, facturas: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
     // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
     if (body.conta_relevar) {
