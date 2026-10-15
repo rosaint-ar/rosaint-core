@@ -258,6 +258,54 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, listas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo compras_borrador (15-oct-2026): facturas de compra EN BORRADOR en un diario sin comprobante fiscal ----
+    // { compras_borrador: { diario: {code, name}, facturas: [{ partner_id? , partner_nombre?, fecha, ref, renglones: [{cuenta, descripcion, monto}] }] }, dry_run }
+    // No valida nada: quedan en borrador para revisar en Odoo. Si ya hay una factura con el mismo ref y proveedor, no la repite.
+    if (body.compras_borrador) {
+      const q = body.compras_borrador; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const pasos: any[] = [];
+      // diario
+      let [dia] = await call("account.journal", "search_read", [[["company_id", "=", 2], ["code", "=", String(q.diario.code)]], ["id", "name", "type"]]);
+      if (!dia) {
+        pasos.push({ paso: "crear diario", code: q.diario.code, nombre: q.diario.name, tipo: "compras", documentos_afip: false });
+        if (!dry) { const id = await call("account.journal", "create", [{ name: String(q.diario.name), code: String(q.diario.code), type: "purchase", company_id: 2, l10n_latam_use_documents: false }], { context: ctx }); dia = { id: Array.isArray(id) ? id[0] : id, name: q.diario.name, type: "purchase" }; }
+      } else pasos.push({ paso: "diario existente", id: dia.id, nombre: dia.name });
+      // cuentas por código
+      const codigos = [...new Set(q.facturas.flatMap((f: any) => f.renglones.map((r: any) => String(r.cuenta))))];
+      const cuentas = await call("account.account", "search_read", [[["code", "in", codigos], ["company_ids", "in", [2]]], ["id", "code", "name"]], { context: ctx });
+      const cuentaId: Record<string, number> = {}; for (const c of cuentas) cuentaId[c.code] = c.id;
+      const faltan = codigos.filter((c) => !cuentaId[c]); if (faltan.length) throw new Error(`No encontré las cuentas ${faltan.join(", ")}`);
+      const partnerCache: Record<string, number> = {};
+      const creadas: any[] = [];
+      for (const f of q.facturas) {
+        let pid = f.partner_id ? Number(f.partner_id) : null;
+        if (!pid && f.partner_nombre) {
+          const k = String(f.partner_nombre);
+          if (partnerCache[k]) pid = partnerCache[k];
+          else {
+            const [p] = await call("res.partner", "search_read", [[["name", "=ilike", k]], ["id"]], { limit: 1 });
+            if (p) pid = p.id;
+            else { pasos.push({ paso: "crear contacto proveedor", nombre: k }); if (!dry) { const id = await call("res.partner", "create", [{ name: k, supplier_rank: 1, is_company: false }]); pid = Array.isArray(id) ? id[0] : id; } }
+            if (pid) partnerCache[k] = pid;
+          }
+        }
+        const total = f.renglones.reduce((a: number, r: any) => a + Number(r.monto), 0);
+        const ya = (pid && dia?.id) ? await call("account.move", "search_read", [[["partner_id", "=", pid], ["ref", "=", String(f.ref)], ["move_type", "=", "in_invoice"], ["company_id", "=", 2], ["state", "!=", "cancel"]], ["id", "name", "state"]], {}) : [];
+        if (ya.length) { pasos.push({ paso: "ya existe, no se repite", ref: f.ref, id: ya[0].id, estado: ya[0].state }); creadas.push({ ref: f.ref, id: ya[0].id, existente: true }); continue; }
+        pasos.push({ paso: "factura de compra (borrador)", proveedor: pid ?? f.partner_nombre, fecha: f.fecha, ref: f.ref, total, renglones: f.renglones.map((r: any) => `${r.cuenta} ${r.descripcion}: ${r.monto}`) });
+        if (!dry) {
+          const id = await call("account.move", "create", [{
+            move_type: "in_invoice", journal_id: dia.id, company_id: 2, partner_id: pid, invoice_date: f.fecha, date: f.fecha, ref: String(f.ref),
+            invoice_line_ids: f.renglones.map((r: any) => [0, 0, { name: String(r.descripcion), account_id: cuentaId[String(r.cuenta)], quantity: 1, price_unit: Number(r.monto), tax_ids: [[6, 0, []]] }]),
+          }], { context: ctx });
+          const mid = Array.isArray(id) ? id[0] : id;
+          const [m] = await call("account.move", "read", [[mid], ["name", "state", "amount_total", "amount_tax"]]);
+          creadas.push({ ref: f.ref, id: mid, ...m });
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, diario: dia?.id ?? null, pasos, creadas }, null, 2), { headers: cors });
+    }
+
     // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
     // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
     if (body.conta_relevar) {
