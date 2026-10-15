@@ -258,6 +258,29 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, listas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo crear_presentacion: producto vendible nuevo copiando otro (categoría, impuestos, rutas) + su lista de materiales ----
+    // { crear_presentacion: { codigo, nombre, copiar_de, lineas: [{codigo, cantidad}] }, dry_run }   (15-oct-2026)
+    if (body.crear_presentacion) {
+      const g = body.crear_presentacion; const dry = body.dry_run !== false;
+      const buscar = async (cod: string) => (await call("product.product", "search_read", [[["default_code", "=", cod]], ["id", "product_tmpl_id", "uom_id", "name"]], { context: { active_test: false } }))[0];
+      if (await buscar(String(g.codigo))) throw new Error(`Ya existe un producto con código ${g.codigo} en Odoo`);
+      const base = await buscar(String(g.copiar_de)); if (!base) throw new Error(`No encontré ${g.copiar_de}`);
+      const comps: any[] = [];
+      for (const l of (g.lineas || [])) { const p = await buscar(String(l.codigo)); if (!p) throw new Error(`No encontré el componente ${l.codigo}`); comps.push({ codigo: l.codigo, cantidad: Number(l.cantidad), id: p.id, uom: p.uom_id[0], nombre: p.name, unidad: p.uom_id[1] }); }
+      if (!comps.length) throw new Error("Falta la lista de materiales");
+      const pasos = [
+        { paso: "crear producto", codigo: g.codigo, nombre: g.nombre, copia_de: `${g.copiar_de} (categoría, impuestos, rutas, unidad)` },
+        { paso: "crear lista de materiales (1 unidad)", lineas: comps.map((c) => ({ codigo: c.codigo, nombre: c.nombre, cantidad: c.cantidad, unidad: c.unidad })) },
+      ];
+      if (dry) return new Response(JSON.stringify({ ok: true, dry_run: true, pasos }, null, 2), { headers: cors });
+      let tmpl = await call("product.template", "copy", [base.product_tmpl_id[0], { name: String(g.nombre), default_code: String(g.codigo) }]);
+      if (Array.isArray(tmpl)) tmpl = tmpl[0]; // Odoo 17+ devuelve una lista
+      const bomId = await call("mrp.bom", "create", [{ product_tmpl_id: tmpl, product_qty: 1, product_uom_id: base.uom_id[0], type: "normal",
+        bom_line_ids: comps.map((c) => [0, 0, { product_id: c.id, product_qty: c.cantidad, product_uom_id: c.uom }]) }]);
+      const [t] = await call("product.template", "read", [[tmpl], ["default_code", "name", "list_price", "categ_id", "sale_ok"]]);
+      return new Response(JSON.stringify({ ok: true, dry_run: false, producto: t, bom: Array.isArray(bomId) ? bomId[0] : bomId }, null, 2), { headers: cors });
+    }
+
     // ---- Modo crear_granel: granel nuevo copiando otro + su lista de materiales, y lo pone en la lista de un SKU ----
     // { crear_granel: { codigo, nombre, copiar_de, lineas: [{codigo, kg}], usar_en: "SKU", reemplaza: "granel viejo" }, dry_run }
     if (body.crear_granel) {
