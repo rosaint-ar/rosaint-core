@@ -46,6 +46,26 @@
     .wa-tpl div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
     .wa-tpl span.st { font-weight: 700; font-size: 11px; }
     .st-APPROVED { color: var(--ok); } .st-PENDING { color: var(--warn); } .st-REJECTED { color: var(--hot); }
+
+    /* Seguimientos */
+    .wa-grupo { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+    .wa-grupo:first-child { margin-top: 0; }
+    .wa-item.seg { border-left: 3px solid var(--warn); }
+    .wa-item.seg.atrasado { border-left-color: var(--hot); }
+    .wa-item.seg.futuro { border-left-color: var(--border-2); }
+    .wa-nota { grid-column: 1 / -1; font-size: 13.5px; font-weight: 600; }
+    .wa-nota::before { content: '📌 '; }
+    .wa-ult { grid-column: 1 / -1; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wa-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: 6px; }
+    .wa-badge.escribio { background: color-mix(in srgb, #25D366 16%, transparent); color: #128C7E; }
+    .wa-badge.seg { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+    /* Formulario de seguimiento: se abre debajo del chat que se está marcando */
+    .wa-form { grid-column: 1 / -1; display: grid; gap: 8px; padding: 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+    .wa-form .rapidos { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .wa-form .rapidos button.sel { border-color: var(--accent); color: var(--accent); }
+    .wa-form .fila { display: flex; gap: 8px; flex-wrap: wrap; }
+    .wa-form .fila .input { flex: 1; min-width: 180px; }
+    .wa-buscar { margin-bottom: 12px; max-width: 360px; }
   </style>
 </head>
 <body data-page="whatsapp" data-title="WhatsApp" data-subtitle="Consultas que quedaron sin responder">
@@ -56,8 +76,22 @@
 
   <div class="wa-tabs">
     <button class="wa-tab sel" data-tab="pendientes" onclick="setTab('pendientes')">Sin responder<span class="n" id="t-pend" hidden>0</span></button>
+    <button class="wa-tab" data-tab="seguimientos" onclick="setTab('seguimientos')">Seguimientos<span class="n" id="t-seg" hidden>0</span></button>
+    <button class="wa-tab" data-tab="chats" onclick="setTab('chats')">Chats</button>
     <button class="wa-tab" data-tab="conector" onclick="setTab('conector')">Conector</button>
   </div>
+
+  <!-- ===================== SEGUIMIENTOS ===================== -->
+  <section id="tab-seguimientos" hidden>
+    <p class="wa-vivo">Chats que hay que retomar. Se agendan con el botón "Seguimiento" de cualquier chat (pestañas Sin responder o Chats).</p>
+    <div class="wa-lista" id="seg-lista"><div class="wa-vacio">Cargando…</div></div>
+  </section>
+
+  <!-- ===================== CHATS ===================== -->
+  <section id="tab-chats" hidden>
+    <input class="input wa-buscar" id="chat-buscar" placeholder="Buscar por nombre o teléfono…" oninput="pintarChats()">
+    <div class="wa-lista" id="chat-lista"><div class="wa-vacio">Cargando…</div></div>
+  </section>
 
   <!-- ===================== SIN RESPONDER ===================== -->
   <section id="tab-pendientes">
@@ -135,9 +169,11 @@ const FN = window.SUPABASE_URL + '/functions/v1/wsp-webhook';
 
 function setTab(t){
   document.querySelectorAll('.wa-tab').forEach(b => b.classList.toggle('sel', b.dataset.tab === t));
-  document.getElementById('tab-pendientes').hidden = t !== 'pendientes';
-  document.getElementById('tab-conector').hidden = t !== 'conector';
+  for (const s of ['pendientes', 'seguimientos', 'chats', 'conector']) document.getElementById('tab-' + s).hidden = t !== s;
   if (t === 'conector') estado();
+  if (t === 'chats') cargarChats();
+  if (t === 'seguimientos') cargarSeguimientos();
+  history.replaceState(null, '', '#' + t);
 }
 
 function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -194,12 +230,13 @@ async function cargarPendientes(){
     const cls = f.horas_esperando >= 24 ? 'hot' : 'warn';
     const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(f.telefono);
     return `<div class="wa-item ${cls}">
-      <div><span class="wa-nombre">${esc(f.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${f.categoria ? `<span class="wa-cat">${esc(f.categoria)}</span>` : ''}</div>
+      <div><span class="wa-nombre">${esc(f.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${f.categoria ? `<span class="wa-cat">${esc(f.categoria)}</span>` : ''}${badgeSeg(f.telefono)}</div>
       <div class="wa-meta">esperando <b>${hace(f.horas_esperando)}</b>${f.sin_responder > 1 ? ' · ' + f.sin_responder + ' mensajes' : ''}</div>
       <div class="wa-texto">${esc(f.resumen || f.ultimo_texto || '[' + (f.ultimo_tipo || 'mensaje') + ']')}</div>
       <div class="wa-acciones">
         <a class="btn primary" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
         <button class="btn secondary" onclick="atendido('${esc(f.telefono)}')">Ya lo atendimos</button>
+        <button class="btn secondary" onclick="abrirForm(this, '${esc(f.telefono)}')">📌 Seguimiento</button>
       </div>
     </div>`;
   }).join('');
@@ -209,6 +246,139 @@ async function atendido(tel){
   const { error } = await sb.from('wsp_chat_estado').upsert({ telefono: tel, atendido_hasta: new Date().toISOString(), actualizado: new Date().toISOString() }, { onConflict: 'telefono' });
   if (error) { alert('No se pudo guardar: ' + error.message); return; }
   cargarPendientes();
+}
+
+// ---------------- Seguimientos (recordatorios por chat; reemplazan a la etiqueta "Seguimiento" de WhatsApp,
+// que Meta no manda por la API)
+let SEG = [];          // seguimientos abiertos (vista wsp_seguimientos_abiertos)
+let CHATS = [];        // un renglón por chat (vista wsp_chats)
+
+const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+function sumarDias(iso, n){ const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function fechaLinda(iso){
+  const dias = Math.round((new Date(iso + 'T12:00:00') - new Date(hoyAR() + 'T12:00:00')) / 864e5);
+  if (dias === 0) return 'hoy';
+  if (dias === 1) return 'mañana';
+  if (dias === -1) return 'ayer';
+  if (dias < 0) return 'hace ' + (-dias) + ' días';
+  return new Date(iso + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+function badgeSeg(tel){
+  const s = SEG.find(x => x.telefono === tel);
+  return s ? `<span class="wa-badge seg" title="${esc(s.nota || '')}">📌 ${esc(fechaLinda(s.fecha))}</span>` : '';
+}
+
+async function cargarSeguimientos(){
+  const { data, error } = await sb.from('wsp_seguimientos_abiertos').select('*').order('fecha', { ascending: true });
+  const lista = document.getElementById('seg-lista');
+  if (error) { lista.innerHTML = '<div class="wa-vacio">No se pudo leer: ' + esc(error.message) + '</div>'; return; }
+  SEG = data || [];
+  const vencen = SEG.filter(s => s.dias <= 0).length;
+  const t = document.getElementById('t-seg'); t.textContent = vencen; t.hidden = !vencen;
+  if (!SEG.length) {
+    lista.innerHTML = '<div class="wa-vacio">No hay seguimientos agendados.<br><small>Desde cualquier chat, el botón "📌 Seguimiento" lo agenda para el día que elijas.</small></div>';
+    return;
+  }
+  const grupos = [['Atrasados', SEG.filter(s => s.dias < 0), 'atrasado'], ['Hoy', SEG.filter(s => s.dias === 0), ''], ['Próximos', SEG.filter(s => s.dias > 0), 'futuro']];
+  lista.innerHTML = grupos.filter(g => g[1].length).map(([titulo, filas, cls]) =>
+    `<div class="wa-grupo">${titulo} · ${filas.length}</div>` + filas.map(s => {
+      const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(s.telefono);
+      const ult = s.ultimo_texto ? (s.ultimo_sentido === 'out' ? 'Tú: ' : '') + s.ultimo_texto : '';
+      return `<div class="wa-item seg ${cls}">
+        <div><span class="wa-nombre">${esc(s.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(s.telefono))}</span>${s.cliente_escribio ? '<span class="wa-badge escribio">💬 Te escribió después</span>' : ''}</div>
+        <div class="wa-meta"><b>${esc(fechaLinda(s.fecha))}</b></div>
+        ${s.nota ? `<div class="wa-nota">${esc(s.nota)}</div>` : ''}
+        ${ult ? `<div class="wa-ult">Último mensaje: ${esc(ult)}</div>` : ''}
+        <div class="wa-acciones">
+          <a class="btn primary" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
+          <button class="btn secondary" onclick="segHecho(${s.id})">✓ Hecho</button>
+          <button class="btn secondary" onclick="abrirForm(this, '${esc(s.telefono)}', ${s.id})">Cambiar fecha</button>
+        </div>
+      </div>`;
+    }).join('')).join('');
+}
+
+async function segHecho(id){
+  const { error } = await sb.from('wsp_seguimientos').update({ hecho: new Date().toISOString() }).eq('id', id);
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  refrescarTodo();
+}
+
+// Formulario debajo del chat: fecha rápida + nota. Si viene id, reprograma ese seguimiento.
+function abrirForm(btn, tel, id){
+  const item = btn.closest('.wa-item');
+  const abierto = item.querySelector('.wa-form');
+  document.querySelectorAll('.wa-form').forEach(f => f.remove());
+  if (abierto) return;   // segundo clic = cerrar
+  const actual = id ? SEG.find(s => s.id === id) : SEG.find(s => s.telefono === tel);
+  const hoy = hoyAR();
+  const opciones = [['Hoy', hoy], ['Mañana', sumarDias(hoy, 1)], ['En 3 días', sumarDias(hoy, 3)], ['En una semana', sumarDias(hoy, 7)]];
+  const f = document.createElement('div');
+  f.className = 'wa-form';
+  f.innerHTML = `
+    <div class="rapidos">${opciones.map(([l, d]) => `<button type="button" class="btn secondary" data-d="${d}">${l}</button>`).join('')}
+      <input type="date" class="input" style="width:auto" value="${actual ? actual.fecha : sumarDias(hoy, 1)}"></div>
+    <div class="fila">
+      <input class="input" maxlength="140" placeholder="¿Qué hay que hacer? Ej.: ver si miró la lista" value="${esc(actual ? actual.nota || '' : '')}">
+      <button type="button" class="btn primary">Guardar</button>
+    </div>`;
+  const fecha = f.querySelector('input[type=date]');
+  f.querySelectorAll('.rapidos button').forEach(b => b.onclick = () => {
+    fecha.value = b.dataset.d;
+    f.querySelectorAll('.rapidos button').forEach(x => x.classList.toggle('sel', x === b));
+  });
+  f.querySelector('.btn.primary').onclick = async () => {
+    if (!fecha.value) return;
+    const nota = f.querySelector('.fila .input').value.trim() || null;
+    const { data: u } = await sb.auth.getUser();
+    const reg = { telefono: tel, fecha: fecha.value, nota };
+    // un solo seguimiento abierto por chat: si ya hay uno, se reprograma
+    const { error } = actual
+      ? await sb.from('wsp_seguimientos').update(reg).eq('id', actual.id)
+      : await sb.from('wsp_seguimientos').insert({ ...reg, creado_por: u && u.user ? u.user.email : null });
+    if (error) { alert('No se pudo guardar: ' + error.message); return; }
+    f.remove();
+    refrescarTodo();
+  };
+  item.appendChild(f);
+  f.querySelector('.fila .input').focus();
+}
+
+// ---------------- Chats (todos, para poder agendar un seguimiento en cualquiera)
+async function cargarChats(){
+  const { data, error } = await sb.from('wsp_chats').select('*').order('ultimo_mensaje', { ascending: false }).limit(500);
+  if (error) { document.getElementById('chat-lista').innerHTML = '<div class="wa-vacio">No se pudo leer: ' + esc(error.message) + '</div>'; return; }
+  CHATS = data || [];
+  pintarChats();
+}
+
+function pintarChats(){
+  const q = document.getElementById('chat-buscar').value.trim().toLowerCase();
+  const filas = CHATS.filter(c => !q || (c.nombre || '').toLowerCase().includes(q) || c.telefono.includes(q.replace(/\D/g, '') || '§'));
+  const lista = document.getElementById('chat-lista');
+  if (!filas.length) { lista.innerHTML = '<div class="wa-vacio">' + (q ? 'Ningún chat coincide con la búsqueda.' : 'Todavía no hay chats.') + '</div>'; return; }
+  lista.innerHTML = filas.slice(0, 150).map(c => {
+    const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(c.telefono);
+    const h = (Date.now() - new Date(c.ultimo_mensaje).getTime()) / 36e5;
+    const txt = (c.ultimo_sentido === 'out' ? 'Tú: ' : '') + (c.ultimo_texto || '[' + (c.ultimo_tipo || 'mensaje') + ']');
+    return `<div class="wa-item">
+      <div><span class="wa-nombre">${esc(c.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(c.telefono))}</span>${badgeSeg(c.telefono)}</div>
+      <div class="wa-meta">hace <b>${hace(h)}</b></div>
+      <div class="wa-ult">${esc(txt)}</div>
+      <div class="wa-acciones">
+        <a class="btn secondary" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
+        <button class="btn secondary" onclick="abrirForm(this, '${esc(c.telefono)}')">📌 Seguimiento</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Recarga lo visible sin perder un formulario a medio escribir
+async function refrescarTodo(){
+  if (document.querySelector('.wa-form')) return;
+  await cargarSeguimientos();
+  await cargarPendientes();
+  if (!document.getElementById('tab-chats').hidden) await cargarChats();
 }
 
 // ---------------- Conector
@@ -305,16 +475,24 @@ async function suscripcion(conectar){
 // Cada mensaje nuevo (del cliente o nuestro) llega por Realtime y recarga la lista; además se refresca
 // cada minuto y al volver a la pestaña, por si la conexión en vivo se cae.
 let VIVO = false, RECARGA = null;
-function recargarPronto(){ clearTimeout(RECARGA); RECARGA = setTimeout(cargarPendientes, 1500); }
+function recargarPronto(){ clearTimeout(RECARGA); RECARGA = setTimeout(refrescarTodo, 1500); }
 
 sb.channel('wsp-mensajes')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wsp_mensajes' }, recargarPronto)
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'wsp_seguimientos' }, recargarPronto)
   .subscribe((st) => { VIVO = st === 'SUBSCRIBED'; recargarPronto(); });
 
-setInterval(cargarPendientes, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) cargarPendientes(); });
+setInterval(refrescarTodo, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarTodo(); });
 
-cargarPendientes();
+// Primero los seguimientos (las otras listas muestran su marca 📌), después el resto.
+// El Inicio entra directo a una pestaña con #seguimientos.
+(async () => {
+  await cargarSeguimientos();
+  await cargarPendientes();
+  const t = location.hash.slice(1);
+  if (['seguimientos', 'chats', 'conector'].includes(t)) setTab(t);
+})();
 estadoSuscripcion();
 </script>
 </body>

@@ -42,6 +42,15 @@
     .kpi.wa .d b { color: var(--text); font-weight: 650; }
     .kpi.wa .pulso { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 8px var(--hot); animation: pulse-ring 1.8s infinite; margin-left: auto; }
     .kpi.wa.hay .pulso { display: inline-block; }
+    /* Seguimientos de WhatsApp: misma familia que la tarjeta WhatsApp, en ámbar de recordatorio */
+    #app-content .kpi.seg { --seg: #F5A623; background: color-mix(in srgb, var(--seg) 8%, var(--surface)); border-color: color-mix(in srgb, var(--seg) 35%, var(--border)); }
+    #app-content .kpi.seg::after { background: linear-gradient(90deg, var(--seg), transparent); }
+    .kpi.seg .l { color: color-mix(in srgb, var(--seg) 75%, var(--text)); }
+    .kpi.seg .v { color: color-mix(in srgb, var(--seg) 75%, var(--text)); }
+    .kpi.seg.hay .v { color: var(--hot); }
+    .kpi.seg .d b { color: var(--text); font-weight: 650; }
+    /* 7 tarjetas en un renglón en pantallas de escritorio */
+    @media (min-width: 1100px) { #app-content .grid-kpis { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
 
     /* Paneles (usan .card de shell + estos detalles) */
     .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
@@ -167,6 +176,11 @@
       <span class="l"><svg viewBox="0 0 24 24"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z"/></svg>Sin responder<span class="pulso"></span></span>
       <span class="v" id="kpi-wa">—</span>
       <span class="d" id="kpi-wa-sub">—</span>
+    </a>
+    <a href="comercial/whatsapp.html#seguimientos" class="kpi seg" id="kpi-seg-card" title="Chats de WhatsApp agendados para retomar hoy o atrasados">
+      <span class="l">📌 Seguimientos</span>
+      <span class="v" id="kpi-seg">—</span>
+      <span class="d" id="kpi-seg-sub">—</span>
     </a>
     <a href="produccion/hoja.html" class="kpi">
       <span class="l">Actividades del día</span>
@@ -313,7 +327,7 @@ const HOY = new Date().toLocaleDateString('en-CA');
 async function cargarTodo(manual) {
   _planP = null; // cada actualización calcula el plan de nuevo
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp(), cargarVencimientos()]);
+  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp(), cargarSeguimientos(), cargarVencimientos()]);
   firstLoad = false;
 }
 
@@ -384,10 +398,29 @@ async function cargarWhatsApp() {
   sub.innerHTML = '<b>' + escapeHTML(viejo.nombre || viejo.telefono) + '</b> espera ' + espera + (viejos ? ' · ' + viejos + ' de +24 h' : '');
 }
 
+// Seguimientos de WhatsApp agendados para hoy o atrasados (se agendan en comercial/whatsapp.html)
+async function cargarSeguimientos() {
+  const { data, error } = await sb.from('wsp_seguimientos_abiertos').select('nombre, telefono, nota, dias, cliente_escribio').lte('dias', 0).order('fecha', { ascending: true });
+  const card = document.getElementById('kpi-seg-card'), sub = document.getElementById('kpi-seg-sub');
+  if (error) { sub.textContent = 'No se pudo leer'; return; }
+  const filas = data || [];
+  setNum('kpi-seg', filas.length);
+  card.classList.toggle('hay', filas.some(f => f.dias < 0));
+  if (!filas.length) {
+    const { count } = await sb.from('wsp_seguimientos_abiertos').select('id', { count: 'exact', head: true }).gt('dias', 0);
+    sub.textContent = count ? '✓ Nada para hoy · ' + count + ' más adelante' : '✓ Nada para hoy';
+    return;
+  }
+  const p = filas[0], atrasados = filas.filter(f => f.dias < 0).length;
+  sub.innerHTML = '<b>' + escapeHTML(p.nombre || p.telefono) + '</b>' + (p.nota ? ': ' + escapeHTML(p.nota) : '') + (atrasados ? ' · ' + atrasados + ' atrasado' + (atrasados > 1 ? 's' : '') : '');
+}
+
 let _waTimer = null;
 sb.channel('inicio-wsp')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wsp_mensajes' },
-      () => { clearTimeout(_waTimer); _waTimer = setTimeout(cargarWhatsApp, 1500); })
+      () => { clearTimeout(_waTimer); _waTimer = setTimeout(() => { cargarWhatsApp(); cargarSeguimientos(); }, 1500); })
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'wsp_seguimientos' },
+      () => { clearTimeout(_waTimer); _waTimer = setTimeout(cargarSeguimientos, 1000); })
   .subscribe();
 
 async function cargarUSD() {
