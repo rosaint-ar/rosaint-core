@@ -49,6 +49,7 @@
     .kpi.wa .wa-seg.atrasado { background: color-mix(in srgb, var(--hot) 14%, transparent); color: var(--hot); }
     .kpi.wa .wa-seg.vacio { background: transparent; padding-left: 0; color: var(--muted); }
     .kpi.wa .wa-seg b { font-weight: 700; }
+    .kpi.wa .wa-seg .det { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Paneles (usan .card de shell + estos detalles) */
     .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
@@ -403,7 +404,7 @@ async function cargarSeguimientos() {
   if (!filas.length) { el.textContent = '📌 Sin seguimientos para hoy'; return; }
   const p = filas[0];
   el.innerHTML = '📌 <b>' + filas.length + ' seguimiento' + (filas.length > 1 ? 's' : '') + '</b>' + (atrasados ? ' (' + atrasados + ' atrasado' + (atrasados > 1 ? 's' : '') + ')' : ' para hoy')
-    + '<br>' + escapeHTML(p.nombre || p.telefono) + (p.nota ? ': ' + escapeHTML(p.nota) : '');
+    + '<span class="det" title="' + escapeHTML((p.nombre || p.telefono) + (p.nota ? ': ' + p.nota : '')) + '">' + escapeHTML(p.nombre || p.telefono) + (p.nota ? ': ' + escapeHTML(p.nota) : '') + '</span>';
 }
 
 let _waTimer = null;
