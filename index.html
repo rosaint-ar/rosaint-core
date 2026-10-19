@@ -388,10 +388,13 @@ async function cargarWhatsApp() {
   setNum('kpi-wa', filas.length);
   card.classList.toggle('hay', filas.length > 0);
   if (!filas.length) { sub.textContent = '✓ Todo respondido'; return; }
+  // Etiqueta automática (Claude): primero cuántos pedidos/reclamos hay, después quién espera hace más
+  const n = c => filas.filter(f => f.categoria === c).length;
+  const tipos = [[n('reclamo'), '⚠ reclamo', '⚠ reclamos'], [n('pedido'), '🛒 pedido', '🛒 pedidos'], [n('consulta'), '❓ consulta', '❓ consultas']]
+    .filter(t => t[0]).map(t => t[0] + ' ' + (t[0] > 1 ? t[2] : t[1]).replace(/^(\S+) /, '$1 ')).join(' · ');
   const viejo = filas[0], h = Number(viejo.horas_esperando);
   const espera = h < 1 ? Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? Math.round(h) + ' h' : Math.round(h / 24) + ' días';
-  const viejos = filas.filter(f => f.horas_esperando >= 24).length;
-  sub.innerHTML = '<b>' + escapeHTML(viejo.nombre || viejo.telefono) + '</b> espera ' + espera + (viejos ? ' · ' + viejos + ' de +24 h' : '');
+  sub.innerHTML = (tipos ? tipos + '<br>' : '') + '<b>' + escapeHTML(viejo.nombre || viejo.telefono) + '</b> espera ' + espera;
 }
 
 // Seguimientos de WhatsApp agendados para hoy o atrasados (se agendan en comercial/whatsapp.html)

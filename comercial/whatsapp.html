@@ -66,6 +66,17 @@
     .wa-form .fila { display: flex; gap: 8px; flex-wrap: wrap; }
     .wa-form .fila .input { flex: 1; min-width: 180px; }
     .wa-buscar { margin-bottom: 12px; max-width: 360px; }
+
+    /* Etiqueta automática (Claude) */
+    .wa-cat.pedido   { background: color-mix(in srgb, var(--ok) 16%, transparent);   color: var(--ok); }
+    .wa-cat.consulta { background: color-mix(in srgb, #3B82F6 16%, transparent);    color: #3B82F6; }
+    .wa-cat.reclamo  { background: color-mix(in srgb, var(--hot) 16%, transparent);  color: var(--hot); }
+    .wa-cat.no_requiere { background: var(--surface-2); color: var(--muted); }
+    .wa-resumen-ia { grid-column: 1 / -1; font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+    details.wa-norequiere { margin-top: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+    details.wa-norequiere > summary { cursor: pointer; padding: 11px 14px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    details.wa-norequiere .wa-lista { padding: 0 10px 10px; }
+    details.wa-norequiere .wa-item { opacity: .85; }
   </style>
 </head>
 <body data-page="whatsapp" data-title="WhatsApp" data-subtitle="Consultas que quedaron sin responder">
@@ -206,7 +217,12 @@ async function cargarPendientes(){
   const lista = document.getElementById('lista');
   const { data, error } = await sb.from('wsp_pendientes').select('*').order('ultimo_mensaje', { ascending: true });
   if (error){ lista.innerHTML = '<div class="wa-vacio">No se pudo leer: ' + esc(error.message) + '</div>'; return; }
-  const filas = (data || []).filter(f => f.categoria !== 'no_requiere');
+  const todas = data || [];
+  const filas = todas.filter(f => f.categoria !== 'no_requiere');
+  const noRequiere = todas.filter(f => f.categoria === 'no_requiere');
+  // Primero lo urgente: reclamos, después pedidos, después el resto; dentro de cada grupo, lo más viejo arriba
+  const PRIORIDAD = { reclamo: 0, pedido: 1, consulta: 2 };
+  filas.sort((a, b) => ((PRIORIDAD[a.categoria] ?? 3) - (PRIORIDAD[b.categoria] ?? 3)) || (b.horas_esperando - a.horas_esperando));
   const viejos = filas.filter(f => f.horas_esperando >= 24).length;
   document.getElementById('r-viejos').textContent = viejos;
   document.getElementById('r-hoy').textContent = filas.length - viejos;
@@ -222,24 +238,49 @@ async function cargarPendientes(){
   document.getElementById('vivo').textContent = (VIVO ? '🟢 En vivo' : '🔄 Se actualiza cada minuto')
     + ' · última actualización ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 
-  if (!filas.length){
-    lista.innerHTML = '<div class="wa-vacio">No hay consultas sin responder. 🎉<br><small>Cuando un cliente escribe y nadie le contestó todavía, el chat aparece acá solo.</small></div>';
-    return;
-  }
-  lista.innerHTML = filas.map(f => {
-    const cls = f.horas_esperando >= 24 ? 'hot' : 'warn';
+  const ETIQ = { pedido: '🛒 Pedido', consulta: '❓ Consulta', reclamo: '⚠ Reclamo', no_requiere: 'No requiere respuesta' };
+  const item = (f, extra) => {
+    const cls = f.categoria === 'no_requiere' ? '' : f.horas_esperando >= 24 ? 'hot' : 'warn';
     const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(f.telefono);
+    const ultimo = f.ultimo_texto || '[' + (f.ultimo_tipo || 'mensaje') + ']';
     return `<div class="wa-item ${cls}">
-      <div><span class="wa-nombre">${esc(f.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${f.categoria ? `<span class="wa-cat">${esc(f.categoria)}</span>` : ''}${badgeSeg(f.telefono)}</div>
+      <div><span class="wa-nombre">${esc(f.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${f.categoria ? `<span class="wa-cat ${esc(f.categoria)}">${esc(ETIQ[f.categoria] || f.categoria)}</span>` : ''}${badgeSeg(f.telefono)}</div>
       <div class="wa-meta">esperando <b>${hace(f.horas_esperando)}</b>${f.sin_responder > 1 ? ' · ' + f.sin_responder + ' mensajes' : ''}</div>
-      <div class="wa-texto">${esc(f.resumen || f.ultimo_texto || '[' + (f.ultimo_tipo || 'mensaje') + ']')}</div>
+      ${f.resumen ? `<div class="wa-resumen-ia">${esc(f.resumen)}</div><div class="wa-ult">Último mensaje: ${esc(ultimo)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
       <div class="wa-acciones">
-        <a class="btn primary" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
+        <a class="btn ${extra ? 'secondary' : 'primary'}" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
         <button class="btn secondary" onclick="atendido('${esc(f.telefono)}')">Ya lo atendimos</button>
-        <button class="btn secondary" onclick="abrirForm(this, '${esc(f.telefono)}')">📌 Seguimiento</button>
+        ${extra || `<button class="btn secondary" onclick="abrirForm(this, '${esc(f.telefono)}')">📌 Seguimiento</button>`}
       </div>
     </div>`;
-  }).join('');
+  };
+
+  let html = filas.length ? filas.map(f => item(f)).join('')
+    : '<div class="wa-vacio">No hay consultas sin responder. 🎉<br><small>Cuando un cliente escribe y nadie le contestó todavía, el chat aparece acá solo.</small></div>';
+  // Los "gracias", "ok" y despedidas no se pierden: quedan plegados abajo y se pueden recuperar
+  if (noRequiere.length) {
+    html += `<details class="wa-norequiere"><summary>${noRequiere.length} chat${noRequiere.length > 1 ? 's' : ''} que no requiere${noRequiere.length > 1 ? 'n' : ''} respuesta (gracias, ok, despedidas)
+      <button class="btn secondary" onclick="event.preventDefault(); archivarNoRequiere()">Archivar todos</button></summary>
+      <div class="wa-lista">${noRequiere.map(f => item(f, `<button class="btn secondary" onclick="siRequiere('${esc(f.telefono)}')">Sí requiere respuesta</button>`)).join('')}</div></details>`;
+  }
+  lista.innerHTML = html;
+  window._noRequiere = noRequiere.map(f => f.telefono);
+}
+
+// Corrige una etiqueta automática equivocada: vuelve a la lista principal como consulta
+async function siRequiere(tel){
+  const { error } = await sb.from('wsp_chat_estado').upsert({ telefono: tel, categoria: 'consulta', actualizado: new Date().toISOString() }, { onConflict: 'telefono' });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  cargarPendientes();
+}
+
+async function archivarNoRequiere(){
+  const tels = window._noRequiere || [];
+  if (!tels.length || !confirm('¿Marcar como atendidos los ' + tels.length + ' chats que no requieren respuesta?')) return;
+  const ahora = new Date().toISOString();
+  const { error } = await sb.from('wsp_chat_estado').upsert(tels.map(t => ({ telefono: t, atendido_hasta: ahora, actualizado: ahora })), { onConflict: 'telefono' });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  cargarPendientes();
 }
 
 async function atendido(tel){
