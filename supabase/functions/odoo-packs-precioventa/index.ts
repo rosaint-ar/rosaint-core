@@ -259,7 +259,7 @@ _servirConGuardia(async (req: Request) => {
     }
 
     // ---- Modo compras_borrador (15-oct-2026): facturas de compra EN BORRADOR en un diario sin comprobante fiscal ----
-    // { compras_borrador: { diario: {code, name}, facturas: [{ partner_id? , partner_nombre?, fecha, ref, renglones: [{cuenta, descripcion, monto}] }] }, dry_run }
+    // { compras_borrador: { diario: {code, name}, facturas: [{ partner_id? , partner_nombre?, fecha, ref, moneda?, renglones: [{cuenta, descripcion, monto}] }] }, dry_run }
     // No valida nada: quedan en borrador para revisar en Odoo. Si ya hay una factura con el mismo ref y proveedor, no la repite.
     if (body.compras_borrador) {
       const q = body.compras_borrador; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
@@ -296,6 +296,7 @@ _servirConGuardia(async (req: Request) => {
         if (!dry) {
           const id = await call("account.move", "create", [{
             move_type: "in_invoice", journal_id: dia.id, company_id: 2, partner_id: pid, invoice_date: f.fecha, date: f.fecha, ref: String(f.ref),
+            ...(f.moneda ? { currency_id: (await call("res.currency", "search_read", [[["name", "=", String(f.moneda)]], ["id"]]))[0].id } : {}), // factura del exterior en otra moneda (ej. "USD")
             invoice_line_ids: f.renglones.map((r: any) => [0, 0, { name: String(r.descripcion), account_id: cuentaId[String(r.cuenta)], quantity: 1, price_unit: Number(r.monto), tax_ids: [[6, 0, []]] }]),
           }], { context: ctx });
           const mid = Array.isArray(id) ? id[0] : id;
@@ -341,6 +342,54 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, facturas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo reclasificar_pasivo (20-oct-2026): pasa facturas de compra (y sus pagos) a otra cuenta de deuda ----
+    // { reclasificar_pasivo: { cuenta_nueva: {code, name}, partner_id, facturas: [ids] }, dry_run }
+    // 1) crea la cuenta si no existe (liability_payable, conciliable) y la pone como cuenta de proveedor del contacto;
+    // 2) por factura: desconcilia, pasa factura y pagos a borrador, cambia la cuenta de deuda, valida y vuelve a conciliar.
+    if (body.reclasificar_pasivo) {
+      const q = body.reclasificar_pasivo; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const pasos: any[] = [];
+      let [cta] = await call("account.account", "search_read", [[["code", "=", String(q.cuenta_nueva.code)], ["company_ids", "in", [2]]], ["id", "code", "name", "account_type", "reconcile"]], { context: ctx });
+      if (!cta) {
+        pasos.push({ paso: "crear cuenta", code: q.cuenta_nueva.code, nombre: q.cuenta_nueva.name, tipo: "liability_payable" });
+        if (!dry) { const id = await call("account.account", "create", [{ code: String(q.cuenta_nueva.code), name: String(q.cuenta_nueva.name), account_type: "liability_payable", reconcile: true, company_ids: [[6, 0, [2]]] }], { context: ctx }); cta = { id: Array.isArray(id) ? id[0] : id, code: q.cuenta_nueva.code }; }
+      } else {
+        if (cta.account_type !== "liability_payable" || !cta.reconcile) throw new Error(`La cuenta ${cta.code} no es de deuda conciliable`);
+        pasos.push({ paso: "cuenta existente", id: cta.id, code: cta.code, nombre: cta.name });
+      }
+      pasos.push({ paso: "cuenta de proveedor del contacto", partner_id: q.partner_id, cuenta: q.cuenta_nueva.code });
+      if (!dry) await call("res.partner", "write", [[Number(q.partner_id)], { property_account_payable_id: cta.id }], { context: { ...ctx, allowed_company_ids: [2] } });
+      const out: any[] = [];
+      for (const fid of q.facturas.map(Number)) {
+        const [m] = await call("account.move", "read", [[fid], ["name", "state", "partner_id", "amount_residual", "move_type"]]);
+        const lineas = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["account_id.account_type", "=", "liability_payable"]], ["id", "account_id", "matched_debit_ids", "credit", "amount_residual"]]);
+        const lp = lineas[0]; if (!lp) throw new Error(`Factura ${fid} sin línea de deuda`);
+        if (cta && lp.account_id[0] === cta.id) { out.push({ factura: m.name, estado: "ya estaba en la cuenta nueva" }); continue; }
+        const parciales = lp.matched_debit_ids.length ? await call("account.partial.reconcile", "read", [lp.matched_debit_ids, ["debit_move_id"]]) : [];
+        const lineasPago = parciales.length ? await call("account.move.line", "read", [parciales.map((p: any) => p.debit_move_id[0]), ["id", "move_id", "payment_id", "debit"]]) : [];
+        const pagos = [...new Set(lineasPago.map((l: any) => l.payment_id && l.payment_id[0]).filter(Boolean))] as number[];
+        const fila: any = { factura: m.name, saldo_antes: m.amount_residual, pagos: pagos.length, de: lp.account_id[1], a: q.cuenta_nueva.code };
+        if (!dry) {
+          await call("account.move.line", "remove_move_reconcile", [[lp.id]]);
+          await call("account.move", "button_draft", [[fid]]);
+          await call("account.move", "write", [[fid], { line_ids: [[1, lp.id, { account_id: cta.id }]] }]);
+          await call("account.move", "action_post", [[fid]]);
+          for (const pid of pagos) {
+            await call("account.payment", "action_draft", [[pid]]);
+            await call("account.payment", "write", [[pid], { destination_account_id: cta.id }]);
+            await call("account.payment", "action_post", [[pid]]);
+          }
+          const [lpN] = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["account_id", "=", cta.id]], ["id"]]);
+          const lPag = pagos.length ? await call("account.move.line", "search_read", [[["payment_id", "in", pagos], ["account_id", "=", cta.id], ["reconciled", "=", false]], ["id"]]) : [];
+          if (lpN && lPag.length) await call("account.move.line", "reconcile", [[lpN.id, ...lPag.map((l: any) => l.id)]]);
+          const [d] = await call("account.move", "read", [[fid], ["name", "state", "amount_residual", "payment_state"]]);
+          Object.assign(fila, { estado: d.state, saldo: d.amount_residual, pago: d.payment_state });
+        }
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, pasos, facturas: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
     // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
     if (body.conta_relevar) {
@@ -368,6 +417,23 @@ _servirConGuardia(async (req: Request) => {
           const p = await call("account.bank.statement.line", "search_read", [[["journal_id", "=", j]], ["date"]], { context: ctx, order: "date asc", limit: 1 });
           const u = await call("account.bank.statement.line", "search_read", [[["journal_id", "=", j]], ["date"]], { context: ctx, order: "date desc", limit: 1 });
           out.extracto_rango[j] = { desde: p[0]?.date ?? null, hasta: u[0]?.date ?? null, n: await call("account.bank.statement.line", "search_count", [[["journal_id", "=", j]]]) };
+        }
+      }
+      if (q.lineas_asiento) {
+        // todas las líneas de unos asientos (cualquier cuenta), con el tipo de cuenta
+        const ls = await call("account.move.line", "search_read", [[["move_id", "in", q.lineas_asiento.map(Number)]], ["move_id", "account_id", "partner_id", "debit", "credit", "amount_residual", "reconciled"]], { context: ctx });
+        const accIds = [...new Set(ls.map((l: any) => l.account_id[0]))];
+        const accs = accIds.length ? await call("account.account", "read", [accIds, ["code", "name", "account_type", "reconcile"]], { context: ctx }) : [];
+        out.lineas = ls.map((l: any) => ({ ...l, cuenta: accs.find((a: any) => a.id === l.account_id[0]) }));
+      }
+      if (q.saldo_cuentas) {
+        // saldo (posteado) de cuentas por código, total y hasta una fecha
+        out.saldos = [];
+        for (const code of q.saldo_cuentas) {
+          const [ac] = await call("account.account", "search_read", [[["code", "=", String(code)], ["company_ids", "in", [2]]], ["id", "code", "name", "account_type"]], { context: ctx });
+          if (!ac) { out.saldos.push({ code, error: "no existe" }); continue; }
+          const g = await call("account.move.line", "read_group", [[["account_id", "=", ac.id], ["parent_state", "=", "posted"], ...(q.hasta ? [["date", "<=", q.hasta]] : [])], ["debit:sum", "credit:sum", "balance:sum"], []], { context: ctx });
+          out.saldos.push({ ...ac, debe: g[0]?.debit ?? 0, haber: g[0]?.credit ?? 0, saldo: g[0]?.balance ?? 0 });
         }
       }
       if (q.movs_contacto) {
@@ -458,6 +524,25 @@ _servirConGuardia(async (req: Request) => {
       if (!dry) await call("product.template", "write", [[v.product_tmpl_id[0]], { default_code: String(r.a), ...(r.nombre ? { name: String(r.nombre) } : {}) }]);
       const [t] = await call("product.template", "read", [[v.product_tmpl_id[0]], ["default_code", "name"]]);
       return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: v.display_name, ahora: t }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo archivar_productos (19-oct-2026): archiva productos creados por error (sin código, sin uso) ----
+    // { archivar_productos: [ids product.product], dry_run }. Se niega si el producto tiene código o aparece en
+    // ventas, compras, asientos, movimientos de stock o listas de materiales. Archivar es reversible.
+    if (Array.isArray(body.archivar_productos)) {
+      const dry = body.dry_run !== false; const out: any[] = [];
+      for (const id of body.archivar_productos.map(Number)) {
+        const [p] = await call("product.product", "read", [[id], ["display_name", "default_code", "product_tmpl_id", "active"]], { context: { active_test: false } });
+        if (!p) { out.push({ id, error: "no existe" }); continue; }
+        const usos: Record<string, number> = {};
+        for (const [m, campo] of [["sale.order.line", "product_id"], ["purchase.order.line", "product_id"], ["account.move.line", "product_id"], ["stock.move", "product_id"], ["mrp.bom.line", "product_id"], ["mrp.bom", "product_id"]]) {
+          try { const n = await call(m, "search_count", [[[campo, "=", id], ...(m === "stock.move" ? [["state", "!=", "cancel"]] : [])]], { context: { active_test: false } }); if (n) usos[m] = n; } catch (_) { /* modelo ausente */ }
+        }
+        if (p.default_code || Object.keys(usos).length) { out.push({ id, nombre: p.display_name, no_se_archiva: p.default_code ? "tiene código" : "tiene uso", usos }); continue; }
+        if (!dry && p.active) await call("product.template", "write", [[p.product_tmpl_id[0]], { active: false }]);
+        out.push({ id, nombre: p.display_name, archivado: !dry });
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, productos: out }, null, 2), { headers: cors });
     }
 
     // ---- Modo costo_desde_bom: "Calcular costo desde lista de materiales" de Odoo, en orden ----
