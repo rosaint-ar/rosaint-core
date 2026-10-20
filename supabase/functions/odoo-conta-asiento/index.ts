@@ -575,6 +575,38 @@ async function iva_pago(body: Rec): Promise<Rec> {
   return { ok: !!fin[0].reconciled, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidacion: fin[0], intereses: interes };
 }
 
+// Lote "iva_plan_cuota": pago de una cuota del plan W633513. La cuota fija (216.292,51) es sistema francés al
+// 2,75% mensual sobre 1.534.447,10 (verificado: da la cuota y el interés total 195.892,98 al centavo).
+// Capital → Debe 2.1.3.03.050 Plan IVA a pagar; interés de financiación y, si se pagó tarde, el resarcitorio
+// (pagado − cuota) → Debe 5.5.1.01.040 Intereses fiscales; Haber el diario con que se pagó.
+const PLAN_CUOTAS: Record<string, { capital: number; interes: number; fecha?: string; pagado?: number; diario?: number; nota?: string }> = {
+  "1": { capital: 174095.22, interes: 42197.29, fecha: "2026-10-20", pagado: 217085.58, diario: 42, nota: "no se debitó del Santander el 16/10; VEP pagado por Mercado Pago el 20/10" },
+  "2": { capital: 178882.84, interes: 37409.67 }, "3": { capital: 183802.12, interes: 32490.39 }, "4": { capital: 188856.67, interes: 27435.84 },
+  "5": { capital: 194050.23, interes: 22242.28 }, "6": { capital: 199386.61, interes: 16905.90 }, "7": { capital: 204869.74, interes: 11422.77 },
+  "8": { capital: 210503.66, interes: 5788.85 },
+};
+async function iva_plan_cuota(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const n = String(body.cuota || ""); const c = PLAN_CUOTAS[n];
+  if (!c || !c.fecha || !c.pagado || !c.diario) return { ok: false, error: "cuota sin pago cargado en la tabla" };
+  const ref = `PLAN-IVA-W633513-C${n.padStart(2, "0")}`;
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const cuota = r2(c.capital + c.interes), resarc = r2(c.pagado - cuota);
+  if (resarc < 0) return { ok: false, error: "lo pagado es menor que la cuota" };
+  const j = (await ex("account.journal", "read", [[c.diario], ["default_account_id"]]) as Rec[])[0];
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.03.050", "5.5.1.01.040"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
+  if (dry) return { ok: true, dry_run: true, ref, fecha: c.fecha, capital: c.capital, interes_financiacion: c.interes, interes_resarcitorio: resarc, total: c.pagado, desde: j.default_account_id };
+  const g = `Plan IVA W633513 · cuota ${n}/8`;
+  const L = (cta: unknown, name: string, debit: number, credit: number) => [0, 0, { account_id: cta, name, debit, credit, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+  const lineas: unknown[] = [L(id["2.1.3.03.050"], `${g} · capital`, c.capital, 0), L(id["5.5.1.01.040"], `${g} · interés de financiación (2,75% mensual)`, c.interes, 0)];
+  if (resarc > 0) lineas.push(L(id["5.5.1.01.040"], `${g} · intereses resarcitorios (pago fuera de término)`, resarc, 0));
+  lineas.push(L(m2o(j.default_account_id), g, 0, c.pagado));
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: c.diario, date: c.fecha, ref, company_id: C, line_ids: lineas }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  return { ok: true, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0], capital: c.capital, interes_financiacion: c.interes, interes_resarcitorio: resarc };
+}
+
 // Lote "iva_plan": consolidación del plan Mis Facilidades W633513 (09/09/2026): IVA de abril, mayo y junio
 // (saldo a pagar de las F.2051) + intereses resarcitorios = 1.534.447,10 pasan a "Plan IVA a pagar".
 // Las 8 cuotas de $216.292,51 (16/10/2026 → 16/05/2027, débito Santander) se registran al pagarse,
@@ -699,6 +731,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "reclasif_mo") return new Response(JSON.stringify(await reclasif_mo(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
     if (body.lote === "iva_pago") return new Response(JSON.stringify(await iva_pago(body)), { headers: h });
+    if (body.lote === "iva_plan_cuota") return new Response(JSON.stringify(await iva_plan_cuota(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
