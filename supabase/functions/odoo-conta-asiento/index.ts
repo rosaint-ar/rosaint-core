@@ -487,6 +487,10 @@ async function personal_a(body: Rec): Promise<Rec> {
 const IVA_CTAS = new Set(["2.1.3.03.010", "1.1.4.04.010", "1.1.4.04.020", "1.1.4.04.050", "2.1.3.03.020", "4.2.1.01.030"]);
 const iva_liquidacion = (body: Rec) => liquidacion(body, /^IVA-2026-\d{2}$/, (c) => IVA_CTAS.has(c));
 const iibb_liquidacion = (body: Rec) => liquidacion(body, /^IIBB-CM-2026-\d{2}$/, (c) => c.startsWith("5.4.2.01.") || c.startsWith("1.1.4.02.") || c === "2.1.3.02.010");
+// Lote "reclasif_mo" (19-oct-2026): la fabricación WH/MO/00136 (Gel Criógeno, 21/03/2026) se valuó con las cuentas
+// viejas de producción (5.1.2.01.040 consumo / 5.1.1.01.900 gastos de producción) en vez de stock intermedio
+// (1.1.7.01.020) como todas las demás. Se anulan entre sí: el asiento las deja en cero sin cambiar el resultado.
+const reclasif_mo = (body: Rec) => liquidacion(body, /^RECLASIF-MO-00136$/, (c) => c === "5.1.1.01.900" || c === "5.1.2.01.040");
 async function liquidacion(body: Rec, refOk: RegExp, permitida: (c: string) => boolean): Promise<Rec> {
   const dry = !!body.dry_run; const ref = String(body.ref || ""), fecha = String(body.fecha || ""), glosa = String(body.glosa || ref);
   const lineas = (body.lineas || []) as { code: string; debe: number; haber: number; nombre?: string }[];
@@ -515,6 +519,7 @@ async function liquidacion(body: Rec, refOk: RegExp, permitida: (c: string) => b
 const IIBB_PAGOS: Record<string, { fecha: string; importe: number; diario: number }> = {
   "2026-03": { fecha: "2026-04-15", importe: 36458.11, diario: 42 },
   "2026-04": { fecha: "2026-05-15", importe: 25182.18, diario: 42 },
+  "2026-09": { fecha: "2026-10-16", importe: 353544.53, diario: 42 }, // pagado por Mercado Pago el 16/10 (avisado por Diego)
 };
 async function iibb_pago(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const mes = String(body.mes || ""); const p = IIBB_PAGOS[mes];
@@ -537,6 +542,37 @@ async function iibb_pago(body: Rec): Promise<Rec> {
   await ex("account.move.line", "reconcile", [[lp[0].id, liq[0].id]]);
   const fin = await ex("account.move.line", "read", [[liq[0].id], ["reconciled", "amount_residual"]]) as Rec[];
   return { ok: !!fin[0].reconciled, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidacion: fin[0] };
+}
+
+// Lote "iva_pago": pago del VEP de IVA de un mes contra "IVA saldo a pagar" (2.1.3.03.020), conciliado con la
+// liquidación del mes (ref IVA-AAAA-MM). Si el VEP se pagó después del vencimiento, la diferencia entre lo pagado
+// y el saldo de la DDJJ son intereses resarcitorios → 5.5.1.01.040 Intereses fiscales.
+const IVA_PAGOS: Record<string, { fecha: string; capital: number; total: number; diario: number; nota: string }> = {
+  "2026-07": { fecha: "2026-10-20", capital: 355663.56, total: 355989.59, diario: 42, nota: "pagado por Mercado Pago el 20/10 (vencía el 19/10), avisado por Diego" },
+};
+async function iva_pago(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const mes = String(body.mes || ""); const p = IVA_PAGOS[mes];
+  if (!p) return { ok: false, error: "mes fuera de la tabla" };
+  const ref = `IVA-${mes}-PAGO`;
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const liq = await ex("account.move.line", "search_read", [[["move_id.ref", "=", `IVA-${mes}`], ["account_id.code", "=", "2.1.3.03.020"], ["parent_state", "=", "posted"]]], { fields: ["id", "credit", "reconciled", "amount_residual"] }) as Rec[];
+  if (liq.length !== 1 || r2(liq[0].credit as number) !== p.capital || liq[0].reconciled) return { ok: false, error: "la liquidación del mes no está como se esperaba", liq };
+  const interes = r2(p.total - p.capital);
+  const j = (await ex("account.journal", "read", [[p.diario], ["default_account_id"]]) as Rec[])[0];
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.03.020", "5.5.1.01.040"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
+  if (dry) return { ok: true, dry_run: true, ref, fecha: p.fecha, capital: p.capital, intereses: interes, total: p.total, desde: j.default_account_id };
+  const glosa = `Pago VEP IVA ${mes}`;
+  const lineas: unknown[] = [[0, 0, { account_id: id["2.1.3.03.020"], name: glosa, debit: p.capital, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]];
+  if (interes > 0) lineas.push([0, 0, { account_id: id["5.5.1.01.040"], name: `${glosa} · intereses resarcitorios (pago fuera de término)`, debit: interes, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]);
+  lineas.push([0, 0, { account_id: m2o(j.default_account_id), name: glosa, debit: 0, credit: p.total, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]);
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: p.diario, date: p.fecha, ref, company_id: C, line_ids: lineas }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  const lp = await ex("account.move.line", "search_read", [[["move_id", "=", mid], ["account_id", "=", id["2.1.3.03.020"]]]], { fields: ["id"] }) as Rec[];
+  await ex("account.move.line", "reconcile", [[lp[0].id, liq[0].id]]);
+  const fin = await ex("account.move.line", "read", [[liq[0].id], ["reconciled", "amount_residual"]]) as Rec[];
+  return { ok: !!fin[0].reconciled, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0], liquidacion: fin[0], intereses: interes };
 }
 
 // Lote "iva_plan": consolidación del plan Mis Facilidades W633513 (09/09/2026): IVA de abril, mayo y junio
@@ -660,7 +696,9 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "aportes_titular") return new Response(JSON.stringify(await aportes_titular(body)), { headers: h });
     if (body.lote === "iva_plan") return new Response(JSON.stringify(await iva_plan(body)), { headers: h });
     if (body.lote === "iva_liquidacion") return new Response(JSON.stringify(await iva_liquidacion(body)), { headers: h });
+    if (body.lote === "reclasif_mo") return new Response(JSON.stringify(await reclasif_mo(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
+    if (body.lote === "iva_pago") return new Response(JSON.stringify(await iva_pago(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
