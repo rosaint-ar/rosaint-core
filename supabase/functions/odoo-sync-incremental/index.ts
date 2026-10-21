@@ -31,6 +31,14 @@ function soloFecha(dt){return dt?(""+dt).slice(0,10):null;}
 function normWa(tel){if(!tel)return null;let d=(""+tel).replace(/[^0-9]/g,"");if(!d)return null;if(d.startsWith("54"))d=d.slice(2);if(d.startsWith("0"))d=d.slice(1);if(d.length<10)return null;let local=d;if(local.startsWith("9"))local=local.slice(1);local=local.replace(/^(\d{2,4})15(\d{6,8})$/,"$1$2");if(local.length<10)return null;return "549"+local;}
 function segmentar(dias,intervalo,nF){if(nF===0||dias==null)return "nunca_compro";let ref=(intervalo&&intervalo>0)?intervalo:null;if(ref){const r=dias/ref;if(r<1)return "activo";if(r<2)return "enfriandose";if(r<4)return "a_reactivar";return "dormido";}else{if(dias<60)return "activo";if(dias<120)return "enfriandose";if(dias<240)return "a_reactivar";return "dormido";}}
 
+
+async function presupuestoAbierto(uid,pid){
+  const desde=new Date(Date.now()-45*86400000).toISOString().slice(0,10)+" 00:00:00";
+  const r=await execKw(uid,"sale.order","search_read",[[["state","in",["draft","sent"]],["partner_id","=",pid],["date_order",">=",desde]]],{fields:["name","date_order"],order:"date_order desc",limit:1,context:CTX_BOTH});
+  const o=(r||[])[0];
+  return o?{presupuesto_id:o.id,presupuesto_name:o.name,presupuesto_fecha:soloFecha(o.date_order)}:{presupuesto_id:null,presupuesto_name:null,presupuesto_fecha:null};
+}
+
 async function recalcCliente(db,uid,pid,nombre,rst){
   // Contacto de RST (company 1): Odoo no deja leerlo. Se conserva el teléfono guardado.
   let cont=null;try{cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["name","phone","mobile"],context:CTX_BOTH});}catch(_){cont=null;}
@@ -43,7 +51,7 @@ async function recalcCliente(db,uid,pid,nombre,rst){
   const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
   if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
   const ticket=nF?total/nF:0;const seg=(nF===0&&rst)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
-  await db.from("cliente_metricas").update({nombre:nom,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+  await db.from("cliente_metricas").update({nombre:nom,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),...(await presupuestoAbierto(uid,pid)),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
   // PRODUCTOS desde lineas de pedido confirmado
   if(nF>0){
     const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
@@ -98,9 +106,9 @@ _servirConGuardia(async(req)=>{
     if(!desde){ const {data}=await db.from("odoo_crm_run").select("mensaje").eq("run_tag","sync_incremental").eq("fase","marca").single(); desde=data?.mensaje||"2026-06-01 00:00:00"; }
     const ahora=new Date().toISOString().replace('T',' ').slice(0,19);
     const uid=await authO();
-    const margen=new Date(new Date(desde+'Z').getTime()-24*3600*1000).toISOString().replace('T',' ').slice(0,19);
+    const margen=new Date(new Date(desde+'Z').getTime()-2*3600*1000).toISOString().replace('T',' ').slice(0,19);
     // PEDIDOS confirmados creados/modificados desde la marca
-    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["write_date",">=",margen]]],{fields:["partner_id","source_id"],context:CTX_BOTH});
+    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",[...ESTADOS,"draft","sent"]],["write_date",">=",margen]]],{fields:["partner_id","source_id","state"],context:CTX_BOTH});
     const pids=[...new Set((ords||[]).map(m=>pidf(m.partner_id)).filter(x=>x&&x!==15))];
     let recalculados=0;
     if(pids.length){
@@ -109,7 +117,7 @@ _servirConGuardia(async(req)=>{
       const mapa=new Map();(ya||[]).forEach(p=>mapa.set(p.partner_id,p));
       // Alta de NO profesionales que compraron por Tienda Nube o venta directa (los de solo Mercado Libre
       // no dejan teléfono: medido 21-10-2026, 3 de 562). Los profesionales los da de alta odoo-espejo-padron.
-      const altas=[...new Set((ords||[]).filter(o=>pidf(o.source_id)!==SRC_ML).map(o=>pidf(o.partner_id)).filter(p=>p&&p!==15&&p!==7&&!mapa.has(p)))];// 7 = "Consumidor Final" (genérico de Odoo)
+      const altas=[...new Set((ords||[]).filter(o=>ESTADOS.includes(o.state)&&pidf(o.source_id)!==SRC_ML).map(o=>pidf(o.partner_id)).filter(p=>p&&p!==15&&p!==7&&!mapa.has(p)))];// 7 = "Consumidor Final" (genérico de Odoo)
       if(altas.length){
         const datos=await execKw(uid,"res.partner","read",[altas],{fields:["name","vat","email"],context:CTX_BOTH});
         const filas=(datos||[]).map(d=>({partner_id:d.id,nombre:d.name||("Contacto "+d.id),vat:d.vat||null,email:d.email||null,es_profesional:false,total_facturas:0,facturas_rst:0,facturas_vel:0,total_gastado:0,segmento:"nunca_compro",verificado_at:new Date().toISOString()}));
@@ -118,6 +126,7 @@ _servirConGuardia(async(req)=>{
       for(const [pid,p] of mapa){ await recalcCliente(db,uid,pid,p.nombre,p.rst_ultima_compra); recalculados++; }
     }
     await db.rpc('recalcular_segmentos');
+    await db.rpc('detectar_conversiones',{ventana:21});
     await db.from("odoo_crm_run").update({mensaje:ahora,updated_at:new Date().toISOString()}).eq("run_tag","sync_incremental").eq("fase","marca");
     return new Response(JSON.stringify({ok:true,pedidos_movidos:(ords||[]).length,clientes_recalculados:recalculados,desde,hasta:ahora}),{headers:cors});
   }catch(e){return new Response(JSON.stringify({ok:false,error:String((e&&e.message)||e)}),{headers:cors});}

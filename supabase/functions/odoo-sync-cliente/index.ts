@@ -62,6 +62,14 @@ function _servirConGuardia(...args: any[]) {
   return (Deno.serve as any)(...args);
 }
 
+
+async function presupuestoAbierto(uid,pid){
+  const desde=new Date(Date.now()-45*86400000).toISOString().slice(0,10)+" 00:00:00";
+  const r=await execKw(uid,"sale.order","search_read",[[["state","in",["draft","sent"]],["partner_id","=",pid],["date_order",">=",desde]]],{fields:["name","date_order"],order:"date_order desc",limit:1,context:CTX_BOTH});
+  const o=(r||[])[0];
+  return o?{presupuesto_id:o.id,presupuesto_name:o.name,presupuesto_fecha:soloFecha(o.date_order)}:{presupuesto_id:null,presupuesto_name:null,presupuesto_fecha:null};
+}
+
 _servirConGuardia(async(req)=>{
   const cors={"Access-Control-Allow-Origin":"*","Content-Type":"application/json"};
   if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
@@ -88,7 +96,7 @@ _servirConGuardia(async(req)=>{
       const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
       if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
       const ticket=nF?total/nF:0;const seg=(nF===0&&c.rst_ultima_compra)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
-      await db.from("cliente_metricas").update({nombre:c.nombre,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+      await db.from("cliente_metricas").update({nombre:c.nombre,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),...(await presupuestoAbierto(uid,pid)),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
       if(nF>0){
         const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
         const grupos=await execKw(uid,"sale.order.line","read_group",[dom,["product_uom_qty:sum","price_subtotal:sum"],["product_id"]],{lazy:false,context:CTX_BOTH});
