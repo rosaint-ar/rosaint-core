@@ -607,6 +607,71 @@ async function iva_plan_cuota(body: Rec): Promise<Rec> {
   return { ok: true, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0], capital: c.capital, interes_financiacion: c.interes, interes_resarcitorio: resarc };
 }
 
+// Lote "aut_plan" (21-oct-2026): plan Mis Facilidades W820473 (RG 5875, consolidado 20/10/2026) de Autónomos
+// 12/2024–04/2025: capital 669.437,95 + resarcitorios 106.850,76 = 776.288,71. Pago a cuenta 50.000 (20/10, Mercado
+// Pago) y 18 cuotas de 51.697,68 (16/11/2026 → 16/04/2028, débito Santander), interés financiero 2,75% mensual.
+//  · paso "consolidar": sale de 2.1.3.05.010 Autónomos a pagar y entra a 2.1.3.05.030 Plan Autónomos W820473 a pagar.
+//  · paso "anticipo": el pago a cuenta contra el plan.
+// Lote "aut_plan_cuota": cada cuota (capital contra el plan; interés financiero y resarcitorio de 2º vto a intereses).
+const PLAN_AUT = { ref: "PLAN-AUT-W820473", fecha: "2026-10-20", total: 776288.71, anticipo: { fecha: "2026-10-20", importe: 50000, diario: 42 } };
+const PLAN_AUT_CUOTAS: Record<string, { capital: number; interes: number; fecha?: string; pagado?: number; diario?: number }> = {
+  "1": { capital: 31724.74, interes: 19972.94 }, "2": { capital: 32597.17, interes: 19100.51 }, "3": { capital: 33493.59, interes: 18204.09 },
+  "4": { capital: 34414.67, interes: 17283.01 }, "5": { capital: 35361.07, interes: 16336.61 }, "6": { capital: 36333.50, interes: 15364.18 },
+  "7": { capital: 37332.67, interes: 14365.01 }, "8": { capital: 38359.32, interes: 13338.36 }, "9": { capital: 39414.20, interes: 12283.48 },
+  "10": { capital: 40498.09, interes: 11199.59 }, "11": { capital: 41611.79, interes: 10085.89 }, "12": { capital: 42756.11, interes: 8941.57 },
+  "13": { capital: 43931.91, interes: 7765.77 }, "14": { capital: 45140.03, interes: 6557.65 }, "15": { capital: 46381.38, interes: 5316.30 },
+  "16": { capital: 47656.87, interes: 4040.81 }, "17": { capital: 48967.44, interes: 2730.24 }, "18": { capital: 50314.16, interes: 1383.52 },
+};
+async function aut_plan(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const log: Rec[] = [];
+  const capCuotas = r2(Object.values(PLAN_AUT_CUOTAS).reduce((a, c) => a + c.capital, 0));
+  if (r2(capCuotas + PLAN_AUT.anticipo.importe) !== PLAN_AUT.total) return { ok: false, error: `el cronograma no cierra: cuotas ${capCuotas} + anticipo ≠ ${PLAN_AUT.total}` };
+  let [cta] = await ex("account.account", "search_read", [[["code", "=", "2.1.3.05.030"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[];
+  if (!cta) { log.push({ crear_cuenta: "2.1.3.05.030 Plan Autónomos W820473 a pagar" }); if (!dry) { const id = await ex("account.account", "create", [{ code: "2.1.3.05.030", name: "Plan Autónomos W820473 a pagar", account_type: "liability_current", reconcile: false, company_ids: [[6, 0, [C]]] }]) as number; cta = { id }; } }
+  const acc = await ex("account.account", "search_read", [[["code", "=", "2.1.3.05.010"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[];
+  const L = (a: unknown, n: string, d: number, h: number) => [0, 0, { account_id: a, name: n, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+  const asientos = [
+    { ref: PLAN_AUT.ref, fecha: PLAN_AUT.fecha, diario: null as number | null, lineas: () => [
+      L(acc[0].id, "Autónomos 12/2024–04/2025 que entran al plan W820473 (capital 669.437,95 + resarcitorios 106.850,76)", PLAN_AUT.total, 0),
+      L(cta?.id, "Plan Mis Facilidades W820473 (RG 5875) consolidado 20/10/2026", 0, PLAN_AUT.total)] },
+    { ref: PLAN_AUT.ref + "-ANTICIPO", fecha: PLAN_AUT.anticipo.fecha, diario: PLAN_AUT.anticipo.diario, lineas: (caja: unknown) => [
+      L(cta?.id, "Plan W820473 · pago a cuenta", PLAN_AUT.anticipo.importe, 0),
+      L(caja, "Plan W820473 · pago a cuenta", 0, PLAN_AUT.anticipo.importe)] },
+  ];
+  for (const a of asientos) {
+    const ya = await ex("account.move", "search_read", [[["ref", "=", a.ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (ya.length) { log.push({ ya_existia: a.ref, asiento: ya[0].name }); continue; }
+    if (dry) { log.push({ asiento: a.ref, fecha: a.fecha }); continue; }
+    let journal: number; let caja: unknown = null;
+    if (a.diario) { journal = a.diario; caja = m2o(((await ex("account.journal", "read", [[a.diario], ["default_account_id"]]) as Rec[])[0]).default_account_id); }
+    else journal = ((await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[])[0]).id as number;
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: journal, date: a.fecha, ref: a.ref, company_id: C, line_ids: a.lineas(caja) }]) as number;
+    await ex("account.move", "action_post", [[mid]]);
+    log.push({ asiento: a.ref, ...(await ex("account.move", "read", [[mid], ["name", "date", "state"]]) as Rec[])[0] });
+  }
+  return { ok: true, dry_run: dry, cuotas_capital: capCuotas, log };
+}
+async function aut_plan_cuota(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const n = String(body.cuota || ""); const c = PLAN_AUT_CUOTAS[n];
+  if (!c || !c.fecha || !c.pagado || !c.diario) return { ok: false, error: "cuota sin pago cargado en la tabla" };
+  const ref = `${PLAN_AUT.ref}-C${n.padStart(2, "0")}`;
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const resarc = r2(c.pagado - c.capital - c.interes); if (resarc < 0) return { ok: false, error: "lo pagado es menor que la cuota" };
+  const j = (await ex("account.journal", "read", [[c.diario], ["default_account_id"]]) as Rec[])[0];
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.05.030", "5.5.1.01.040"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
+  if (dry) return { ok: true, dry_run: true, ref, capital: c.capital, interes: c.interes, resarcitorio: resarc, total: c.pagado };
+  const g = `Plan W820473 · cuota ${n}/18`;
+  const L = (a: unknown, nm: string, d: number, h: number) => [0, 0, { account_id: a, name: nm, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+  const lineas = [L(id["2.1.3.05.030"], `${g} · capital`, c.capital, 0), L(id["5.5.1.01.040"], `${g} · interés financiero (2,75%)`, c.interes, 0)];
+  if (resarc > 0) lineas.push(L(id["5.5.1.01.040"], `${g} · interés resarcitorio (2º vencimiento)`, resarc, 0));
+  lineas.push(L(m2o(j.default_account_id), g, 0, c.pagado));
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: c.diario, date: c.fecha, ref, company_id: C, line_ids: lineas }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  return { ok: true, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0] };
+}
+
 // Lote "iva_plan": consolidación del plan Mis Facilidades W633513 (09/09/2026): IVA de abril, mayo y junio
 // (saldo a pagar de las F.2051) + intereses resarcitorios = 1.534.447,10 pasan a "Plan IVA a pagar".
 // Las 8 cuotas de $216.292,51 (16/10/2026 → 16/05/2027, débito Santander) se registran al pagarse,
@@ -732,6 +797,8 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
     if (body.lote === "iva_pago") return new Response(JSON.stringify(await iva_pago(body)), { headers: h });
     if (body.lote === "iva_plan_cuota") return new Response(JSON.stringify(await iva_plan_cuota(body)), { headers: h });
+    if (body.lote === "aut_plan") return new Response(JSON.stringify(await aut_plan(body)), { headers: h });
+    if (body.lote === "aut_plan_cuota") return new Response(JSON.stringify(await aut_plan_cuota(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });
