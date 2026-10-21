@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// ====== odoo-espejo-padron (v2) ======
+// ====== odoo-espejo-padron (v3) ======
 // Padron de profesionales = contactos ACTIVOS con etiqueta 'Profesional' (id 1).
 // (La etiqueta es la fuente de verdad; en Fase 1 se la pusimos a todos los profesionales.)
 // Da de alta nuevos, de baja los que perdieron la etiqueta. Idempotente.
@@ -67,8 +67,17 @@ _servirConGuardia(async(req)=>{
     if(setProf.size<50) throw new Error('padron sospechosamente chico ('+setProf.size+'), abortando por seguridad');
     const padron=[...setProf];
 
-    const {data:actuales}=await db.from("cliente_metricas").select("partner_id,es_profesional").limit(5000);
-    const mapaActual=new Map();(actuales||[]).forEach(r=>mapaActual.set(r.partner_id,r.es_profesional));
+    // Leer TODO el espejo de a 1000 (el servidor corta ahí) y abortar si la lectura falla.
+    // 14-sep-2026: la lectura vino vacía, los 961 clientes se tomaron como "nuevos" y el upsert
+    // les pisó compras y segmento con 0 / nunca_compro. Un espejo incompleto no puede decidir altas.
+    const actuales=[];
+    for(let desde=0;;desde+=1000){
+      const {data,error}=await db.from("cliente_metricas").select("partner_id,es_profesional").order("partner_id").range(desde,desde+999);
+      if(error) throw new Error("no pude leer cliente_metricas: "+error.message);
+      actuales.push(...(data||[])); if((data||[]).length<1000) break;
+    }
+    if(actuales.length<50) throw new Error("espejo sospechosamente chico ("+actuales.length+"), abortando por seguridad");
+    const mapaActual=new Map();actuales.forEach(r=>mapaActual.set(r.partner_id,r.es_profesional));
 
     const nuevos=[],reactivar=[];
     for(const pid of padron){ if(!mapaActual.has(pid))nuevos.push(pid); else if(mapaActual.get(pid)===false)reactivar.push(pid); }
@@ -83,7 +92,8 @@ _servirConGuardia(async(req)=>{
         const sub=nuevos.slice(i,i+50);
         const datos=await execKw(uid,"res.partner","read",[sub],{fields:["name","vat","email","phone","mobile"],context:CTX_BOTH});
         const filas=(datos||[]).map(d=>({partner_id:d.id,nombre:d.name||('Contacto '+d.id),vat:d.vat||null,email:d.email||null,telefono:d.mobile||d.phone||null,es_profesional:true,total_facturas:0,facturas_rst:0,facturas_vel:0,total_gastado:0,segmento:'nunca_compro',verificado_at:new Date().toISOString()}));
-        if(filas.length){const {error}=await db.from("cliente_metricas").upsert(filas,{onConflict:"partner_id"});if(!error)nuevosOk+=filas.length;}
+        // ignoreDuplicates: un alta NUNCA pisa las métricas de un cliente que ya existe
+        if(filas.length){const {error}=await db.from("cliente_metricas").upsert(filas,{onConflict:"partner_id",ignoreDuplicates:true});if(!error)nuevosOk+=filas.length;}
         // tambien agregarlos a odoo_crm_contacto para que el sync de detalle los recorra
         const filasBase=(datos||[]).map(d=>({partner_id:d.id,nombre:d.name||('Contacto '+d.id),vat:d.vat||null,email:d.email||null}));
         if(filasBase.length){await db.from("odoo_crm_contacto").upsert(filasBase,{onConflict:"partner_id"});}
