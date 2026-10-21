@@ -11,6 +11,7 @@ const ODOO_URL=Deno.env.get("ODOO_URL")!,ODOO_DB=Deno.env.get("ODOO_DB")!,ODOO_L
 const SUPABASE_URL=Deno.env.get("SUPABASE_URL")!,SERVICE_KEY=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RST=1,VEL=2;// Solo VELAZQUEZ: desde el 27-sep el usuario de Odoo ya no tiene acceso a RST (company 1) y pedirla rompe toda la función
 const CTX_BOTH={allowed_company_ids:[VEL]};const HOY=new Date();const ESTADOS=["sale","done"];
+const SRC_ML=15,SRC_TN=16;// utm.source del pedido: 15 Mercado Libre, 16 Tienda Nube, cualquier otro = venta directa
 function escapeXml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function unescapeXml(s){return s.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,"&");}
 function xmlValue(v){if(typeof v==="number")return Number.isInteger(v)?`<value><int>${v}</int></value>`:`<value><double>${v}</double></value>`;if(typeof v==="boolean")return `<value><boolean>${v?1:0}</boolean></value>`;if(typeof v==="string")return `<value><string>${escapeXml(v)}</string></value>`;if(Array.isArray(v))return `<value><array><data>${v.map(xmlValue).join("")}</data></array></value>`;if(v&&typeof v==="object"){const m=Object.entries(v).map(([k,val])=>`<member><name>${escapeXml(k)}</name>${xmlValue(val)}</member>`).join("");return `<value><struct>${m}</struct></value>`;}return `<value><boolean>0</boolean></value>`;}
@@ -30,17 +31,18 @@ function soloFecha(dt){return dt?(""+dt).slice(0,10):null;}
 function normWa(tel){if(!tel)return null;let d=(""+tel).replace(/[^0-9]/g,"");if(!d)return null;if(d.startsWith("54"))d=d.slice(2);if(d.startsWith("0"))d=d.slice(1);if(d.length<10)return null;let local=d;if(local.startsWith("9"))local=local.slice(1);local=local.replace(/^(\d{2,4})15(\d{6,8})$/,"$1$2");if(local.length<10)return null;return "549"+local;}
 function segmentar(dias,intervalo,nF){if(nF===0||dias==null)return "nunca_compro";let ref=(intervalo&&intervalo>0)?intervalo:null;if(ref){const r=dias/ref;if(r<1)return "activo";if(r<2)return "enfriandose";if(r<4)return "a_reactivar";return "dormido";}else{if(dias<60)return "activo";if(dias<120)return "enfriandose";if(dias<240)return "a_reactivar";return "dormido";}}
 
-async function recalcCliente(db,uid,pid,nombre){
+async function recalcCliente(db,uid,pid,nombre,rst){
   const cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["name","phone","mobile"],context:CTX_BOTH});
   const tel=cont[0]?.mobile||cont[0]?.phone||null; const nom=nombre||cont[0]?.name||('Contacto '+pid);
   // PEDIDOS CONFIRMADOS del cliente
-  const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["partner_id","=",pid]]],{fields:["name","date_order","company_id","amount_untaxed"],order:"date_order asc",context:CTX_BOTH});
+  const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["partner_id","=",pid]]],{fields:["name","date_order","company_id","amount_untaxed","source_id"],order:"date_order asc",context:CTX_BOTH});
   let fR=0,fV=0,total=0;const fechas=[];let ultId=null,ultName=null,ultFecha=null;
-  for(const o of ords){const ci=pidf(o.company_id);if(ci===RST)fR++;else if(ci===VEL)fV++;total+=(o.amount_untaxed||0);const f=soloFecha(o.date_order);if(f){fechas.push(f);if(!ultFecha||f>=ultFecha){ultFecha=f;ultId=o.id;ultName=o.name;}}}
+  let cML=0,cTN=0,cDir=0;
+  for(const o of ords){const ci=pidf(o.company_id);if(ci===RST)fR++;else if(ci===VEL)fV++;const so=pidf(o.source_id);if(so===SRC_ML)cML++;else if(so===SRC_TN)cTN++;else cDir++;total+=(o.amount_untaxed||0);const f=soloFecha(o.date_order);if(f){fechas.push(f);if(!ultFecha||f>=ultFecha){ultFecha=f;ultId=o.id;ultName=o.name;}}}
   const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
   if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
-  const ticket=nF?total/nF:0;const seg=segmentar(dias,inter,nF);const wa=normWa(tel);
-  await db.from("cliente_metricas").update({nombre:nom,telefono:tel,telefono_wa:wa,primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+  const ticket=nF?total/nF:0;const seg=(nF===0&&rst)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
+  await db.from("cliente_metricas").update({nombre:nom,telefono:tel,telefono_wa:wa,primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
   // PRODUCTOS desde lineas de pedido confirmado
   if(nF>0){
     const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
@@ -97,13 +99,22 @@ _servirConGuardia(async(req)=>{
     const uid=await authO();
     const margen=new Date(new Date(desde+'Z').getTime()-24*3600*1000).toISOString().replace('T',' ').slice(0,19);
     // PEDIDOS confirmados creados/modificados desde la marca
-    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["write_date",">=",margen]]],{fields:["partner_id"],context:CTX_BOTH});
+    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["write_date",">=",margen]]],{fields:["partner_id","source_id"],context:CTX_BOTH});
     const pids=[...new Set((ords||[]).map(m=>pidf(m.partner_id)).filter(x=>x&&x!==15))];
     let recalculados=0;
     if(pids.length){
-      const {data:prof}=await db.from("cliente_metricas").select("partner_id,nombre").eq("es_profesional",true).in("partner_id",pids);
-      const mapaNom=new Map();(prof||[]).forEach(p=>mapaNom.set(p.partner_id,p.nombre));
-      for(const pid of (prof||[]).map(p=>p.partner_id)){ await recalcCliente(db,uid,pid,mapaNom.get(pid)); recalculados++; }
+      // Entran todos los del espejo (profesionales y no profesionales).
+      const {data:ya}=await db.from("cliente_metricas").select("partner_id,nombre,rst_ultima_compra").in("partner_id",pids);
+      const mapa=new Map();(ya||[]).forEach(p=>mapa.set(p.partner_id,p));
+      // Alta de NO profesionales que compraron por Tienda Nube o venta directa (los de solo Mercado Libre
+      // no dejan teléfono: medido 21-10-2026, 3 de 562). Los profesionales los da de alta odoo-espejo-padron.
+      const altas=[...new Set((ords||[]).filter(o=>pidf(o.source_id)!==SRC_ML).map(o=>pidf(o.partner_id)).filter(p=>p&&p!==15&&p!==7&&!mapa.has(p)))];// 7 = "Consumidor Final" (genérico de Odoo)
+      if(altas.length){
+        const datos=await execKw(uid,"res.partner","read",[altas],{fields:["name","vat","email"],context:CTX_BOTH});
+        const filas=(datos||[]).map(d=>({partner_id:d.id,nombre:d.name||("Contacto "+d.id),vat:d.vat||null,email:d.email||null,es_profesional:false,total_facturas:0,facturas_rst:0,facturas_vel:0,total_gastado:0,segmento:"nunca_compro",verificado_at:new Date().toISOString()}));
+        if(filas.length){await db.from("cliente_metricas").upsert(filas,{onConflict:"partner_id",ignoreDuplicates:true});filas.forEach(f=>mapa.set(f.partner_id,f));}
+      }
+      for(const [pid,p] of mapa){ await recalcCliente(db,uid,pid,p.nombre,p.rst_ultima_compra); recalculados++; }
     }
     await db.rpc('recalcular_segmentos');
     await db.from("odoo_crm_run").update({mensaje:ahora,updated_at:new Date().toISOString()}).eq("run_tag","sync_incremental").eq("fase","marca");

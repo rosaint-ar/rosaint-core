@@ -14,6 +14,7 @@
       --t-enfri:  var(--warn);       /* enfriándose: ámbar */
       --t-dorm:   var(--structure);  /* dormido: azul institucional */
       --t-nunca:  var(--muted);      /* nunca compró: gris */
+      --t-rst:    color-mix(in srgb, var(--structure) 50%, var(--muted)); /* compró solo en RST: gris azulado */
       --t-activo: var(--ok);         /* activo: verde */
     }
 
@@ -139,6 +140,8 @@
       display: grid; grid-template-columns: repeat(5, 1fr);
       gap: 10px; margin-bottom: 20px;
     }
+    #kpis { grid-template-columns: repeat(6, 1fr); }   /* 6 segmentos */
+    @media (max-width: 1100px) { #kpis { grid-template-columns: repeat(3, 1fr); } }
     .kpi-seg {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 13px 15px;
@@ -508,7 +511,7 @@
     @media (max-width: 560px) { .istat { grid-template-columns: repeat(2, 1fr); } }
 
     @media (max-width: 680px) {
-      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .kpis { grid-template-columns: repeat(2, 1fr); } #kpis { grid-template-columns: repeat(2, 1fr); }
       .row { grid-template-columns: 1fr; gap: 12px; }
       .right {
         flex-direction: row; align-items: center;
@@ -559,24 +562,35 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por nombre…">
       </div>
-      <select id="orden" class="picker">
+      <select id="orden" class="picker" autocomplete="off">
         <option value="prioridad">Orden: prioridad (termómetro)</option>
         <option value="dias">Más días sin comprar</option>
         <option value="monto">Mayor monto histórico</option>
         <option value="reciente">Compra más reciente</option>
         <option value="ficha">Ficha incompleta primero</option>
       </select>
-      <select id="fwa" class="picker">
+      <select id="fwa" class="picker" autocomplete="off">
         <option value="todos">Todos</option>
         <option value="con">Con WhatsApp</option>
         <option value="sin">Sin WhatsApp</option>
         <option value="sintel">Sin teléfono</option>
       </select>
-      <select id="fcompras" class="picker">
+      <select id="fcompras" class="picker" autocomplete="off">
         <option value="todas">Cualquier cantidad de compras</option>
         <option value="una">Una sola compra</option>
         <option value="varias">2 compras o más</option>
         <option value="ninguna">Sin compras</option>
+      </select>
+      <select id="fcanal" class="picker" autocomplete="off">
+        <option value="todos">Todos los canales</option>
+        <option value="directa">Venta directa</option>
+        <option value="tn">Tienda Nube</option>
+        <option value="ml">Mercado Libre</option>
+      </select>
+      <select id="ftipo" class="picker" autocomplete="off">
+        <option value="prof">Profesionales</option>
+        <option value="noprof">No profesionales</option>
+        <option value="todos">Profesionales y no profesionales</option>
       </select>
     </div>
     <div class="count" id="count"></div>
@@ -607,7 +621,9 @@
 
     <div class="info-sec">
       <h4>🎯 Qué es un cliente para el sistema</h4>
-      <p>Una "compra" es un <b>pedido confirmado</b> en Odoo (no la factura). Se suman las dos empresas, y los montos son <b>netos, sin IVA</b>.</p>
+      <p>Una "compra" es un <b>pedido confirmado</b> en Odoo (no la factura), de <b>VELAZQUEZ</b>. Los montos son <b>netos, sin IVA</b>.</p>
+      <p>El <b>canal</b> sale del origen del pedido: Mercado Libre, Tienda Nube, y todo lo demás es <b>venta directa</b> (WhatsApp, local, mayoristas).</p>
+      <p><b>No profesionales:</b> están los que compraron por Tienda Nube o venta directa. Los que compraron solo por Mercado Libre no se suman porque casi ninguno deja teléfono.</p>
     </div>
 
     <div class="info-sec">
@@ -619,6 +635,7 @@
         <div class="seg-row"><span class="seg-dot" style="background:var(--t-enfri)"></span><span class="n">Enfriándose</span><span class="d">entre 1× y 2× su ritmo</span></div>
         <div class="seg-row"><span class="seg-dot" style="background:var(--t-react)"></span><span class="n">A reactivar</span><span class="d">entre 2× y 4× su ritmo — el más recuperable</span></div>
         <div class="seg-row"><span class="seg-dot" style="background:var(--t-dorm)"></span><span class="n">Dormido</span><span class="d">4× su ritmo o más — el más perdido</span></div>
+        <div class="seg-row"><span class="seg-dot" style="background:var(--t-rst)"></span><span class="n">Compró en RST</span><span class="d">compró solo con la empresa anterior, hasta marzo 2026</span></div>
         <div class="seg-row"><span class="seg-dot" style="background:var(--t-nunca)"></span><span class="n">Nunca compró</span><span class="d">está en la base pero nunca pidió</span></div>
       </div>
       <p style="margin-top:10px"><b>Ejemplo:</b> compra cada 30 días y hace 75 que no compra → 2,5× → <i>A reactivar</i>.</p>
@@ -716,13 +733,19 @@ const SEG = {
   a_reactivar: { label: 'A reactivar',  c: 'var(--t-react)' },
   enfriandose: { label: 'Enfriándose',  c: 'var(--t-enfri)' },
   dormido:     { label: 'Dormido',      c: 'var(--t-dorm)' },
+  ex_rst:      { label: 'Compró en RST', c: 'var(--t-rst)' },
   nunca_compro:{ label: 'Nunca compró', c: 'var(--t-nunca)' },
   activo:      { label: 'Activo',       c: 'var(--t-activo)' },
 };
-const ORDEN_SEG = ['a_reactivar','enfriandose','dormido','nunca_compro','activo'];
+const ORDEN_SEG = ['a_reactivar','enfriandose','dormido','ex_rst','nunca_compro','activo'];
+// Canales: del origen del pedido en Odoo (compras_* las calculan odoo-sync-cliente y odoo-sync-incremental)
+const CANALES = [['directa','Venta directa','compras_directa'],['tn','Tienda Nube','compras_tn'],['ml','Mercado Libre','compras_ml']];
+const canalesDe = d => CANALES.filter(c => (d[c[2]] || 0) > 0).map(c => c[1]);
+// "Compró en RST": en la lista va mes y año; la fecha exacta está en la ficha
+const fmtMesAnio = f => { if (!f) return '—'; const [y,m] = f.split('-'); return ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][+m-1] + ' ' + y; };
 
 let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONV_POR_PID = {}, tab = 'lista';
-let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas' };
+let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas', canal: 'todos', tipo: 'prof' };
 let queueIdx = 0, pendingContact = null;
 
 const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
@@ -761,7 +784,7 @@ async function apiGetTodo(path) {
 
 async function load() {
   try {
-    const m = await apiGetTodo('cliente_metricas?select=*&partner_id=neq.15&es_profesional=eq.true&order=partner_id');
+    const m = await apiGetTodo('cliente_metricas?select=*&partner_id=neq.15&order=partner_id');
     DATA = m || [];
     const p = await apiGetTodo('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=monto_total.desc,partner_id,product_name');
     PRODS = {};
@@ -820,7 +843,7 @@ async function archivar(pid)           { await setEstado(pid, { archivado: true,
 async function desarchivar(pid)        { await setEstado(pid, { archivado: false, archivado_at: null }); renderAll(); }
 
 function priorityScore(d) {
-  const base = { a_reactivar: 4000, enfriandose: 3000, dormido: 2000, nunca_compro: 500, activo: 0 }[d.segmento] || 0;
+  const base = { a_reactivar: 4000, enfriandose: 3000, dormido: 2000, ex_rst: 1500, nunca_compro: 500, activo: 0 }[d.segmento] || 0;
   const g = Math.min((d.total_gastado||0)/100000, 500);
   return base + g;
 }
@@ -840,7 +863,7 @@ function pulseHtml(d) {
 }
 
 function objetivos() {
-  return DATA.filter(d => !estaArchivado(d.partner_id) && d.segmento !== 'activo' && d.telefono_wa);
+  return DATA.filter(d => d.es_profesional && !estaArchivado(d.partner_id) && d.segmento !== 'activo' && d.telefono_wa);
 }
 function colaPendiente() {
   return objetivos().filter(d => !estaContactado(d.partner_id)).sort((a,b) => priorityScore(b) - priorityScore(a));
@@ -993,7 +1016,7 @@ function setTab(t) {
 }
 
 function renderAll() {
-  document.getElementById('tab-lista').textContent = DATA.filter(d => !estaArchivado(d.partner_id)).length;
+  document.getElementById('tab-lista').textContent = baseLista().length;
   document.getElementById('tab-cont').textContent  = DATA.filter(d => estaContactado(d.partner_id) && !estaArchivado(d.partner_id)).length;
   document.getElementById('tab-arch').textContent  = DATA.filter(d => estaArchivado(d.partner_id)).length;
   document.getElementById('tab-logros').textContent = CONV.length;
@@ -1024,7 +1047,7 @@ function renderCola() {
         <div class="qcard-body" style="--c:${seg.c}">
           <div class="qtop"><div class="qname">${esc(d.nombre)}${winTag(d.partner_id)}</div><span class="qbadge">${seg.label}</span></div>
           <div class="qmetrics">
-            <div class="qm"><div class="v hot">${dias!=null?dias+' d':'—'}</div><div class="k">sin comprar</div></div>
+            <div class="qm">${d.segmento==='ex_rst'?`<div class="v">${fmtMesAnio(d.rst_ultima_compra)}</div><div class="k">última, en RST</div>`:`<div class="v hot">${dias!=null?dias+' d':'—'}</div><div class="k">sin comprar</div>`}</div>
             <div class="qm"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="k">histórico</div></div>
             <div class="qm"><div class="v">${d.total_facturas||0}</div><div class="k">compras</div></div>
             <div class="qm"><div class="v">${d.intervalo_tipico_dias?Math.round(d.intervalo_tipico_dias)+' d':'—'}</div><div class="k">su ritmo</div></div>
@@ -1090,9 +1113,18 @@ function confirmNo()  { closeConfirm(); }
 function closeConfirm() { document.getElementById('confirm').classList.remove('show'); pendingContact = null; }
 
 // ─── Lista ───
+// Lo que entra a la lista según tipo y canal (los recuadros de segmento cuentan sobre esto)
+function baseLista() {
+  let rows = DATA.filter(d => !estaArchivado(d.partner_id));
+  if (filtro.tipo === 'prof')   rows = rows.filter(d => d.es_profesional);
+  if (filtro.tipo === 'noprof') rows = rows.filter(d => !d.es_profesional);
+  const can = CANALES.find(c => c[0] === filtro.canal);
+  if (can) rows = rows.filter(d => (d[can[2]] || 0) > 0);
+  return rows;
+}
 function renderKPIs() {
-  const c = { a_reactivar: 0, enfriandose: 0, dormido: 0, nunca_compro: 0, activo: 0 };
-  DATA.filter(d => !estaArchivado(d.partner_id)).forEach(d => { if (c[d.segmento] != null) c[d.segmento]++; });
+  const c = Object.fromEntries(ORDEN_SEG.map(s => [s, 0]));
+  baseLista().forEach(d => { if (c[d.segmento] != null) c[d.segmento]++; });
   document.getElementById('kpis').innerHTML = ORDEN_SEG.map(s =>
     `<div class="kpi-seg ${filtro.seg===s?'active':''}" style="--c:${SEG[s].c}" onclick="toggleSeg('${s}')">
       <div class="n">${c[s]}</div><div class="l">${SEG[s].label}</div>
@@ -1101,7 +1133,7 @@ function renderKPIs() {
 function toggleSeg(s) { filtro.seg = filtro.seg === s ? null : s; renderKPIs(); renderLista(); }
 function renderLista() {
   const gh = document.getElementById('gami-host'); if (gh) gh.innerHTML = gamiHtml();
-  let rows = DATA.filter(d => !estaArchivado(d.partner_id));
+  let rows = baseLista();
   if (filtro.seg) rows = rows.filter(d => d.segmento === filtro.seg);
   if (filtro.q) { const q = filtro.q.toLowerCase(); rows = rows.filter(d => (d.nombre||'').toLowerCase().includes(q)); }
   if (filtro.fwa === 'con') rows = rows.filter(d => d.telefono_wa);
@@ -1109,7 +1141,7 @@ function renderLista() {
   if (filtro.fwa === 'sintel') rows = rows.filter(d => !d.telefono);
   if (filtro.compras === 'una')    rows = rows.filter(d => (d.total_facturas || 0) === 1);
   if (filtro.compras === 'varias') rows = rows.filter(d => (d.total_facturas || 0) >= 2);
-  if (filtro.compras === 'ninguna') rows = rows.filter(d => !(d.total_facturas || 0));
+  if (filtro.compras === 'ninguna') rows = rows.filter(d => !(d.total_facturas || 0) && !d.rst_ultima_compra);
   rows.sort((a,b) => {
     const ca = estaContactado(a.partner_id) ? 1 : 0, cb = estaContactado(b.partner_id) ? 1 : 0;
     if (ca !== cb) return ca - cb;
@@ -1132,14 +1164,17 @@ function rowHtml(d) {
   const f = FICHA[d.partner_id]; const pct = f ? completar(f).pct : null;
   const rec = tieneCompras
     ? `<b>${dias === 0 ? 'hoy' : (dias == null ? '—' : dias + 'd')}</b> sin comprar<div class="s">${d.total_facturas} ped · ${fmtMoney(d.total_gastado)}</div>`
-    : `<span class="s">sin compras</span>`;
+    : d.rst_ultima_compra
+      ? `<b>${fmtMesAnio(d.rst_ultima_compra)}</b> última compra<div class="s">en RST</div>`
+      : `<span class="s">sin compras</span>`;
+  const can = canalesDe(d);
   const ficha = pct == null
     ? `<div class="rc-ficha"><div class="lab"><span>Ficha</span><span>…</span></div><div class="track"></div></div>`
     : `<div class="rc-ficha"><div class="lab"><span>Ficha</span><span>${pct}%</span></div><div class="track"><div class="fill" style="width:${pct}%;background:${colorFicha(pct)}"></div></div></div>`;
   return `<div class="rowc ${cont ? 'contactado' : ''}" style="--c:${seg.c}" onclick="abrirFicha(${d.partner_id})">
     <div class="rc-main">
       <div class="rc-name">${esc(d.nombre || 'Sin nombre')}${!d.telefono ? '<span class="badge-notel">📞 sin tel.</span>' : ''}</div>
-      <div class="rc-sub">${seg.label}${cont ? ' · ✅ contactado' : ''}${arch ? ' · 🗄 archivado' : ''}</div>
+      <div class="rc-sub">${seg.label}${can.length ? ' · ' + can.join(' + ') : ''}${d.es_profesional ? '' : ' · no profesional'}${cont ? ' · ✅ contactado' : ''}${arch ? ' · 🗄 archivado' : ''}</div>
     </div>
     <div class="rc-rec">${rec}</div>
     ${ficha}
@@ -1356,6 +1391,8 @@ document.getElementById('q').oninput      = e => { filtro.q = e.target.value; re
 document.getElementById('orden').onchange = e => { filtro.orden = e.target.value; renderLista(); };
 document.getElementById('fwa').onchange   = e => { filtro.fwa = e.target.value; renderLista(); };
 document.getElementById('fcompras').onchange = e => { filtro.compras = e.target.value; renderLista(); };
+document.getElementById('fcanal').onchange = e => { filtro.canal = e.target.value; renderAll(); };
+document.getElementById('ftipo').onchange  = e => { filtro.tipo = e.target.value; renderAll(); };
 document.getElementById('modal').onclick  = e => { if (e.target.id === 'modal') closeModal(); };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1537,7 +1574,10 @@ function abrirDrawer(c, d, isNew) {
     const tps = (PRODS[d.partner_id] || []).slice(0, cuantosTop(d));
     const wa = c.phone || c.mobile;
     const cont = estaContactado(d.partner_id), arch = estaArchivado(d.partner_id);
+    const can = CANALES.filter(c => (d[c[2]] || 0) > 0);
     intel = `<div class="intel"><h4>Actividad comercial</h4>
+      ${d.rst_ultima_compra ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Compró en <b>RST</b> (la empresa anterior) del ${fmtFecha(d.rst_primera_compra)} al ${fmtFecha(d.rst_ultima_compra)}. Esas compras no se cuentan acá.</div>` : ''}
+      ${can.length ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Compra por: <b>${can.map(c => c[1] + ' (' + d[c[2]] + ')').join(' · ')}</b></div>` : ''}
       <div class="istat">
         <div class="b"><div class="v">${dias == null ? '—' : (dias === 0 ? 'hoy' : dias + 'd')}</div><div class="l">sin comprar</div></div>
         <div class="b"><div class="v">${d.total_facturas || 0}</div><div class="l">compras</div></div>
