@@ -603,6 +603,7 @@ try { VEND = localStorage.getItem('crm_vendedor') || ''; } catch (_) {}
 
 const fmtMoney = n => '$' + Math.round(n || 0).toLocaleString('es-AR');
 const fmtNum = n => Math.round(n || 0).toLocaleString('es-AR');
+const NO_PRODUCTO = /^(env[ií]o|cup[oó]n|retiro|recargo|flete)/i;
 const cleanProd = s => (s || '').replace(/^\[[^\]]*\]\s*/, '').replace(/[«»]/g, '').trim();
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const fmtFecha = d => { if (!d) return '—'; const [y, m, da] = String(d).slice(0, 10).split('-'); return `${da}/${m}/${y}`; };
@@ -654,7 +655,8 @@ async function load(primera) {
     if (primera) {
       const p = await apiGetTodo('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=partner_id,product_name');
       PRODS = {};
-      (p || []).forEach(x => { if (x.es_servicio) return; (PRODS[x.partner_id] = PRODS[x.partner_id] || []).push(x); });
+      // envíos y cupones no son productos para ofrecer (algunos llegan sin la marca de servicio)
+      (p || []).forEach(x => { if (x.es_servicio || NO_PRODUCTO.test(cleanProd(x.product_name))) return; (PRODS[x.partner_id] = PRODS[x.partner_id] || []).push(x); });
       armarAfinidad();
     }
     pintarActualizado();

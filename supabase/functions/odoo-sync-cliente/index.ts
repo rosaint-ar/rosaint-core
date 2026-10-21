@@ -101,7 +101,7 @@ _servirConGuardia(async(req)=>{
         const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
         const grupos=await execKw(uid,"sale.order.line","read_group",[dom,["product_uom_qty:sum","price_subtotal:sum"],["product_id"]],{lazy:false,context:CTX_BOTH});
         const filas=[];const ids=[];
-        for(const g of grupos){const pp=pidf(g.product_id);const pn=pname(g.product_id);if(!pp||esDescuento(pn))continue;ids.push(pp);filas.push({partner_id:pid,product_id:pp,product_name:pn,veces_comprado:g.__count||0,cantidad_total:g.product_uom_qty||0,monto_total:g.price_subtotal||0,ultima_compra:null});}
+        for(const g of grupos){const pp=pidf(g.product_id);const pn=pname(g.product_id);if(!pp||esDescuento(pn))continue;ids.push(pp);filas.push({partner_id:pid,product_id:pp,product_name:pn,veces_comprado:g.__count||0,cantidad_total:g.product_uom_qty||0,monto_total:g.price_subtotal||0,ultima_compra:null,es_servicio:/^(\[[^\]]*\]\s*)?(env[ií]o|cup[oó]n|retiro|recargo|flete)/i.test(pn||"")});}
         if(filas.length){await db.from("cliente_producto").upsert(filas,{onConflict:"partner_id,product_id"});await db.from("cliente_producto").delete().eq("partner_id",pid).not("product_id","in",`(${ids.join(",")})`);}
         else { await db.from("cliente_producto").delete().eq("partner_id",pid); }
       } else if(!c.rst_ultima_compra){ await db.from("cliente_producto").delete().eq("partner_id",pid); } // los de RST conservan lo que compraron allá
