@@ -32,8 +32,9 @@ function normWa(tel){if(!tel)return null;let d=(""+tel).replace(/[^0-9]/g,"");if
 function segmentar(dias,intervalo,nF){if(nF===0||dias==null)return "nunca_compro";let ref=(intervalo&&intervalo>0)?intervalo:null;if(ref){const r=dias/ref;if(r<1)return "activo";if(r<2)return "enfriandose";if(r<4)return "a_reactivar";return "dormido";}else{if(dias<60)return "activo";if(dias<120)return "enfriandose";if(dias<240)return "a_reactivar";return "dormido";}}
 
 async function recalcCliente(db,uid,pid,nombre,rst){
-  const cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["name","phone","mobile"],context:CTX_BOTH});
-  const tel=cont[0]?.mobile||cont[0]?.phone||null; const nom=nombre||cont[0]?.name||('Contacto '+pid);
+  // Contacto de RST (company 1): Odoo no deja leerlo. Se conserva el teléfono guardado.
+  let cont=null;try{cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["name","phone","mobile"],context:CTX_BOTH});}catch(_){cont=null;}
+  const tel=cont?(cont[0]?.mobile||cont[0]?.phone||null):undefined; const nom=nombre||cont?.[0]?.name||('Contacto '+pid);
   // PEDIDOS CONFIRMADOS del cliente
   const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["partner_id","=",pid]]],{fields:["name","date_order","company_id","amount_untaxed","source_id"],order:"date_order asc",context:CTX_BOTH});
   let fR=0,fV=0,total=0;const fechas=[];let ultId=null,ultName=null,ultFecha=null;
@@ -42,7 +43,7 @@ async function recalcCliente(db,uid,pid,nombre,rst){
   const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
   if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
   const ticket=nF?total/nF:0;const seg=(nF===0&&rst)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
-  await db.from("cliente_metricas").update({nombre:nom,telefono:tel,telefono_wa:wa,primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+  await db.from("cliente_metricas").update({nombre:nom,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
   // PRODUCTOS desde lineas de pedido confirmado
   if(nF>0){
     const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];

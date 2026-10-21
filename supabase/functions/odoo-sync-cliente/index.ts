@@ -78,8 +78,9 @@ _servirConGuardia(async(req)=>{
     const uid=await authO();
     for(const c of lote){
       const pid=c.partner_id;
-      const cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["phone","mobile"],context:CTX_BOTH});
-      const tel=cont[0]?.mobile||cont[0]?.phone||null;
+      // Contacto de RST (company 1): Odoo no deja leerlo y antes tiraba el lote entero. Se conserva el teléfono guardado.
+      let cont=null;try{cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["phone","mobile"],context:CTX_BOTH});}catch(_){cont=null;}
+      const tel=cont?(cont[0]?.mobile||cont[0]?.phone||null):undefined;
       const ords=await execKw(uid,"sale.order","search_read",[[["state","in",ESTADOS],["partner_id","=",pid]]],{fields:["name","date_order","company_id","amount_untaxed","source_id"],order:"date_order asc",context:CTX_BOTH});
       let fR=0,fV=0,total=0;const fechas=[];let ultId=null,ultName=null,ultFecha=null;
       let cML=0,cTN=0,cDir=0;
@@ -87,7 +88,7 @@ _servirConGuardia(async(req)=>{
       const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
       if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
       const ticket=nF?total/nF:0;const seg=(nF===0&&c.rst_ultima_compra)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
-      await db.from("cliente_metricas").update({nombre:c.nombre,telefono:tel,telefono_wa:wa,primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+      await db.from("cliente_metricas").update({nombre:c.nombre,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
       if(nF>0){
         const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
         const grupos=await execKw(uid,"sale.order.line","read_group",[dom,["product_uom_qty:sum","price_subtotal:sum"],["product_id"]],{lazy:false,context:CTX_BOTH});
