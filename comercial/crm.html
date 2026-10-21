@@ -8,770 +8,619 @@
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
-    /* ---- Colores por segmento (semánticos: usan tokens del shell) ---- */
-    :root {
-      --t-react:  var(--hot);        /* a reactivar: rojo */
-      --t-enfri:  var(--warn);       /* enfriándose: ámbar */
-      --t-dorm:   var(--structure);  /* dormido: azul institucional */
-      --t-nunca:  var(--muted);      /* nunca compró: gris */
-      --t-rst:    color-mix(in srgb, var(--structure) 50%, var(--muted)); /* compró solo en RST: gris azulado */
-      --t-activo: var(--ok);         /* activo: verde */
-    }
+    /* ══════════════════════════════════════════════════════════════════
+       Identidad Rosaint (manual de marca, edición 21 · kit v20)
+       Sora 400/500 titulares y datos · Bitter Italic 400 una palabra · Source Sans 3 400/600 lectura
+       Paleta cerrada: azul #34495E · blanco roto #F7F5F2 · ácido #EAF46B · rojo #F93549 · niebla #DDE4E8
+       Botón principal: ácido con texto azul. Paneles con un solo corte de 45°. Filete ácido para entradas.
+       ══════════════════════════════════════════════════════════════════ */
+    @font-face { font-family: 'Sora'; src: url('../shared/marca/fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Bitter'; src: url('../shared/marca/fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Source Sans 3'; src: url('../shared/marca/fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
 
-    /* ---- Barra de tabs + acciones ---- */
-    .tabs-bar {
-      display: flex; justify-content: space-between; align-items: flex-end;
-      gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
-      border-bottom: 1px solid var(--border);
+    :root {
+      --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+      --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+      --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel));
+      --r-li: rgba(52, 73, 94, .16); --r-panel: var(--niebla);
+      --r-inv-bg: var(--azul); --r-inv-tx: var(--papel);
+      /* segmentos: solo colores de la paleta y sus tintas */
+      --s-react: var(--rojo); --s-enfri: color-mix(in srgb, var(--rojo) 45%, var(--papel));
+      --s-dorm: var(--azul);  --s-rst: color-mix(in srgb, var(--azul) 45%, var(--papel));
+      --s-nunca: var(--niebla); --s-activo: var(--acido);
+      --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
     }
-    .tabs { display: flex; gap: 0; }
-    .tab {
-      padding: 10px 16px; font-size: 13.5px; font-weight: 500;
-      color: var(--muted); border-bottom: 2px solid transparent;
-      margin-bottom: -1px; transition: color .12s, border-color .12s;
-      display: flex; align-items: center; gap: 6px;
+    [data-theme="dark"] {
+      --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+      --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul));
+      --r-li: rgba(247, 245, 242, .14); --r-panel: color-mix(in srgb, var(--azul) 88%, var(--papel));
+      --r-inv-bg: var(--papel); --r-inv-tx: var(--azul);
+      --s-dorm: color-mix(in srgb, var(--niebla) 70%, var(--azul)); --s-rst: color-mix(in srgb, var(--niebla) 40%, var(--azul));
+      --s-nunca: color-mix(in srgb, var(--niebla) 25%, var(--azul));
     }
-    .tab:hover { color: var(--text); }
-    .tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-      font-weight: 600;
-    }
-    .tab .cnt {
-      font-size: 11px; color: var(--muted);
-      background: var(--surface-2);
-      padding: 1px 7px; border-radius: 10px; font-weight: 500;
-    }
-    .tab.active .cnt { background: var(--accent-tint); color: var(--accent); }
-    .tabs-actions {
-      display: flex; align-items: center; gap: 12px;
-      padding-bottom: 8px;
-    }
-    .sync-info { font-size: 11px; color: var(--muted); }
-    #btnSync svg { transition: transform .3s; }
+    body { background: var(--r-bg); }
+    body::before { display: none; }              /* sin aurora: la marca pide base clara y lisa */
+    #app-content, .drawer, .modal-bg, .confirm, .celebra, .ftoast { font-family: var(--sans); color: var(--r-tx); }
+    #app-content { font-size: 15px; }
+    #app-content b, .drawer b { font-weight: 600; }
+
+    /* ---- piezas de la identidad ---- */
+    .eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+    .titular { font: 400 34px/1.08 var(--sora); letter-spacing: -.01em; color: var(--r-tx); margin: 6px 0 0; }
+    .titular em { font-family: var(--bitter); font-style: italic; font-weight: 400; }
+    .filete { display: block; width: 40px; height: 3px; background: var(--acido); }
+    .corte { clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%); }
+    .num { font-family: var(--sora); font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+    .ico { width: 28px; height: 28px; flex-shrink: 0; }
+    .ico svg { width: 100%; height: 100%; display: block; }
+    [data-theme="dark"] .ico svg [stroke="#34495E"] { stroke: var(--papel); }
+
+    /* botones de marca: ácido con texto azul, sin redondeo */
+    #app-content button, .drawer button, .modal button, .confirm button { border-radius: 0; box-shadow: none; }   /* la marca no redondea */
+    .rb { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 400 13.5px var(--sora); padding: 11px 18px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, transform .12s; white-space: nowrap; }
+    .rb:active { transform: translateY(1px); }
+    .rb.si { background: var(--acido); color: var(--azul); }
+    .rb.si:hover { background: color-mix(in srgb, var(--acido) 82%, var(--azul)); }
+    .rb.linea { background: transparent; color: var(--r-tx); border-color: var(--r-li); }
+    .rb.linea:hover { border-color: var(--r-tx); }
+    .rb.suave { background: transparent; color: var(--r-mu); padding: 11px 10px; }
+    .rb.suave:hover { color: var(--r-tx); }
+    .rb[disabled] { opacity: .45; cursor: default; }
+    .rb svg { width: 16px; height: 16px; }
+
+    /* ---- encabezado y pestañas ---- */
+    .cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+    .cab-acc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .actualizado { font: 400 12.5px var(--sans); color: var(--r-mu); display: inline-flex; align-items: center; gap: 6px; }
+    .actualizado i { width: 7px; height: 7px; background: var(--acido); display: inline-block; box-shadow: 0 0 0 1px var(--azul) inset; }
+    .actualizado.viejo i { background: var(--rojo); box-shadow: none; }
     #btnSync.spin svg { animation: rot 1s linear infinite; }
     @keyframes rot { to { transform: rotate(360deg); } }
+    .pestanas { display: flex; gap: 28px; border-bottom: 1px solid var(--r-li); margin-bottom: 24px; overflow-x: auto; }
+    .pest { position: relative; padding: 10px 0 12px; font: 400 15px var(--sora); color: var(--r-mu); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+    .pest .c { font: 400 12px var(--sans); color: var(--r-mu); margin-left: 6px; }
+    .pest:hover { color: var(--r-tx); }
+    .pest.on { color: var(--r-tx); font-weight: 500; }
+    .pest.on::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 40px; height: 3px; background: var(--acido); animation: crece .35s ease both; }
+    @keyframes crece { from { width: 0; } to { width: 40px; } }
 
-    /* ══════════════════════════════════════════════════════════════════
-       MODO COLA (queue) — un cliente por vez, el más prioritario
-       ══════════════════════════════════════════════════════════════════ */
-    .queue-wrap {
-      display: flex; flex-direction: column; align-items: center;
-      gap: 18px; padding-top: 10px;
-    }
-    .queue-head { text-align: center; }
-    .queue-head .big { font-size: 14px; color: var(--muted); }
-    .queue-head .big b { color: var(--accent); font-size: 16px; font-weight: 700; }
+    /* ══════════ HOY ══════════ */
+    .hoy-top { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; margin-bottom: 22px; }
+    .hola { background: var(--r-sup); display: grid; grid-template-columns: minmax(0, 1fr) 26%; }
+    .hola-txt { padding: 26px 28px 22px; min-width: 0; }
+    .hola .bajada { font: 400 16px/1.5 var(--sans); color: var(--r-mu); margin: 10px 0 0; max-width: 560px; }
+    .hola .quien { margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13.5px; color: var(--r-mu); }
+    .hola .quien b { color: var(--r-tx); }
+    .hola .trama { background: url('../shared/marca/patrones/micro-claro.svg') center/cover no-repeat; border-left: 1px solid var(--r-li); }
+    [data-theme="dark"] .hola .trama { background-image: url('../shared/marca/patrones/micro-azul.svg'); opacity: .5; }
+    .guia { margin-top: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; max-width: 640px; position: relative; }
+    .guia div { font-size: 13px; line-height: 1.45; color: var(--r-mu); border-top: 1px solid var(--r-li); padding-top: 9px; }
+    .guia div b { display: block; font: 500 11px var(--sora); letter-spacing: .12em; color: var(--r-tx); text-transform: uppercase; margin-bottom: 3px; }
 
-    .qcard {
-      width: 100%; max-width: 620px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; overflow: hidden; position: relative;
-    }
-    .qcard .stripe { height: 6px; background: var(--c); }
-    .qcard-body { padding: 24px 26px; }
-    .qcard .qtop {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      gap: 12px; margin-bottom: 20px;
-    }
-    .qcard .qname {
-      font-size: 22px; font-weight: 700;
-      letter-spacing: -0.02em; line-height: 1.15;
-    }
-    .qcard .qbadge {
-      font-size: 11px; font-weight: 600; padding: 3px 10px;
-      border-radius: 20px; white-space: nowrap;
-      color: var(--c);
-      background: color-mix(in srgb, var(--c) 14%, transparent);
-      border: 1px solid color-mix(in srgb, var(--c) 32%, transparent);
-    }
-    .qmetrics {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-      padding: 16px 0; border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border); margin-bottom: 18px;
-    }
-    .qm { text-align: center; }
-    .qm .v { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
-    .qm .v.hot { color: var(--c); }
-    .qm .k {
-      font-size: 10px; color: var(--muted); margin-top: 2px;
-      text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    .qprod { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-    .qprod b { color: var(--text); }
-    .qprod .none { color: var(--muted); font-style: italic; }
-    .qchips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .meta { background: var(--r-inv-bg); color: var(--r-inv-tx); padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .meta .eyebrow { color: color-mix(in srgb, var(--r-inv-tx) 70%, transparent); }
+    .anillo { display: flex; align-items: center; gap: 16px; }
+    .anillo svg { width: 96px; height: 96px; transform: rotate(-90deg); flex-shrink: 0; }
+    .anillo .pista { stroke: color-mix(in srgb, var(--r-inv-tx) 18%, transparent); }
+    .anillo .avance { stroke: var(--acido); transition: stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1); }
+    .anillo .cifra { font: 400 38px/1 var(--sora); }
+    .anillo .cifra small { font-size: 16px; opacity: .7; }
+    .anillo .txt { font-size: 13px; opacity: .85; margin-top: 4px; }
+    .marcas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; border-top: 1px solid color-mix(in srgb, var(--r-inv-tx) 18%, transparent); padding-top: 12px; }
+    .marcas div { font-size: 11.5px; opacity: .85; }
+    .marcas .num { display: block; font-size: 22px; opacity: 1; }
 
-    .qbtns { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    .qbtns-row { display: flex; gap: 10px; }
-    .big-wa {
-      flex: 1; display: inline-flex; align-items: center; justify-content: center;
-      gap: 8px; background: var(--accent); color: var(--on-accent);
-      font-weight: 700; font-size: 14px; padding: 14px;
-      border-radius: var(--radius); transition: background .12s;
-    }
-    .big-wa:hover { background: var(--accent-press); }
-    .big-mark {
-      width: 100%; padding: 12px;
-      background: color-mix(in srgb, var(--ok) 12%, transparent);
-      border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
-      border-radius: var(--radius); color: var(--ok);
-      font-size: 13.5px; font-weight: 600; transition: background .12s;
-    }
-    .big-mark:hover { background: color-mix(in srgb, var(--ok) 20%, transparent); }
-    .big-chat, .big-skip, .big-arch {
-      padding: 12px 16px; background: transparent;
-      border: 1px solid var(--border); border-radius: var(--radius);
-      color: var(--muted); font-size: 13px; font-weight: 500;
-      transition: border-color .12s, color .12s;
-    }
-    .big-chat:hover { border-color: #25d366; color: #25d366; }
-    .big-skip:hover { border-color: var(--muted); color: var(--text); }
-    .big-arch:hover { border-color: var(--hot); color: var(--hot); }
+    .misiones { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .mis { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--r-sup); border: 1px solid var(--r-li); font: 400 13px var(--sora); color: var(--r-tx); cursor: pointer; transition: border-color .15s, background .15s; }
+    .mis .ico { width: 20px; height: 20px; }
+    .mis .num { color: var(--r-mu); }
+    .mis:hover { border-color: var(--r-tx); }
+    .mis.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .mis.on .num { color: var(--azul); }
+    .mis.on .ico svg path[fill="#EAF46B"] { fill: var(--papel); }
 
-    .queue-done { text-align: center; padding: 60px 20px; color: var(--muted); }
-    .queue-done .big { font-size: 40px; margin-bottom: 14px; }
-    .queue-done h2 { font-size: 20px; color: var(--text); margin-bottom: 8px; }
+    .plan-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .plan-cab h3 { font: 400 20px var(--sora); margin: 0; }
+    .plan-cab span { font-size: 13px; color: var(--r-mu); }
+    .plan { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+    .tarea { background: var(--r-sup); padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 12px; animation: entra .45s cubic-bezier(.2,.8,.2,1) both; position: relative; }
+    .tarea.sale { animation: sale .45s ease forwards; }
+    @keyframes entra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @keyframes sale { to { opacity: 0; transform: translateX(30px) scale(.97); } }
+    .t-tipo { display: flex; align-items: center; gap: 9px; }
+    .t-tipo .eyebrow { color: var(--r-tx); }
+    .t-tipo .filete { width: 32px; margin-left: auto; }
+    .t-nombre { font: 400 19px/1.2 var(--sora); margin: 0; cursor: pointer; }
+    .t-nombre:hover { text-decoration: underline; text-decoration-color: var(--acido); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+    .t-por { font-size: 14px; line-height: 1.45; color: var(--r-mu); margin: 0; }
+    .t-por b { color: var(--r-tx); }
+    .t-ofre { background: var(--r-panel); padding: 10px 12px; font-size: 13.5px; line-height: 1.45; }
+    .t-ofre .eyebrow { display: block; font-size: 10px; margin-bottom: 2px; }
+    .t-ofre .tambien { display: block; margin-top: 4px; color: var(--r-mu); font-size: 12.5px; }
+    .t-datos { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--r-mu); }
+    .t-datos .num { display: block; font-size: 15px; color: var(--r-tx); }
+    .t-acc { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+    .t-acc .rb.si { flex: 1; }
+    .t-badge { font: 500 10.5px var(--sora); letter-spacing: .08em; text-transform: uppercase; padding: 3px 7px; background: var(--r-panel); color: var(--r-tx); }
+    .vacio { text-align: center; padding: 50px 20px; color: var(--r-mu); background: var(--r-sup); }
+    .vacio .iso { width: 54px; margin: 0 auto 14px; opacity: .9; }
+    .vacio h3 { font: 400 22px var(--sora); color: var(--r-tx); margin: 0 0 6px; }
+    .vacio h3 em { font-family: var(--bitter); font-style: italic; }
+    .mas { margin-top: 14px; text-align: center; }
+    .hechos { margin-top: 26px; }
+    .hechos h4 { font: 500 11px var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); margin: 0 0 8px; }
+    .hecho { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--r-li); font-size: 14px; }
+    .hecho .ok { width: 18px; height: 18px; background: var(--acido); color: var(--azul); display: grid; place-items: center; font-size: 12px; flex-shrink: 0; }
+    .hecho span.s { color: var(--r-mu); font-size: 12.5px; margin-left: auto; white-space: nowrap; }
+    .hecho button { background: none; border: 0; color: var(--r-mu); cursor: pointer; font-size: 12px; text-decoration: underline; }
 
-    /* ══════════════════════════════════════════════════════════════════
-       MODO LISTA
-       ══════════════════════════════════════════════════════════════════ */
-    .kpis {
-      display: grid; grid-template-columns: repeat(5, 1fr);
-      gap: 10px; margin-bottom: 20px;
-    }
-    #kpis { grid-template-columns: repeat(6, 1fr); }   /* 6 segmentos */
-    @media (max-width: 1100px) { #kpis { grid-template-columns: repeat(3, 1fr); } }
-    .kpi-seg {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 13px 15px;
-      cursor: pointer; position: relative; overflow: hidden;
-      box-shadow: var(--shadow-card);
-      transition: transform .18s, border-color .18s, box-shadow .18s;
-    }
-    .kpi-seg::before {
-      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-      width: 4px; background: var(--c); box-shadow: 0 0 12px -2px var(--c);
-    }
-    .kpi-seg:hover { transform: translateY(-3px); border-color: var(--c);
-      box-shadow: var(--shadow), 0 0 26px -12px var(--c); }
-    .kpi-seg.active {
-      border-color: var(--c);
-      box-shadow: 0 0 0 1px var(--c), 0 0 22px -8px var(--c);
-    }
-    .kpi-seg .n {
-      font-size: 24px; font-weight: 800; letter-spacing: -0.02em;
-      color: var(--text); font-variant-numeric: tabular-nums; text-shadow: var(--value-glow);
-    }
-    .kpi-seg .l {
-      font-size: 11px; color: var(--muted); margin-top: 2px;
-      text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
-    }
+    /* ══════════ CLIENTES ══════════ */
+    .segs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .sgm { background: var(--r-sup); padding: 14px 14px 12px; cursor: pointer; border: 1px solid transparent; position: relative; transition: border-color .15s; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border-radius: 0; box-shadow: none; overflow: hidden; }
+    .sgm::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--c); }
+    .sgm:hover { border-color: var(--r-li); }
+    .sgm.on { border-color: var(--r-tx); }
+    .sgm .num { font-size: 26px; display: block; color: var(--r-tx); }
+    .sgm .l { font: 500 10.5px var(--sora); letter-spacing: .1em; text-transform: uppercase; color: var(--r-mu); }
+    .barra-filtros { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    .buscar { flex: 1 1 240px; position: relative; }
+    .buscar input { width: 100%; padding: 10px 12px 10px 36px; background: var(--r-sup); border: 1px solid var(--r-li); color: var(--r-tx); font: 400 14px var(--sans); }
+    .buscar input:focus, .sel:focus { outline: none; border-color: var(--r-tx); }
+    .buscar svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--r-mu); }
+    .sel { background: var(--r-sup); border: 1px solid var(--r-li); padding: 10px 10px; color: var(--r-tx); font: 400 14px var(--sans); max-width: 100%; }
+    .cuenta { font-size: 13px; color: var(--r-mu); margin-bottom: 10px; }
+    .fila { display: grid; grid-template-columns: minmax(0, 1fr) 170px 150px 90px; gap: 14px; align-items: center; background: var(--r-sup); padding: 12px 16px 12px 18px; margin-bottom: 6px; cursor: pointer; position: relative; transition: background .15s; }
+    .fila::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+    .fila:hover { background: color-mix(in srgb, var(--r-sup) 85%, var(--niebla)); }
+    .fila.cont { opacity: .62; }
+    .fila .nm { font: 400 15px var(--sora); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fila .sub { font-size: 12.5px; color: var(--r-mu); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fila .rec { font-size: 13px; } .fila .rec .s { color: var(--r-mu); font-size: 12px; }
+    .fila .mi { font-size: 12px; color: var(--r-tx); }
+    .fila .mi span { background: var(--acido); color: var(--azul); padding: 2px 6px; font: 400 11.5px var(--sora); }
+    .fila .ir { text-align: right; font: 400 13px var(--sora); color: var(--r-mu); }
+    .fila:hover .ir { color: var(--r-tx); }
+    .sin-tel { font: 500 10px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--rojo); margin-left: 8px; }
 
-    .toolbar {
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-    .search-box { flex: 1; min-width: 220px; position: relative; }
-    .search-box input {
-      width: 100%; padding: 10px 12px 10px 38px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); color: var(--text); font-size: 14px;
-    }
-    .search-box input:focus {
-      outline: none; border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-tint);
-    }
-    .search-box svg {
-      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-      color: var(--muted);
-    }
-    select.picker {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 10px 12px;
-      color: var(--text); font-size: 14px;
-    }
-    select.picker:focus { outline: none; border-color: var(--accent); }
-    .count { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-    .list { display: flex; flex-direction: column; gap: 10px; }
+    /* ══════════ RESULTADOS ══════════ */
+    .tira { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .dato { background: var(--r-sup); padding: 16px 18px 14px; }
+    .dato .num { font-size: 32px; display: block; line-height: 1.1; margin-top: 4px; }
+    .dato .s { font-size: 12.5px; color: var(--r-mu); }
+    .grilla2 { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+    .caja { background: var(--r-sup); padding: 18px 20px; min-width: 0; }
+    .caja h3 { font: 400 17px var(--sora); margin: 6px 0 14px; }
+    .caja h3 em { font-family: var(--bitter); font-style: italic; }
+    .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--r-mu); margin-top: 8px; }
+    .leyenda i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+    .grafico { width: 100%; height: 200px; display: block; }
+    .grafico text { font: 400 10.5px var(--sans); fill: var(--r-mu); }
+    .grafico .bar { transform-box: fill-box; transform-origin: bottom; animation: sube .7s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes sube { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    .barras-h { display: flex; flex-direction: column; gap: 9px; }
+    .bh { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 13px; }
+    .bh .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bh .t { height: 10px; background: var(--r-panel); position: relative; }
+    .bh .t i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--azul); transform-origin: left; animation: ancho .8s cubic-bezier(.2,.8,.2,1) both; }
+    [data-theme="dark"] .bh .t i { background: var(--niebla); }
+    .bh .v { text-align: right; font-family: var(--sora); font-variant-numeric: tabular-nums; }
+    @keyframes ancho { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .dona { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+    .dona svg { width: 150px; height: 150px; flex-shrink: 0; }
+    .dona circle.seg-d { transition: stroke-dasharray 1s cubic-bezier(.2,.8,.2,1); }
+    .dona ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+    .dona li i { display: inline-block; width: 10px; height: 10px; margin-right: 7px; vertical-align: -1px; }
+    .dona li b { font-family: var(--sora); font-weight: 400; margin-left: 4px; }
+    .insignias { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+    .ins { background: var(--r-panel); padding: 14px 14px 12px; display: flex; gap: 12px; align-items: flex-start; position: relative; }
+    .ins .ico { width: 36px; height: 36px; }
+    .ins .nm { font: 400 14px var(--sora); }
+    .ins .ds { font-size: 12px; color: var(--r-mu); line-height: 1.35; margin-top: 2px; }
+    .ins .pr { height: 4px; background: color-mix(in srgb, var(--r-tx) 12%, transparent); margin-top: 8px; }
+    .ins .pr i { display: block; height: 100%; background: var(--azul); }
+    [data-theme="dark"] .ins .pr i { background: var(--papel); }
+    .ins.bloq { opacity: .55; }
+    .ins.bloq .ico { filter: grayscale(1); }
+    .ins.gano { background: var(--acido); color: var(--azul); }
+    .ins.gano .ds { color: color-mix(in srgb, var(--azul) 75%, var(--acido)); }
+    .ins.gano .ico svg path[fill="#EAF46B"] { fill: var(--papel); }
+    .ins.gano .ico svg [stroke] { stroke: var(--azul) !important; }
+    .ins.nueva { animation: pop .6s cubic-bezier(.2,1.4,.4,1) both; }
+    @keyframes pop { 0% { transform: scale(.85); } 100% { transform: scale(1); } }
+    .venta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--r-li); font-size: 14px; animation: entra .4s both; }
+    .venta .d { font-size: 12.5px; color: var(--r-mu); }
+    .venta .d a { color: var(--r-tx); }
+    .venta .dias { text-align: right; } .venta .dias .num { font-size: 20px; display: block; }
+    .venta .dias span { font-size: 11px; color: var(--r-mu); }
+    .equipo { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+    .equipo div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--r-li); padding: 6px 0; }
 
-    /* ---- Cada fila ---- */
-    .row {
-      position: relative; display: grid;
-      grid-template-columns: 1fr auto; gap: 16px; align-items: flex-start;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 16px 18px 16px 20px;
-      transition: border-color .12s;
-    }
-    .row::before {
-      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-      width: 4px; border-radius: var(--radius) 0 0 var(--radius);
-      background: var(--c);
-    }
-    .row {
-      background: linear-gradient(90deg,
-        color-mix(in srgb, var(--c) 5%, var(--surface)) 0%,
-        var(--surface) 220px);
-    }
-    .row:hover { border-color: var(--muted); }
-    .row.contactado { opacity: .5; filter: saturate(.4); }
-    .row.contactado::before { background: var(--border) !important; }
-    .row.contactado { background: var(--surface) !important; }
-    .row.contactado:hover { opacity: .75; }
-    .row.contactado::after {
-      content: '✓ contactado'; position: absolute; top: 12px; right: 16px;
-      font-size: 11px; color: var(--muted); font-weight: 600;
-    }
-
-    .main { min-width: 0; }
-    .row-top {
-      display: flex; align-items: center; gap: 10px;
-      margin-bottom: 8px; flex-wrap: wrap;
-    }
-    .name {
-      font-size: 15px; font-weight: 650; letter-spacing: -0.01em;
-      color: var(--text);
-    }
-    .row-badge {
-      font-size: 11px; font-weight: 600; padding: 2px 9px;
-      border-radius: 20px; white-space: nowrap; color: var(--c);
-      background: color-mix(in srgb, var(--c) 14%, transparent);
-      border: 1px solid color-mix(in srgb, var(--c) 32%, transparent);
-    }
-    .metrics {
-      display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 10px;
-    }
-    .m .v {
-      font-size: 14px; font-weight: 600; color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
-    .m .v.hot { color: var(--c); }
-    .m .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .prod { font-size: 12.5px; color: var(--muted); }
-    .prod b { color: var(--text); font-weight: 600; }
-    .prod .none { color: var(--muted); font-style: italic; }
-
-    /* Mini indicador de ritmo/pulso */
-    .pulse { margin-top: 10px; display: flex; align-items: center; gap: 9px; }
-    .pulse-track {
-      position: relative; flex: 1; max-width: 180px; height: 6px;
-      border-radius: 4px;
-      background: linear-gradient(90deg,
-        var(--t-activo) 0%, var(--t-enfri) 50%, var(--t-react) 100%);
-      opacity: .3;
-    }
-    .pulse-dot {
-      position: absolute; top: 50%; width: 10px; height: 10px;
-      border-radius: 50%; background: var(--c);
-      border: 2px solid var(--surface);
-      transform: translate(-50%,-50%);
-      box-shadow: 0 0 0 1px var(--c);
-    }
-    .pulse-lbl { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-
-    .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
-    .chip {
-      font-size: 11.5px; color: var(--muted);
-      background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 5px 10px;
-      transition: color .12s, border-color .12s;
-      display: inline-flex; align-items: center; gap: 5px;
-    }
-    .chip:hover { border-color: var(--muted); color: var(--text); }
-    .chip svg { width: 13px; height: 13px; opacity: .7; }
-    .chip.arch:hover { border-color: var(--hot); color: var(--hot); }
-    .chip.mark:hover { border-color: var(--ok); color: var(--ok); }
-
-    .right {
-      display: flex; flex-direction: column; align-items: stretch;
-      gap: 8px; flex-shrink: 0; min-width: 150px;
-    }
-    .wa {
-      display: inline-flex; align-items: center; justify-content: center;
-      gap: 6px; background: var(--accent); color: var(--on-accent);
-      font-weight: 600; font-size: 13px; padding: 9px 16px;
-      border-radius: var(--radius-sm); white-space: nowrap;
-      transition: background .12s;
-    }
-    .wa:hover { background: var(--accent-press); }
-    .chat-btn, .mark-btn {
-      width: 100%; padding: 8px 14px; background: transparent;
-      border: 1px solid var(--border); border-radius: var(--radius-sm);
-      color: var(--muted); font-size: 12.5px; font-weight: 500;
-      white-space: nowrap; transition: border-color .12s, color .12s;
-    }
-    .chat-btn:hover { border-color: #25d366; color: #25d366; }
-    .mark-btn:hover { border-color: var(--ok); color: var(--ok); }
-    .mark-btn.done {
-      background: color-mix(in srgb, var(--ok) 12%, transparent);
-      border-color: color-mix(in srgb, var(--ok) 32%, transparent);
-      color: var(--ok);
-    }
-    .mark-btn.done:hover { background: transparent; }
-    .telmuted { font-size: 11px; color: var(--muted); text-align: center; }
-
-    .expand {
-      margin-top: 10px; padding: 12px;
-      background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); display: none;
-    }
-    .expand.show { display: block; }
-    .expand h4 {
-      font-size: 11px; color: var(--muted); text-transform: uppercase;
-      letter-spacing: 0.05em; margin-bottom: 8px; font-weight: 600;
-    }
-    .ptable { display: flex; flex-direction: column; gap: 6px; }
-    .pitem {
-      display: flex; justify-content: space-between; gap: 12px;
-      font-size: 13px; padding: 6px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .pitem:last-child { border-bottom: none; }
-    .pitem .pn {
-      color: var(--text); min-width: 0; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pitem .pv {
-      color: var(--muted); white-space: nowrap;
-      font-variant-numeric: tabular-nums;
-    }
-    .empty-view, .loading {
-      text-align: center; padding: 80px 20px; color: var(--muted);
-    }
-
-    /* ---- Modal WhatsApp ---- */
-    .modal-bg {
-      position: fixed; inset: 0; background: rgba(0,0,0,.55);
-      backdrop-filter: blur(4px);
-      display: none; align-items: center; justify-content: center;
-      z-index: 50; padding: 20px;
-    }
-    .modal-bg.show { display: flex; }
-    .modal {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); max-width: 480px; width: 100%;
-      padding: 24px;
-      /* Si el contenido es largo (ej. el panel de info), scrollea la ventana
-         en vez de cortarse. overscroll-behavior evita arrastrar el fondo. */
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-    }
-    .modal h3 { font-size: 16px; margin-bottom: 4px; color: var(--text); }
-    .modal .who { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-    .modal textarea {
-      width: 100%; min-height: 130px;
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 12px;
-      color: var(--text); font-family: inherit; font-size: 14px;
-      line-height: 1.5; resize: vertical;
-    }
-    .modal textarea:focus { outline: none; border-color: var(--accent); }
-    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
-
-    /* ---- Confirmación flotante ---- */
-    .confirm {
-      position: fixed; left: 50%; bottom: 28px;
-      transform: translateX(-50%) translateY(120px);
-      background: var(--surface); border: 1px solid var(--accent);
-      border-radius: 14px; padding: 14px 20px;
-      display: flex; align-items: center; gap: 14px;
-      z-index: 60; box-shadow: 0 12px 40px rgba(0,0,0,.25);
-      transition: transform .25s ease; max-width: 90vw;
-    }
-    .confirm.show { transform: translateX(-50%) translateY(0); }
-    .confirm .txt { font-size: 13.5px; color: var(--muted); }
-    .confirm .txt b { color: var(--text); }
-    .confirm .yes {
-      padding: 8px 14px; border-radius: var(--radius-sm);
-      background: var(--accent); color: var(--on-accent);
-      font-size: 13px; font-weight: 600;
-    }
-    .confirm .no {
-      padding: 8px 14px; border-radius: var(--radius-sm);
-      background: var(--surface-2); color: var(--muted);
-      border: 1px solid var(--border); font-size: 13px; font-weight: 500;
-    }
-
-    /* ═══ Panel informativo (botón ⓘ) ═══ */
-    .modal.wide { max-width: 640px; }
-    .info-sec { margin-bottom: 18px; }
-    .info-sec h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-    .info-sec p { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 8px; }
-    .seg-list { display: flex; flex-direction: column; gap: 6px; }
-    .seg-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 12.5px; }
-    .seg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-    .seg-row .n { font-weight: 600; min-width: 92px; }
-    .seg-row .d { color: var(--muted); }
-    .info-formula { background: var(--surface-2); border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12.5px; margin: 8px 0; }
-
-    /* ═══ Barra de progreso / gamificación ═══ */
-    .gami { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
-    .gami .meta { flex: 1; min-width: 190px; }
-    .gami .meta-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
-    .gami .meta-top span { color: var(--muted); }
-    .bar { height: 8px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
-    .bar i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, var(--accent), #FF8A7A); transition: width .6s cubic-bezier(.2,.8,.2,1); }
-    .bar.full i { background: linear-gradient(90deg, var(--ok), #5FD39A); }
-    .gchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 6px 11px; border-radius: 20px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-    .gchip b { color: var(--text); }
-    .gchip.fire { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
-    .gchip.win  { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); cursor: pointer; }
-    .frase { font-size: 12.5px; color: var(--muted); font-style: italic; }
-
-    /* ═══ Logros ═══ */
-    .logro { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px; animation: slideIn .35s both; }
-    .logro .em { font-size: 22px; }
-    .logro .info { flex: 1; min-width: 0; }
-    .logro .nm { font-weight: 600; font-size: 14px; }
-    .logro .dt { font-size: 12px; color: var(--muted); }
-    .logro .dias { text-align: right; }
-    .logro .dias .v { font-size: 20px; font-weight: 700; color: var(--ok); line-height: 1.1; }
-    .logro .dias .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    .win-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); padding: 2px 7px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
-
-    /* ═══ Celebración ═══ */
-    /* Oculto de verdad: no alcanza con el transform (el % es relativo al alto
-       del propio banner y le dejaba una franja asomando arriba). */
-    .celebra {
-      position: fixed; top: 70px; left: 50%; z-index: 120;
-      transform: translateX(-50%) translateY(-16px);
-      opacity: 0; visibility: hidden; pointer-events: none;
-      transition: transform .45s cubic-bezier(.2,1.2,.3,1), opacity .28s ease, visibility .45s;
-    }
-    .celebra.show {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1; visibility: visible; pointer-events: auto;
-    }
-    .celebra-box { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow-menu); max-width: 92vw; }
-    .cel-emoji { font-size: 26px; animation: pop .5s both; }
-    .cel-txt { display: flex; flex-direction: column; }
-    .cel-txt b { font-size: 14px; } .cel-txt span { font-size: 12px; color: var(--muted); }
-    .cel-x { background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
-    #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 200; display: none; }
-
-    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes pop { 0% { transform: scale(.4); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
-    @media (prefers-reduced-motion: reduce) {
-      .logro, .cel-emoji { animation: none !important; }
-      .bar i, .celebra { transition: none !important; }
-    }
-
-    /* ═══ Editor de ficha: drawer + formulario ═══ */
-    .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: .2s; z-index: 60; }
+    /* ══════════ Panel del cliente (drawer) ══════════ */
+    .scrim { position: fixed; inset: 0; background: rgba(52, 73, 94, .45); opacity: 0; pointer-events: none; transition: .2s; z-index: 60; }
     .scrim.on { opacity: 1; pointer-events: auto; }
-    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: 520px; max-width: 96vw; background: var(--surface); z-index: 70; box-shadow: -8px 0 40px rgba(0,0,0,.22); transform: translateX(100%); transition: transform .24s; display: flex; flex-direction: column; }
+    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: 540px; max-width: 100vw; background: var(--r-bg); z-index: 70; transform: translateX(100%); transition: transform .28s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; }
     .drawer.on { transform: none; }
-    .dhead { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--accent); color: #fff; }
-    .dhead .x { float: right; cursor: pointer; font-size: 22px; opacity: .9; line-height: 1; border: 0; background: none; color: #fff; }
-    .dhead h3 { font-size: 17px; font-weight: 700; padding-right: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dhead .cbar { margin-top: 10px; height: 8px; background: rgba(255,255,255,.28); border-radius: 6px; overflow: hidden; }
-    .dhead .cbar .f { height: 100%; background: #fff; border-radius: 6px; transition: width .5s; }
-    .dhead .cpct { font-size: 12px; margin-top: 6px; opacity: .95; }
+    .dhead { padding: 18px 22px 16px; background: var(--r-inv-bg); color: var(--r-inv-tx); }
+    .dhead .x { float: right; cursor: pointer; font-size: 22px; line-height: 1; border: 0; background: none; color: inherit; opacity: .8; }
+    .dhead .eyebrow { color: color-mix(in srgb, var(--r-inv-tx) 70%, transparent); }
+    .dhead h3 { font: 400 22px/1.2 var(--sora); margin: 4px 0 0; padding-right: 26px; }
+    .dhead .cbar { margin-top: 12px; height: 4px; background: color-mix(in srgb, var(--r-inv-tx) 20%, transparent); }
+    .dhead .cbar .f { height: 100%; background: var(--acido); transition: width .5s; }
+    .dhead .cpct { font-size: 12.5px; margin-top: 6px; opacity: .85; }
     .dbody { overflow-y: auto; flex: 1; }
-    .intel { padding: 14px 20px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-    .intel h4, .dform h4 { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
-    .istat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-    .istat .b { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 8px 6px; text-align: center; }
-    .istat .b .v { font-size: 15px; font-weight: 800; line-height: 1.1; } .istat .b .l { font-size: 10px; color: var(--muted); margin-top: 2px; }
-    .dprod { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
-    .dprod .q { color: var(--accent); font-weight: 700; white-space: nowrap; }
-    .wa-big { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; background: #25D366; color: #fff; border: 0; border-radius: 10px; padding: 11px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 10px; text-decoration: none; }
-    .wa-big[data-off] { background: var(--surface); color: var(--muted); border: 1px solid var(--border); cursor: default; }
-    .dform { padding: 16px 20px; }
+    .intel { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--r-li); }
+    .que-hacer { background: var(--r-sup); padding: 16px 18px; }
+    .que-hacer h4 { font: 400 17px var(--sora); margin: 4px 0 6px; }
+    .que-hacer p { margin: 0 0 10px; font-size: 14px; line-height: 1.5; color: var(--r-mu); }
+    .istat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--r-li); }
+    .istat .b { background: var(--r-sup); padding: 10px 6px; text-align: center; }
+    .istat .b .v { font: 400 17px var(--sora); } .istat .b .l { font-size: 11px; color: var(--r-mu); margin-top: 2px; }
+    .nota { font-size: 13px; color: var(--r-mu); line-height: 1.45; }
+    .nota b { color: var(--r-tx); }
+    .dprod { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--r-li); }
+    .dprod .q { font-family: var(--sora); white-space: nowrap; color: var(--r-mu); }
+    .acc-fila { display: flex; gap: 8px; flex-wrap: wrap; }
+    .acc-fila .rb { flex: 1; }
+    .dform { padding: 18px 22px; }
+    .dform h4, .intel h5 { font: 500 11px var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); margin: 0 0 10px; }
     .fld { margin-bottom: 12px; }
-    .fld label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
-    .fld label .miss { color: var(--hot); font-weight: 700; margin-left: 6px; font-size: 11px; }
-    .fld input, .fld select { width: 100%; font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--text); background: var(--surface); }
-    .fld input:focus, .fld select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-    .fld .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
-    .fld .prev { font-size: 11.5px; color: var(--accent); font-weight: 600; margin-top: 4px; min-height: 14px; }
+    .fld label { display: block; font-size: 12.5px; font-weight: 600; color: var(--r-mu); margin-bottom: 5px; }
+    .fld label .miss { color: var(--rojo); font-weight: 600; margin-left: 6px; font-size: 11.5px; }
+    .fld input, .fld select { width: 100%; font: 400 14.5px var(--sans); border: 1px solid var(--r-li); padding: 9px 11px; color: var(--r-tx); background: var(--r-sup); }
+    .fld input:focus, .fld select:focus { outline: none; border-color: var(--r-tx); }
+    .fld .hint { font-size: 11.5px; color: var(--r-mu); margin-top: 4px; }
+    .fld .prev { font-size: 12px; color: var(--r-tx); font-weight: 600; margin-top: 4px; min-height: 14px; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .dfoot { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: var(--surface); }
-    .dfoot .btn { flex: 1; justify-content: center; }
-    .chip.ficha { cursor: pointer; }
-    .badge-notel { display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--hot); background: color-mix(in srgb, var(--hot) 12%, transparent); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
-    /* ═══ Tarjeta compacta de contacto (abre el panel) ═══ */
-    .rowc { display: grid; grid-template-columns: 1fr 150px 118px 78px; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--c, var(--muted)); border-radius: 12px; padding: 12px 16px; cursor: pointer; margin-bottom: 10px; transition: transform .1s, border-color .1s, box-shadow .1s; }
-    .rowc:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,.07); border-color: var(--accent); }
-    .rowc.contactado { border-left-color: var(--ok); }
-    .rowc .rc-main { min-width: 0; }
-    .rowc .rc-name { font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rowc .rc-sub { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rowc .rc-rec { font-size: 12.5px; } .rowc .rc-rec b { font-weight: 700; } .rowc .rc-rec .s { color: var(--muted); font-size: 11.5px; }
-    .rowc .rc-ficha .lab { font-size: 10.5px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 3px; }
-    .rowc .rc-ficha .track { height: 6px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
-    .rowc .rc-ficha .fill { height: 100%; border-radius: 5px; transition: width .4s; }
-    .rowc .rc-go { font-size: 12.5px; font-weight: 700; color: var(--accent); text-align: right; white-space: nowrap; }
-    .rowc .rc-go.done { color: var(--ok); }
-    @media (max-width: 680px) { .rowc { grid-template-columns: 1fr auto; } .rowc .rc-rec, .rowc .rc-ficha { display: none; } }
-    .ftoast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--surface); padding: 12px 20px; border-radius: 24px; font-weight: 600; font-size: 14px; opacity: 0; transition: .3s; z-index: 100; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
-    .ftoast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .ftoast.win { background: var(--ok); color: #fff; }
-    @media (max-width: 560px) { .istat { grid-template-columns: repeat(2, 1fr); } }
+    .dfoot { padding: 12px 22px; border-top: 1px solid var(--r-li); display: flex; gap: 10px; background: var(--r-sup); }
+    .dfoot .rb { flex: 1; }
 
+    /* ══════════ Ventanas, avisos y festejos ══════════ */
+    .modal-bg { position: fixed; inset: 0; background: rgba(52, 73, 94, .5); display: none; align-items: center; justify-content: center; z-index: 80; padding: 20px; }
+    .modal-bg.show { display: flex; }
+    .modal { background: var(--r-bg); max-width: 520px; width: 100%; padding: 26px 26px 22px; max-height: calc(100vh - 40px); overflow-y: auto; overscroll-behavior: contain; }
+    .modal.wide { max-width: 680px; }
+    .modal h3 { font: 400 22px/1.2 var(--sora); margin: 6px 0 12px; }
+    .modal h3 em { font-family: var(--bitter); font-style: italic; }
+    .modal p, .modal li { font-size: 14px; line-height: 1.55; color: var(--r-mu); }
+    .modal p b, .modal li b { color: var(--r-tx); }
+    .modal textarea, .modal input[type=text] { width: 100%; background: var(--r-sup); border: 1px solid var(--r-li); padding: 11px 12px; color: var(--r-tx); font: 400 14.5px/1.5 var(--sans); }
+    .modal textarea { min-height: 120px; resize: vertical; }
+    .modal textarea:focus, .modal input[type=text]:focus { outline: none; border-color: var(--r-tx); }
+    .modal-acc { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+    .tpl { margin-bottom: 14px; }
+    .tpl label { display: block; font: 500 11px var(--sora); letter-spacing: .12em; text-transform: uppercase; color: var(--r-tx); margin-bottom: 6px; }
+    .tpl .ej { font-size: 12.5px; color: var(--r-mu); margin-top: 4px; }
+    .nombres { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+    .info-sec { margin-bottom: 16px; }
+    .info-sec h4 { font: 400 15px var(--sora); margin: 0 0 6px; }
+    .seg-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+    .seg-row { display: flex; gap: 10px; align-items: center; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--r-li); }
+    .seg-row i { width: 12px; height: 12px; flex-shrink: 0; }
+    .seg-row .n { min-width: 120px; font-family: var(--sora); }
+    .seg-row .d { color: var(--r-mu); }
+    .confirm { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(140px); background: var(--r-inv-bg); color: var(--r-inv-tx); padding: 14px 16px 14px 20px; display: flex; align-items: center; gap: 12px; z-index: 90; transition: transform .3s cubic-bezier(.2,1.2,.4,1), opacity .2s, visibility .3s; max-width: 92vw; flex-wrap: wrap; opacity: 0; visibility: hidden; pointer-events: none; }
+    .confirm.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; pointer-events: auto; }
+    .confirm .txt { font-size: 14px; }
+    .confirm .rb.linea { color: var(--r-inv-tx); border-color: color-mix(in srgb, var(--r-inv-tx) 30%, transparent); }
+    .celebra { position: fixed; top: 76px; left: 50%; z-index: 120; transform: translateX(-50%) translateY(-16px); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .45s cubic-bezier(.2,1.2,.3,1), opacity .28s ease, visibility .45s; }
+    .celebra.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; pointer-events: auto; }
+    .celebra-box { display: flex; align-items: center; gap: 14px; background: var(--acido); color: var(--azul); padding: 14px 18px; max-width: 92vw; }
+    .celebra-box .cel-txt { display: flex; flex-direction: column; }
+    .celebra-box b { font: 400 16px var(--sora); } .celebra-box span { font-size: 13px; }
+    .cel-x { background: none; border: 0; color: var(--azul); font-size: 20px; cursor: pointer; }
+    #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 200; display: none; }
+    .ftoast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--r-inv-bg); color: var(--r-inv-tx); padding: 12px 20px; font: 400 14px var(--sora); opacity: 0; transition: .3s; z-index: 100; pointer-events: none; }
+    .ftoast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .ftoast.win { background: var(--acido); color: var(--azul); }
+    .cargando { padding: 60px 20px; text-align: center; color: var(--r-mu); }
+    .cargando .iso { width: 46px; margin: 0 auto 12px; animation: late 1.4s ease-in-out infinite; }
+    @keyframes late { 50% { opacity: .35; transform: scale(.94); } }
+
+    @media (max-width: 1100px) { .segs { grid-template-columns: repeat(3, 1fr); } .grilla2 { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .hoy-top { grid-template-columns: 1fr; } .tira { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 680px) {
-      .kpis { grid-template-columns: repeat(2, 1fr); } #kpis { grid-template-columns: repeat(2, 1fr); }
-      .row { grid-template-columns: 1fr; gap: 12px; }
-      .right {
-        flex-direction: row; align-items: center;
-        justify-content: space-between; width: 100%;
-      }
-      .qmetrics { grid-template-columns: repeat(2, 1fr); }
-      .tabs-bar { flex-direction: column; align-items: stretch; }
-      .tabs { overflow-x: auto; white-space: nowrap; }
+      .titular { font-size: 27px; }
+      .hola { grid-template-columns: 1fr; } .hola-txt { padding: 22px 18px 18px; } .hola .trama { display: none; }
+      .guia { grid-template-columns: 1fr; gap: 8px; }
+      .plan { grid-template-columns: 1fr; }
+      .segs { grid-template-columns: repeat(2, 1fr); }
+      .fila { grid-template-columns: minmax(0, 1fr) auto; } .fila .rec, .fila .mi { display: none; }
+      .istat { grid-template-columns: repeat(2, 1fr); }
+      .bh { grid-template-columns: minmax(0, 1fr) 80px 40px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
-<body data-page="crm" data-title="Clientes" data-subtitle="Contactar y reactivar clientes">
+<body data-page="crm" data-title="Clientes" data-subtitle="Qué hacer hoy, a quién y qué ofrecerle">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
 
-  <div class="tabs-bar">
-    <div class="tabs">
-      <button class="tab active" data-tab="lista" onclick="setTab('lista')">Contactos<span class="cnt" id="tab-lista"></span></button>
-      <button class="tab" data-tab="contactados" onclick="setTab('contactados')">Contactados<span class="cnt" id="tab-cont"></span></button>
-      <button class="tab" data-tab="logros" onclick="setTab('logros')">🏆 Logros<span class="cnt" id="tab-logros"></span></button>
-      <button class="tab" data-tab="archivados" onclick="setTab('archivados')">Archivados<span class="cnt" id="tab-arch"></span></button>
+  <div class="cab">
+    <div>
+      <span class="eyebrow">Atención comercial · Rosaint</span>
     </div>
-    <div class="tabs-actions">
-      <span class="sync-info" id="syncInfo">…</span>
-      <button class="btn primary" onclick="nuevoContacto()" title="Crear un contacto nuevo en Odoo">＋ Nuevo contacto</button>
-      <button class="btn secondary" onclick="abrirInfo()" title="¿Cómo funciona este módulo?" aria-label="Cómo funciona">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <div class="cab-acc">
+      <span class="actualizado" id="actualizado" title="Los datos se traen de Odoo solos cada 15 minutos (lunes a sábado, 8 a 21)"><i></i><span>Cargando…</span></span>
+      <button class="rb linea" id="btnSync" onclick="doSync()" title="Traer ya los pedidos nuevos de Odoo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+        <span id="btnSyncTxt">Actualizar</span>
       </button>
-      <button class="btn secondary" onclick="abrirConfigMensajes()" title="Configurar plantillas de mensaje">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span>Mensaje</span>
-        <span id="momInd" onclick="event.stopPropagation(); toggleMomQuick();" title="Mensaje momentáneo ACTIVO — clic para apagarlo" style="display:none; margin-left:6px; font-size:10.5px; font-weight:700; background:var(--accent); color:#fff; padding:1px 7px; border-radius:10px;">momentáneo ✕</span>
-      </button>
-      <button class="btn secondary" id="btnSync" onclick="doSync()" title="Actualizar datos desde Odoo">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
-        <span id="btnSyncTxt">Sincronizar</span>
-      </button>
+      <button class="rb linea" onclick="abrirConfigMensajes()" title="Los mensajes de WhatsApp que se arman solos">Mensajes<span id="momInd" style="display:none" class="t-badge">campaña activa</span></button>
+      <button class="rb linea" onclick="nuevoContacto()" title="Crear un contacto nuevo en Odoo">＋ Contacto</button>
+      <button class="rb suave" onclick="abrirInfo()" title="Cómo funciona">¿Cómo funciona?</button>
     </div>
   </div>
 
-  <div id="view-lista">
-    <div id="gami-host"></div>
-    <div class="kpis" id="kpis"></div>
-    <div class="toolbar">
-      <div class="search-box">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="q" placeholder="Buscar por nombre…">
+  <nav class="pestanas" role="tablist">
+    <button class="pest on" data-tab="hoy" onclick="setTab('hoy')">Hoy<span class="c" id="c-hoy"></span></button>
+    <button class="pest" data-tab="clientes" onclick="setTab('clientes')">Clientes<span class="c" id="c-clientes"></span></button>
+    <button class="pest" data-tab="resultados" onclick="setTab('resultados')">Resultados<span class="c" id="c-resultados"></span></button>
+  </nav>
+
+  <!-- ══════════ HOY ══════════ -->
+  <section id="view-hoy">
+    <div class="hoy-top">
+      <div class="hola corte">
+        <div class="hola-txt">
+        <span class="eyebrow" id="hola-fecha"></span>
+        <h1 class="titular" id="hola-tit">Tu plan de <em>hoy</em>.</h1>
+        <p class="bajada" id="hola-bajada">Cargando los clientes…</p>
+        <div class="guia">
+          <div><b>1 · Elegí</b>Empezá por la primera tarea: están ordenadas por lo que más conviene.</div>
+          <div><b>2 · Escribí</b>Tocá WhatsApp: el mensaje ya está armado. Leelo, ajustalo y mandalo.</div>
+          <div><b>3 · Marcá</b>Volvé y tocá «Listo». Si compra en 21 días, suma a tus logros.</div>
+        </div>
+        <div class="quien" id="quien"></div>
+        </div>
+        <div class="trama" aria-hidden="true"></div>
       </div>
-      <select id="orden" class="picker" autocomplete="off">
-        <option value="prioridad">Orden: prioridad (termómetro)</option>
-        <option value="dias">Más días sin comprar</option>
-        <option value="monto">Mayor monto histórico</option>
-        <option value="reciente">Compra más reciente</option>
-        <option value="ficha">Ficha incompleta primero</option>
+      <div class="meta corte" id="meta"></div>
+    </div>
+    <div class="misiones" id="misiones"></div>
+    <div class="plan-cab"><h3 id="plan-tit">Para hacer</h3><span id="plan-sub"></span></div>
+    <div class="plan" id="plan"><div class="cargando" style="grid-column:1/-1"><img class="iso" src="../shared/marca/isotipo-original.svg" alt=""><div>Armando tu plan…</div></div></div>
+    <div class="mas" id="mas"></div>
+    <div class="hechos" id="hechos"></div>
+  </section>
+
+  <!-- ══════════ CLIENTES ══════════ -->
+  <section id="view-clientes" style="display:none">
+    <div class="segs" id="segs"></div>
+    <div class="barra-filtros">
+      <div class="buscar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="Buscar por nombre…" autocomplete="off">
+      </div>
+      <select id="ftipo" class="sel" autocomplete="off" aria-label="Tipo de cliente">
+        <option value="prof">Profesionales</option>
+        <option value="noprof">No profesionales</option>
+        <option value="todos">Profesionales y no profesionales</option>
       </select>
-      <select id="fwa" class="picker" autocomplete="off">
-        <option value="todos">Todos</option>
-        <option value="con">Con WhatsApp</option>
-        <option value="sin">Sin WhatsApp</option>
-        <option value="sintel">Sin teléfono</option>
-      </select>
-      <select id="fcompras" class="picker" autocomplete="off">
-        <option value="todas">Cualquier cantidad de compras</option>
-        <option value="una">Una sola compra</option>
-        <option value="varias">2 compras o más</option>
-        <option value="ninguna">Sin compras</option>
-      </select>
-      <select id="fcanal" class="picker" autocomplete="off">
+      <select id="fcanal" class="sel" autocomplete="off" aria-label="Canal">
         <option value="todos">Todos los canales</option>
         <option value="directa">Venta directa</option>
         <option value="tn">Tienda Nube</option>
         <option value="ml">Mercado Libre</option>
       </select>
-      <select id="ftipo" class="picker" autocomplete="off">
-        <option value="prof">Profesionales</option>
-        <option value="noprof">No profesionales</option>
-        <option value="todos">Profesionales y no profesionales</option>
+      <select id="fcompras" class="sel" autocomplete="off" aria-label="Compras">
+        <option value="todas">Cualquier cantidad de compras</option>
+        <option value="una">Una sola compra</option>
+        <option value="varias">2 compras o más</option>
+        <option value="ninguna">Sin compras</option>
+      </select>
+      <select id="festado" class="sel" autocomplete="off" aria-label="Estado">
+        <option value="activos">Sin archivar</option>
+        <option value="tarea">Con tarea pendiente</option>
+        <option value="contactados">Contactados (últimos 15 días)</option>
+        <option value="presupuesto">Con presupuesto abierto</option>
+        <option value="archivados">Archivados</option>
+      </select>
+      <select id="fwa" class="sel" autocomplete="off" aria-label="WhatsApp">
+        <option value="todos">Con y sin WhatsApp</option>
+        <option value="con">Con WhatsApp</option>
+        <option value="sin">Sin WhatsApp</option>
+      </select>
+      <select id="orden" class="sel" autocomplete="off" aria-label="Orden">
+        <option value="prioridad">Orden: prioridad</option>
+        <option value="dias">Más días sin comprar</option>
+        <option value="monto">Mayor monto histórico</option>
+        <option value="reciente">Compra más reciente</option>
+        <option value="ficha">Ficha incompleta primero</option>
       </select>
     </div>
-    <div class="count" id="count"></div>
-    <div id="list"></div>
-  </div>
+    <div class="cuenta" id="cuenta"></div>
+    <div id="lista"></div>
+    <div class="mas" id="lista-mas"></div>
+  </section>
 
-  <div id="view-contactados" style="display:none">
-    <div class="count" id="count-cont"></div>
-    <div id="list-cont"></div>
-  </div>
-  <div id="view-logros" style="display:none">
-    <div class="kpis" id="kpis-logros"></div>
-    <div class="count" id="count-logros"></div>
-    <div id="list-logros"></div>
-  </div>
-
-  <div id="view-archivados" style="display:none">
-    <div class="count" id="count-arch"></div>
-    <div id="list-arch"></div>
-  </div>
+  <!-- ══════════ RESULTADOS ══════════ -->
+  <section id="view-resultados" style="display:none">
+    <div class="tira" id="tira"></div>
+    <div class="grilla2">
+      <div class="caja"><span class="eyebrow">Últimos 30 días</span><h3>Contactos por <em>día</em></h3><div id="g-contactos"></div><div class="leyenda" id="ley-contactos"></div></div>
+      <div class="caja"><span class="eyebrow">Cartera profesional</span><h3>Cómo está la <em>base</em></h3><div id="g-dona"></div></div>
+    </div>
+    <div class="grilla2">
+      <div class="caja"><span class="eyebrow">Tus logros</span><h3 id="ins-tit">Insignias</h3><div class="insignias" id="insignias"></div></div>
+      <div class="caja"><span class="eyebrow">Equipo · este mes</span><h3>Quién está <em>sumando</em></h3><div class="equipo" id="equipo"></div></div>
+    </div>
+    <div class="grilla2">
+      <div class="caja"><span class="eyebrow">Ventas que vinieron de un contacto</span><h3>Ventas <em>logradas</em></h3><div id="ventas"></div></div>
+      <div class="caja"><span class="eyebrow">Qué se vende</span><h3>Lo que más compra la <em>cartera</em></h3><div class="barras-h" id="g-productos"></div></div>
+    </div>
+    <div class="grilla2">
+      <div class="caja"><span class="eyebrow">Pedidos confirmados</span><h3>Clientes por <em>canal</em></h3><div class="barras-h" id="g-canales"></div></div>
+      <div class="caja"><span class="eyebrow">Trabajo disponible</span><h3>Tareas por <em>tipo</em></h3><div class="barras-h" id="g-tareas"></div></div>
+    </div>
+  </section>
 
 </main>
 
-<!-- Panel informativo: qué significa cada cosa -->
+<!-- Quién está trabajando (la cuenta del Core es compartida) -->
+<div class="modal-bg" id="modalQuien">
+  <div class="modal">
+    <span class="eyebrow">Antes de empezar</span>
+    <h3>¿Quién está <em>vendiendo</em>?</h3>
+    <p>Así cada uno ve su avance y sus logros, y el mensaje de WhatsApp se presenta con tu nombre.</p>
+    <div class="nombres" id="nombresConocidos"></div>
+    <input type="text" id="quienInput" placeholder="Tu nombre, por ejemplo: Emi" maxlength="30" autocomplete="off">
+    <div class="modal-acc"><button class="rb si" onclick="guardarQuien()">Empezar</button></div>
+  </div>
+</div>
+
+<!-- Cómo funciona -->
 <div class="modal-bg" id="modalInfo" onclick="if(event.target===this)cerrarInfo()">
   <div class="modal wide">
-    <h3>¿Cómo funciona el CRM?</h3>
-
+    <span class="eyebrow">Guía del módulo</span>
+    <h3>Cómo funciona <em>Clientes</em></h3>
     <div class="info-sec">
-      <h4>🎯 Qué es un cliente para el sistema</h4>
-      <p>Una "compra" es un <b>pedido confirmado</b> en Odoo (no la factura), de <b>VELAZQUEZ</b>. Los montos son <b>netos, sin IVA</b>.</p>
-      <p>El <b>canal</b> sale del origen del pedido: Mercado Libre, Tienda Nube, y todo lo demás es <b>venta directa</b> (WhatsApp, local, mayoristas).</p>
-      <p><b>No profesionales:</b> están los que compraron por Tienda Nube o venta directa. Los que compraron solo por Mercado Libre no se suman porque casi ninguno deja teléfono.</p>
+      <h4>Hoy: tu lista de tareas</h4>
+      <p>Cada día el sistema arma <b>10 tareas</b> con los clientes que más conviene contactar. Cada tarea dice <b>por qué</b> le escribís y <b>qué ofrecerle</b>. El mensaje de WhatsApp ya viene armado según el tipo de tarea.</p>
+      <div class="seg-list" id="info-misiones"></div>
     </div>
-
     <div class="info-sec">
-      <h4>📊 Cómo se clasifica cada contacto</h4>
-      <p>No usamos días fijos: cada cliente se mide contra <b>su propio ritmo</b>. El ritmo es la <b>mediana</b> de días entre sus compras.</p>
-      <div class="info-formula">ritmo del cliente = mediana de días entre sus compras<br>ratio = días sin comprar ÷ su ritmo</div>
-      <div class="seg-list">
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-activo)"></span><span class="n">Activo</span><span class="d">compró hace menos de 1× su ritmo</span></div>
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-enfri)"></span><span class="n">Enfriándose</span><span class="d">entre 1× y 2× su ritmo</span></div>
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-react)"></span><span class="n">A reactivar</span><span class="d">entre 2× y 4× su ritmo — el más recuperable</span></div>
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-dorm)"></span><span class="n">Dormido</span><span class="d">4× su ritmo o más — el más perdido</span></div>
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-rst)"></span><span class="n">Compró en RST</span><span class="d">compró solo con la empresa anterior, hasta marzo 2026</span></div>
-        <div class="seg-row"><span class="seg-dot" style="background:var(--t-nunca)"></span><span class="n">Nunca compró</span><span class="d">está en la base pero nunca pidió</span></div>
-      </div>
-      <p style="margin-top:10px"><b>Ejemplo:</b> compra cada 30 días y hace 75 que no compra → 2,5× → <i>A reactivar</i>.</p>
-      <p><b>Si tiene una sola compra</b> no hay ritmo que calcular, así que ahí sí van días fijos: menos de 60 = Activo · 60 a 119 = Enfriándose · 120 a 239 = A reactivar · 240+ = Dormido.</p>
+      <h4>Qué ofrecer a quién</h4>
+      <p><b>Lo que suele comprar:</b> el producto que más veces pidió. <b>También le puede interesar:</b> lo que más compran los clientes que compran lo mismo que él y que él todavía no probó. A quien nunca compró se le sugieren los productos que más eligen los profesionales.</p>
     </div>
-
     <div class="info-sec">
-      <h4>🔥 Por qué aparecen en ese orden</h4>
-      <p>La cola prioriza <b>A reactivar</b> → <b>Enfriándose</b> → <b>Dormido</b> → <b>Nunca compró</b>. Los <i>A reactivar</i> van primero porque son los más recuperables (se atrasaron, pero no desaparecieron). Dentro de cada grupo, primero los que más te compraron históricamente.</p>
-      <p>Los <b>Activos</b> no entran a la cola (ya te están comprando), y tampoco los que no tienen WhatsApp cargado.</p>
+      <h4>Cómo se clasifica cada cliente</h4>
+      <p>Cada cliente se mide contra <b>su propio ritmo</b>: la mediana de días entre sus compras. Si compró una sola vez, se usan días fijos (60 / 120 / 240).</p>
+      <div class="seg-list" id="info-segs"></div>
     </div>
-
     <div class="info-sec">
-      <h4>🏆 Qué cuenta como logro</h4>
-      <p>Si marcás a alguien como contactado y <b>confirma un pedido dentro de los <span id="infoVentana">21</span> días</b>, se registra como logro tuyo. Se detecta solo, cruzando tu contacto con los pedidos confirmados de Odoo.</p>
+      <h4>Qué cuenta como logro</h4>
+      <p>Si contactás a alguien y <b>confirma un pedido dentro de los 21 días</b>, la venta se suma a tus logros. Se detecta sola, cruzando el contacto con los pedidos confirmados de Odoo.</p>
     </div>
-
     <div class="info-sec">
-      <h4>🔄 Cuándo se actualizan los datos</h4>
-      <p>Automático, <b>todos los días a las 08:00</b>: se traen los pedidos nuevos de Odoo y se recalculan todos los segmentos. Los logros se detectan a las 08:20. Igual podés forzarlo con <b>Sincronizar</b>.</p>
-      <p>Un contacto marcado vuelve solo a la cola después de <b>15 días</b> sin comprar.</p>
+      <h4>Siempre al día</h4>
+      <p>Los pedidos y presupuestos se traen de Odoo <b>cada 15 minutos</b>, de lunes a sábado de 8 a 21. Un cliente que acaba de comprar o que tiene un presupuesto abierto deja de aparecer para reactivar. Con <b>Actualizar</b> lo forzás en el momento.</p>
+      <p>Una compra es un <b>pedido confirmado</b> de VELAZQUEZ, con montos sin IVA. Los clientes que compraron solo en RST (hasta marzo 2026) figuran como «Compró en RST».</p>
     </div>
-
-    <div class="modal-actions">
-      <button class="btn primary" onclick="cerrarInfo()">Entendido</button>
-    </div>
+    <div class="modal-acc"><button class="rb si" onclick="cerrarInfo()">Entendido</button></div>
   </div>
 </div>
 
-<!-- Celebración de logros nuevos -->
-<div class="celebra" id="celebra">
-  <div class="celebra-box">
-    <div class="cel-emoji">🎉</div>
-    <div class="cel-txt"><b id="celTitulo"></b><span id="celSub"></span></div>
-    <button class="btn primary" onclick="verLogros()">Ver</button>
-    <button class="cel-x" onclick="cerrarCelebra()" aria-label="Cerrar">×</button>
-  </div>
-</div>
-<canvas id="confetti"></canvas>
-
-<!-- Editor de ficha (drawer) -->
-<div class="scrim" id="fscrim" onclick="cerrarDrawer()"></div>
-<div class="drawer" id="fdrawer" aria-hidden="true"></div>
-<div class="ftoast" id="ftoast"></div>
-
-<div class="modal-bg" id="modal">
+<!-- Mensaje de WhatsApp para revisar antes de abrir -->
+<div class="modal-bg" id="modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <h3>Mensaje de WhatsApp</h3>
-    <div class="who" id="modalWho"></div>
+    <span class="eyebrow" id="modalTipo">Mensaje</span>
+    <h3 id="modalWho"></h3>
     <textarea id="modalText"></textarea>
-    <div class="modal-actions">
-      <button class="btn primary" id="modalSend">Abrir WhatsApp</button>
-      <button class="btn secondary" onclick="closeModal()">Cancelar</button>
+    <p style="margin:8px 0 0;font-size:12.5px">Se abre WhatsApp con este texto. Podés cambiarlo acá o allá.</p>
+    <div class="modal-acc">
+      <button class="rb linea" onclick="closeModal()">Cancelar</button>
+      <button class="rb si" id="modalSend">Abrir WhatsApp</button>
     </div>
   </div>
 </div>
 
 <div class="confirm" id="confirm">
-  <span class="txt">¿Contactaste a <b id="confirmName"></b>?</span>
-  <button class="yes" onclick="confirmYes()">Sí, marcar</button>
-  <button class="no" onclick="confirmNo()">No</button>
+  <span class="txt">¿Le escribiste a <b id="confirmName"></b>?</span>
+  <button class="rb si" onclick="confirmYes()">Sí, listo</button>
+  <button class="rb linea" onclick="confirmNo()">Todavía no</button>
 </div>
+
+<div class="celebra" id="celebra">
+  <div class="celebra-box">
+    <div class="cel-txt"><b id="celTitulo"></b><span id="celSub"></span></div>
+    <button class="rb linea" style="border-color:var(--azul);color:var(--azul)" onclick="verLogros()">Ver</button>
+    <button class="cel-x" onclick="cerrarCelebra()" aria-label="Cerrar">×</button>
+  </div>
+</div>
+<canvas id="confetti"></canvas>
+
+<div class="scrim" id="fscrim" onclick="cerrarDrawer()"></div>
+<div class="drawer" id="fdrawer" aria-hidden="true"></div>
+<div class="ftoast" id="ftoast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061943"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-// CRM · Reactivación
-// Lee cliente_metricas / cliente_producto / cliente_estado desde Supabase.
-// La sincronización dispara la RPC iniciar_sync_completo (varios minutos).
+// Clientes · Rosaint Core
+// Datos: cliente_metricas / cliente_producto / cliente_estado / crm_contactos /
+// crm_conversiones / crm_plantillas (Supabase). Se actualizan desde Odoo cada 15 min
+// (cron clientes-al-dia → odoo-sync-incremental).
 // ═══════════════════════════════════════════════════════════════════════════
-
 const EMPRESA = 'Rosaint';
 const ODOO_URL = 'https://rosaint.odoo.com';
-const DIAS_CONTACTADO = 15; // se considera "contactado" si fue hace menos de N días
-const DIAS_ATRIBUCION = 21; // si compra dentro de N días del contacto, cuenta como logro
-const META_DIARIA = 10;     // objetivo de contactos por día
+const LINK_LISTA = 'https://rosaint.com.ar/listas/profesionales.html';
+const LINK_TIENDA = 'https://rosaint.online';
+const DIAS_CONTACTADO = 15;   // un cliente contactado no vuelve a la lista de tareas por N días
+const DIAS_ATRIBUCION = 21;   // si compra dentro de N días del contacto, es un logro
+const META_DIARIA = 10;
+const DIAS_RECIENTE = 10;     // compró hace menos de N días: no se le escribe
+const DIAS_PRESU = 45;        // un presupuesto abierto más viejo que esto ya no cuenta
+const EXCLUIR = '(1,3,7,15)'; // RST Cosmetics, Comercial Rosaint, Consumidor Final, Rosaint
 
-const FRASES = [
-  'Cada mensaje es una puerta que se abre 🚪',
-  'El que no contacta, no vende 💪',
-  'Uno más y estás más cerca 🎯',
-  'Los dormidos también se despiertan ☕',
-  'Tu próxima venta está a un mensaje 📲',
-  'Constancia > suerte 🔁',
-];
-const FRASES_META = [
-  '¡Meta del día cumplida! 🏅',
-  '¡Crack! Objetivo alcanzado 🎉',
-  'Día redondo. A descansar 😎',
-];
+// Íconos del kit de marca (64 × 64, trazo 2,4, acento ácido)
+const ICO = {
+  consulta: '<svg viewBox="0 0 64 64"><path d="M45 12h10v10H45Z" fill="#EAF46B"/><path d="M9 12h46v31H31L17 55V43H9ZM20 27h2M30 27h2M40 27h2" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  envio: '<svg viewBox="0 0 64 64"><path d="M6 18h31v7H6Z" fill="#EAF46B"/><path d="M6 18h31v28H6ZM37 27h12l9 11v8H37M41 31h5l6 8H41ZM22 49a6 6 0 1 1-12 0 6 6 0 0 1 12 0ZM54 49a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  formacion: '<svg viewBox="0 0 64 64"><path d="M43 12h7v22l-3.5-4-3.5 4Z" fill="#EAF46B"/><path d="M8 14q12-5 24 2 12-7 24-2v39q-12-5-24 2-12-7-24-2ZM32 16v39M15 25l10 2M15 34l10 2" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  formula: '<svg viewBox="0 0 64 64"><path d="M20 43h24l7 12H13Z" fill="#EAF46B"/><path d="M25 8h14M28 8v17L14 49q-4 7 5 7h26q9 0 5-7L36 25V8" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  presentacion: '<svg viewBox="0 0 64 64"><path d="M12 16h40v9H12Z" fill="#EAF46B"/><path d="M12 16h40v9H12ZM15 25v25q0 6 6 6h22q6 0 6-6V25M22 36h20" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  protocolo: '<svg viewBox="0 0 64 64"><path d="M23 8h18v10H23Z" fill="#EAF46B"/><path d="M23 12H13v45h38V12H41M23 8h18v10H23ZM23 29h18M23 38h18M23 47h10" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  textura: '<svg viewBox="0 0 64 64"><path d="M39 30a11 11 0 0 1 5 14l-8-3Z" fill="#EAF46B"/><path d="M32 7C25 19 15 30 15 40a17 17 0 0 0 34 0C49 30 39 19 32 7ZM23 40q0 10 10 10" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  aplicacion: '<svg viewBox="0 0 64 64"><path d="M14 48l10 7-4 5-10-7Z" fill="#EAF46B"/><path d="M14 48 41 11q6-7 11-3t-1 11L24 55ZM27 30l10 8" fill="none" stroke="#34495E" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+const ico = (k, cls) => `<span class="ico ${cls || ''}" aria-hidden="true">${ICO[k] || ''}</span>`;
 
 const SEG = {
-  a_reactivar: { label: 'A reactivar',  c: 'var(--t-react)' },
-  enfriandose: { label: 'Enfriándose',  c: 'var(--t-enfri)' },
-  dormido:     { label: 'Dormido',      c: 'var(--t-dorm)' },
-  ex_rst:      { label: 'Compró en RST', c: 'var(--t-rst)' },
-  nunca_compro:{ label: 'Nunca compró', c: 'var(--t-nunca)' },
-  activo:      { label: 'Activo',       c: 'var(--t-activo)' },
+  a_reactivar: { label: 'A reactivar',   c: 'var(--s-react)',  d: 'entre 2 y 4 veces su ritmo: el más recuperable' },
+  enfriandose: { label: 'Enfriándose',   c: 'var(--s-enfri)',  d: 'entre 1 y 2 veces su ritmo' },
+  dormido:     { label: 'Dormido',       c: 'var(--s-dorm)',   d: '4 veces su ritmo o más' },
+  ex_rst:      { label: 'Compró en RST', c: 'var(--s-rst)',    d: 'compró solo con la empresa anterior, hasta marzo 2026' },
+  nunca_compro:{ label: 'Nunca compró',  c: 'var(--s-nunca)',  d: 'está en la base pero nunca pidió' },
+  activo:      { label: 'Activo',        c: 'var(--s-activo)', d: 'compró hace menos de una vez su ritmo' },
 };
 const ORDEN_SEG = ['a_reactivar','enfriandose','dormido','ex_rst','nunca_compro','activo'];
-// Canales: del origen del pedido en Odoo (compras_* las calculan odoo-sync-cliente y odoo-sync-incremental)
 const CANALES = [['directa','Venta directa','compras_directa'],['tn','Tienda Nube','compras_tn'],['ml','Mercado Libre','compras_ml']];
 const canalesDe = d => CANALES.filter(c => (d[c[2]] || 0) > 0).map(c => c[1]);
-// "Compró en RST": en la lista va mes y año; la fecha exacta está en la ficha
-const fmtMesAnio = f => { if (!f) return '—'; const [y,m] = f.split('-'); return ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][+m-1] + ' ' + y; };
 
-let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONV_POR_PID = {}, tab = 'lista';
-let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas', canal: 'todos', tipo: 'prof' };
-let queueIdx = 0, pendingContact = null;
+// Tareas del día. orden = cómo se mezclan en el plan; cupo = cuántas entran como mínimo.
+const MIS = {
+  presupuesto: { label: 'Cerrar presupuesto', ico: 'protocolo',    cupo: 5, tpl: 'presupuesto',  d: 'tiene un presupuesto abierto en Odoo: ayudalo a confirmarlo' },
+  reponer:     { label: 'Le toca reponer',    ico: 'presentacion', cupo: 3, tpl: 'reponer',      d: 'por su ritmo de compra, ya le toca pedir' },
+  segunda:     { label: 'Segunda compra',     ico: 'aplicacion',   cupo: 2, tpl: 'segunda',      d: 'compró una vez hace 3 semanas a 4 meses' },
+  recuperar:   { label: 'Recuperar',          ico: 'envio',        cupo: 2, tpl: 'reactivacion', d: 'se atrasó mucho o compró una vez y no volvió' },
+  rst:         { label: 'Volver de RST',      ico: 'formula',      cupo: 1, tpl: 'rst',          d: 'compraba en RST y todavía no volvió' },
+  primera:     { label: 'Primera compra',     ico: 'consulta',     cupo: 1, tpl: 'nunca_compro', d: 'profesional registrado que nunca compró' },
+};
+const ORDEN_MIS = ['presupuesto','reponer','segunda','recuperar','rst','primera'];
 
-const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
-const cleanProd = s => (s||'').replace(/^\[[^\]]*\]\s*/,'').replace(/[«»]/g,'').trim();
-const esc = s => (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmtFecha = d => { if(!d) return '—'; const [y,m,da] = d.split('-'); return `${da}/${m}/${y}`; };
+let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONTACTOS = [];
+let tab = 'hoy', filtroMis = null, extraPlan = 0, limiteLista = 60;
+let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas', canal: 'todos', tipo: 'prof', estado: 'activos' };
+let pendingContact = null, MODAL_PID = null;
+let VEND = '';
+try { VEND = localStorage.getItem('crm_vendedor') || ''; } catch (_) {}
 
+const fmtMoney = n => '$' + Math.round(n || 0).toLocaleString('es-AR');
+const fmtNum = n => Math.round(n || 0).toLocaleString('es-AR');
+const cleanProd = s => (s || '').replace(/^\[[^\]]*\]\s*/, '').replace(/[«»]/g, '').trim();
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const fmtFecha = d => { if (!d) return '—'; const [y, m, da] = String(d).slice(0, 10).split('-'); return `${da}/${m}/${y}`; };
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fmtMesAnio = f => { if (!f) return '—'; const [y, m] = f.split('-'); return MESES[+m - 1] + ' ' + y; };
+const dayKey = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+const diasDesde = f => f ? Math.floor((Date.now() - new Date(String(f).slice(0, 10) + 'T12:00:00').getTime()) / 86400000) : null;
+const primerNombre = s => { const n = (s || '').trim(); if (!n) return ''; const p = n.includes(',') ? n.split(',')[1].trim().split(' ')[0] : n.split(' ')[0]; return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(); };
+
+// ─── Acceso a Supabase con la sesión del usuario ───
 async function api(path, opts) {
-  // Después del RLS necesitamos el JWT del usuario logueado, no la publishable key.
   const { data: sess } = await sb.auth.getSession();
   const token = (sess && sess.session && sess.session.access_token) || window.SUPABASE_KEY;
-  const baseHeaders = {
-    apikey: window.SUPABASE_KEY,
-    Authorization: 'Bearer ' + token,
-    'Content-Type': 'application/json',
-    Prefer: 'resolution=merge-duplicates',
-  };
-  const finalHeaders = opts && opts.headers ? { ...baseHeaders, ...opts.headers, Authorization: 'Bearer ' + token, apikey: window.SUPABASE_KEY } : baseHeaders;
-  const r = await fetch(window.SUPABASE_URL + '/rest/v1/' + path, {
-    ...opts,
-    headers: finalHeaders,
-  });
-  return r;
+  const headers = { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates', ...((opts && opts.headers) || {}), apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token };
+  return fetch(window.SUPABASE_URL + '/rest/v1/' + path, { ...opts, headers });
 }
 async function apiGet(path) { const r = await api(path); if (!r.ok) throw new Error('HTTP ' + r.status + ' leyendo ' + path.split('?')[0]); return r.json(); }
-// Trae TODAS las filas de a 1.000 (el servidor corta ahí: antes se perdían productos de la mayoría de los clientes)
+// Trae TODAS las filas de a 1.000 (el servidor corta ahí)
 async function apiGetTodo(path) {
   const out = [];
   for (let desde = 0; ; desde += 1000) {
@@ -782,202 +631,540 @@ async function apiGetTodo(path) {
   }
 }
 
-async function load() {
+async function cargarDinamico() {
+  const desde = new Date(Date.now() - 400 * 86400000).toISOString();
+  const [m, e, c, v] = await Promise.all([
+    apiGetTodo('cliente_metricas?select=*&partner_id=not.in.' + EXCLUIR + '&order=partner_id'),
+    apiGetTodo('cliente_estado?select=*&order=partner_id'),
+    apiGetTodo('crm_contactos?select=id,partner_id,usuario,motivo,created_at&created_at=gte.' + encodeURIComponent(desde) + '&order=created_at'),
+    apiGet('crm_conversiones?select=*&order=fecha_pedido.desc&limit=1000'),
+  ]);
+  DATA = m || [];
+  ESTADO = {}; (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
+  CONTACTOS = c || [];
+  CONV = Array.isArray(v) ? v : [];
+  MISION_CACHE = new Map();
+}
+async function load(primera) {
   try {
-    const m = await apiGetTodo('cliente_metricas?select=*&partner_id=neq.15&order=partner_id');
-    DATA = m || [];
-    const p = await apiGetTodo('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=monto_total.desc,partner_id,product_name');
-    PRODS = {};
-    (p || []).forEach(x => { if (x.es_servicio) return; (PRODS[x.partner_id] = PRODS[x.partner_id] || []).push(x); });
-    const e = await apiGetTodo('cliente_estado?select=*&order=partner_id');
-    ESTADO = {};
-    (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
-    await cargarLogros();
-    document.getElementById('syncInfo').textContent = DATA.length + ' clientes';
+    if (primera) {
+      try { await api('rpc/detectar_conversiones', { method: 'POST', body: JSON.stringify({ ventana: DIAS_ATRIBUCION }) }); } catch (_) {}
+    }
+    await cargarDinamico();
+    if (primera) {
+      const p = await apiGetTodo('cliente_producto?select=partner_id,product_name,veces_comprado,monto_total,es_servicio&order=partner_id,product_name');
+      PRODS = {};
+      (p || []).forEach(x => { if (x.es_servicio) return; (PRODS[x.partner_id] = PRODS[x.partner_id] || []).push(x); });
+      armarAfinidad();
+    }
+    pintarActualizado();
     renderAll();
-    celebrarNuevos();
-    cargarFichas(); // trae las fichas de Odoo en segundo plano (completitud, editar)
-  } catch(err) {
-    document.getElementById('list').innerHTML = '<div class="empty-view">No se pudieron cargar los datos.<br>' + esc(err.message) + '</div>';
+    if (primera) { celebrarNuevos(); revisarInsignias(true); cargarFichas(); }
+  } catch (err) {
+    document.getElementById('plan').innerHTML = '<div class="vacio" style="grid-column:1/-1"><h3>No se pudieron cargar los datos</h3><div>' + esc(err.message) + '</div></div>';
   }
 }
 
-// ─── Helpers de estado ───
-function estaContactado(pid) {
-  const e = ESTADO[pid]; if (!e || !e.contactado_at) return false;
-  const dias = (Date.now() - new Date(e.contactado_at).getTime()) / 86400000;
-  return dias < DIAS_CONTACTADO;
+function pintarActualizado() {
+  const el = document.getElementById('actualizado');
+  const ult = DATA.reduce((a, d) => (d.sincronizado_at && d.sincronizado_at > a ? d.sincronizado_at : a), '');
+  if (!ult) { el.querySelector('span').textContent = DATA.length + ' clientes'; return; }
+  const min = Math.round((Date.now() - new Date(ult).getTime()) / 60000);
+  const h = new Date().getHours(), dia = new Date().getDay();
+  const horario = dia >= 1 && dia <= 6 && h >= 8 && h < 21;
+  el.classList.toggle('viejo', horario && min > 45);
+  el.querySelector('span').textContent = 'Odoo al día · ' + (min < 2 ? 'recién' : min < 60 ? 'hace ' + min + ' min' : min < 1440 ? 'hace ' + Math.round(min / 60) + ' h' : 'el ' + fmtFecha(ult));
 }
-function estaArchivado(pid) { const e = ESTADO[pid]; return e && e.archivado; }
+
+// ─── Estado de cada cliente ───
+function contactadoHace(pid) { const e = ESTADO[pid]; if (!e || !e.contactado_at) return null; return (Date.now() - new Date(e.contactado_at).getTime()) / 86400000; }
+function estaContactado(pid) { const d = contactadoHace(pid); return d != null && d < DIAS_CONTACTADO; }
+function estaArchivado(pid) { const e = ESTADO[pid]; return !!(e && e.archivado); }
+const presuAbierto = d => d.presupuesto_name && d.presupuesto_fecha && diasDesde(d.presupuesto_fecha) <= DIAS_PRESU;
 
 async function setEstado(pid, campos) {
   const previo = ESTADO[pid];
   ESTADO[pid] = { ...(ESTADO[pid] || { partner_id: pid }), ...campos, updated_at: new Date().toISOString() };
-  const body = JSON.stringify({ partner_id: pid, ...ESTADO[pid] });
-  const r = await api('cliente_estado?on_conflict=partner_id', {
-    method: 'POST',
-    headers: {
-      apikey: window.SUPABASE_KEY,
-      Authorization: 'Bearer ' + window.SUPABASE_KEY,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates',
-    },
-    body,
-  });
+  const r = await api('cliente_estado?on_conflict=partner_id', { method: 'POST', body: JSON.stringify({ partner_id: pid, ...ESTADO[pid] }) });
   if (!r.ok) {
-    // no se guardó: se vuelve atrás para no mostrar algo que al recargar desaparece
     if (previo) ESTADO[pid] = previo; else delete ESTADO[pid];
-    alert('No se pudo guardar el cambio del cliente (HTTP ' + r.status + '). Revisá la conexión o volvé a iniciar sesión.');
+    toastF('No se pudo guardar (HTTP ' + r.status + '). Revisá la conexión o volvé a iniciar sesión.');
     throw new Error('cliente_estado ' + r.status);
   }
 }
-async function marcarContactado(pid) {
-  const antes = statsGami().hoy;
+async function marcarContactado(pid, motivo) {
+  const d = DATA.find(x => x.partner_id === pid);
+  const m = motivo || (d && misionDe(d) ? misionDe(d).tipo : 'manual');
+  const antes = misStats().hoy;
+  const card = document.querySelector(`.tarea[data-pid="${pid}"]`);
+  if (card) card.classList.add('sale');
   await setEstado(pid, { contactado_at: new Date().toISOString() });
-  renderAll();
-  // Festejo justo cuando se alcanza la meta del día
-  if (antes < META_DIARIA && statsGami().hoy >= META_DIARIA) confetti();
+  try {
+    const r = await api('crm_contactos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ partner_id: pid, usuario: VEND || null, motivo: m }) });
+    if (r.ok) { const fila = (await r.json())[0]; if (fila) CONTACTOS.push(fila); }
+  } catch (_) { /* el estado ya quedó guardado; la bitácora es un extra */ }
+  MISION_CACHE.delete(pid);
+  setTimeout(() => {
+    renderAll();
+    const s = misStats();
+    if (antes < META_DIARIA && s.hoy >= META_DIARIA) { confetti(); toastF('Meta del día cumplida. Buen trabajo.', true); }
+    else toastF('Listo: ' + (d ? primerNombre(d.nombre) || d.nombre : 'cliente') + ' quedó contactado');
+    revisarInsignias(false);
+  }, card ? 380 : 0);
 }
-async function desmarcarContactado(pid){ await setEstado(pid, { contactado_at: null }); renderAll(); }
-async function archivar(pid)           { await setEstado(pid, { archivado: true,  archivado_at: new Date().toISOString() }); renderAll(); }
-async function desarchivar(pid)        { await setEstado(pid, { archivado: false, archivado_at: null }); renderAll(); }
-
-function priorityScore(d) {
-  const base = { a_reactivar: 4000, enfriandose: 3000, dormido: 2000, ex_rst: 1500, nunca_compro: 500, activo: 0 }[d.segmento] || 0;
-  const g = Math.min((d.total_gastado||0)/100000, 500);
-  return base + g;
-}
-function topProd(pid) { const l = PRODS[pid] || []; return l.length ? cleanProd(l[0].product_name) : null; }
-function cuantosTop(d) { const n = d.total_facturas || 0; if (n > 30) return 10; if (n >= 10) return 5; return 3; }
-function pulseHtml(d) {
-  const ritmo = d.intervalo_tipico_dias, dias = d.dias_desde_ultima;
-  if (!ritmo || ritmo <= 0 || dias == null || (d.total_facturas || 0) < 2) return '';
-  const ratio = dias / ritmo;
-  let pos = Math.min(Math.max(ratio/2, 0), 1) * 100;
-  let lbl;
-  if (ratio < 1) lbl = 'compra al día';
-  else if (ratio < 2) lbl = 'se está atrasando';
-  else if (ratio < 4) lbl = ratio.toFixed(1) + '× su ritmo';
-  else lbl = 'muy atrasado';
-  return `<div class="pulse" title="Cada ~${Math.round(ritmo)} días suele comprar; hace ${dias} que no"><div class="pulse-track"><div class="pulse-dot" style="left:${pos}%"></div></div><span class="pulse-lbl">${lbl}</span></div>`;
-}
-
-function objetivos() {
-  return DATA.filter(d => d.es_profesional && !estaArchivado(d.partner_id) && d.segmento !== 'activo' && d.telefono_wa);
-}
-function colaPendiente() {
-  return objetivos().filter(d => !estaContactado(d.partner_id)).sort((a,b) => priorityScore(b) - priorityScore(a));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Logros (conversiones) y gamificación
-// ═══════════════════════════════════════════════════════════════════════════
-const dayKey = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'); };
-
-async function cargarLogros() {
-  // Detección al vuelo (idempotente) por si compró después del último cron.
-  try { await api('rpc/detectar_conversiones', { method: 'POST', body: JSON.stringify({ ventana: DIAS_ATRIBUCION }) }); }
-  catch (_) { /* si falla, mostramos lo que ya detectó el cron */ }
-  const c = await apiGet('crm_conversiones?select=*&order=fecha_pedido.desc&limit=500');
-  CONV = Array.isArray(c) ? c : [];
-  CONV_POR_PID = {};
-  CONV.forEach(x => { if (!CONV_POR_PID[x.partner_id]) CONV_POR_PID[x.partner_id] = x; });
-}
-
-function statsGami() {
+async function desmarcarContactado(pid) {
+  await setEstado(pid, { contactado_at: null });
   const hoyK = dayKey(new Date());
-  const hace7 = Date.now() - 7 * 86400000;
-  const dias = new Set();
-  let hoy = 0, semana = 0;
-  Object.values(ESTADO).forEach(e => {
-    if (!e.contactado_at) return;
-    const k = dayKey(e.contactado_at);
-    dias.add(k);
-    if (k === hoyK) hoy++;
-    if (new Date(e.contactado_at).getTime() >= hace7) semana++;
-  });
-  let racha = 0; const d = new Date();
-  if (!dias.has(dayKey(d))) d.setDate(d.getDate() - 1); // si hoy todavía no arrancó, mirar desde ayer
-  while (dias.has(dayKey(d))) { racha++; d.setDate(d.getDate() - 1); }
-  const hoyD = new Date();
-  const logrosMes = CONV.filter(x => { const f = new Date(x.fecha_pedido + 'T00:00:00'); return f.getMonth() === hoyD.getMonth() && f.getFullYear() === hoyD.getFullYear(); }).length;
-  return { hoy, semana, racha, logrosMes };
+  const mio = [...CONTACTOS].reverse().find(c => c.partner_id === pid && dayKey(c.created_at) === hoyK && (c.usuario || '') === (VEND || ''));
+  if (mio && mio.id) { try { await api('crm_contactos?id=eq.' + mio.id, { method: 'DELETE' }); CONTACTOS = CONTACTOS.filter(c => c !== mio); } catch (_) {} }
+  MISION_CACHE.delete(pid);
+  renderAll();
 }
+async function archivar(pid)    { await setEstado(pid, { archivado: true,  archivado_at: new Date().toISOString() }); MISION_CACHE.delete(pid); renderAll(); toastF('Archivado. Lo encontrás en Clientes → Archivados.'); }
+async function desarchivar(pid) { await setEstado(pid, { archivado: false, archivado_at: null }); MISION_CACHE.delete(pid); renderAll(); }
 
-function gamiHtml() {
-  const s = statsGami();
-  const pct = Math.min(100, Math.round(s.hoy / META_DIARIA * 100));
-  const full = s.hoy >= META_DIARIA;
-  const frase = full ? FRASES_META[s.hoy % FRASES_META.length] : FRASES[s.hoy % FRASES.length];
-  return `
-    <div class="gami">
-      <div class="meta">
-        <div class="meta-top"><b>Hoy: ${s.hoy} de ${META_DIARIA}</b><span>${full ? '¡meta cumplida!' : (META_DIARIA - s.hoy) + ' para la meta'}</span></div>
-        <div class="bar ${full ? 'full' : ''}"><i style="width:${pct}%"></i></div>
-      </div>
-      ${s.racha > 0 ? `<span class="gchip fire" title="Días seguidos contactando">🔥 Racha <b>${s.racha}</b> ${s.racha === 1 ? 'día' : 'días'}</span>` : ''}
-      <span class="gchip" title="Contactos de los últimos 7 días">💬 <b>${s.semana}</b> esta semana</span>
-      <span class="gchip win" onclick="setTab('logros')" title="Contactos que compraron este mes">🏆 <b>${s.logrosMes}</b> ${s.logrosMes === 1 ? 'logro' : 'logros'} del mes</span>
-      <span class="frase">${frase}</span>
-    </div>`;
-}
-
-function winTag(pid) {
-  const c = CONV_POR_PID[pid];
-  return c ? `<span class="win-tag" title="Te compró ${c.dias_hasta_compra} día(s) después de que lo contactaras">🏆 convirtió</span>` : '';
-}
-
-function renderLogros() {
-  const s = statsGami();
-  const prom = CONV.length ? Math.round(CONV.reduce((a, x) => a + (x.dias_hasta_compra || 0), 0) / CONV.length) : 0;
-  document.getElementById('kpis-logros').innerHTML = `
-    <div class="kpi-seg" style="--c:var(--t-activo)"><div class="n">${CONV.length}</div><div class="l">Logros totales</div></div>
-    <div class="kpi-seg" style="--c:var(--t-activo)"><div class="n">${s.logrosMes}</div><div class="l">Este mes</div></div>
-    <div class="kpi-seg" style="--c:var(--t-enfri)"><div class="n">${prom} d</div><div class="l">Tardan en comprar</div></div>
-    <div class="kpi-seg" style="--c:var(--t-dorm)"><div class="n">${DIAS_ATRIBUCION} d</div><div class="l">Ventana</div></div>`;
-  document.getElementById('count-logros').textContent =
-    `${CONV.length} ${CONV.length === 1 ? 'logro' : 'logros'} · pedidos confirmados dentro de ${DIAS_ATRIBUCION} días del contacto`;
-  const cont = document.getElementById('list-logros');
-  if (!CONV.length) {
-    cont.innerHTML = `<div class="queue-done"><div class="big">🏆</div><h2>Todavía no hay logros</h2><div>Cuando contactes a alguien y confirme un pedido dentro de los ${DIAS_ATRIBUCION} días, va a aparecer acá.</div></div>`;
-    return;
+// ═══════════════════════════════════════════════════════════════════════════
+// Qué ofrecer: lo que más pide cada cliente y lo que compran los que compran lo mismo
+// ═══════════════════════════════════════════════════════════════════════════
+let AFIN = { n: {}, co: {}, top: [] }, SUG_CACHE = new Map();
+function armarAfinidad() {
+  const n = {}, co = {}, nProf = {};
+  const prof = new Set(DATA.filter(d => d.es_profesional).map(d => d.partner_id));
+  for (const [pid, lista] of Object.entries(PRODS)) {
+    const set = [...new Set(lista.map(p => cleanProd(p.product_name)).filter(Boolean))];
+    for (const a of set) {
+      n[a] = (n[a] || 0) + 1;
+      if (prof.has(+pid)) nProf[a] = (nProf[a] || 0) + 1;
+      const fila = co[a] = co[a] || {};
+      for (const b of set) if (b !== a) fila[b] = (fila[b] || 0) + 1;
+    }
   }
-  cont.innerHTML = CONV.map((x, i) => {
-    const url = x.pedido_id ? `${ODOO_URL}/odoo/sales/${x.pedido_id}` : null;
-    const em = x.dias_hasta_compra <= 2 ? '⚡' : x.dias_hasta_compra <= 7 ? '🎯' : '🏆';
-    return `<div class="logro" style="animation-delay:${Math.min(i * 0.03, 0.4)}s">
-      <div class="em">${em}</div>
-      <div class="info">
-        <div class="nm">${esc(x.nombre || ('Contacto ' + x.partner_id))}</div>
-        <div class="dt">Contactado el ${fmtFecha(dayKey(x.contactado_at))} · pidió el ${fmtFecha(x.fecha_pedido)}${url ? ` · <a href="${url}" target="_blank" style="color:var(--accent)">${esc(x.pedido_name || 'ver pedido')} →</a>` : ''}</div>
-      </div>
-      <div class="dias"><div class="v">${x.dias_hasta_compra}</div><div class="k">${x.dias_hasta_compra === 1 ? 'día' : 'días'}</div></div>
-    </div>`;
-  }).join('');
+  AFIN = { n, co, top: Object.entries(nProf).sort((x, y) => y[1] - x[1]).map(x => x[0]) };
+  SUG_CACHE = new Map();
+}
+function productoClave(pid) {
+  const l = PRODS[pid] || []; if (!l.length) return null;
+  const p = [...l].sort((a, b) => (b.veces_comprado || 0) - (a.veces_comprado || 0) || (b.monto_total || 0) - (a.monto_total || 0))[0];
+  return { nombre: cleanProd(p.product_name), veces: p.veces_comprado || 0 };
+}
+function sugerido(pid) {
+  if (SUG_CACHE.has(pid)) return SUG_CACHE.get(pid);
+  const propios = new Set((PRODS[pid] || []).map(p => cleanProd(p.product_name)));
+  const score = {};
+  for (const a of propios) {
+    const fila = AFIN.co[a] || {}, na = AFIN.n[a] || 1;
+    for (const [b, c] of Object.entries(fila)) if (!propios.has(b) && c >= 2) score[b] = (score[b] || 0) + c / na;
+  }
+  let mejor = Object.entries(score).sort((x, y) => y[1] - x[1] || (AFIN.n[y[0]] || 0) - (AFIN.n[x[0]] || 0))[0];
+  const r = mejor ? mejor[0] : (AFIN.top.find(t => !propios.has(t)) || null);
+  SUG_CACHE.set(pid, r); return r;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// La tarea de cada cliente: qué hay que hacer, por qué y qué ofrecer
+// ═══════════════════════════════════════════════════════════════════════════
+let MISION_CACHE = new Map();
+function misionDe(d) {
+  if (MISION_CACHE.has(d.partner_id)) return MISION_CACHE.get(d.partner_id);
+  const r = calcularMision(d); MISION_CACHE.set(d.partner_id, r); return r;
+}
+function calcularMision(d) {
+  if (!d.telefono_wa || estaArchivado(d.partner_id)) return null;
+  const hace = contactadoHace(d.partner_id);
+  const n = d.total_facturas || 0, dias = d.dias_desde_ultima, ritmo = d.intervalo_tipico_dias;
+  const gasto = Math.min((d.total_gastado || 0) / 1e5, 900);
+  const clave = productoClave(d.partner_id), sug = sugerido(d.partner_id);
+  const yaCompro = clave ? clave.nombre : null;
+
+  if (presuAbierto(d)) {
+    const pd = diasDesde(d.presupuesto_fecha);
+    if (pd >= 1 && (hace == null || hace >= 2)) return {
+      tipo: 'presupuesto', score: 9000 + gasto - pd,
+      razon: `Tiene el presupuesto <b>${esc(d.presupuesto_name)}</b> abierto desde el ${fmtFecha(d.presupuesto_fecha)} (${pd === 1 ? 'ayer' : 'hace ' + pd + ' días'}). Preguntale si lo pudo ver y ayudalo a confirmarlo.`,
+      principal: 'Confirmar el presupuesto ' + d.presupuesto_name, tambien: sug, producto: yaCompro, sugerido: sug };
+    return null;   // presupuesto recién hecho o seguido hace poco: no molestar
+  }
+  if (hace != null && hace < DIAS_CONTACTADO) return null;
+  if (n > 0 && dias != null && dias < DIAS_RECIENTE) return null;   // acaba de comprar
+
+  if (n >= 2 && ritmo > 0 && dias != null) {
+    const ratio = dias / ritmo;
+    if (ratio >= .85 && ratio < 2) return {
+      tipo: 'reponer', score: 8000 + gasto,
+      razon: `Compra cada <b>~${Math.round(ritmo)} días</b> y hace <b>${dias}</b> que no pide. Ya le toca reponer.`,
+      principal: yaCompro, nota: clave ? `lo pidió ${clave.veces} ${clave.veces === 1 ? 'vez' : 'veces'}` : '', tambien: sug, producto: yaCompro, sugerido: sug };
+    if (ratio >= 2) return {
+      tipo: 'recuperar', score: (ratio < 4 ? 6000 : 4000) + gasto,
+      razon: `Compraba cada <b>~${Math.round(ritmo)} días</b> y hace <b>${dias}</b> que no pide (${ratio.toFixed(1).replace('.', ',')} veces su ritmo).`,
+      principal: yaCompro, tambien: sug, producto: yaCompro, sugerido: sug };
+    return null;
+  }
+  if (n === 1 && dias != null) {
+    if (dias >= 21 && dias < 120) return {
+      tipo: 'segunda', score: 7000 + gasto - Math.abs(dias - 45),
+      razon: `Compró <b>una sola vez</b>, hace ${dias} días${yaCompro ? ': <b>' + esc(yaCompro) + '</b>' : ''}. Es el momento de que vuelva.`,
+      principal: sug || yaCompro, ya: yaCompro, tambien: sug ? yaCompro : null, producto: yaCompro, sugerido: sug };
+    if (dias >= 120) return {
+      tipo: 'recuperar', score: (dias < 240 ? 5000 : 3500) + gasto,
+      razon: `Compró una vez, hace <b>${dias} días</b>, y no volvió.`,
+      principal: yaCompro, tambien: sug, producto: yaCompro, sugerido: sug };
+    return null;
+  }
+  if (!d.es_profesional) return null;
+  if (d.segmento === 'ex_rst') return {
+    tipo: 'rst', score: 3000 + Math.min((PRODS[d.partner_id] || []).length, 30) * 10,
+    razon: `Compraba en RST hasta <b>${fmtMesAnio(d.rst_ultima_compra)}</b> y todavía no volvió a comprar.`,
+    principal: yaCompro, tambien: sug, producto: yaCompro, sugerido: sug };
+  if (n === 0) {
+    const [a, b] = AFIN.top;
+    return {
+      tipo: 'primera', score: 2000 + d.partner_id / 1e4,
+      razon: 'Está registrado como profesional pero <b>nunca compró</b>. Presentale la línea y la lista de precios.',
+      principal: a ? a + ' (lo que más eligen los profesionales)' : 'la lista profesional', tambien: b, producto: a, sugerido: b };
+  }
+  return null;
+}
+function candidatos() {
+  const out = [];
+  for (const d of DATA) { const m = misionDe(d); if (m) out.push({ d, m }); }
+  return out.sort((a, b) => b.m.score - a.m.score);
+}
+// El plan mezcla tipos de tarea (cupos) y completa con las de mayor prioridad
+function armarPlan(cuantos) {
+  const todos = candidatos();
+  if (filtroMis) return todos.filter(x => x.m.tipo === filtroMis).slice(0, cuantos);
+  const elegidos = [], usados = new Set();
+  for (const t of ORDEN_MIS) {
+    const cupo = t === 'presupuesto' ? MIS[t].cupo : Math.ceil(MIS[t].cupo * cuantos / META_DIARIA);
+    todos.filter(x => x.m.tipo === t).slice(0, cupo).forEach(x => { if (elegidos.length < cuantos) { elegidos.push(x); usados.add(x.d.partner_id); } });
+  }
+  for (const x of todos) { if (elegidos.length >= cuantos) break; if (!usados.has(x.d.partner_id)) { elegidos.push(x); usados.add(x.d.partner_id); } }
+  return elegidos.sort((a, b) => b.m.score - a.m.score);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Avance de cada persona (la cuenta del Core es compartida: cada uno elige su nombre)
+// ═══════════════════════════════════════════════════════════════════════════
+const esMio = c => (c.usuario || '') === (VEND || '');
+function statsDe(lista, conv) {
+  const hoyK = dayKey(new Date()), hace7 = Date.now() - 7 * 86400000;
+  const porDia = {};
+  let hoy = 0, semana = 0;
+  lista.forEach(c => { const k = dayKey(c.created_at); porDia[k] = (porDia[k] || 0) + 1; if (k === hoyK) hoy++; if (new Date(c.created_at).getTime() >= hace7) semana++; });
+  const dias = new Set(Object.keys(porDia));
+  let racha = 0; const d = new Date();
+  if (!dias.has(dayKey(d))) d.setDate(d.getDate() - 1);
+  while (dias.has(dayKey(d)) || d.getDay() === 0 && dias.has(dayKey(new Date(d.getTime() - 86400000)))) { if (dias.has(dayKey(d))) racha++; d.setDate(d.getDate() - 1); }
+  let mejorRacha = 0, run = 0, prev = null;
+  [...dias].sort().forEach(k => { const t = new Date(k + 'T12:00:00').getTime(); const salto = prev == null ? 99 : Math.round((t - prev) / 86400000); run = (salto === 1 || (salto === 2 && new Date(t - 86400000).getDay() === 0)) ? run + 1 : 1; mejorRacha = Math.max(mejorRacha, run); prev = t; });
+  const ahora = new Date();
+  const mes = conv.filter(x => { const f = new Date(x.fecha_pedido + 'T12:00:00'); return f.getMonth() === ahora.getMonth() && f.getFullYear() === ahora.getFullYear(); });
+  return { hoy, semana, racha, mejorRacha, mejorDia: Math.max(0, ...Object.values(porDia)), totalCont: lista.length, ventas: conv.length, ventasMes: mes.length,
+    recuperos: conv.filter(x => ['recuperar','rst','reactivacion'].includes(x.motivo)).length, cierres: conv.filter(x => x.motivo === 'presupuesto').length };
+}
+const misStats = () => statsDe(CONTACTOS.filter(esMio), CONV.filter(x => (x.usuario || '') === (VEND || '') && VEND));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pestañas
+// ═══════════════════════════════════════════════════════════════════════════
+function setTab(t) {
+  tab = t;
+  document.querySelectorAll('.pest').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
+  ['hoy','clientes','resultados'].forEach(v => { document.getElementById('view-' + v).style.display = v === t ? '' : 'none'; });
+  renderAll();
+}
+function renderAll() {
+  const s = misStats();
+  document.getElementById('c-hoy').textContent = Math.max(0, META_DIARIA - s.hoy) || '✓';
+  document.getElementById('c-clientes').textContent = fmtNum(baseLista().length);
+  document.getElementById('c-resultados').textContent = s.ventasMes ? s.ventasMes + ' ventas' : '';
+  if (tab === 'hoy') renderHoy();
+  if (tab === 'clientes') renderClientes();
+  if (tab === 'resultados') renderResultados();
+}
+
+// ─── HOY ───
+function renderHoy() {
+  const s = misStats();
+  const f = new Date();
+  document.getElementById('hola-fecha').textContent = f.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const quedan = Math.max(0, META_DIARIA - s.hoy);
+  document.getElementById('hola-tit').innerHTML = (VEND ? esc(VEND) + ', tu' : 'Tu') + ' plan de <em>hoy</em>.';
+  document.getElementById('hola-bajada').textContent = quedan
+    ? `Te quedan ${quedan} ${quedan === 1 ? 'cliente' : 'clientes'} para llegar a la meta. Cada tarea dice a quién escribirle, por qué y qué ofrecerle.`
+    : 'Llegaste a la meta de hoy. Si te queda tiempo, abajo hay más clientes esperando.';
+  document.getElementById('quien').innerHTML = VEND
+    ? `Trabajando como <b>${esc(VEND)}</b> <button class="rb suave" style="padding:4px 6px" onclick="pedirQuien()">cambiar</button>`
+    : `<button class="rb linea" onclick="pedirQuien()">Decime quién sos</button>`;
+
+  const pct = Math.min(1, s.hoy / META_DIARIA), C = 2 * Math.PI * 42;
+  document.getElementById('meta').innerHTML = `
+    <span class="eyebrow">Meta del día</span>
+    <div class="anillo">
+      <svg viewBox="0 0 96 96"><circle class="pista" cx="48" cy="48" r="42" fill="none" stroke-width="7"/><circle class="avance" cx="48" cy="48" r="42" fill="none" stroke-width="7" stroke-dasharray="${C}" stroke-dashoffset="${C}" id="anilloAvance"/></svg>
+      <div><div class="cifra num">${s.hoy}<small> / ${META_DIARIA}</small></div><div class="txt">${s.hoy >= META_DIARIA ? 'meta cumplida' : 'contactos hoy'}</div></div>
+    </div>
+    <div class="marcas">
+      <div><span class="num" data-n="${s.racha}">${s.racha}</span>${s.racha === 1 ? 'día seguido' : 'días seguidos'}</div>
+      <div><span class="num" data-n="${s.semana}">${s.semana}</span>esta semana</div>
+      <div><span class="num" data-n="${s.ventasMes}">${s.ventasMes}</span>ventas del mes</div>
+    </div>`;
+  requestAnimationFrame(() => { const a = document.getElementById('anilloAvance'); if (a) a.style.strokeDashoffset = C * (1 - pct); });
+
+  const todos = candidatos();
+  const cuenta = {}; todos.forEach(x => { cuenta[x.m.tipo] = (cuenta[x.m.tipo] || 0) + 1; });
+  document.getElementById('misiones').innerHTML = `<button class="mis ${!filtroMis ? 'on' : ''}" onclick="elegirMision(null)">Todo mezclado <span class="num">${fmtNum(todos.length)}</span></button>` +
+    ORDEN_MIS.filter(t => cuenta[t]).map(t => `<button class="mis ${filtroMis === t ? 'on' : ''}" onclick="elegirMision('${t}')" title="${esc(MIS[t].d)}">${ico(MIS[t].ico)}${MIS[t].label} <span class="num">${fmtNum(cuenta[t])}</span></button>`).join('');
+
+  const cuantos = Math.max(quedan, filtroMis ? 12 : 3) + extraPlan;
+  const plan = armarPlan(cuantos);
+  document.getElementById('plan-tit').textContent = filtroMis ? MIS[filtroMis].label : (quedan ? 'Para hacer hoy' : 'Si querés seguir');
+  document.getElementById('plan-sub').textContent = filtroMis ? MIS[filtroMis].d.charAt(0).toUpperCase() + MIS[filtroMis].d.slice(1) + '.' : 'Ordenadas por lo que más conviene. Tocá el nombre para ver todo el cliente.';
+  document.getElementById('plan').innerHTML = plan.length
+    ? plan.map((x, i) => tareaHtml(x.d, x.m, i)).join('')
+    : `<div class="vacio corte" style="grid-column:1/-1"><img class="iso" src="../shared/marca/isotipo-original.svg" alt=""><h3>No queda nada <em>pendiente</em></h3><div>Todos los clientes con tareas ya fueron contactados en los últimos ${DIAS_CONTACTADO} días.</div></div>`;
+  const resto = (filtroMis ? todos.filter(x => x.m.tipo === filtroMis).length : todos.length) - plan.length;
+  document.getElementById('mas').innerHTML = resto > 0 ? `<button class="rb linea" onclick="extraPlan += 6; renderHoy()">Ver 6 más · quedan ${fmtNum(resto)}</button>` : '';
+
+  const hoyK = dayKey(new Date());
+  const hechos = CONTACTOS.filter(c => esMio(c) && dayKey(c.created_at) === hoyK).reverse();
+  document.getElementById('hechos').innerHTML = hechos.length ? `<h4>Hechos hoy · ${hechos.length}</h4>` + hechos.map(c => {
+    const d = DATA.find(x => x.partner_id === c.partner_id) || { nombre: 'Cliente ' + c.partner_id };
+    const hora = new Date(c.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="hecho"><span class="ok">✓</span><span>${esc(d.nombre)}</span><span class="s">${MIS[c.motivo] ? MIS[c.motivo].label : 'Contacto'} · ${hora}</span><button onclick="desmarcarContactado(${c.partner_id})">deshacer</button></div>`;
+  }).join('') : '';
+}
+function elegirMision(t) { filtroMis = filtroMis === t ? null : t; extraPlan = 0; renderHoy(); }
+
+function tareaHtml(d, m, i) {
+  const M = MIS[m.tipo];
+  const can = canalesDe(d);
+  const datos = [];
+  if (d.total_facturas) datos.push(`<div><span class="num">${d.total_facturas}</span>${d.total_facturas === 1 ? 'compra' : 'compras'}</div>`);
+  if (d.total_gastado) datos.push(`<div><span class="num">${fmtMoney(d.total_gastado)}</span>histórico</div>`);
+  if (d.intervalo_tipico_dias) datos.push(`<div><span class="num">${Math.round(d.intervalo_tipico_dias)} d</span>su ritmo</div>`);
+  if (can.length) datos.push(`<div><span class="num" style="font-size:13px">${can.join(' + ')}</span>canal</div>`);
+  const ofre = m.principal ? `<div class="t-ofre"><span class="eyebrow">${m.tipo === 'presupuesto' ? 'Objetivo' : m.tipo === 'segunda' && m.ya && m.principal !== m.ya ? 'Ofrecele' : m.tipo === 'primera' ? 'Para empezar' : 'Lo que suele comprar'}</span>${esc(m.principal)}${m.nota ? ` <span style="color:var(--r-mu)">· ${esc(m.nota)}</span>` : ''}${m.tambien && m.tambien !== m.principal ? `<span class="tambien">${m.tipo === 'segunda' && m.ya ? 'Ya probó' : 'También le puede interesar'}: ${esc(m.tambien)}</span>` : ''}</div>` : '';
+  return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
+    <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span>${d.es_profesional ? '' : '<span class="t-badge">Consumidor</span>'}<span class="filete"></span></div>
+    <h4 class="t-nombre" onclick="abrirFicha(${d.partner_id})" title="Ver el cliente">${esc(d.nombre || 'Sin nombre')}</h4>
+    <p class="t-por">${m.razon}</p>
+    ${ofre}
+    ${datos.length ? `<div class="t-datos">${datos.join('')}</div>` : ''}
+    <div class="t-acc">
+      <button class="rb si" onclick="abrirMensaje(${d.partner_id})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>WhatsApp</button>
+      <button class="rb linea" onclick="marcarContactado(${d.partner_id}, '${m.tipo}')" title="Ya le escribí">Listo</button>
+      <button class="rb suave" onclick="archivar(${d.partner_id})" title="No volver a mostrarlo">Archivar</button>
+    </div>
+  </article>`;
+}
+
+// ─── CLIENTES ───
+function baseLista() {
+  let rows = DATA;
+  if (filtro.estado === 'archivados') rows = rows.filter(d => estaArchivado(d.partner_id));
+  else rows = rows.filter(d => !estaArchivado(d.partner_id));
+  if (filtro.tipo === 'prof') rows = rows.filter(d => d.es_profesional);
+  if (filtro.tipo === 'noprof') rows = rows.filter(d => !d.es_profesional);
+  const can = CANALES.find(c => c[0] === filtro.canal);
+  if (can) rows = rows.filter(d => (d[can[2]] || 0) > 0);
+  return rows;
+}
+function renderClientes() {
+  const base = baseLista();
+  const c = Object.fromEntries(ORDEN_SEG.map(s => [s, 0]));
+  base.forEach(d => { if (c[d.segmento] != null) c[d.segmento]++; });
+  document.getElementById('segs').innerHTML = ORDEN_SEG.map(s => `<button class="sgm ${filtro.seg === s ? 'on' : ''}" style="--c:${SEG[s].c}" onclick="toggleSeg('${s}')" title="${esc(SEG[s].d)}"><span class="num">${fmtNum(c[s])}</span><span class="l">${SEG[s].label}</span></button>`).join('');
+  let rows = base;
+  if (filtro.seg) rows = rows.filter(d => d.segmento === filtro.seg);
+  if (filtro.q) { const q = filtro.q.toLowerCase(); rows = rows.filter(d => (d.nombre || '').toLowerCase().includes(q)); }
+  if (filtro.fwa === 'con') rows = rows.filter(d => d.telefono_wa);
+  if (filtro.fwa === 'sin') rows = rows.filter(d => !d.telefono_wa);
+  if (filtro.compras === 'una') rows = rows.filter(d => (d.total_facturas || 0) === 1);
+  if (filtro.compras === 'varias') rows = rows.filter(d => (d.total_facturas || 0) >= 2);
+  if (filtro.compras === 'ninguna') rows = rows.filter(d => !(d.total_facturas || 0) && !d.rst_ultima_compra);
+  if (filtro.estado === 'contactados') rows = rows.filter(d => estaContactado(d.partner_id));
+  if (filtro.estado === 'tarea') rows = rows.filter(d => misionDe(d));
+  if (filtro.estado === 'presupuesto') rows = rows.filter(presuAbierto);
+  const prio = d => { const m = misionDe(d); return m ? m.score : -1; };
+  rows = [...rows].sort((a, b) => {
+    if (filtro.orden === 'ficha') return fichaPct(a.partner_id) - fichaPct(b.partner_id);
+    if (filtro.orden === 'dias') return (b.dias_desde_ultima ?? -1) - (a.dias_desde_ultima ?? -1);
+    if (filtro.orden === 'monto') return (b.total_gastado || 0) - (a.total_gastado || 0);
+    if (filtro.orden === 'reciente') return String(b.ultima_compra || '').localeCompare(String(a.ultima_compra || ''));
+    return prio(b) - prio(a) || (b.total_gastado || 0) - (a.total_gastado || 0);
+  });
+  document.getElementById('cuenta').textContent = fmtNum(rows.length) + (rows.length === 1 ? ' cliente' : ' clientes');
+  document.getElementById('lista').innerHTML = rows.length
+    ? rows.slice(0, limiteLista).map(filaHtml).join('')
+    : '<div class="vacio">No hay clientes con estos filtros.</div>';
+  document.getElementById('lista-mas').innerHTML = rows.length > limiteLista ? `<button class="rb linea" onclick="limiteLista += 100; renderClientes()">Mostrar más · quedan ${fmtNum(rows.length - limiteLista)}</button>` : '';
+}
+const renderLista = () => { if (tab === 'clientes') renderClientes(); };
+function toggleSeg(s) { filtro.seg = filtro.seg === s ? null : s; limiteLista = 60; renderClientes(); }
+function filaHtml(d) {
+  const seg = SEG[d.segmento] || { label: d.segmento || '—', c: 'var(--r-li)' };
+  const dias = d.dias_desde_ultima, n = d.total_facturas || 0;
+  const cont = estaContactado(d.partner_id), m = misionDe(d);
+  const rec = n
+    ? `<b class="num">${dias === 0 ? 'hoy' : dias == null ? '—' : dias + ' d'}</b> sin comprar<div class="s">${n} ${n === 1 ? 'compra' : 'compras'} · ${fmtMoney(d.total_gastado)}</div>`
+    : d.rst_ultima_compra ? `<b class="num">${fmtMesAnio(d.rst_ultima_compra)}</b><div class="s">última compra, en RST</div>` : '<span class="s">sin compras</span>';
+  const can = canalesDe(d);
+  const mi = presuAbierto(d) ? `<span>Presupuesto ${esc(d.presupuesto_name)}</span>` : m ? `<span>${MIS[m.tipo].label}</span>` : cont ? 'Contactado' : '';
+  return `<div class="fila ${cont ? 'cont' : ''}" style="--c:${seg.c}" onclick="abrirFicha(${d.partner_id})">
+    <div style="min-width:0"><div class="nm">${esc(d.nombre || 'Sin nombre')}${!d.telefono ? '<span class="sin-tel">sin teléfono</span>' : ''}</div>
+    <div class="sub">${seg.label}${can.length ? ' · ' + can.join(' + ') : ''}${d.es_profesional ? '' : ' · no profesional'}${cont ? ' · contactado' : ''}</div></div>
+    <div class="rec">${rec}</div>
+    <div class="mi">${mi}</div>
+    <div class="ir">Abrir →</div>
+  </div>`;
+}
+
+// ─── RESULTADOS ───
+function renderResultados() {
+  const yo = misStats();
+  const hace30 = Date.now() - 30 * 86400000;
+  const cont30 = CONTACTOS.filter(c => new Date(c.created_at).getTime() >= hace30 && c.motivo !== 'historico');
+  const conv30 = CONV.filter(x => new Date(x.contactado_at).getTime() >= hace30);
+  const tasa = cont30.length ? Math.round(conv30.length / cont30.length * 100) : 0;
+  document.getElementById('tira').innerHTML = [
+    ['Tus contactos · 7 días', yo.semana, VEND ? 'como ' + VEND : 'elegí tu nombre en Hoy'],
+    ['Ventas logradas · mes', CONV.filter(x => { const f = new Date(x.fecha_pedido + 'T12:00:00'), a = new Date(); return f.getMonth() === a.getMonth() && f.getFullYear() === a.getFullYear(); }).length, 'de todo el equipo'],
+    ['Conversión · 30 días', tasa, '% de los contactos compraron', '%'],
+    ['Clientes activos', DATA.filter(d => d.segmento === 'activo').length, 'compraron dentro de su ritmo'],
+  ].map(x => `<div class="dato"><span class="eyebrow">${x[0]}</span><span class="num" data-n="${x[1]}" data-suf="${x[3] || ''}">${x[1]}${x[3] || ''}</span><span class="s">${esc(x[2])}</span></div>`).join('');
+
+  // contactos por día: vos y el resto del equipo
+  const dias = [], mios = [], otros = [];
+  for (let i = 29; i >= 0; i--) { const k = dayKey(Date.now() - i * 86400000); dias.push(k); mios.push(0); otros.push(0); }
+  cont30.forEach(c => { const j = dias.indexOf(dayKey(c.created_at)); if (j >= 0) { if (esMio(c) && VEND) mios[j]++; else otros[j]++; } });
+  barrasApiladas(document.getElementById('g-contactos'), dias.map(k => k.slice(8) + '/' + k.slice(5, 7)), [{ v: mios, c: 'var(--acido)', borde: true }, { v: otros, c: 'var(--azul)' }]);
+  document.getElementById('ley-contactos').innerHTML = `<span><i style="background:var(--acido);box-shadow:0 0 0 1px var(--azul) inset"></i>${VEND ? esc(VEND) : 'Vos'}</span><span><i style="background:var(--azul)"></i>Resto del equipo</span>`;
+
+  const prof = DATA.filter(d => d.es_profesional);
+  const segs = ORDEN_SEG.map(s => ({ l: SEG[s].label, v: prof.filter(d => d.segmento === s).length, c: SEG[s].c }));
+  dona(document.getElementById('g-dona'), segs, prof.length, 'profesionales');
+
+  renderInsignias(yo);
+
+  const mes = new Date(); const porQuien = {};
+  CONTACTOS.forEach(c => { const f = new Date(c.created_at); if (f.getMonth() !== mes.getMonth() || f.getFullYear() !== mes.getFullYear() || c.motivo === 'historico') return; const k = c.usuario || 'Sin nombre'; (porQuien[k] = porQuien[k] || { c: 0, v: 0 }).c++; });
+  CONV.forEach(x => { const f = new Date(x.fecha_pedido + 'T12:00:00'); if (f.getMonth() !== mes.getMonth() || f.getFullYear() !== mes.getFullYear()) return; const k = x.usuario || 'Sin nombre'; (porQuien[k] = porQuien[k] || { c: 0, v: 0 }).v++; });
+  const eq = Object.entries(porQuien).sort((a, b) => b[1].v - a[1].v || b[1].c - a[1].c);
+  document.getElementById('equipo').innerHTML = eq.length
+    ? '<div style="color:var(--r-mu);font-size:12px"><span>Persona</span><span>contactos · ventas</span></div>' + eq.map(([k, x]) => `<div><span>${esc(k)}${k === VEND ? ' (vos)' : ''}</span><span class="num">${x.c} · ${x.v}</span></div>`).join('')
+    : '<p class="nota">Todavía no hay contactos este mes.</p>';
+
+  document.getElementById('ventas').innerHTML = CONV.length ? CONV.slice(0, 12).map((x, i) => {
+    const url = x.pedido_id ? `${ODOO_URL}/odoo/sales/${x.pedido_id}` : null;
+    return `<div class="venta" style="animation-delay:${i * .04}s"><div><div>${esc(x.nombre || 'Cliente ' + x.partner_id)}</div><div class="d">Contactado el ${fmtFecha(dayKey(x.contactado_at))}${x.usuario ? ' por ' + esc(x.usuario) : ''} · pidió el ${fmtFecha(x.fecha_pedido)}${url ? ` · <a href="${url}" target="_blank">${esc(x.pedido_name || 'ver pedido')}</a>` : ''}</div></div><div class="dias"><span class="num">${x.dias_hasta_compra}</span><span>${x.dias_hasta_compra === 1 ? 'día' : 'días'}</span></div></div>`;
+  }).join('') : '<p class="nota">Cuando contactes a alguien y confirme un pedido dentro de los 21 días, aparece acá.</p>';
+
+  const top = Object.entries(AFIN.n).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ l: k, v }));
+  barrasH(document.getElementById('g-productos'), top, v => fmtNum(v), 'clientes');
+  barrasH(document.getElementById('g-canales'), CANALES.map(c => ({ l: c[1], v: DATA.filter(d => (d[c[2]] || 0) > 0).length })), v => fmtNum(v));
+  const cand = candidatos(); const porTipo = {}; cand.forEach(x => { porTipo[x.m.tipo] = (porTipo[x.m.tipo] || 0) + 1; });
+  barrasH(document.getElementById('g-tareas'), ORDEN_MIS.map(t => ({ l: MIS[t].label, v: porTipo[t] || 0 })), v => fmtNum(v));
+  contar(document.getElementById('view-resultados'));
+}
+
+// ─── Gráficos (SVG propio, colores de la paleta) ───
+function barrasApiladas(el, labels, series) {
+  const W = Math.max(320, el.clientWidth || 600), H = 200, pl = 26, pb = 22, pt = 8;
+  const tot = labels.map((_, i) => series.reduce((a, s) => a + s.v[i], 0));
+  const max = Math.max(4, ...tot), bw = (W - pl) / labels.length;
+  let svg = `<svg class="grafico" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Contactos por día">`;
+  [0, .5, 1].forEach(f => { const y = pt + (H - pt - pb) * (1 - f); svg += `<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--r-li)"/><text x="0" y="${y + 4}">${Math.round(max * f)}</text>`; });
+  labels.forEach((l, i) => {
+    let y = H - pb;
+    series.forEach(s => {
+      const h = (H - pt - pb) * s.v[i] / max; if (!h) return; y -= h;
+      svg += `<rect class="bar" x="${pl + i * bw + bw * .18}" y="${y}" width="${bw * .64}" height="${h}" fill="${s.c}" ${s.borde ? 'stroke="var(--azul)" stroke-width=".8"' : ''} style="animation-delay:${i * 12}ms"><title>${l}: ${s.v[i]}</title></rect>`;
+    });
+    if (i % 5 === 4 || i === labels.length - 1) svg += `<text x="${pl + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${l}</text>`;
+  });
+  el.innerHTML = svg + '</svg>';
+  if (!tot.some(Boolean)) el.innerHTML += '<p class="nota" style="margin-top:6px">Los contactos se empiezan a registrar desde hoy, con quién los hizo.</p>';
+}
+function dona(el, segs, total, rotulo) {
+  const R = 52, C = 2 * Math.PI * R; let acc = 0;
+  const arcos = segs.filter(s => s.v).map(s => { const len = C * s.v / Math.max(1, total); const a = `<circle class="seg-d" cx="75" cy="75" r="${R}" fill="none" stroke="${s.c}" stroke-width="22" stroke-dasharray="0 ${C}" data-d="${len} ${C - len}" stroke-dashoffset="${-acc}" transform="rotate(-90 75 75)"><title>${s.l}: ${s.v}</title></circle>`; acc += len; return a; }).join('');
+  el.innerHTML = `<div class="dona"><svg viewBox="0 0 150 150">${arcos}<text x="75" y="76" text-anchor="middle" style="font:400 26px var(--sora);fill:var(--r-tx)">${fmtNum(total)}</text><text x="75" y="94" text-anchor="middle" style="font:400 10px var(--sans);fill:var(--r-mu)">${rotulo}</text></svg>
+    <ul>${segs.map(s => `<li><i style="background:${s.c}"></i>${s.l}<b>${fmtNum(s.v)}</b></li>`).join('')}</ul></div>`;
+  requestAnimationFrame(() => el.querySelectorAll('circle.seg-d').forEach(c => c.setAttribute('stroke-dasharray', c.dataset.d)));
+}
+function barrasH(el, items, fmt, sufijo) {
+  const max = Math.max(1, ...items.map(x => x.v));
+  el.innerHTML = items.map((x, i) => `<div class="bh"><span class="n" title="${esc(x.l)}">${esc(x.l)}</span><span class="t"><i style="width:${x.v / max * 100}%;animation-delay:${i * 60}ms"></i></span><span class="v">${fmt(x.v)}</span></div>`).join('') + (sufijo ? `<p class="nota" style="margin:4px 0 0">Cantidad de ${sufijo} que lo compraron alguna vez.</p>` : '');
+}
+function contar(root) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('.num[data-n]').forEach(el => {
+    const fin = +el.dataset.n, suf = el.dataset.suf || ''; if (!fin) return;
+    const t0 = performance.now();
+    const paso = t => { const p = Math.min(1, (t - t0) / 700); el.textContent = Math.round(fin * (1 - Math.pow(1 - p, 3))).toLocaleString('es-AR') + suf; if (p < 1) requestAnimationFrame(paso); };
+    requestAnimationFrame(paso);
+  });
+}
+
+// ─── Insignias ───
+const INSIG = [
+  { id: 'primer',  ico: 'consulta',     nm: 'Primer mensaje',       ds: 'Contactaste a tu primer cliente.',               meta: 1,   v: s => s.totalCont },
+  { id: 'dia',     ico: 'protocolo',    nm: 'Día completo',         ds: 'Llegaste a la meta de 10 contactos en un día.',  meta: 10,  v: s => s.mejorDia },
+  { id: 'racha3',  ico: 'formacion',    nm: 'Constancia',           ds: '3 días seguidos contactando (el domingo no corta).', meta: 3, v: s => s.mejorRacha },
+  { id: 'venta1',  ico: 'envio',        nm: 'Primera venta',        ds: 'Un cliente que contactaste compró.',              meta: 1,   v: s => s.ventas },
+  { id: 'cierre',  ico: 'presentacion', nm: 'Presupuesto cerrado',  ds: 'Se confirmó un presupuesto que seguiste.',        meta: 1,   v: s => s.cierres },
+  { id: 'recupero',ico: 'aplicacion',   nm: 'Cliente recuperado',   ds: 'Volvió a comprar alguien atrasado o de RST.',     meta: 1,   v: s => s.recuperos },
+  { id: 'racha10', ico: 'formacion',    nm: 'Hábito',               ds: '10 días seguidos contactando.',                   meta: 10,  v: s => s.mejorRacha },
+  { id: 'diez',    ico: 'formula',      nm: 'Diez ventas',          ds: '10 ventas que vinieron de tus contactos.',        meta: 10,  v: s => s.ventas },
+  { id: 'cien',    ico: 'textura',      nm: 'Cartera en movimiento',ds: '100 contactos en total.',                         meta: 100, v: s => s.totalCont },
+];
+const insigGuardadas = () => { try { return new Set(JSON.parse(localStorage.getItem('crm_insig_' + VEND) || '[]')); } catch (_) { return new Set(); } };
+let INSIG_NUEVAS = new Set();
+function renderInsignias(s) {
+  const ganadas = INSIG.filter(x => x.v(s) >= x.meta).length;
+  document.getElementById('ins-tit').innerHTML = `Insignias · <em>${ganadas}</em> de ${INSIG.length}`;
+  document.getElementById('insignias').innerHTML = INSIG.map(x => {
+    const v = Math.min(x.v(s), x.meta), ok = v >= x.meta;
+    return `<div class="ins ${ok ? 'gano' : 'bloq'} ${INSIG_NUEVAS.has(x.id) ? 'nueva' : ''}" title="${esc(x.ds)}">${ico(x.ico)}<div style="min-width:0;flex:1"><div class="nm">${x.nm}</div><div class="ds">${x.ds}</div>${ok ? '' : `<div class="pr"><i style="width:${v / x.meta * 100}%"></i></div><div class="ds">${v} de ${x.meta}</div>`}</div></div>`;
+  }).join('');
+  INSIG_NUEVAS = new Set();
+}
+function revisarInsignias(silencio) {
+  if (!VEND) return;
+  const s = misStats(), antes = insigGuardadas();
+  const ahora = INSIG.filter(x => x.v(s) >= x.meta).map(x => x.id);
+  const nuevas = ahora.filter(id => !antes.has(id));
+  try { localStorage.setItem('crm_insig_' + VEND, JSON.stringify(ahora)); } catch (_) {}
+  if (!nuevas.length || silencio) return;
+  INSIG_NUEVAS = new Set(nuevas);
+  const x = INSIG.find(i => i.id === nuevas[0]);
+  document.getElementById('celTitulo').textContent = 'Nueva insignia: ' + x.nm;
+  document.getElementById('celSub').textContent = x.ds;
+  document.getElementById('celebra').classList.add('show');
+  confetti();
+  setTimeout(cerrarCelebra, 7000);
+}
+
+// ─── Ventas logradas nuevas: festejo ───
 function celebrarNuevos() {
   const nuevos = CONV.filter(x => !x.visto);
   if (!nuevos.length) return;
   const n = nuevos.length, nom = nuevos[0].nombre || '';
-  document.getElementById('celTitulo').textContent = n === 1 ? '¡Un contacto tuyo compró!' : `¡${n} contactos tuyos compraron!`;
-  document.getElementById('celSub').textContent = n === 1
-    ? `${nom} — pidió a los ${nuevos[0].dias_hasta_compra} días`
-    : `Incluye a ${nom} y ${n - 1} más`;
+  document.getElementById('celTitulo').textContent = n === 1 ? 'Un cliente contactado compró' : n + ' clientes contactados compraron';
+  document.getElementById('celSub').textContent = n === 1 ? `${nom} pidió a los ${nuevos[0].dias_hasta_compra} días del contacto` : `Entre ellos, ${nom}`;
   document.getElementById('celebra').classList.add('show');
   confetti();
-  marcarLogrosVistos();
+  api('crm_conversiones?visto=eq.false', { method: 'PATCH', body: JSON.stringify({ visto: true }) }).then(() => CONV.forEach(x => { x.visto = true; })).catch(() => {});
   setTimeout(cerrarCelebra, 9000);
 }
-async function marcarLogrosVistos() {
-  try {
-    await api('crm_conversiones?visto=eq.false', { method: 'PATCH', body: JSON.stringify({ visto: true }) });
-    CONV.forEach(x => { x.visto = true; });
-  } catch (_) { /* no bloquea */ }
-}
-function verLogros() { cerrarCelebra(); setTab('logros'); }
+function verLogros() { cerrarCelebra(); setTab('resultados'); }
 function cerrarCelebra() { document.getElementById('celebra').classList.remove('show'); }
-function abrirInfo() { document.getElementById('infoVentana').textContent = DIAS_ATRIBUCION; document.getElementById('modalInfo').classList.add('show'); }
+function abrirInfo() {
+  document.getElementById('info-misiones').innerHTML = ORDEN_MIS.map(t => `<div class="seg-row">${ico(MIS[t].ico)}<span class="n">${MIS[t].label}</span><span class="d">${MIS[t].d}</span></div>`).join('');
+  document.getElementById('info-segs').innerHTML = ORDEN_SEG.map(s => `<div class="seg-row"><i style="background:${SEG[s].c}"></i><span class="n">${SEG[s].label}</span><span class="d">${SEG[s].d}</span></div>`).join('');
+  document.getElementById('modalInfo').classList.add('show');
+}
 function cerrarInfo() { document.getElementById('modalInfo').classList.remove('show'); }
 
 function confetti() {
@@ -985,237 +1172,49 @@ function confetti() {
   const cv = document.getElementById('confetti'); if (!cv) return;
   const ctx = cv.getContext('2d');
   cv.width = innerWidth; cv.height = innerHeight; cv.style.display = 'block';
-  const cols = ['#F93549', '#2F8F5B', '#B8860B', '#34495E', '#FF8A7A'];
-  const P = Array.from({ length: 90 }, () => ({
-    x: innerWidth / 2 + (Math.random() - .5) * 260, y: -20 - Math.random() * 120,
-    vx: (Math.random() - .5) * 3, vy: 2 + Math.random() * 3.5,
-    s: 5 + Math.random() * 6, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .25,
-    c: cols[(Math.random() * cols.length) | 0],
-  }));
+  const cols = ['#EAF46B', '#34495E', '#F93549', '#DDE4E8', '#EAF46B'];
+  const P = Array.from({ length: 90 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 280, y: -20 - Math.random() * 120, vx: (Math.random() - .5) * 3, vy: 2 + Math.random() * 3.5, s: 5 + Math.random() * 6, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .25, c: cols[(Math.random() * cols.length) | 0] }));
   let t = 0;
   (function frame() {
-    t++;
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    for (const p of P) {
-      p.x += p.vx; p.y += p.vy; p.vy += .045; p.r += p.vr;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
-      ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6); ctx.restore();
-    }
-    if (t < 220) requestAnimationFrame(frame);
-    else { ctx.clearRect(0, 0, cv.width, cv.height); cv.style.display = 'none'; }
+    t++; ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of P) { p.x += p.vx; p.y += p.vy; p.vy += .045; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6); ctx.restore(); }
+    if (t < 220) requestAnimationFrame(frame); else { ctx.clearRect(0, 0, cv.width, cv.height); cv.style.display = 'none'; }
   })();
 }
 
-function setTab(t) {
-  tab = t;
-  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
-  ['lista','contactados','logros','archivados'].forEach(v => {
-    document.getElementById('view-' + v).style.display = (v === t ? '' : 'none');
-  });
+// ─── Quién está trabajando ───
+function pedirQuien() {
+  const nombres = [...new Set(CONTACTOS.map(c => c.usuario).filter(Boolean))];
+  document.getElementById('nombresConocidos').innerHTML = nombres.map(n => `<button class="rb linea" onclick="document.getElementById('quienInput').value='${esc(n)}';guardarQuien()">${esc(n)}</button>`).join('');
+  document.getElementById('quienInput').value = VEND;
+  document.getElementById('modalQuien').classList.add('show');
+  setTimeout(() => document.getElementById('quienInput').focus(), 50);
+}
+function guardarQuien() {
+  const v = document.getElementById('quienInput').value.trim().replace(/\s+/g, ' ');
+  if (!v) { document.getElementById('quienInput').focus(); return; }
+  VEND = v.charAt(0).toUpperCase() + v.slice(1);
+  try { localStorage.setItem('crm_vendedor', VEND); } catch (_) {}
+  document.getElementById('modalQuien').classList.remove('show');
+  revisarInsignias(true);
   renderAll();
 }
+document.getElementById('quienInput').addEventListener('keydown', e => { if (e.key === 'Enter') guardarQuien(); });
 
-function renderAll() {
-  document.getElementById('tab-lista').textContent = baseLista().length;
-  document.getElementById('tab-cont').textContent  = DATA.filter(d => estaContactado(d.partner_id) && !estaArchivado(d.partner_id)).length;
-  document.getElementById('tab-arch').textContent  = DATA.filter(d => estaArchivado(d.partner_id)).length;
-  document.getElementById('tab-logros').textContent = CONV.length;
-  if (tab === 'lista') { renderKPIs(); renderLista(); }
-  if (tab === 'contactados') renderContactados();
-  if (tab === 'logros') renderLogros();
-  if (tab === 'archivados') renderArchivados();
-}
-
-// ─── Cola ───
-function renderCola() {
-  const cola = colaPendiente();
-  const cont = document.getElementById('view-cola');
-  if (!cola.length) {
-    cont.innerHTML = gamiHtml() + '<div class="queue-done"><div class="big">🎉</div><h2>¡Cola al día!</h2><div>No quedan clientes prioritarios sin contactar.<br>Volvé más tarde o revisá la lista completa.</div></div>';
-    return;
-  }
-  if (queueIdx >= cola.length) queueIdx = 0;
-  const d = cola[queueIdx];
-  const seg = SEG[d.segmento]; const tp = topProd(d.partner_id); const dias = d.dias_desde_ultima;
-  const pedidoUrl = (d.ultimo_pedido_id && d.ultimo_pedido_id > 0) ? `${ODOO_URL}/odoo/sales/${d.ultimo_pedido_id}` : null;
-  const contactoUrl = `${ODOO_URL}/odoo/contacts/${d.partner_id}`;
-  cont.innerHTML = gamiHtml() + `
-    <div class="queue-wrap">
-      <div class="queue-head"><div class="big">Quedan <b>${cola.length}</b> por contactar · mostrando el más prioritario</div></div>
-      <div class="qcard">
-        <div class="stripe" style="--c:${seg.c};background:var(--c)"></div>
-        <div class="qcard-body" style="--c:${seg.c}">
-          <div class="qtop"><div class="qname">${esc(d.nombre)}${winTag(d.partner_id)}</div><span class="qbadge">${seg.label}</span></div>
-          <div class="qmetrics">
-            <div class="qm">${d.segmento==='ex_rst'?`<div class="v">${fmtMesAnio(d.rst_ultima_compra)}</div><div class="k">última, en RST</div>`:`<div class="v hot">${dias!=null?dias+' d':'—'}</div><div class="k">sin comprar</div>`}</div>
-            <div class="qm"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="k">histórico</div></div>
-            <div class="qm"><div class="v">${d.total_facturas||0}</div><div class="k">compras</div></div>
-            <div class="qm"><div class="v">${d.intervalo_tipico_dias?Math.round(d.intervalo_tipico_dias)+' d':'—'}</div><div class="k">su ritmo</div></div>
-          </div>
-          <div class="qprod">${tp?`Suele comprar: <b>${esc(tp)}</b>`:'<span class="none">Sin productos registrados</span>'}</div>
-          ${pulseHtml(d)}
-          <div class="qchips">
-            ${dias!=null?`<span class="chip" onclick="toggleBox('qult')">📅 Última compra: ${fmtFecha(d.ultima_compra)}</span>`:''}
-            ${(PRODS[d.partner_id]||[]).length?`<span class="chip" onclick="toggleBox('qtop')">📊 Top productos</span>`:''}
-            <a class="chip" href="${contactoUrl}" target="_blank">👤 Ver contacto</a>
-          </div>
-          <div class="expand" id="box-qult"><h4>Última compra</h4><div style="font-size:14px">El <b>${fmtFecha(d.ultima_compra)}</b>${dias!=null?` · hace ${dias} días`:''}<br>${pedidoUrl?`<a class="chip" style="margin-top:8px" href="${pedidoUrl}" target="_blank">Abrir pedido ${esc(d.ultimo_pedido_name||'')} →</a>`:`<a class="chip" style="margin-top:8px" href="${contactoUrl}" target="_blank">Ver en Odoo (facturación directa) →</a>`}</div></div>
-          <div class="expand" id="box-qtop"><h4>Productos que más compra (top ${cuantosTop(d)})</h4><div class="ptable">${topProdRows(d)}</div></div>
-          <div class="qbtns">
-            <button class="big-wa" onclick='waAndConfirm(${d.partner_id})'>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.2-.6.1-.2.3-.7 1-.9 1.1-.2.2-.3.2-.6.1-1.5-.7-2.4-1.3-3.4-3-.3-.5.3-.4.7-1.4.1-.2 0-.4 0-.5 0-.2-.6-1.5-.9-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.7.7-1 1.7-1 2.8 0 1.7 1.2 3.3 1.4 3.5.2.2 2.4 3.7 5.9 5 .8.3 1.5.5 2 .7.8.2 1.6.2 2.2.1.7-.1 1.7-.7 2-1.4.2-.6.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3z"/></svg>
-              Enviar WhatsApp
-            </button>
-            <div class="qbtns-row">
-              <button class="big-mark" style="flex:1" onclick="marcarContactado(${d.partner_id})">✓ Marcar como contactado</button>
-              <button class="big-chat" onclick="verChat(${d.partner_id})" title="Abrir el chat para ver qué respondió, sin texto cargado">💬 Ver chat</button>
-            </div>
-            <div class="qbtns-row">
-              <button class="big-skip" onclick="skipQueue()">Saltar →</button>
-              <button class="big-arch" onclick="archivar(${d.partner_id})">🗄 Archivar</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-}
-function topProdRows(d) {
-  const list = (PRODS[d.partner_id] || []).slice(0, cuantosTop(d));
-  return list.length
-    ? list.map(p => `<div class="pitem"><span class="pn">${esc(cleanProd(p.product_name))}</span><span class="pv">${p.veces_comprado}× · ${fmtMoney(p.monto_total)}</span></div>`).join('')
-    : '<div style="color:var(--muted)">Sin productos</div>';
-}
-function toggleBox(id) { document.getElementById('box-' + id).classList.toggle('show'); }
-function skipQueue() { queueIdx++; renderCola(); }
-
-function verChat(pid) {
-  const d = DATA.find(x => x.partner_id === pid); if (!d || !d.telefono_wa) return;
-  window.open('https://api.whatsapp.com/send?phone=' + d.telefono_wa, '_blank');
-}
-
-function waAndConfirm(pid) {
-  const d = DATA.find(x => x.partner_id === pid); if (!d) return;
-  const txt = encodeURIComponent(buildMsg(d));
-  window.open('https://api.whatsapp.com/send?phone=' + d.telefono_wa + '&text=' + txt, '_blank');
-  pendingContact = pid;
-  document.getElementById('confirmName').textContent = d.nombre;
-  document.getElementById('confirm').classList.add('show');
-}
-// Abrir WhatsApp no es haber escrito: se pregunta, igual que en la cola (antes la ficha lo daba por contactado)
-function pedirConfirmacion(pid) {
-  const d = DATA.find(x => x.partner_id === pid); if (!d) return;
-  pendingContact = pid;
-  document.getElementById('confirmName').textContent = d.nombre;
-  document.getElementById('confirm').classList.add('show');
-}
-function confirmYes() { if (pendingContact) { marcarContactado(pendingContact); } closeConfirm(); }
-function confirmNo()  { closeConfirm(); }
-function closeConfirm() { document.getElementById('confirm').classList.remove('show'); pendingContact = null; }
-
-// ─── Lista ───
-// Lo que entra a la lista según tipo y canal (los recuadros de segmento cuentan sobre esto)
-function baseLista() {
-  let rows = DATA.filter(d => !estaArchivado(d.partner_id));
-  if (filtro.tipo === 'prof')   rows = rows.filter(d => d.es_profesional);
-  if (filtro.tipo === 'noprof') rows = rows.filter(d => !d.es_profesional);
-  const can = CANALES.find(c => c[0] === filtro.canal);
-  if (can) rows = rows.filter(d => (d[can[2]] || 0) > 0);
-  return rows;
-}
-function renderKPIs() {
-  const c = Object.fromEntries(ORDEN_SEG.map(s => [s, 0]));
-  baseLista().forEach(d => { if (c[d.segmento] != null) c[d.segmento]++; });
-  document.getElementById('kpis').innerHTML = ORDEN_SEG.map(s =>
-    `<div class="kpi-seg ${filtro.seg===s?'active':''}" style="--c:${SEG[s].c}" onclick="toggleSeg('${s}')">
-      <div class="n">${c[s]}</div><div class="l">${SEG[s].label}</div>
-    </div>`).join('');
-}
-function toggleSeg(s) { filtro.seg = filtro.seg === s ? null : s; renderKPIs(); renderLista(); }
-function renderLista() {
-  const gh = document.getElementById('gami-host'); if (gh) gh.innerHTML = gamiHtml();
-  let rows = baseLista();
-  if (filtro.seg) rows = rows.filter(d => d.segmento === filtro.seg);
-  if (filtro.q) { const q = filtro.q.toLowerCase(); rows = rows.filter(d => (d.nombre||'').toLowerCase().includes(q)); }
-  if (filtro.fwa === 'con') rows = rows.filter(d => d.telefono_wa);
-  if (filtro.fwa === 'sin') rows = rows.filter(d => !d.telefono_wa);
-  if (filtro.fwa === 'sintel') rows = rows.filter(d => !d.telefono);
-  if (filtro.compras === 'una')    rows = rows.filter(d => (d.total_facturas || 0) === 1);
-  if (filtro.compras === 'varias') rows = rows.filter(d => (d.total_facturas || 0) >= 2);
-  if (filtro.compras === 'ninguna') rows = rows.filter(d => !(d.total_facturas || 0) && !d.rst_ultima_compra);
-  rows.sort((a,b) => {
-    const ca = estaContactado(a.partner_id) ? 1 : 0, cb = estaContactado(b.partner_id) ? 1 : 0;
-    if (ca !== cb) return ca - cb;
-    if (filtro.orden === 'ficha') return fichaPct(a.partner_id) - fichaPct(b.partner_id);
-    if (filtro.orden === 'dias') return (b.dias_desde_ultima||-1) - (a.dias_desde_ultima||-1);
-    if (filtro.orden === 'monto') return (b.total_gastado||0) - (a.total_gastado||0);
-    if (filtro.orden === 'reciente') return new Date(b.ultima_compra||0) - new Date(a.ultima_compra||0);
-    return priorityScore(b) - priorityScore(a);
-  });
-  document.getElementById('count').textContent = rows.length + ' cliente' + (rows.length !== 1 ? 's' : '');
-  document.getElementById('list').innerHTML = '<div class="list">' + rows.map(d => rowHtml(d)).join('') + '</div>';
-}
-const colorFicha = p => p >= 100 ? 'var(--ok)' : p >= 60 ? 'var(--accent)' : p >= 30 ? 'var(--warn)' : 'var(--hot)';
-function rowHtml(d) {
-  const seg = SEG[d.segmento] || { label: d.segmento, c: 'var(--muted)' };
-  const dias = d.dias_desde_ultima;
-  const cont = estaContactado(d.partner_id);
-  const arch = estaArchivado(d.partner_id);
-  const tieneCompras = (d.total_facturas || 0) > 0;
-  const f = FICHA[d.partner_id]; const pct = f ? completar(f).pct : null;
-  const rec = tieneCompras
-    ? `<b>${dias === 0 ? 'hoy' : (dias == null ? '—' : dias + 'd')}</b> sin comprar<div class="s">${d.total_facturas} ped · ${fmtMoney(d.total_gastado)}</div>`
-    : d.rst_ultima_compra
-      ? `<b>${fmtMesAnio(d.rst_ultima_compra)}</b> última compra<div class="s">en RST</div>`
-      : `<span class="s">sin compras</span>`;
-  const can = canalesDe(d);
-  const ficha = pct == null
-    ? `<div class="rc-ficha"><div class="lab"><span>Ficha</span><span>…</span></div><div class="track"></div></div>`
-    : `<div class="rc-ficha"><div class="lab"><span>Ficha</span><span>${pct}%</span></div><div class="track"><div class="fill" style="width:${pct}%;background:${colorFicha(pct)}"></div></div></div>`;
-  return `<div class="rowc ${cont ? 'contactado' : ''}" style="--c:${seg.c}" onclick="abrirFicha(${d.partner_id})">
-    <div class="rc-main">
-      <div class="rc-name">${esc(d.nombre || 'Sin nombre')}${!d.telefono ? '<span class="badge-notel">📞 sin tel.</span>' : ''}</div>
-      <div class="rc-sub">${seg.label}${can.length ? ' · ' + can.join(' + ') : ''}${d.es_profesional ? '' : ' · no profesional'}${cont ? ' · ✅ contactado' : ''}${arch ? ' · 🗄 archivado' : ''}</div>
-    </div>
-    <div class="rc-rec">${rec}</div>
-    ${ficha}
-    <div class="rc-go ${cont ? 'done' : ''}">${cont ? 'Abrir ✓' : 'Abrir →'}</div>
-  </div>`;
-}
-function toggleTopList(pid) {
-  toggleBox('top-' + pid);
-  const d = DATA.find(x => x.partner_id === pid);
-  const list = (PRODS[pid] || []).slice(0, cuantosTop(d));
-  document.getElementById('topbody-' + pid).innerHTML = list.length
-    ? list.map(p => `<div class="pitem"><span class="pn">${esc(cleanProd(p.product_name))}</span><span class="pv">${p.veces_comprado}× · ${fmtMoney(p.monto_total)}</span></div>`).join('')
-    : '<div style="color:var(--muted)">Sin productos</div>';
-}
-
-// ─── Contactados / Archivados ───
-function renderContactados() {
-  const rows = DATA
-    .filter(d => estaContactado(d.partner_id) && !estaArchivado(d.partner_id))
-    .sort((a,b) => new Date(ESTADO[b.partner_id].contactado_at) - new Date(ESTADO[a.partner_id].contactado_at));
-  document.getElementById('count-cont').textContent = rows.length + ' contactado' + (rows.length!==1?'s':'') + ` · se reactivan solos tras ${DIAS_CONTACTADO} días`;
-  document.getElementById('list-cont').innerHTML = rows.length
-    ? '<div class="list">' + rows.map(d => rowHtml(d)).join('') + '</div>'
-    : '<div class="empty-view">Todavía no marcaste a nadie como contactado.</div>';
-}
-function renderArchivados() {
-  const rows = DATA.filter(d => estaArchivado(d.partner_id));
-  document.getElementById('count-arch').textContent = rows.length + ' archivado' + (rows.length!==1?'s':'');
-  document.getElementById('list-arch').innerHTML = rows.length
-    ? '<div class="list">' + rows.map(d => rowHtml(d)).join('') + '</div>'
-    : '<div class="empty-view">No hay clientes archivados.</div>';
-}
-
-const LINK_LISTA_DEFAULT = 'https://rosaint.com.ar/listas/profesionales.html';
-// Fallback si la DB no responde (no debería pasar con sesión activa)
+// ═══════════════════════════════════════════════════════════════════════════
+// Mensajes de WhatsApp: uno por tipo de tarea (editables en «Mensajes»)
+// ═══════════════════════════════════════════════════════════════════════════
 const PLANTILLAS_FALLBACK = {
-  nunca_compro: 'Hola {nombre}! Te escribimos de {empresa}. Tenemos toda la línea profesional de cosmética con la mejor lista de precios. ¿Te comparto nuestra lista profesional actualizada? {link}',
+  presupuesto: 'Hola {nombre}! {quien}. Te escribo por el presupuesto {presupuesto}. ¿Lo pudiste ver? Si querés lo ajustamos, o lo confirmamos y te lo preparamos.',
+  reponer: 'Hola {nombre}! {quien}. Por cómo venís comprando, a esta altura solés reponer {producto}. ¿Querés que te lo preparemos? Te dejo la lista actualizada: {link}',
+  segunda: 'Hola {nombre}! {quien}. ¿Cómo te fue con {producto}? Si te sirve, te cuento de {sugerido}, que suele acompañarlo. Te dejo la lista: {link}',
   reactivacion: 'Hola {nombre}! Te escribimos de {empresa}. Hace un tiempo no hacés tu pedido, ¿te comparto nuestra lista profesional actualizada para que veas si querés reponer stock? {link}',
+  rst: 'Hola {nombre}! {quien}. Hace un tiempo nos compraste {producto}. Seguimos con toda la línea profesional y la lista está actualizada: {link}. ¿Te ayudo con algo?',
+  nunca_compro: 'Hola {nombre}! Te escribimos de {empresa}. Tenemos toda la línea profesional de cosmética con la mejor lista de precios. ¿Te comparto nuestra lista profesional actualizada? {link}',
 };
+const TPL_ROTULO = { presupuesto: 'Cerrar presupuesto', reponer: 'Le toca reponer', segunda: 'Segunda compra', reactivacion: 'Recuperar', rst: 'Volver de RST', nunca_compro: 'Primera compra' };
 let PLANTILLAS = { ...PLANTILLAS_FALLBACK };
-let MOMENTANEO = { texto: '', activo: false };  // mensaje puntual que reemplaza a los de arriba
+let MOMENTANEO = { texto: '', activo: false };
 async function cargarPlantillas() {
   try {
     const { data } = await sb.from('crm_plantillas').select('clave, texto');
@@ -1224,179 +1223,119 @@ async function cargarPlantillas() {
       else if (p.clave === 'momentaneo') MOMENTANEO.texto = p.texto || '';
       else if (p.clave === 'momentaneo_activo') MOMENTANEO.activo = (p.texto === '1');
     });
-  } catch (_) { /* usa fallback */ }
+  } catch (_) { /* usa los de fábrica */ }
   refreshMomInd();
 }
-function momentaneoOn() { return MOMENTANEO.activo && !!MOMENTANEO.texto.trim(); }
+const momentaneoOn = () => MOMENTANEO.activo && !!MOMENTANEO.texto.trim();
 function refreshMomInd() { const el = document.getElementById('momInd'); if (el) el.style.display = momentaneoOn() ? 'inline-block' : 'none'; }
-async function toggleMomQuick() {
-  MOMENTANEO.activo = false;  // el indicador solo sirve para apagar rápido
-  refreshMomInd();
-  try { await sb.from('crm_plantillas').upsert([{ clave: 'momentaneo_activo', texto: '0', actualizado_en: new Date().toISOString() }], { onConflict: 'clave' }); } catch (_) {}
-}
-window.toggleMomQuick = toggleMomQuick;
-function renderPlantilla(txt, ctx) {
+function renderPlantilla(txt, c) {
   return String(txt || '')
-    .replaceAll('{nombre}', ctx.nombre || '')
-    .replaceAll('{empresa}', ctx.empresa || EMPRESA)
-    .replaceAll('{link}', ctx.link || LINK_LISTA_DEFAULT)
-    .replaceAll('{producto}', ctx.producto || '');
+    .replaceAll('{nombre}', c.nombre || '').replaceAll('{empresa}', c.empresa || EMPRESA)
+    .replaceAll('{quien}', c.quien || 'Te escribimos de ' + EMPRESA).replaceAll('{link}', c.link || LINK_LISTA)
+    .replaceAll('{producto}', c.producto || 'nuestros productos').replaceAll('{sugerido}', c.sugerido || 'otros productos de la línea')
+    .replaceAll('{presupuesto}', c.presupuesto || '').replace(/\s+([.,?!])/g, '$1');
+}
+function ctxDe(d, m) {
+  const minus = s => s || '';   // el nombre del producto va como figura en el catálogo
+  return { nombre: primerNombre(d.nombre), empresa: EMPRESA, quien: VEND ? `Soy ${VEND}, de ${EMPRESA}` : 'Te escribimos de ' + EMPRESA,
+    link: d.es_profesional ? LINK_LISTA : LINK_TIENDA, producto: minus(m && m.producto), sugerido: minus(m && m.sugerido), presupuesto: d.presupuesto_name || '' };
 }
 function buildMsg(d) {
-  const nombre = (d.nombre || '').split(' ')[0];
-  const tp = topProd(d.partner_id);
-  const ctx = { nombre, empresa: EMPRESA, link: LINK_LISTA_DEFAULT, producto: tp ? tp.toLowerCase() : '' };
-  if (momentaneoOn()) return renderPlantilla(MOMENTANEO.texto, ctx);  // reemplaza al por defecto
-  const clave = d.segmento === 'nunca_compro' ? 'nunca_compro' : 'reactivacion';
-  return renderPlantilla(PLANTILLAS[clave] || PLANTILLAS_FALLBACK[clave], ctx);
+  const m = misionDe(d) || { tipo: d.total_facturas ? 'recuperar' : 'primera', producto: (productoClave(d.partner_id) || {}).nombre, sugerido: sugerido(d.partner_id) };
+  const c = ctxDe(d, m);
+  if (momentaneoOn()) return renderPlantilla(MOMENTANEO.texto, c);
+  const clave = MIS[m.tipo].tpl;
+  return renderPlantilla(PLANTILLAS[clave] || PLANTILLAS_FALLBACK[clave], c);
 }
-
-// Modal de configuración de mensajes
-async function abrirConfigMensajes() {
-  await cargarPlantillas();
-  const html = `
-    <div class="modal-inner" style="max-width: 640px; padding: 24px;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px;">
-        <h2 style="margin:0; font-size:18px; font-weight:600;">Configurar mensajes de WhatsApp</h2>
-        <button onclick="cerrarConfigMensajes()" style="background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer;">×</button>
-      </div>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:14px; line-height:1.5;">
-        Podés usar estos placeholders: <code>{nombre}</code>, <code>{empresa}</code>, <code>{link}</code>, <code>{producto}</code>.
-        El link a la lista profesional es <code>${LINK_LISTA_DEFAULT}</code>.
-      </div>
-      <div style="margin-bottom:16px;">
-        <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Clientes que nunca compraron</label>
-        <textarea id="tpl-nunca" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${esc(PLANTILLAS.nunca_compro)}</textarea>
-      </div>
-      <div style="margin-bottom:16px;">
-        <label style="display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Reactivación (dormidos / enfriándose / a reactivar)</label>
-        <textarea id="tpl-reactivacion" rows="4" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--text); resize:vertical;">${esc(PLANTILLAS.reactivacion)}</textarea>
-      </div>
-      <div style="margin-bottom:16px; border:1px solid var(--accent); border-radius:8px; padding:12px 14px; background:var(--accent-tint);">
-        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:6px;">
-          <input type="checkbox" id="tpl-mom-on" ${MOMENTANEO.activo ? 'checked' : ''} style="width:18px; height:18px; accent-color:var(--accent);">
-          <span style="font-size:13.5px; font-weight:700;">📣 Mensaje momentáneo — reemplaza a los de arriba para TODOS los contactos</span>
-        </label>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Para una campaña puntual. Prendelo cuando lo quieras usar y apagalo para volver a los mensajes por defecto.</div>
-        <textarea id="tpl-mom" rows="4" placeholder="Ej: Hola {nombre}! Esta semana 20% OFF en toda la línea corporal 🎉 {link}" style="width:100%; padding:10px; font-family:inherit; font-size:14px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); resize:vertical;">${esc(MOMENTANEO.texto || '')}</textarea>
-      </div>
-      <div id="tpl-preview" style="background:var(--surface-2); border-radius:6px; padding:12px; margin-bottom:14px; font-size:13px; line-height:1.5;">
-        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;">Previsualización con nombre "Georgina":</div>
-        <div id="tpl-preview-body"></div>
-      </div>
-      <div style="display:flex; gap:10px; justify-content:flex-end;">
-        <button class="btn secondary" onclick="cerrarConfigMensajes()">Cancelar</button>
-        <button class="btn primary" id="btnGuardarTpl">Guardar</button>
-      </div>
-    </div>
-  `;
-  const bg = document.createElement('div');
-  bg.id = 'modalConfigMsg';
-  bg.className = 'modal-bg show';
-  bg.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;';
-  bg.innerHTML = `<div style="background:var(--surface); border-radius:12px; width:100%; max-width:640px; max-height:92vh; overflow-y:auto; border:1px solid var(--border);">${html}</div>`;
-  document.body.appendChild(bg);
-  bg.addEventListener('click', e => { if (e.target === bg) cerrarConfigMensajes(); });
-
-  const preview = () => {
-    const nunca = document.getElementById('tpl-nunca').value;
-    const react = document.getElementById('tpl-reactivacion').value;
-    const mom = document.getElementById('tpl-mom').value;
-    const momOn = document.getElementById('tpl-mom-on').checked;
-    const c = { nombre:'Georgina', empresa:EMPRESA, link:LINK_LISTA_DEFAULT, producto:'crema exfoliante corporal' };
-    let h = '';
-    if (momOn && mom.trim()) h += `<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--border); color:var(--accent);"><b>📣 Momentáneo (ACTIVO, va a todos):</b> ${esc(renderPlantilla(mom, c))}</div>`;
-    h += `<div style="margin-bottom:6px;${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Nunca compró:</b> ${esc(renderPlantilla(nunca, c))}</div><div style="${momOn && mom.trim() ? 'opacity:.5;' : ''}"><b>Reactivación:</b> ${esc(renderPlantilla(react, c))}</div>`;
-    document.getElementById('tpl-preview-body').innerHTML = h;
-  };
-  document.getElementById('tpl-nunca').addEventListener('input', preview);
-  document.getElementById('tpl-reactivacion').addEventListener('input', preview);
-  document.getElementById('tpl-mom').addEventListener('input', preview);
-  document.getElementById('tpl-mom-on').addEventListener('change', preview);
-  preview();
-
-  document.getElementById('btnGuardarTpl').onclick = async () => {
-    const nunca = document.getElementById('tpl-nunca').value.trim();
-    const react = document.getElementById('tpl-reactivacion').value.trim();
-    const mom = document.getElementById('tpl-mom').value.trim();
-    const momOn = document.getElementById('tpl-mom-on').checked;
-    if (!nunca || !react) { alert('Los mensajes por defecto no pueden estar vacíos'); return; }
-    if (momOn && !mom) { alert('Activaste el mensaje momentáneo pero está vacío'); return; }
-    const now = new Date().toISOString();
-    const { error } = await sb.from('crm_plantillas').upsert([
-      { clave: 'nunca_compro', texto: nunca, actualizado_en: now },
-      { clave: 'reactivacion', texto: react, actualizado_en: now },
-      { clave: 'momentaneo', texto: mom, actualizado_en: now },
-      { clave: 'momentaneo_activo', texto: momOn ? '1' : '0', actualizado_en: now },
-    ], { onConflict: 'clave' });
-    if (error) { alert('Error al guardar: ' + error.message); return; }
-    PLANTILLAS.nunca_compro = nunca;
-    PLANTILLAS.reactivacion = react;
-    MOMENTANEO.texto = mom;
-    MOMENTANEO.activo = momOn;
-    refreshMomInd();
-    cerrarConfigMensajes();
-  };
-}
-function cerrarConfigMensajes() {
-  const el = document.getElementById('modalConfigMsg');
-  if (el) el.remove();
-}
-window.cerrarConfigMensajes = cerrarConfigMensajes;
-let MODAL_PID = null;
-function openModal(pid) {
+function abrirMensaje(pid) {
   const d = DATA.find(x => x.partner_id === pid); if (!d) return;
+  const m = misionDe(d);
   MODAL_PID = pid;
+  document.getElementById('modalTipo').textContent = momentaneoOn() ? 'Mensaje de campaña' : m ? MIS[m.tipo].label : 'Mensaje';
   document.getElementById('modalWho').textContent = d.nombre + ' · +' + d.telefono_wa;
   document.getElementById('modalText').value = buildMsg(d);
   document.getElementById('modal').classList.add('show');
 }
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
 document.getElementById('modalSend').onclick = () => {
-  const d = DATA.find(x => x.partner_id === MODAL_PID);
-  const txt = encodeURIComponent(document.getElementById('modalText').value);
-  window.open('https://api.whatsapp.com/send?phone=' + d.telefono_wa + '&text=' + txt, '_blank');
+  const d = DATA.find(x => x.partner_id === MODAL_PID); if (!d) return;
+  window.open('https://api.whatsapp.com/send?phone=' + d.telefono_wa + '&text=' + encodeURIComponent(document.getElementById('modalText').value), '_blank');
   closeModal();
-  pendingContact = MODAL_PID;
+  pedirConfirmacion(MODAL_PID);
+};
+// Abrir WhatsApp no es haber escrito: se pregunta
+function pedirConfirmacion(pid) {
+  const d = DATA.find(x => x.partner_id === pid); if (!d) return;
+  pendingContact = pid;
   document.getElementById('confirmName').textContent = d.nombre;
   document.getElementById('confirm').classList.add('show');
-};
+}
+function confirmYes() { const p = pendingContact; closeConfirm(); if (p) marcarContactado(p); }
+function confirmNo() { closeConfirm(); }
+function closeConfirm() { document.getElementById('confirm').classList.remove('show'); pendingContact = null; }
 
+async function abrirConfigMensajes() {
+  await cargarPlantillas();
+  const ej = { nombre: 'Georgina', empresa: EMPRESA, quien: VEND ? `Soy ${VEND}, de ${EMPRESA}` : 'Te escribimos de ' + EMPRESA, link: LINK_LISTA, producto: 'gel criógeno x 4 kg', sugerido: 'crema base masajes', presupuesto: 'S01450' };
+  const bg = document.createElement('div');
+  bg.id = 'modalConfigMsg'; bg.className = 'modal-bg show';
+  bg.innerHTML = `<div class="modal wide">
+    <span class="eyebrow">WhatsApp</span><h3>Mensajes por tipo de <em>tarea</em></h3>
+    <p>Se completan solos con: <b>{nombre}</b>, <b>{quien}</b> (“Soy ${esc(VEND || 'Emi')}, de Rosaint”), <b>{producto}</b> (lo que suele comprar), <b>{sugerido}</b>, <b>{presupuesto}</b> y <b>{link}</b> (la lista profesional, o la tienda para consumidores).</p>
+    ${Object.keys(TPL_ROTULO).map(k => `<div class="tpl"><label for="tpl-${k}">${TPL_ROTULO[k]}</label><textarea id="tpl-${k}" rows="3">${esc(PLANTILLAS[k])}</textarea><div class="ej" id="ej-${k}"></div></div>`).join('')}
+    <div class="tpl" style="background:var(--r-panel);padding:12px 14px">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="tpl-mom-on" ${MOMENTANEO.activo ? 'checked' : ''}> Mensaje de campaña: reemplaza a todos los de arriba</label>
+      <textarea id="tpl-mom" rows="3" placeholder="Ej: Hola {nombre}! Esta semana hay 20% en la línea corporal. {link}">${esc(MOMENTANEO.texto || '')}</textarea>
+      <div class="ej" id="ej-mom"></div>
+    </div>
+    <div class="modal-acc"><button class="rb linea" onclick="cerrarConfigMensajes()">Cancelar</button><button class="rb si" id="btnGuardarTpl">Guardar</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e => { if (e.target === bg) cerrarConfigMensajes(); });
+  const prev = () => {
+    Object.keys(TPL_ROTULO).forEach(k => { document.getElementById('ej-' + k).textContent = 'Queda así: ' + renderPlantilla(document.getElementById('tpl-' + k).value, ej); });
+    const mt = document.getElementById('tpl-mom').value;
+    document.getElementById('ej-mom').textContent = mt.trim() ? 'Queda así: ' + renderPlantilla(mt, ej) : '';
+  };
+  bg.querySelectorAll('textarea, input').forEach(x => x.addEventListener('input', prev)); prev();
+  document.getElementById('btnGuardarTpl').onclick = async () => {
+    const now = new Date().toISOString(), filas = [];
+    for (const k of Object.keys(TPL_ROTULO)) { const t = document.getElementById('tpl-' + k).value.trim(); if (!t) { toastF('El mensaje «' + TPL_ROTULO[k] + '» no puede quedar vacío'); return; } filas.push({ clave: k, texto: t, actualizado_en: now }); }
+    const mom = document.getElementById('tpl-mom').value.trim(), on = document.getElementById('tpl-mom-on').checked;
+    if (on && !mom) { toastF('Activaste el mensaje de campaña pero está vacío'); return; }
+    filas.push({ clave: 'momentaneo', texto: mom, actualizado_en: now }, { clave: 'momentaneo_activo', texto: on ? '1' : '0', actualizado_en: now });
+    const { error } = await sb.from('crm_plantillas').upsert(filas, { onConflict: 'clave' });
+    if (error) { toastF('No se pudo guardar: ' + error.message); return; }
+    filas.forEach(f => { if (f.clave in PLANTILLAS_FALLBACK) PLANTILLAS[f.clave] = f.texto; });
+    MOMENTANEO = { texto: mom, activo: on }; refreshMomInd(); cerrarConfigMensajes(); toastF('Mensajes guardados', true);
+  };
+}
+function cerrarConfigMensajes() { const el = document.getElementById('modalConfigMsg'); if (el) el.remove(); }
+
+// ─── Actualizar ya desde Odoo ───
 async function doSync() {
-  const b = document.getElementById('btnSync');
-  b.classList.add('spin');
-  document.getElementById('btnSyncTxt').textContent = 'Sincronizando…';
+  const b = document.getElementById('btnSync'), t = document.getElementById('btnSyncTxt');
+  b.classList.add('spin'); b.disabled = true; t.textContent = 'Trayendo de Odoo…';
   try {
     await api('rpc/iniciar_sync_completo', { method: 'POST', body: '{}' });
-    document.getElementById('btnSyncTxt').textContent = 'Actualizando en segundo plano…';
-    // El sync completo tarda varios minutos; recargamos cada 30s un rato para ir reflejando avances.
-    let veces = 0;
-    const iv = setInterval(async () => {
-      veces++; await load();
-      if (veces >= 10) {
-        clearInterval(iv);
-        b.classList.remove('spin');
-        document.getElementById('btnSyncTxt').textContent = 'Sincronizar';
-      }
-    }, 30000);
-    setTimeout(() => { b.classList.remove('spin'); }, 3000);
-  } catch(e) {
-    b.classList.remove('spin');
-    document.getElementById('btnSyncTxt').textContent = 'Sincronizar';
-    alert('No se pudo iniciar la sincronización: ' + e.message);
-  }
+    setTimeout(async () => { await load(false); b.classList.remove('spin'); b.disabled = false; t.textContent = 'Actualizar'; toastF('Datos al día'); }, 45000);
+  } catch (e) { b.classList.remove('spin'); b.disabled = false; t.textContent = 'Actualizar'; toastF('No se pudo actualizar: ' + e.message); }
 }
+// Mientras la pantalla está abierta, se refresca sola cada 5 minutos (sin interrumpir si hay algo abierto)
+setInterval(() => {
+  if (document.hidden || document.querySelector('.drawer.on, .modal-bg.show, .confirm.show')) return;
+  load(false);
+}, 5 * 60000);
 
-document.getElementById('q').oninput      = e => { filtro.q = e.target.value; renderLista(); };
-document.getElementById('orden').onchange = e => { filtro.orden = e.target.value; renderLista(); };
-document.getElementById('fwa').onchange   = e => { filtro.fwa = e.target.value; renderLista(); };
-document.getElementById('fcompras').onchange = e => { filtro.compras = e.target.value; renderLista(); };
-document.getElementById('fcanal').onchange = e => { filtro.canal = e.target.value; renderAll(); };
-document.getElementById('ftipo').onchange  = e => { filtro.tipo = e.target.value; renderAll(); };
-document.getElementById('modal').onclick  = e => { if (e.target.id === 'modal') closeModal(); };
+// ─── Filtros de la lista ───
+document.getElementById('q').oninput = e => { filtro.q = e.target.value; limiteLista = 60; renderClientes(); };
+[['orden','orden'],['fwa','fwa'],['fcompras','compras'],['fcanal','canal'],['ftipo','tipo'],['festado','estado']].forEach(([id, k]) => {
+  document.getElementById(id).onchange = e => { filtro[k] = e.target.value; limiteLista = 60; renderAll(); };
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { cerrarDrawer(); closeModal(); cerrarInfo(); } });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Editor de ficha del contacto (lee/escribe Odoo vía odoo-rpc)
+// Panel del cliente: qué hacer + ficha de Odoo (lee y escribe vía odoo-rpc)
 // ═══════════════════════════════════════════════════════════════════════════
 async function orpc(model, method, args, kwargs) {
   const { data: sess } = await sb.auth.getSession();
@@ -1569,39 +1508,45 @@ function abrirDrawer(c, d, isNew) {
   const tipo = c.company_type || 'person';
   let intel = '';
   if (!isNew && d) {
-    const seg = SEG[d.segmento] || { label: d.segmento };
-    const dias = d.dias_desde_ultima;
-    const tps = (PRODS[d.partner_id] || []).slice(0, cuantosTop(d));
-    const wa = c.phone || c.mobile;
+    const seg = SEG[d.segmento] || { label: d.segmento || '—' };
+    const dias = d.dias_desde_ultima, m = misionDe(d);
+    const tps = [...(PRODS[d.partner_id] || [])].sort((a, b) => (b.monto_total || 0) - (a.monto_total || 0)).slice(0, cuantosTop(d));
     const cont = estaContactado(d.partner_id), arch = estaArchivado(d.partner_id);
-    const can = CANALES.filter(c => (d[c[2]] || 0) > 0);
-    intel = `<div class="intel"><h4>Actividad comercial</h4>
-      ${d.rst_ultima_compra ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Compró en <b>RST</b> (la empresa anterior) del ${fmtFecha(d.rst_primera_compra)} al ${fmtFecha(d.rst_ultima_compra)}. Esas compras no se cuentan acá.</div>` : ''}
-      ${can.length ? `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Compra por: <b>${can.map(c => c[1] + ' (' + d[c[2]] + ')').join(' · ')}</b></div>` : ''}
+    const can = CANALES.filter(k => (d[k[2]] || 0) > 0);
+    const sug = sugerido(d.partner_id);
+    intel = `<div class="intel">
+      <div class="que-hacer corte">
+        <span class="eyebrow">${m ? MIS[m.tipo].label : cont ? 'Ya contactado' : arch ? 'Archivado' : 'Sin tarea pendiente'}</span>
+        <h4>${m ? 'Qué hacer' : cont ? 'Contactado el ' + fmtFecha(dayKey(ESTADO[d.partner_id].contactado_at)) : 'Nada urgente'}</h4>
+        <p>${m ? m.razon : cont ? `Vuelve a la lista de tareas a los ${DIAS_CONTACTADO} días si no compra.` : d.dias_desde_ultima != null && d.dias_desde_ultima < DIAS_RECIENTE ? 'Compró hace muy poco.' : presuAbierto(d) ? 'Tiene un presupuesto recién armado.' : 'Está dentro de su ritmo de compra.'}</p>
+        ${m && m.principal ? `<p><b>${m.tipo === 'presupuesto' ? 'Objetivo' : 'Ofrecele'}:</b> ${esc(m.principal)}${m.tambien && m.tambien !== m.principal ? ` · también: ${esc(m.tambien)}` : ''}</p>` : sug ? `<p><b>Le puede interesar:</b> ${esc(sug)}</p>` : ''}
+        <div class="acc-fila">
+          ${d.telefono_wa ? `<button class="rb si" onclick="abrirMensaje(${d.partner_id})">Escribir por WhatsApp</button>` : `<button class="rb linea" disabled>Sin teléfono: cargalo abajo</button>`}
+          ${cont ? `<button class="rb linea" onclick="desmarcarDrawer(${d.partner_id})">Deshacer contacto</button>` : `<button class="rb linea" onclick="marcarDrawer(${d.partner_id})">Ya le escribí</button>`}
+          ${arch ? `<button class="rb linea" onclick="recuperarDrawer(${d.partner_id})">Recuperar</button>` : `<button class="rb suave" onclick="archivarDrawer(${d.partner_id})">Archivar</button>`}
+        </div>
+      </div>
       <div class="istat">
-        <div class="b"><div class="v">${dias == null ? '—' : (dias === 0 ? 'hoy' : dias + 'd')}</div><div class="l">sin comprar</div></div>
+        <div class="b"><div class="v">${dias == null ? '—' : dias === 0 ? 'hoy' : dias + ' d'}</div><div class="l">sin comprar</div></div>
         <div class="b"><div class="v">${d.total_facturas || 0}</div><div class="l">compras</div></div>
         <div class="b"><div class="v">${fmtMoney(d.total_gastado)}</div><div class="l">histórico</div></div>
-        <div class="b"><div class="v">${d.intervalo_tipico_dias ? Math.round(d.intervalo_tipico_dias) + 'd' : '—'}</div><div class="l">su ritmo</div></div>
+        <div class="b"><div class="v">${d.intervalo_tipico_dias ? Math.round(d.intervalo_tipico_dias) + ' d' : '—'}</div><div class="l">su ritmo</div></div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Segmento: <b style="color:var(--text)">${seg.label}</b></div>
-      ${tps.length ? ('<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:8px 0 4px">Lo que más compra</div>' + tps.map(p => `<div class="dprod"><span>${esc(cleanProd(p.product_name))}</span><span class="q">${fmtMoney(p.monto_total)}</span></div>`).join('')) : ''}
-      ${wa ? `<a class="wa-big" href="https://api.whatsapp.com/send?phone=${waNum(wa)}&text=${encodeURIComponent(buildMsg(d))}" target="_blank" onclick="pedirConfirmacion(${d.partner_id})"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>Contactar por WhatsApp</a>` : `<div class="wa-big" data-off>Sin teléfono — cargalo abajo para poder contactar</div>`}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        ${cont ? `<button class="btn secondary" style="flex:1;justify-content:center" onclick="desmarcarDrawer(${d.partner_id})">✓ Contactado hoy</button>` : `<button class="btn secondary" style="flex:1;justify-content:center" onclick="marcarDrawer(${d.partner_id})">Marcar contactado</button>`}
-        ${arch ? `<button class="btn secondary" style="flex:1;justify-content:center" onclick="recuperarDrawer(${d.partner_id})">↩ Recuperar</button>` : `<button class="btn ghost" style="flex:1;justify-content:center" onclick="archivarDrawer(${d.partner_id})">🗄 Archivar</button>`}
-      </div>
+      <div class="nota">Segmento <b>${seg.label}</b>${can.length ? ` · compra por <b>${can.map(k => k[1] + ' (' + d[k[2]] + ')').join(', ')}</b>` : ''}${d.es_profesional ? '' : ' · <b>no profesional</b>'}${d.ultima_compra ? ` · última compra el ${fmtFecha(d.ultima_compra)}${d.ultimo_pedido_id > 0 ? ` (<a href="${ODOO_URL}/odoo/sales/${d.ultimo_pedido_id}" target="_blank" style="color:inherit">${esc(d.ultimo_pedido_name || 'pedido')}</a>)` : ''}` : ''}${presuAbierto(d) ? ` · presupuesto abierto <a href="${ODOO_URL}/odoo/sales/${d.presupuesto_id}" target="_blank" style="color:inherit"><b>${esc(d.presupuesto_name)}</b></a>` : ''}</div>
+      ${d.rst_ultima_compra ? `<div class="nota">Compró en <b>RST</b> (la empresa anterior) del ${fmtFecha(d.rst_primera_compra)} al ${fmtFecha(d.rst_ultima_compra)}. Esas compras no se cuentan en los números de arriba.</div>` : ''}
+      ${tps.length ? '<div><h5>Lo que más compra</h5>' + tps.map(p => `<div class="dprod"><span>${esc(cleanProd(p.product_name))}</span><span class="q">${p.veces_comprado}× · ${fmtMoney(p.monto_total)}</span></div>`).join('') + '</div>' : ''}
     </div>`;
   }
   document.getElementById('fdrawer').innerHTML = `
     <div class="dhead"><button class="x" onclick="cerrarDrawer()" aria-label="Cerrar">✕</button>
-      <h3>${isNew ? 'Nuevo contacto' : esc(c.name || '')}</h3>
+      <span class="eyebrow">${isNew ? 'Nuevo contacto' : d && !d.es_profesional ? 'Cliente · consumidor' : 'Cliente profesional'}</span>
+      <h3>${isNew ? 'Datos del contacto' : esc(c.name || '')}</h3>
       <div class="cbar"><div class="f" style="width:${isNew ? 0 : comp.pct}%"></div></div>
-      <div class="cpct">${isNew ? 'Completá los datos del nuevo contacto' : 'Ficha ' + comp.pct + '% completa'}</div>
+      <div class="cpct">${isNew ? 'Completá los datos para crearlo en Odoo' : 'Ficha ' + comp.pct + '% completa'}</div>
     </div>
     <div class="dbody">
       ${intel}
-      <div class="dform"><h4>${isNew ? 'Datos del contacto' : 'Completar / corregir ficha'}</h4>
+      <div class="dform"><h4>${isNew ? 'Datos del contacto' : 'Completar o corregir la ficha'}</h4>
         <div class="fld"><label>Tipo</label><select id="ff_type" onchange="onTipoFicha()">
           <option value="person" ${tipo !== 'company' ? 'selected' : ''}>Persona</option><option value="company" ${tipo === 'company' ? 'selected' : ''}>Empresa</option></select></div>
         <div class="fld"><label id="ff_lbl_name">${tipo === 'company' ? 'Razón social' : 'Apellido y nombre'} ${comp.has.name || isNew ? '' : '<span class="miss">falta</span>'}</label>
@@ -1610,7 +1555,7 @@ function abrirDrawer(c, d, isNew) {
           <input id="ff_phone" value="${esc(c.phone || c.mobile || '')}" oninput="prevTelF()" placeholder="0341 155033943">
           <div class="hint">Área sin 0, celular sin 15. Se guarda formateado.</div><div class="prev" id="ff_prev_phone"></div></div>
         <div class="fld"><label>Email ${comp.has.email || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_email" value="${esc(c.email || '')}" placeholder="nombre@dominio.com"></div>
-        <div class="fld"><label>Dirección ${comp.has.street || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_street" value="${esc(c.street || '')}" placeholder="San Martín 1234"><div class="hint">Se guarda tipo oración.</div></div>
+        <div class="fld"><label>Dirección ${comp.has.street || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_street" value="${esc(c.street || '')}" placeholder="San Martín 1234"></div>
         <div class="grid2">
           <div class="fld"><label>Código postal ${comp.has.zip || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_zip" value="${esc(c.zip || '')}" placeholder="2000"></div>
           <div class="fld"><label>Localidad ${comp.has.city || isNew ? '' : '<span class="miss">falta</span>'}</label><input id="ff_city" value="${esc(c.city || '')}" placeholder="Rosario"></div>
@@ -1624,13 +1569,15 @@ function abrirDrawer(c, d, isNew) {
       </div>
     </div>
     <div class="dfoot">
-      <button class="btn secondary" onclick="cerrarDrawer()">${isNew ? 'Cancelar' : 'Cerrar'}</button>
-      <button class="btn primary" id="ff_save" onclick="guardarFicha()">${isNew ? 'Crear contacto' : 'Guardar ficha'}</button>
+      <button class="rb linea" onclick="cerrarDrawer()">${isNew ? 'Cancelar' : 'Cerrar'}</button>
+      <button class="rb si" id="ff_save" onclick="guardarFicha()">${isNew ? 'Crear contacto' : 'Guardar ficha'}</button>
     </div>`;
   document.getElementById('fdrawer').classList.add('on');
   document.getElementById('fscrim').classList.add('on');
   prevTelF(); prevDocF();
 }
+function cuantosTop(d) { const n = d.total_facturas || 0; if (n > 30) return 10; if (n >= 10) return 6; return 4; }
+
 function onTipoFicha() {
   const t = document.getElementById('ff_type').value;
   document.getElementById('ff_lbl_name').innerHTML = t === 'company' ? 'Razón social' : 'Apellido y nombre';
@@ -1677,9 +1624,9 @@ async function guardarFicha() {
 let _ftoastT;
 function toastF(msg, win) { const t = document.getElementById('ftoast'); t.textContent = msg; t.className = 'ftoast on' + (win ? ' win' : ''); clearTimeout(_ftoastT); _ftoastT = setTimeout(() => t.className = 'ftoast', 2800); }
 
-window.abrirConfigMensajes = abrirConfigMensajes;
+// ─── Arranque ───
 cargarPlantillas();
-load();
+load(true).then(() => { if (!VEND) pedirQuien(); });
 </script>
 </body>
 </html>
