@@ -572,6 +572,12 @@
         <option value="sin">Sin WhatsApp</option>
         <option value="sintel">Sin teléfono</option>
       </select>
+      <select id="fcompras" class="picker">
+        <option value="todas">Cualquier cantidad de compras</option>
+        <option value="una">Una sola compra</option>
+        <option value="varias">2 compras o más</option>
+        <option value="ninguna">Sin compras</option>
+      </select>
     </div>
     <div class="count" id="count"></div>
     <div id="list"></div>
@@ -716,7 +722,7 @@ const SEG = {
 const ORDEN_SEG = ['a_reactivar','enfriandose','dormido','nunca_compro','activo'];
 
 let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONV_POR_PID = {}, tab = 'lista';
-let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos' };
+let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas' };
 let queueIdx = 0, pendingContact = null;
 
 const fmtMoney = n => '$' + Math.round(n||0).toLocaleString('es-AR');
@@ -1101,6 +1107,9 @@ function renderLista() {
   if (filtro.fwa === 'con') rows = rows.filter(d => d.telefono_wa);
   if (filtro.fwa === 'sin') rows = rows.filter(d => !d.telefono_wa);
   if (filtro.fwa === 'sintel') rows = rows.filter(d => !d.telefono);
+  if (filtro.compras === 'una')    rows = rows.filter(d => (d.total_facturas || 0) === 1);
+  if (filtro.compras === 'varias') rows = rows.filter(d => (d.total_facturas || 0) >= 2);
+  if (filtro.compras === 'ninguna') rows = rows.filter(d => !(d.total_facturas || 0));
   rows.sort((a,b) => {
     const ca = estaContactado(a.partner_id) ? 1 : 0, cb = estaContactado(b.partner_id) ? 1 : 0;
     if (ca !== cb) return ca - cb;
@@ -1346,6 +1355,7 @@ async function doSync() {
 document.getElementById('q').oninput      = e => { filtro.q = e.target.value; renderLista(); };
 document.getElementById('orden').onchange = e => { filtro.orden = e.target.value; renderLista(); };
 document.getElementById('fwa').onchange   = e => { filtro.fwa = e.target.value; renderLista(); };
+document.getElementById('fcompras').onchange = e => { filtro.compras = e.target.value; renderLista(); };
 document.getElementById('modal').onclick  = e => { if (e.target.id === 'modal') closeModal(); };
 
 // ═══════════════════════════════════════════════════════════════════════════
