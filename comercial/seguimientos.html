@@ -79,6 +79,7 @@
     .b-cat.andreani    { background: #E4002B; }   /* Andreani · rojo */
     .b-cat.rosario { background: var(--ok); }
     .b-cat.retiro  { background: var(--warn); }
+    .b-cat.sinasignar { background: var(--muted); }
     .b-cat.ml      { background: #b8860b; }
     .b-carrier { background: color-mix(in srgb, var(--structure) 14%, transparent); color: var(--structure); }
     .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
@@ -142,7 +143,7 @@
     <div class="seg-chip avisar" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
     <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo <span class="tot" id="r-correo-tot"></span></span></div>
     <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario <span class="tot" id="r-rosario-tot"></span></span></div>
-    <div class="seg-chip retiro"  data-tab="retiro"  onclick="setTab('retiro')"><span class="n" id="r-retiro">—</span><span class="l">Retiro <span class="tot" id="r-retiro-tot"></span></span></div>
+    <div class="seg-chip retiro"  data-tab="sinasignar"  onclick="setTab('sinasignar')"><span class="n" id="r-sinasignar">—</span><span class="l">Retiro / sin asignar <span class="tot" id="r-sinasignar-tot"></span></span></div>
     <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre <span class="tot" id="r-ml-tot"></span></span></div>
     <div class="seg-chip sel"     data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
   </div>
@@ -246,7 +247,7 @@ Rosaint Cosmética Profesional 💛`
 const LS_TPL = 'seg-plantillas';
 function getPlantillas(){ try { return Object.assign({}, TPL_DEF, JSON.parse(localStorage.getItem(LS_TPL)||'{}')); } catch { return {...TPL_DEF}; } }
 
-const CATLBL = { correo:'Correo', rosario:'Rosario', retiro:'Retiro', ml:'Mercado Libre' };
+const CATLBL = { correo:'Correo', rosario:'Rosario', retiro:'Retiro', sinasignar:'Sin asignar', ml:'Mercado Libre' };
 
 // ---- Utils ----
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -293,11 +294,15 @@ function templateFor(o, tpls){
   const listo = o.etiqueta === 21 || o.stock_pct === 100;
   if (o.categoria === 'rosario') return listo ? tpls.rosario : tpls.pendiente;
   if (o.categoria === 'retiro')  return listo ? tpls.retiro : tpls.pendiente;
+  // 'sinasignar' = sin transporte cargado: por las dudas no decimos "listo para retirar"
+  // (puede ser una venta a la que falta asignarle el envío). Queda en "preparando".
+  if (o.categoria === 'sinasignar') return tpls.pendiente;
   return efDesp(o) ? tpls.despachado : tpls.pendiente;
 }
 
 // ---- Estado ----
 let DATA = [];
+let LAST_LOAD = 0;      // cuándo se cargó por última vez (para "actualizado hace X" + auto-refresco)
 let TAB = 'todos';
 let Q = '';             // texto de búsqueda de contactos
 let ESTADO = {};
@@ -352,21 +357,24 @@ function paraAvisar(o){ return o.categoria !== 'ml' && efDesp(o) && !isAvisado(o
 // "Hecho" = ya resuelto (entregado/avisado viejo, o ML despachado) -> se apaga en la vista
 function hecho(o){ return !pendiente(o) && !paraAvisar(o); }
 
+// La pestaña "sin asignar" junta las ventas sin transporte y los retiros reales (ambos son "lo
+// retira/falta cargar envío"); el resto es 1 a 1 con su categoría.
+function enCat(o, cat){ return cat === 'sinasignar' ? (o.categoria === 'sinasignar' || o.categoria === 'retiro') : o.categoria === cat; }
 function updateCounts(){
-  const pend = cat => DATA.filter(o => o.categoria === cat && pendiente(o)).length;
-  const tot  = cat => DATA.filter(o => o.categoria === cat).length;
+  const pend = cat => DATA.filter(o => enCat(o, cat) && pendiente(o)).length;
+  const tot  = cat => DATA.filter(o => enCat(o, cat)).length;
   const avisar = DATA.filter(paraAvisar).length;
   document.getElementById('r-avisar').textContent = avisar;
-  for (const cat of ['correo','rosario','retiro','ml']) {
+  for (const cat of ['correo','rosario','sinasignar','ml']) {
     document.getElementById('r-'+cat).textContent = pend(cat);
     const t = document.getElementById('r-'+cat+'-tot'); if (t) t.textContent = 'de ' + tot(cat);
   }
   document.getElementById('r-total').textContent = DATA.length;
 }
 
-async function cargar(){
+async function cargar(silent){
   const salida = document.getElementById('salida');
-  salida.innerHTML = '<div class="seg-loading">Cargando ventas…</div>';
+  if (!silent) salida.innerHTML = '<div class="seg-loading">Cargando ventas…</div>';  // auto-refresco = sin parpadeo
   const dias = document.getElementById('dias').value;
   try {
     const { data: sess } = await sb.auth.getSession();
@@ -387,12 +395,15 @@ async function cargar(){
       const e = ESTADO[o.estado_key];
       if (!o.tracking_code && e && e.tracking_manual) o.tracking_code = e.tracking_manual;  // tracking cargado a mano
     }
-    document.getElementById('aviso').innerHTML = 'Todas las ventas confirmadas de Odoo, categorizadas por tipo de entrega. El tracking de correo se cruza con Tienda Nube.';
+    LAST_LOAD = Date.now();
+    document.getElementById('aviso').innerHTML = 'Odoo + Tienda Nube + Mercado Libre, en vivo. <span id="upd" style="color:var(--muted)"></span>';
+    pintarActualizado();
     updateCounts();
     render();
     enrichFechasDespacho();   // en segundo plano: cambia la fecha del mensaje por la real del correo/Andreani
   } catch (e) {
-    salida.innerHTML = '<div class="seg-error">No pude cargar los pedidos: ' + esc(e.message) + '</div>';
+    if (!silent) salida.innerHTML = '<div class="seg-error">No pude cargar los pedidos: ' + esc(e.message) + '</div>';
+    // en auto-refresco silencioso, si falla, dejamos la vista anterior (no la borramos por un error pasajero)
   }
 }
 
@@ -442,7 +453,7 @@ function filtrar(){
   }
   if (TAB === 'avisar')  return DATA.filter(o => paraAvisar(o));
   if (TAB === 'todos')   return DATA;
-  return DATA.filter(o => o.categoria === TAB && pendiente(o));  // solo pendientes de la categoría
+  return DATA.filter(o => enCat(o, TAB) && pendiente(o));  // solo pendientes de la categoría
 }
 
 function render(){
@@ -470,8 +481,13 @@ function render(){
     const nProds = (o.productos||[]).length;
 
     let estadoBadge;
-    if (cat === 'retiro') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Entregado</span>' : '<span class="b-tag b-pend">⏳ Preparando</span>';
-    else if (cat === 'ml') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Despachado</span>' : '<span class="b-tag b-pend">⏳ Pendiente</span>';
+    if (cat === 'ml') {
+      // ML: estado REAL del envío (status + substatus de ML, no el delivery_status de Odoo).
+      const et = esc(o.ml_estado || (enCamino ? 'Despachado' : 'Pendiente'));
+      estadoBadge = enCamino ? `<span class="b-tag b-camino">✓ ${et}</span>` : `<span class="b-tag b-pend">⏳ ${et}</span>`;
+    }
+    else if (cat === 'retiro') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Retirado</span>' : '<span class="b-tag b-pend">⏳ Listo para retirar</span>';
+    else if (cat === 'sinasignar') estadoBadge = enCamino ? '<span class="b-tag b-camino">✓ Entregado</span>' : '<span class="b-tag b-pend">⚠ Falta cargar envío</span>';
     else estadoBadge = enCamino ? '<span class="b-tag b-camino">📦 En camino</span>' : '<span class="b-tag b-pend">⏳ Por despachar</span>';
 
     // Badge de categoría: para correo, distingue Correo Argentino (azul) vs Andreani (rojo)
@@ -489,7 +505,9 @@ function render(){
       `<div class="p"><span class="q">${p.cantidad}×</span><span>${esc(p.nombre)}</span>${p.sku?`<span class="sku">${esc(p.sku)}</span>`:''}</div>`
     ).join('');
 
-    const chip = (f, label) => `<button class="chip${st[f]?' on':''}" data-f="${f}" onclick="tog('${k}','${f}',this)">${label}</button>`;
+    // forceOn: el chip se tilda aunque no esté marcado a mano, cuando el estado real ya lo dice
+    // (Despachado se tilda solo si Odoo/TN/ML indican que salió).
+    const chip = (f, label, forceOn) => `<button class="chip${(st[f]||forceOn)?' on':''}" data-f="${f}" onclick="tog('${k}','${f}',this)">${label}</button>`;
     const chipPedido = `<button class="chip pedido${st.pedido?' on':''}" data-f="pedido" title="Descargar el pedido de venta de Odoo para imprimir" onclick="pedidoClick('${k}',this)">🖨 Pedido</button>`;
 
     let stockBar = '';
@@ -511,7 +529,7 @@ function render(){
         <span class="seg-badges">${catBadge}${estadoBadge}${o.numero?`<span class="b-tag b-carrier" style="font-family:var(--font-mono)">#${esc(o.numero)}</span>`:''}</span>
       </div>
       <div class="seg-row2">
-        <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado')}${esML?'':chip('avisado','Avisado')}</div>
+        <div class="chips">${chipPedido}${chip('armado','Armado')}${chip('empaquetado','Empaquetado')}${chip('etiqueta','Etiqueta')}${chip('despachado','Despachado',o.despachado)}${esML?'':chip('avisado','Avisado')}</div>
         ${prioSel}
       </div>
       <div class="seg-row3">
@@ -629,6 +647,31 @@ function guardarPlantillas(){
   const b=event.target; const t=b.textContent; b.textContent='✓ Guardado'; setTimeout(()=>b.textContent=t,1300);
 }
 function restaurarPlantillas(){ localStorage.removeItem(LS_TPL); pintarPlantillas(); render(); }
+
+// ---- Auto-refresco ----
+// El panel es una foto de Odoo+TN+ML. Para que no quede viejo, se refresca solo cada 3 min y al
+// volver a la pestaña. Nunca pisa lo que estás usando: si tenés un mensaje abierto o un modal
+// abierto, saltea ese turno (lo reintenta al siguiente). El estado de ML lo refresca su propio
+// cron cada 15 min; acá solo se vuelve a leer.
+function pintarActualizado(){
+  const el = document.getElementById('upd'); if (!el) return;
+  if (!LAST_LOAD) { el.textContent = ''; return; }
+  const s = Math.round((Date.now() - LAST_LOAD) / 1000);
+  el.textContent = '· actualizado ' + (s < 50 ? 'recién' : 'hace ' + Math.round(s/60) + ' min');
+}
+function ocupado(){
+  return !!document.querySelector('.seg-more.open') || !!document.querySelector('.tpl-modal.open');
+}
+function autoRefrescar(){
+  if (document.hidden || ocupado()) return;        // no interrumpir si estás mirando/editando algo
+  if (Date.now() - LAST_LOAD < 150000) return;      // ya está fresco
+  cargar(true);
+}
+setInterval(pintarActualizado, 20000);               // refresca el textito "hace X min"
+setInterval(autoRefrescar, 60000);                   // chequea cada minuto si conviene recargar
+document.addEventListener('visibilitychange', () => { // al volver a la pestaña, si está viejo, recarga
+  if (!document.hidden && !ocupado() && Date.now() - LAST_LOAD > 120000) cargar(true);
+});
 
 pintarPlantillas();
 cargar();
