@@ -7,130 +7,184 @@
   <meta name="app-root" content="../">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <style>
-    .seg-resumen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-    .seg-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 13px; min-width: 108px; display: flex; flex-direction: column; gap: 1px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
-    .seg-chip:hover { border-color: var(--muted); }
-    .seg-chip .n { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
-    .seg-chip .l { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-    .seg-chip.avisar { border-left: 3px solid var(--accent); } .seg-chip.avisar .n { color: var(--accent); }
-    .seg-chip.correo   { border-left: 3px solid var(--structure); }
-    .seg-chip.rosario  { border-left: 3px solid var(--ok); }
-    .seg-chip.retiro   { border-left: 3px solid var(--warn); }
-    .seg-chip.ml       { border-left: 3px solid #b8860b; }
-    .seg-chip.sel { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
 
-    .seg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-    .seg-spacer { flex: 1; }
-    select.seg-sel { padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 13px; }
-    .seg-aviso { font-size: 12px; color: var(--muted); margin: -4px 0 12px; }
+    /* ══════════════════════════════════════════════════════════════════
+       Identidad Rosaint (manual de marca, edición 21 · kit v20)
+       Sora 400/500 titulares y datos · Bitter Italic 400 una palabra · Source Sans 3 400/600 lectura
+       Paleta cerrada: azul #34495E · blanco roto #F7F5F2 · ácido #EAF46B · rojo #F93549 · niebla #DDE4E8
+       La marca no redondea. Acento = ácido. Mismo criterio que el módulo Clientes.
+       ══════════════════════════════════════════════════════════════════ */
+    @font-face { font-family: 'Sora'; src: url('../shared/marca/fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Bitter'; src: url('../shared/marca/fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Source Sans 3'; src: url('../shared/marca/fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
+    :root {
+      --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+      --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+      --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel));
+      --r-li: rgba(52, 73, 94, .16); --r-panel: var(--niebla);
+      --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
+      --c: var(--azul);
+    }
+    [data-theme="dark"] {
+      --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+      --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul));
+      --r-li: rgba(247, 245, 242, .14); --r-panel: color-mix(in srgb, var(--azul) 88%, var(--papel));
+    }
+    body { background: var(--r-bg); }
+    body::before { display: none; }
+    #app-content { font-family: var(--sans); color: var(--r-tx); font-size: 15px; }
+    #app-content b { font-weight: 600; }
 
-    details.tpl-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
-    details.tpl-box > summary { list-style: none; cursor: pointer; padding: 11px 15px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--muted); }
-    details.tpl-box > summary::-webkit-details-marker { display: none; }
-    details.tpl-box > summary::before { content: '▸'; font-size: 10px; transition: transform .15s; }
-    details.tpl-box[open] > summary::before { transform: rotate(90deg); }
-    .tpl-body { padding: 4px 15px 15px; display: grid; gap: 12px; }
-    .tpl-field label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
-    .tpl-field textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
-    .tpl-vars { font-size: 11.5px; color: var(--muted); line-height: 1.9; }
-    .tpl-vars code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
-    .tpl-actions { display: flex; gap: 8px; }
+    /* ---- piezas de identidad ---- */
+    .eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+    .titular { font: 400 30px/1.08 var(--sora); letter-spacing: -.01em; color: var(--r-tx); margin: 5px 0 0; }
+    .titular em { font-family: var(--bitter); font-style: italic; font-weight: 400; }
+    .filete { display: block; width: 40px; height: 3px; background: var(--acido); margin-top: 12px; }
+    .num { font-family: var(--sora); font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+    .rb { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 400 13.5px var(--sora); padding: 9px 15px; border: 1px solid transparent; border-radius: 0; box-shadow: none; cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, transform .12s; white-space: nowrap; background: transparent; color: var(--r-tx); }
+    .rb:active { transform: translateY(1px); }
+    .rb.linea { border-color: var(--r-li); } .rb.linea:hover { border-color: var(--r-tx); }
+    .rb.si { background: var(--acido); color: var(--azul); } .rb.si:hover { background: color-mix(in srgb, var(--acido) 82%, var(--azul)); }
+    .rb svg { width: 15px; height: 15px; }
 
-    /* total en gris dentro de la tarjeta-filtro */
-    .seg-chip .tot { color: var(--muted); font-weight: 600; font-size: 10px; text-transform: none; letter-spacing: 0; }
-    /* buscador */
-    .seg-search { display: flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 11px; color: var(--muted); flex: 1; min-width: 200px; max-width: 380px; transition: border-color .12s; }
-    .seg-search:focus-within { border-color: var(--accent); }
-    .seg-search input { border: none; outline: none; background: transparent; color: var(--text); font-size: 13px; width: 100%; }
-    /* modal de plantillas */
-    .tpl-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 100; align-items: flex-start; justify-content: center; padding: 5vh 16px; }
-    .tpl-modal.open { display: flex; }
-    .tpl-modal-inner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 640px; max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow-menu); }
-    .tpl-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); font-size: 15px; }
-    .tpl-x { font-size: 18px; color: var(--muted); cursor: pointer; background: none; border: none; }
-    .tpl-x:hover { color: var(--text); }
-    /* tabla de producción (qué falta) */
-    .stock-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .stock-tbl th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-    .stock-tbl th.num, .stock-tbl td.num { text-align: center; }
-    .stock-tbl td { padding: 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-    .stock-tbl tr.falta { background: color-mix(in srgb, var(--hot) 8%, transparent); }
-    .stock-tbl tr.falta td { color: var(--hot); font-weight: 600; }
-    .stock-tbl tr.listo td.falta-c { color: var(--ok); }
-    .stock-tbl .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; }
-    .stock-legend { font-size: 12px; color: var(--muted); margin-top: 12px; }
+    /* ---- encabezado ---- */
+    .cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .cab-acc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .per { font: 400 12.5px var(--sans); color: var(--r-mu); display: inline-flex; align-items: center; gap: 6px; }
+    .actualizado { font: 400 12.5px var(--sans); color: var(--r-mu); display: inline-flex; align-items: center; gap: 7px; }
+    .actualizado i { width: 7px; height: 7px; background: var(--acido); display: inline-block; box-shadow: 0 0 0 1px var(--azul) inset; }
+    .actualizado.viejo i { background: var(--rojo); box-shadow: none; }
+    select.seg-sel { padding: 7px 9px; border: 1px solid var(--r-li); border-radius: 0; background: var(--r-sup); color: var(--r-tx); font: 400 13px var(--sans); }
+    select.seg-sel:focus { outline: none; border-color: var(--r-tx); }
 
-    .seg-list { display: flex; flex-direction: column; gap: 8px; }
-    .seg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; transition: opacity .15s, filter .15s; }
-    /* pedidos ya resueltos: apagados y sin color, para que resalte lo pendiente */
-    .seg-card.hecho { opacity: .5; filter: grayscale(1); }
-    .seg-card.hecho:hover { opacity: .85; filter: grayscale(0); }
-    .seg-card.avisado { opacity: .45; }
+    /* ---- tarjetas-filtro (resumen) ---- */
+    .seg-resumen { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .seg-chip { position: relative; background: var(--r-sup); border: 1px solid var(--r-li); padding: 13px 15px 11px; min-width: 112px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; overflow: hidden; transition: border-color .15s; }
+    .seg-chip::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--c); }
+    .seg-chip:hover { border-color: var(--r-mu); }
+    .seg-chip.sel { border-color: var(--r-tx); box-shadow: inset 0 0 0 1px var(--r-tx); }
+    .seg-chip .n { font: 400 24px/1 var(--sora); color: var(--r-tx); font-variant-numeric: tabular-nums; }
+    .seg-chip .l { font: 500 10.5px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--r-mu); }
+    .seg-chip .tot { color: var(--r-mu); font-weight: 400; letter-spacing: 0; text-transform: none; }
+    .seg-chip.avisar     { --c: var(--rojo); }
+    .seg-chip.correo     { --c: var(--azul); }
+    .seg-chip.rosario    { --c: var(--acido); }
+    .seg-chip.sinasignar { --c: var(--niebla); }
+    .seg-chip.ml         { --c: color-mix(in srgb, var(--rojo) 55%, var(--azul)); }
+    .seg-chip[data-tab="todos"] { --c: var(--azul); }
 
-    .seg-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-    .seg-so { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-tint); padding: 1px 7px; border-radius: 5px; }
-    .seg-name { font-size: 14.5px; font-weight: 700; }
-    .seg-meta { font-size: 12px; color: var(--muted); }
-    .seg-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-    .b-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
-    .b-cat { color: #fff; }
-    .b-cat.correo      { background: var(--structure); }
-    .b-cat.correo-arg  { background: var(--structure); }   /* Correo Argentino · ese azul */
-    .b-cat.andreani    { background: #E4002B; }   /* Andreani · rojo */
-    .b-cat.rosario { background: var(--ok); }
-    .b-cat.retiro  { background: var(--warn); }
-    .b-cat.sinasignar { background: var(--muted); }
-    .b-cat.ml      { background: #b8860b; }
-    .b-carrier { background: color-mix(in srgb, var(--structure) 14%, transparent); color: var(--structure); }
-    .b-camino { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
-    .b-pend { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+    /* ---- buscador ---- */
+    .seg-search { display: flex; align-items: center; gap: 8px; background: var(--r-sup); border: 1px solid var(--r-li); padding: 9px 12px; color: var(--r-mu); max-width: 420px; margin-bottom: 16px; transition: border-color .15s; }
+    .seg-search:focus-within { border-color: var(--r-tx); }
+    .seg-search input { border: none; outline: none; background: transparent; color: var(--r-tx); font: 400 14px var(--sans); width: 100%; }
 
-    .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+    /* ---- lista de pedidos ---- */
+    .seg-list { display: flex; flex-direction: column; gap: 7px; }
+    .seg-card { position: relative; background: var(--r-sup); border: 1px solid var(--r-li); padding: 12px 16px 12px 18px; transition: background .15s, opacity .15s, filter .15s; }
+    .seg-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c, var(--azul)); }
+    .seg-card:hover { background: color-mix(in srgb, var(--r-sup) 86%, var(--niebla)); }
+    .seg-card.hecho { opacity: .5; filter: grayscale(.6); }
+    .seg-card.hecho:hover { opacity: .9; filter: none; }
+    .seg-card.avisado { opacity: .5; }
+    .seg-card.cat-correo     { --c: var(--azul); }
+    .seg-card.cat-rosario    { --c: var(--acido); }
+    .seg-card.cat-sinasignar { --c: var(--niebla); }
+    .seg-card.cat-retiro     { --c: color-mix(in srgb, var(--acido) 60%, var(--azul)); }
+    .seg-card.cat-ml         { --c: color-mix(in srgb, var(--rojo) 55%, var(--azul)); }
+
+    .seg-top { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .seg-so { font: 400 12px var(--sora); color: var(--azul); background: color-mix(in srgb, var(--azul) 10%, var(--papel)); padding: 2px 8px; }
+    [data-theme="dark"] .seg-so { color: var(--papel); background: color-mix(in srgb, var(--papel) 14%, transparent); }
+    .seg-name { font: 400 15.5px var(--sora); color: var(--r-tx); }
+    .seg-meta { font: 400 12.5px var(--sans); color: var(--r-mu); }
+    .seg-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- etiquetas ---- */
+    .b-tag { font: 500 10.5px var(--sora); letter-spacing: .03em; padding: 3px 9px; white-space: nowrap; }
+    .b-cat { color: var(--papel); background: var(--azul); }
+    .b-cat.correo, .b-cat.correo-arg { background: var(--azul); color: var(--papel); }
+    .b-cat.andreani   { background: var(--rojo); color: var(--papel); }
+    .b-cat.rosario    { background: var(--acido); color: var(--azul); }
+    .b-cat.retiro     { background: color-mix(in srgb, var(--acido) 60%, var(--azul)); color: var(--azul); }
+    .b-cat.sinasignar { background: var(--niebla); color: var(--azul); }
+    .b-cat.ml         { background: color-mix(in srgb, var(--rojo) 55%, var(--azul)); color: var(--papel); }
+    .b-carrier { background: var(--r-panel); color: var(--r-tx); }
+    .b-camino { background: transparent; border: 1px solid color-mix(in srgb, var(--azul) 34%, transparent); color: var(--r-tx); }
+    .b-pend   { background: transparent; border: 1px solid color-mix(in srgb, var(--rojo) 50%, transparent); color: var(--rojo); }
+
+    /* ---- fila 2: fases ---- */
+    .seg-row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; }
-    .chip { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; gap: 4px; }
-    .chip:hover { border-color: var(--muted); color: var(--text); }
-    .chip.on { background: color-mix(in srgb, var(--ok) 14%, transparent); border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
-    .chip.on::before { content: '✓'; font-weight: 700; }
-    .chip.pedido { color: var(--structure); border-color: color-mix(in srgb, var(--structure) 35%, transparent); }
-    .chip.pedido.on { background: color-mix(in srgb, var(--structure) 12%, transparent); color: var(--structure); }
-    .chip[data-f="avisado"].on { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+    .chip { font: 400 11.5px var(--sora); padding: 5px 11px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-mu); cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; gap: 4px; }
+    .chip:hover { border-color: var(--r-tx); color: var(--r-tx); }
+    .chip.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .chip.on::before { content: '✓'; font-weight: 500; }
+    .chip.pedido { color: var(--azul); border-color: color-mix(in srgb, var(--azul) 34%, transparent); }
+    .chip.pedido.on { background: var(--azul); color: var(--papel); border-color: var(--azul); }
+    .chip[data-f="avisado"].on { background: var(--rojo); border-color: var(--rojo); color: var(--papel); }
 
+    /* ---- prioridad ---- */
+    .prio { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .prio-lbl { font: 500 10.5px var(--sora); letter-spacing: .06em; text-transform: uppercase; color: var(--r-mu); white-space: nowrap; }
+    .etiq-sel { font: 400 12.5px var(--sans); padding: 5px 8px; border: 1px solid var(--r-li); border-radius: 0; background: var(--r-sup); color: var(--r-tx); cursor: pointer; }
+    .etiq-sel:hover { border-color: var(--r-tx); }
+
+    /* ---- fila 3: stock + acciones ---- */
+    .seg-row3 { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .stockbar { position: relative; flex: 1; min-width: 150px; max-width: 280px; height: 18px; background: var(--r-panel); border: 1px solid var(--r-li); overflow: hidden; }
+    .stockbar-fill { position: absolute; left: 0; top: 0; bottom: 0; transition: width .25s; }
+    .stockbar-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 500 10.5px var(--sora); color: var(--azul); }
     .seg-acts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-    .mini { font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
-    .mini:hover { border-color: var(--muted); }
-    .mini.wa { background: #25D366; border-color: #25D366; color: #fff; }
-    .mini.wa:hover { background: #1eb958; }
-    .mini.wa.off { background: var(--muted); border-color: var(--muted); pointer-events: none; opacity: .6; }
-    .mini.track { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+    .mini { font: 400 12px var(--sora); padding: 6px 11px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .mini:hover { border-color: var(--r-tx); }
+    .mini.wa { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .mini.wa:hover { background: color-mix(in srgb, var(--acido) 82%, var(--azul)); }
+    .mini.wa.off { background: transparent; border-color: var(--r-li); color: var(--r-mu); pointer-events: none; opacity: .6; }
+    .mini.track { color: var(--azul); border-color: color-mix(in srgb, var(--azul) 34%, transparent); }
+    [data-theme="dark"] .mini.track { color: var(--papel); border-color: color-mix(in srgb, var(--papel) 34%, transparent); }
 
-    .seg-more { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+    /* ---- detalle (mensaje) ---- */
+    .seg-more { display: none; margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--r-li); }
     .seg-more.open { display: block; }
     .seg-prods { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
-    .seg-prods .p { font-size: 12.5px; display: flex; gap: 7px; }
-    .seg-prods .p .q { color: var(--muted); font-variant-numeric: tabular-nums; }
-    .seg-prods .p .sku { color: var(--accent); font-family: var(--font-mono); font-size: 11px; margin-left: auto; }
-    .seg-more textarea { width: 100%; min-height: 180px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; }
-    .seg-more-acts { display: flex; gap: 8px; margin-top: 8px; }
+    .seg-prods .p { font: 400 12.5px var(--sans); display: flex; gap: 7px; }
+    .seg-prods .p .q { color: var(--r-mu); font-variant-numeric: tabular-nums; }
+    .seg-prods .p .sku { color: var(--rojo); font-family: var(--sora); font-size: 11px; margin-left: auto; }
+    .seg-more textarea { width: 100%; min-height: 180px; resize: vertical; padding: 11px 13px; border: 1px solid var(--r-li); border-radius: 0; background: var(--r-sup); color: var(--r-tx); font: 400 13.5px/1.5 var(--sans); }
+    .seg-more textarea:focus { outline: none; border-color: var(--r-tx); }
+    .seg-more-acts { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 
-    /* stock + etiquetas */
-    .seg-row3 { display: flex; align-items: center; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
-    .stockbar { position: relative; flex: 1; min-width: 150px; max-width: 280px; height: 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
-    .stockbar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 9px 0 0 9px; transition: width .2s; }
-    .stockbar-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; color: var(--text); }
-    .etiq-pills { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; align-items: center; }
-    .etiq-pills .lbl { font-size: 10.5px; color: var(--muted); font-weight: 600; margin-right: 2px; }
-    .etiq { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .12s; }
-    .etiq:hover { border-color: var(--muted); color: var(--text); }
-    .etiq.on { border-color: var(--accent); background: var(--accent-tint); color: var(--text); }
-    /* selector de prioridad (¿para cuándo?) */
-    .prio { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-    .prio-lbl { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
-    .etiq-sel { font-size: 12.5px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; }
-    .etiq-sel:hover { border-color: var(--muted); }
+    /* ---- estados ---- */
+    .seg-empty, .seg-loading { text-align: center; padding: 48px 20px; color: var(--r-mu); background: var(--r-sup); border: 1px solid var(--r-li); font: 400 15px var(--sans); }
+    .seg-error { background: color-mix(in srgb, var(--rojo) 8%, var(--papel)); border: 1px solid color-mix(in srgb, var(--rojo) 30%, transparent); color: var(--rojo); padding: 14px 16px; font: 400 14px var(--sans); }
 
-    .seg-empty, .seg-loading { text-align: center; padding: 42px 20px; color: var(--muted); }
-    .seg-error { background: color-mix(in srgb, var(--hot) 8%, transparent); border: 1px solid color-mix(in srgb, var(--hot) 30%, transparent); color: var(--hot); padding: 14px 16px; border-radius: var(--radius); font-size: 13px; }
-    @media (max-width: 620px) { .seg-badges { margin-left: 0; width: 100%; } .seg-acts { margin-left: 0; } }
+    /* ---- modales ---- */
+    .tpl-modal { display: none; position: fixed; inset: 0; background: color-mix(in srgb, var(--azul) 55%, transparent); z-index: 100; align-items: flex-start; justify-content: center; padding: 5vh 16px; }
+    .tpl-modal.open { display: flex; }
+    .tpl-modal-inner { background: var(--r-sup); border: 1px solid var(--r-li); width: 100%; max-width: 640px; max-height: 88vh; overflow-y: auto; clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%); }
+    .tpl-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--r-li); position: sticky; top: 0; background: var(--r-sup); font: 400 18px var(--sora); color: var(--r-tx); }
+    .tpl-x { font-size: 18px; color: var(--r-mu); cursor: pointer; background: none; border: none; }
+    .tpl-x:hover { color: var(--r-tx); }
+    .tpl-body { padding: 6px 18px 18px; display: grid; gap: 14px; }
+    .tpl-field label { font: 500 11px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--r-mu); display: block; margin-bottom: 5px; }
+    .tpl-field textarea { width: 100%; min-height: 120px; resize: vertical; padding: 11px 13px; border: 1px solid var(--r-li); border-radius: 0; background: var(--r-bg); color: var(--r-tx); font: 400 13.5px/1.5 var(--sans); }
+    .tpl-field textarea:focus { outline: none; border-color: var(--r-tx); }
+    .tpl-vars { font: 400 11.5px/1.9 var(--sans); color: var(--r-mu); }
+    .tpl-vars code { background: var(--r-panel); color: var(--r-tx); padding: 1px 6px; font-family: var(--sora); }
+    .tpl-actions { display: flex; gap: 8px; }
+
+    /* ---- tabla de producción ---- */
+    .stock-tbl { width: 100%; border-collapse: collapse; font: 400 13px var(--sans); }
+    .stock-tbl th { text-align: left; font: 500 10.5px var(--sora); text-transform: uppercase; letter-spacing: .06em; color: var(--r-mu); padding: 7px 8px; border-bottom: 1px solid var(--r-li); }
+    .stock-tbl th.num, .stock-tbl td.num { text-align: center; }
+    .stock-tbl td { padding: 8px; border-bottom: 1px solid var(--r-li); font-variant-numeric: tabular-nums; }
+    .stock-tbl tr.falta td { color: var(--rojo); font-weight: 600; }
+    .stock-tbl tr.falta { background: color-mix(in srgb, var(--rojo) 7%, transparent); }
+    .stock-tbl tr.listo td.falta-c { color: color-mix(in srgb, var(--azul) 70%, var(--acido)); }
+    .stock-tbl .sku { color: var(--rojo); font-family: var(--sora); font-size: 11px; }
+    .stock-legend { font: 400 12.5px var(--sans); color: var(--r-mu); margin-top: 12px; }
+    @media (max-width: 620px) { .seg-badges { margin-left: 0; width: 100%; } .seg-acts { margin-left: 0; } .cab { align-items: flex-start; } }
+
   </style>
 </head>
 <body data-page="seguimientos" data-title="Seguimientos" data-subtitle="Seguimiento de todas tus ventas">
@@ -139,30 +193,40 @@
 
 <main id="app-content">
 
+  <div class="cab">
+    <div>
+      <span class="eyebrow">Atención al cliente · Rosaint</span>
+      <h1 class="titular">El estado de cada <em>pedido</em>.</h1>
+      <span class="filete"></span>
+    </div>
+    <div class="cab-acc">
+      <span class="actualizado" id="actualizado" title="Odoo + Tienda Nube + Mercado Libre, en vivo. Se actualiza solo."><i></i><span>Cargando…</span></span>
+      <label class="per">Últimos
+        <select class="seg-sel" id="dias" onchange="cargar()">
+          <option value="15">15 días</option><option value="30" selected>30 días</option>
+          <option value="60">60 días</option><option value="90">90 días</option>
+        </select>
+      </label>
+      <button class="rb linea" onclick="cargar()" title="Actualizar ahora">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+        <span>Actualizar</span>
+      </button>
+      <button class="rb linea" onclick="abrirConfig()" title="Plantillas de mensaje">Mensajes</button>
+    </div>
+  </div>
+
   <div class="seg-resumen" id="resumen">
     <div class="seg-chip avisar" data-tab="avisar" onclick="setTab('avisar')"><span class="n" id="r-avisar">—</span><span class="l">Para avisar</span></div>
     <div class="seg-chip correo"  data-tab="correo"  onclick="setTab('correo')"><span class="n" id="r-correo">—</span><span class="l">Correo <span class="tot" id="r-correo-tot"></span></span></div>
     <div class="seg-chip rosario" data-tab="rosario" onclick="setTab('rosario')"><span class="n" id="r-rosario">—</span><span class="l">Rosario <span class="tot" id="r-rosario-tot"></span></span></div>
-    <div class="seg-chip retiro"  data-tab="sinasignar"  onclick="setTab('sinasignar')"><span class="n" id="r-sinasignar">—</span><span class="l">Retiro / sin asignar <span class="tot" id="r-sinasignar-tot"></span></span></div>
+    <div class="seg-chip sinasignar" data-tab="sinasignar" onclick="setTab('sinasignar')"><span class="n" id="r-sinasignar">—</span><span class="l">Retiro / sin asignar <span class="tot" id="r-sinasignar-tot"></span></span></div>
     <div class="seg-chip ml"      data-tab="ml"      onclick="setTab('ml')"><span class="n" id="r-ml">—</span><span class="l">Mercado Libre <span class="tot" id="r-ml-tot"></span></span></div>
     <div class="seg-chip sel"     data-tab="todos"   onclick="setTab('todos')"><span class="n" id="r-total">—</span><span class="l">Todas</span></div>
   </div>
-  <div class="seg-aviso" id="aviso"></div>
 
-  <div class="seg-controls">
-    <div class="seg-search">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-      <input id="q" type="search" placeholder="Buscar cliente, N° de venta o teléfono…" oninput="onSearch(this.value)" autocomplete="off">
-    </div>
-    <div class="seg-spacer"></div>
-    <label style="font-size:12px;color:var(--muted)">Últimos
-      <select class="seg-sel" id="dias" onchange="cargar()">
-        <option value="15">15 días</option><option value="30" selected>30 días</option>
-        <option value="60">60 días</option><option value="90">90 días</option>
-      </select>
-    </label>
-    <button class="btn secondary" onclick="cargar()" title="Refrescar">↻</button>
-    <button class="btn secondary" onclick="abrirConfig()" title="Plantillas de mensaje">⚙</button>
+  <div class="seg-search">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="q" type="search" placeholder="Buscar cliente, N° de venta o teléfono…" oninput="onSearch(this.value)" autocomplete="off">
   </div>
 
   <div class="tpl-modal" id="tplModal" onclick="if(event.target===this)cerrarConfig()">
@@ -396,7 +460,6 @@ async function cargar(silent){
       if (!o.tracking_code && e && e.tracking_manual) o.tracking_code = e.tracking_manual;  // tracking cargado a mano
     }
     LAST_LOAD = Date.now();
-    document.getElementById('aviso').innerHTML = 'Odoo + Tienda Nube + Mercado Libre, en vivo. <span id="upd" style="color:var(--muted)"></span>';
     pintarActualizado();
     updateCounts();
     render();
@@ -513,7 +576,7 @@ function render(){
     let stockBar = '';
     if (o.stock_pct != null) {
       const pct = o.stock_pct;
-      const col = pct >= 100 ? 'var(--ok)' : pct > 0 ? 'var(--warn)' : 'var(--hot)';
+      const col = pct >= 100 ? 'var(--acido)' : pct > 0 ? 'color-mix(in srgb, var(--azul) 32%, var(--papel))' : 'color-mix(in srgb, var(--rojo) 24%, var(--papel))';
       const faltan = (o.productos_stock || []).filter(p => p.falta > 0);
       const tip = pct >= 100 ? '✓ Todo el pedido está en stock' : ('Faltan fabricar: ' + faltan.map(p => `${p.falta}× ${p.nombre}`).join(', '));
       const click = pct < 100 ? ` onclick="verStock('${k}')" style="cursor:pointer"` : '';
@@ -521,7 +584,7 @@ function render(){
     }
     const prioSel = `<div class="prio"><span class="prio-lbl">¿Para cuándo?</span><select class="etiq-sel" title="Prioridad — sincroniza con Odoo" onchange="setEtiquetaSel('${k}',${o.odoo_id},this.value)"><option value="">— sin fecha —</option>${ETIQUETAS.map(t=>`<option value="${t.id}"${o.etiqueta===t.id?' selected':''}>${esc(t.name)}</option>`).join('')}</select></div>`;
 
-    html += `<div class="seg-card${hecho(o)?' hecho':''}${st.avisado?' avisado':''}" data-id="${k}">
+    html += `<div class="seg-card cat-${cat}${hecho(o)?' hecho':''}${st.avisado?' avisado':''}" data-id="${k}">
       <div class="seg-top">
         ${o.odoo_so?`<span class="seg-so">${esc(o.odoo_so)}</span>`:''}
         <span class="seg-name">${esc(o.cliente)}</span>
@@ -654,10 +717,12 @@ function restaurarPlantillas(){ localStorage.removeItem(LS_TPL); pintarPlantilla
 // abierto, saltea ese turno (lo reintenta al siguiente). El estado de ML lo refresca su propio
 // cron cada 15 min; acá solo se vuelve a leer.
 function pintarActualizado(){
-  const el = document.getElementById('upd'); if (!el) return;
-  if (!LAST_LOAD) { el.textContent = ''; return; }
+  const el = document.getElementById('actualizado'); if (!el) return;
+  const sp = el.querySelector('span');
+  if (!LAST_LOAD) { if (sp) sp.textContent = 'Cargando…'; return; }
   const s = Math.round((Date.now() - LAST_LOAD) / 1000);
-  el.textContent = '· actualizado ' + (s < 50 ? 'recién' : 'hace ' + Math.round(s/60) + ' min');
+  if (sp) sp.textContent = s < 50 ? 'Actualizado recién' : 'Actualizado hace ' + Math.round(s/60) + ' min';
+  el.classList.toggle('viejo', s > 300);
 }
 function ocupado(){
   return !!document.querySelector('.seg-more.open') || !!document.querySelector('.tpl-modal.open');
