@@ -755,20 +755,57 @@ async function aut_plan(body: Rec): Promise<Rec> {
   }
   return { ok: true, dry_run: dry, cuotas_capital: capCuotas, log };
 }
+// Lote "aut_plan_w830182" (22-oct-2026): plan Mis Facilidades W830182 (RG 5321, consolidado 22/10/2026) con TODO el
+// resto de autónomos: 12/2023–11/2024 y 05/2025–09/2026 (29 períodos x 156.541,75 = 4.539.710,75 + resarcitorios
+// 624.701,74 = 5.164.412,49). Sin pago a cuenta; 20 cuotas de 339.155,91 (16/11/2026 → 16/06/2028, 2º vto el 26 con
+// 3.108,93 de resarcitorio), débito Santander, 2,75% mensual (interés total 1.618.705,71). Monotributo NO entró.
+// Consolidación: sale TODO el saldo de 2.1.3.05.010 (era la estimación con la CCMA del 14/10) y la diferencia contra lo
+// que consolidó ARCA va a intereses fiscales (resarcitorios hasta el 22/10 y actualización del valor del aporte).
+const PLAN_AUT2 = { ref: "PLAN-AUT-W830182", fecha: "2026-10-22", total: 5164412.49, cuenta: "2.1.3.05.040", nombre: "Plan Autónomos W830182 a pagar" };
+const PLAN_AUT2_CUOTAS: Record<string, { capital: number; interes: number; fecha?: string; pagado?: number; diario?: number }> = Object.fromEntries(
+  [[197134.57, 142021.34], [202555.77, 136600.14], [208126.05, 131029.86], [213849.52, 125306.39], [219730.38, 119425.53], [225772.96, 113382.95],
+   [231981.72, 107174.19], [238361.22, 100794.69], [244916.15, 94239.76], [251651.35, 87504.56], [258571.76, 80584.15], [265682.48, 73473.43],
+   [272988.75, 66167.16], [280495.94, 58659.97], [288209.58, 50946.33], [296135.34, 43020.57], [304279.06, 34876.85], [312646.74, 26509.17],
+   [321244.52, 17911.39], [330078.63, 9077.28]].map(([capital, interes], k) => [String(k + 1), { capital, interes }]));
+async function aut_plan_w830182(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run;
+  const cap = r2(Object.values(PLAN_AUT2_CUOTAS).reduce((a, c) => a + c.capital, 0));
+  if (cap !== PLAN_AUT2.total || Object.values(PLAN_AUT2_CUOTAS).some(c => r2(c.capital + c.interes) !== 339155.91)) return { ok: false, error: "el cronograma no cierra", cap };
+  const ya = await ex("account.move", "search_read", [[["ref", "=", PLAN_AUT2.ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya };
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.05.010", "5.5.1.01.040", PLAN_AUT2.cuenta]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
+  const g = await ex("account.move.line", "read_group", [[["account_id", "=", id["2.1.3.05.010"]], ["parent_state", "=", "posted"]], ["balance:sum"], []]) as Rec[];
+  const saldo = r2(-((g[0]?.balance as number) || 0)), dif = r2(PLAN_AUT2.total - saldo);
+  if (saldo <= 0 || Math.abs(dif) > 150000) return { ok: false, error: "el saldo de Autónomos a pagar no es el esperado", saldo, dif };
+  if (dry) return { ok: true, dry_run: true, saldo_autonomos: saldo, intereses_actualizacion: dif, plan: PLAN_AUT2.total, crea_cuenta: !id[PLAN_AUT2.cuenta] };
+  if (!id[PLAN_AUT2.cuenta]) id[PLAN_AUT2.cuenta] = await ex("account.account", "create", [{ code: PLAN_AUT2.cuenta, name: PLAN_AUT2.nombre, account_type: "liability_current", reconcile: false, company_ids: [[6, 0, [C]]] }]);
+  const L = (a: unknown, n: string, d: number, h: number) => [0, 0, { account_id: a, name: n, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+  const lineas = [L(id["2.1.3.05.010"], "Autónomos 12/2023–11/2024 y 05/2025–09/2026 que entran al plan W830182", saldo, 0)];
+  if (dif > 0) lineas.push(L(id["5.5.1.01.040"], "Plan W830182 · resarcitorios al 22/10/2026 y actualización del aporte (consolidado ARCA − estimado)", dif, 0));
+  if (dif < 0) lineas.push(L(id["5.5.1.01.040"], "Plan W830182 · diferencia a favor entre lo estimado y lo consolidado por ARCA", 0, -dif));
+  lineas.push(L(id[PLAN_AUT2.cuenta], "Plan Mis Facilidades W830182 (RG 5321) consolidado 22/10/2026 · 20 cuotas de $339.155,91", 0, PLAN_AUT2.total));
+  const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
+  const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: PLAN_AUT2.fecha, ref: PLAN_AUT2.ref, company_id: C, line_ids: lineas }]) as number;
+  await ex("account.move", "action_post", [[mid]]);
+  return { ok: true, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0], saldo_autonomos: saldo, intereses_actualizacion: dif };
+}
 async function aut_plan_cuota(body: Rec): Promise<Rec> {
-  const dry = !!body.dry_run; const n = String(body.cuota || ""); const c = PLAN_AUT_CUOTAS[n];
+  const w83 = body.plan === "W830182";
+  const P = w83 ? { ref: PLAN_AUT2.ref, cuenta: PLAN_AUT2.cuenta, nro: "W830182", n: 20 } : { ref: PLAN_AUT.ref, cuenta: "2.1.3.05.030", nro: "W820473", n: 18 };
+  const dry = !!body.dry_run; const n = String(body.cuota || ""); const c = (w83 ? PLAN_AUT2_CUOTAS : PLAN_AUT_CUOTAS)[n];
   if (!c || !c.fecha || !c.pagado || !c.diario) return { ok: false, error: "cuota sin pago cargado en la tabla" };
-  const ref = `${PLAN_AUT.ref}-C${n.padStart(2, "0")}`;
+  const ref = `${P.ref}-C${n.padStart(2, "0")}`;
   const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
   if (ya.length) return { ok: true, ya_existia: ya };
   const resarc = r2(c.pagado - c.capital - c.interes); if (resarc < 0) return { ok: false, error: "lo pagado es menor que la cuota" };
   const j = (await ex("account.journal", "read", [[c.diario], ["default_account_id"]]) as Rec[])[0];
-  const acc = await ex("account.account", "search_read", [[["code", "in", ["2.1.3.05.030", "5.5.1.01.040"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const acc = await ex("account.account", "search_read", [[["code", "in", [P.cuenta, "5.5.1.01.040"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
   const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
   if (dry) return { ok: true, dry_run: true, ref, capital: c.capital, interes: c.interes, resarcitorio: resarc, total: c.pagado };
-  const g = `Plan W820473 · cuota ${n}/18`;
+  const g = `Plan ${P.nro} · cuota ${n}/${P.n}`;
   const L = (a: unknown, nm: string, d: number, h: number) => [0, 0, { account_id: a, name: nm, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
-  const lineas = [L(id["2.1.3.05.030"], `${g} · capital`, c.capital, 0), L(id["5.5.1.01.040"], `${g} · interés financiero (2,75%)`, c.interes, 0)];
+  const lineas = [L(id[P.cuenta], `${g} · capital`, c.capital, 0), L(id["5.5.1.01.040"], `${g} · interés financiero (2,75%)`, c.interes, 0)];
   if (resarc > 0) lineas.push(L(id["5.5.1.01.040"], `${g} · interés resarcitorio (2º vencimiento)`, resarc, 0));
   lineas.push(L(m2o(j.default_account_id), g, 0, c.pagado));
   const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: c.diario, date: c.fecha, ref, company_id: C, line_ids: lineas }]) as number;
@@ -903,6 +940,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "iva_pago") return new Response(JSON.stringify(await iva_pago(body)), { headers: h });
     if (body.lote === "iva_plan_cuota") return new Response(JSON.stringify(await iva_plan_cuota(body)), { headers: h });
     if (body.lote === "aut_plan") return new Response(JSON.stringify(await aut_plan(body)), { headers: h });
+    if (body.lote === "aut_plan_w830182") return new Response(JSON.stringify(await aut_plan_w830182(body)), { headers: h });
     if (body.lote === "aut_plan_cuota") return new Response(JSON.stringify(await aut_plan_cuota(body)), { headers: h });
     if (body.lote === "iibb_saf_inicial") return new Response(JSON.stringify(await iibb_saf_inicial(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
