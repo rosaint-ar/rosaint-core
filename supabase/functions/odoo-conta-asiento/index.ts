@@ -487,6 +487,10 @@ async function personal_a(body: Rec): Promise<Rec> {
 const IVA_CTAS = new Set(["2.1.3.03.010", "1.1.4.04.010", "1.1.4.04.020", "1.1.4.04.050", "2.1.3.03.020", "4.2.1.01.030"]);
 const iva_liquidacion = (body: Rec) => liquidacion(body, /^IVA-2026-\d{2}$/, (c) => IVA_CTAS.has(c));
 const iibb_liquidacion = (body: Rec) => liquidacion(body, /^IIBB-CM-2026-\d{2}$/, (c) => c.startsWith("5.4.2.01.") || c.startsWith("1.1.4.02.") || c === "2.1.3.02.010");
+// Lote "iibb_saf_inicial": saldos a favor de IIBB CM que venían de DDJJ anteriores a la carga en Odoo (VELAZQUEZ
+// arranca en marzo 2026). Santa Fe 25.267,75: la CM03 03/2026 lo resta sin impuesto del mes (sale de las DDJJ
+// 2021–2024). Debe saldo a favor / Haber 3.3.1.01.030 Ajuste de ejercicios anteriores, al 28/02/2026.
+const iibb_saf_inicial = (body: Rec) => liquidacion(body, /^IIBB-SAF-INICIAL$/, (c) => c.startsWith("1.1.4.02.") || c === "3.3.1.01.030");
 // Lote "reclasif_mo" (19-oct-2026): la fabricación WH/MO/00136 (Gel Criógeno, 21/03/2026) se valuó con las cuentas
 // viejas de producción (5.1.2.01.040 consumo / 5.1.1.01.900 gastos de producción) en vez de stock intermedio
 // (1.1.7.01.020) como todas las demás. Se anulan entre sí: el asiento las deja en cero sin cambiar el resultado.
@@ -584,31 +588,57 @@ async function iibb_pago(body: Rec): Promise<Rec> {
 const IVA_PAGOS: Record<string, { fecha: string; capital: number; total: number; diario: number; nota: string }> = {
   "2026-07": { fecha: "2026-10-20", capital: 355663.56, total: 355989.59, diario: 42, nota: "pagado por Mercado Pago el 20/10 (vencía el 19/10), avisado por Diego" },
 };
-// Lote "ret_sircar": retenciones de IIBB que Mercado Libre (agente SIRCAR, CUIT 30-70308853-4) descuenta del cobro
-// de las ventas. El cobro se registra en Odoo por el total de la factura, así que la retención nunca entraba:
-// la CM03 la computaba y la cuenta de retención quedaba negativa. Debe retención sufrida / Haber Mercado Pago.
-// Importes = lo que la CM03 final (rectificativas del 21/10/2026) restó por encima de las percepciones de Odoo;
-// septiembre además figura en el listado de retenciones SIRCAR de la jurisdicción 905 (comprobante 17702882706).
-const RET_SIRCAR: Record<string, { fecha: string; importe: number; cuenta: string; jur: string; nota: string }> = {
-  "2026-05-905": { fecha: "2026-05-31", importe: 628.50, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 05/2026 rect. 2" },
-  "2026-07-905": { fecha: "2026-07-31", importe: 728.52, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 07/2026 rect. 2" },
-  "2026-08-905": { fecha: "2026-08-31", importe: 1302.00, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 08/2026 rect. 2" },
-  "2026-09-905": { fecha: "2026-09-03", importe: 7483.99, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "SIRCAR comprobante 17702882706, 2% s/ 374.199,50" },
+// Lote "ret_sircar": retenciones de IIBB sufridas que la CM03 computó y nunca entraron a Odoo (el cobro se registra
+// por el total, así que la retención no aparecía y la cuenta de retención quedaba negativa).
+// Debe retención sufrida de cada jurisdicción / Haber la cuenta donde se descontó (Mercado Pago o el banco).
+// Fuentes (SIFERE web, bajadas el 22/10/2026), todas cruzadas al centavo contra lo que restó cada CM03 final:
+//   SIRCAR 905 Corrientes de Mercado Libre (sep: comprobante 17702882706, 2% s/ 374.199,50; may–ago según CM03 rect. 2);
+//   SIRTAC (tarjetas / sistemas de pago) de Mercado Libre, períodos 03 y 04/2026 (después, solo registros informativos en 0);
+//   SIRCREB del Santander, CBU 0720362488000001774940, julio 2026 $1.548,91 (el único mes con importe).
+type RetLinea = { cuenta: string; jur: string; importe: number };
+const RET_SIRCAR: Record<string, { fecha: string; diario: number; regimen: string; nota: string; lineas: RetLinea[] }> = {
+  "2026-05-905": { fecha: "2026-05-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 05/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 628.50 }] },
+  "2026-07-905": { fecha: "2026-07-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 07/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 728.52 }] },
+  "2026-08-905": { fecha: "2026-08-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 08/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 1302.00 }] },
+  "2026-09-905": { fecha: "2026-09-03", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 17702882706, 2% s/ 374.199,50", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 7483.99 }] },
+  "SIRTAC-2026-03": { fecha: "2026-03-31", diario: 42, regimen: "Mercado Libre (SIRTAC)", nota: "listado SIRTAC 202603, total 30.504,82", lineas: [
+    { cuenta: "1.1.4.02.050", jur: "Buenos Aires", importe: 17723.85 }, { cuenta: "1.1.4.02.110", jur: "Córdoba", importe: 2136.05 },
+    { cuenta: "1.1.4.02.170", jur: "Entre Ríos", importe: 702.92 }, { cuenta: "1.1.4.02.230", jur: "Mendoza", importe: 1444.04 },
+    { cuenta: "1.1.4.02.560", jur: "Misiones", importe: 1397.56 }, { cuenta: "1.1.4.02.590", jur: "Neuquén", importe: 822.80 },
+    { cuenta: "1.1.4.02.650", jur: "Río Negro", importe: 1704.31 }, { cuenta: "1.1.4.02.320", jur: "San Juan", importe: 1006.33 },
+    { cuenta: "1.1.4.02.350", jur: "San Luis", importe: 1990.52 }, { cuenta: "1.1.4.02.680", jur: "Santa Cruz", importe: 1576.44 }] },
+  "SIRTAC-2026-04": { fecha: "2026-04-30", diario: 42, regimen: "Mercado Libre (SIRTAC)", nota: "listado SIRTAC 202604, total 32.839,65", lineas: [
+    { cuenta: "1.1.4.02.050", jur: "Buenos Aires", importe: 14597.71 }, { cuenta: "1.1.4.02.110", jur: "Córdoba", importe: 1897.10 },
+    { cuenta: "1.1.4.02.470", jur: "Chaco", importe: 1725.26 }, { cuenta: "1.1.4.02.500", jur: "Chubut", importe: 3280.78 },
+    { cuenta: "1.1.4.02.170", jur: "Entre Ríos", importe: 1139.66 }, { cuenta: "1.1.4.02.230", jur: "Mendoza", importe: 1212.41 },
+    { cuenta: "1.1.4.02.590", jur: "Neuquén", importe: 2252.29 }, { cuenta: "1.1.4.02.650", jur: "Río Negro", importe: 2901.67 },
+    { cuenta: "1.1.4.02.290", jur: "Salta", importe: 1740.75 }, { cuenta: "1.1.4.02.320", jur: "San Juan", importe: 2092.02 }] },
+  "SIRCREB-2026-07": { fecha: "2026-07-31", diario: 54, regimen: "Santander (SIRCREB)", nota: "SIRCREB 07/2026, CBU 0720362488000001774940, total 1.548,91", lineas: [
+    { cuenta: "1.1.4.02.020", jur: "CABA", importe: 180.13 }, { cuenta: "1.1.4.02.050", jur: "Buenos Aires", importe: 813.17 },
+    { cuenta: "1.1.4.02.110", jur: "Córdoba", importe: 359.19 }, { cuenta: "1.1.4.02.500", jur: "Chubut", importe: 1.23 },
+    { cuenta: "1.1.4.02.260", jur: "La Rioja", importe: 15.64 }, { cuenta: "1.1.4.02.230", jur: "Mendoza", importe: 77.13 },
+    { cuenta: "1.1.4.02.590", jur: "Neuquén", importe: 2.01 }, { cuenta: "1.1.4.02.650", jur: "Río Negro", importe: 30.51 },
+    { cuenta: "1.1.4.02.320", jur: "San Juan", importe: 2.16 }, { cuenta: "1.1.4.02.350", jur: "San Luis", importe: 2.01 },
+    { cuenta: "1.1.4.02.680", jur: "Santa Cruz", importe: 27.41 }, { cuenta: "1.1.4.02.410", jur: "Santiago del Estero", importe: 22.30 },
+    { cuenta: "1.1.4.02.710", jur: "Tierra del Fuego", importe: 16.02 }] },
 };
 async function ret_sircar(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const out: Rec[] = [];
-  const acc = await ex("account.account", "search_read", [[["code", "in", [...new Set(Object.values(RET_SIRCAR).map(r => r.cuenta))]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const codes = [...new Set(Object.values(RET_SIRCAR).flatMap(r => r.lineas.map(l => l.cuenta)))];
+  const acc = await ex("account.account", "search_read", [[["code", "in", codes], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
   const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
-  const j = (await ex("account.journal", "read", [[42], ["default_account_id"]]) as Rec[])[0];
+  const faltan = codes.filter(c => !id[c]); if (faltan.length) return { ok: false, error: "cuentas inexistentes", faltan };
   for (const [k, r] of Object.entries(RET_SIRCAR)) {
-    const ref = `RET-SIRCAR-${k}`;
+    const ref = k.startsWith("SIR") ? `RET-${k}` : `RET-SIRCAR-${k}`;
+    const total = r2(r.lineas.reduce((a, l) => a + l.importe, 0));
     const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
     if (ya.length) { out.push({ ref, ya_existia: ya }); continue; }
-    if (dry) { out.push({ ref, fecha: r.fecha, importe: r.importe }); continue; }
-    const glosa = `Retención IIBB ${r.jur} sufrida · Mercado Libre (SIRCAR) · ${r.nota}`;
-    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: 42, date: r.fecha, ref, company_id: C, line_ids: [
-      [0, 0, { account_id: id[r.cuenta], name: glosa, debit: r.importe, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
-      [0, 0, { account_id: m2o(j.default_account_id), name: glosa, debit: 0, credit: r.importe, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]] }]) as number;
+    if (dry) { out.push({ ref, fecha: r.fecha, diario: r.diario, total }); continue; }
+    const j = (await ex("account.journal", "read", [[r.diario], ["default_account_id"]]) as Rec[])[0];
+    const sinImp = { tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] };
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: r.diario, date: r.fecha, ref, company_id: C, line_ids: [
+      ...r.lineas.map(l => [0, 0, { account_id: id[l.cuenta], name: `Retención IIBB ${l.jur} sufrida · ${r.regimen} · ${r.nota}`, debit: l.importe, credit: 0, ...sinImp }]),
+      [0, 0, { account_id: m2o(j.default_account_id), name: `Retenciones IIBB · ${r.regimen} · ${r.nota}`, debit: 0, credit: total, ...sinImp }]] }]) as number;
     await ex("account.move", "action_post", [[mid]]);
     out.push({ ref, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0] });
   }
@@ -865,6 +895,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "iva_plan_cuota") return new Response(JSON.stringify(await iva_plan_cuota(body)), { headers: h });
     if (body.lote === "aut_plan") return new Response(JSON.stringify(await aut_plan(body)), { headers: h });
     if (body.lote === "aut_plan_cuota") return new Response(JSON.stringify(await aut_plan_cuota(body)), { headers: h });
+    if (body.lote === "iibb_saf_inicial") return new Response(JSON.stringify(await iibb_saf_inicial(body)), { headers: h });
     if (body.lote === "iibb_liquidacion") return new Response(JSON.stringify(await iibb_liquidacion(body)), { headers: h });
     if (body.lote === "personal_a_nueva") return new Response(JSON.stringify(await personal_a_nueva(body)), { headers: h });
     if (body.lote === "personal_a") return new Response(JSON.stringify(await personal_a(body)), { headers: h });

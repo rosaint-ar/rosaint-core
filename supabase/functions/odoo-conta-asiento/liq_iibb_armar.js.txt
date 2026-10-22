@@ -39,7 +39,8 @@ const IMPUTA = (mes, j) => {
   }
   return (perc[mes] || {})[j] || 0;
 };
-const out = []; let afPrev = {};
+// saldo a favor que ya venía de DDJJ anteriores (asiento IIBB-SAF-INICIAL del 28/02/2026)
+const out = []; let afPrev = { "SANTA FE": 25267.75 };
 for (const [mes, f] of Object.entries(DDJJ)) {
   const d = leer(f); const lineas = []; let pagar = 0;
   for (const [J, x] of Object.entries(d.filas)) {
