@@ -499,11 +499,12 @@ async function liquidacion(body: Rec, refOk: RegExp, permitida: (c: string) => b
   const debe = r2(lineas.reduce((a, l) => a + (l.debe || 0), 0)), haber = r2(lineas.reduce((a, l) => a + (l.haber || 0), 0));
   if (debe !== haber || !debe) return { ok: false, error: "no balancea", debe, haber };
   const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name", "state"] }) as Rec[];
-  if (ya.length) return { ok: true, ya_existia: ya };
+  if (ya.length && !body.reemplazar) return { ok: true, ya_existia: ya };
   const codes = [...new Set(lineas.map(l => l.code))];
   const accs = await ex("account.account", "search_read", [[["code", "in", codes], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
   const id = Object.fromEntries(accs.map(a => [a.code, a.id]));
   const faltan = codes.filter(c => !id[c]); if (faltan.length) return { ok: false, error: "cuentas inexistentes", faltan };
+  if (ya.length) return await reemplazarAsiento(ya[0].id as number, lineas.map(l => ({ account_id: id[l.code], name: l.nombre || glosa, debit: r2(l.debe || 0), credit: r2(l.haber || 0) })), fecha, dry);
   if (dry) return { ok: true, dry_run: true, ref, fecha, renglones: lineas.length, debe, haber };
   const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
   const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: fecha, ref, company_id: C,
@@ -511,6 +512,39 @@ async function liquidacion(body: Rec, refOk: RegExp, permitida: (c: string) => b
   await ex("account.move", "action_post", [[mid]]);
   const m = (await ex("account.move", "read", [[mid], ["name", "state", "date", "amount_total"]]) as Rec[])[0];
   return { ok: m.state === "posted", asiento: m };
+}
+
+// Reemplaza los renglones de un asiento ya posteado (p. ej. cuando se rectifica la DDJJ de la que salió) sin
+// perder sus conciliaciones: guarda con qué renglones estaba conciliada cada cuenta, lo pasa a borrador, cambia
+// los renglones, lo vuelve a postear y reconcilia de nuevo cuenta por cuenta.
+async function reemplazarAsiento(mid: number, nuevas: { account_id: number; name: string; debit: number; credit: number }[], fecha: string, dry: boolean): Promise<Rec> {
+  const viejas = await ex("account.move.line", "search_read", [[["move_id", "=", mid]]], { fields: ["account_id", "debit", "credit", "matched_debit_ids", "matched_credit_ids"] }) as Rec[];
+  const pid = viejas.flatMap(l => [...(l.matched_debit_ids as number[]), ...(l.matched_credit_ids as number[])]);
+  const parciales = pid.length ? await ex("account.partial.reconcile", "read", [pid, ["debit_move_id", "credit_move_id"]]) as Rec[] : [];
+  const propias = new Set(viejas.map(l => l.id as number));
+  const contra: Record<number, number[]> = {};   // account_id → renglones de OTROS asientos con los que estaba conciliada
+  for (const p of parciales) for (const [a, b] of [[m2o(p.debit_move_id)!, m2o(p.credit_move_id)!], [m2o(p.credit_move_id)!, m2o(p.debit_move_id)!]])
+    if (propias.has(a) && !propias.has(b)) { const acc = m2o(viejas.find(l => l.id === a)!.account_id)!; (contra[acc] ||= []).includes(b) || contra[acc].push(b); }
+  const cuadro = (ls: Rec[]) => { const o: Record<string, number> = {}; for (const l of ls) { const k = String(typeof l.account_id === "number" ? l.account_id : m2o(l.account_id)); o[k] = r2((o[k] || 0) + (l.debit as number) - (l.credit as number)); } return o; };
+  const antes = cuadro(viejas), despues = cuadro(nuevas);
+  const cambios = [...new Set([...Object.keys(antes), ...Object.keys(despues)])].filter(k => r2((antes[k] || 0) - (despues[k] || 0)) !== 0).map(k => ({ account_id: Number(k), antes: antes[k] || 0, despues: despues[k] || 0 }));
+  const conciliadas = Object.keys(contra).map(Number);
+  if (conciliadas.some(a => cambios.some(c => c.account_id === a))) return { ok: false, error: "cambia el saldo de una cuenta conciliada; revisar a mano", cambios, conciliadas };
+  if (dry) return { ok: true, dry_run: true, reemplaza: mid, cambios, reconcilia: contra };
+  if (!cambios.length) return { ok: true, sin_cambios: mid };
+  await ex("account.move.line", "remove_move_reconcile", [[...propias]]);
+  await ex("account.move", "button_draft", [[mid]]);
+  await ex("account.move", "write", [[mid], { date: fecha, line_ids: [...[...propias].map(i => [2, i]), ...nuevas.map(l => [0, 0, { ...l, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }])] }]);
+  await ex("account.move", "action_post", [[mid]]);
+  const reconc: Rec[] = [];
+  for (const acc of conciliadas) {
+    const mias = await ex("account.move.line", "search_read", [[["move_id", "=", mid], ["account_id", "=", acc]]], { fields: ["id"] }) as Rec[];
+    const ids = [...mias.map(l => l.id as number), ...contra[acc]];
+    await ex("account.move.line", "reconcile", [ids]);
+    reconc.push({ account_id: acc, renglones: ids });
+  }
+  const m = (await ex("account.move", "read", [[mid], ["name", "state", "date", "amount_total"]]) as Rec[])[0];
+  return { ok: m.state === "posted", reemplazado: m, cambios, reconc };
 }
 
 // Lote "iibb_pago": pago de un VEP de IIBB CM contra "IIBB a pagar" (2.1.3.02.010), conciliado con la
@@ -550,6 +584,37 @@ async function iibb_pago(body: Rec): Promise<Rec> {
 const IVA_PAGOS: Record<string, { fecha: string; capital: number; total: number; diario: number; nota: string }> = {
   "2026-07": { fecha: "2026-10-20", capital: 355663.56, total: 355989.59, diario: 42, nota: "pagado por Mercado Pago el 20/10 (vencía el 19/10), avisado por Diego" },
 };
+// Lote "ret_sircar": retenciones de IIBB que Mercado Libre (agente SIRCAR, CUIT 30-70308853-4) descuenta del cobro
+// de las ventas. El cobro se registra en Odoo por el total de la factura, así que la retención nunca entraba:
+// la CM03 la computaba y la cuenta de retención quedaba negativa. Debe retención sufrida / Haber Mercado Pago.
+// Importes = lo que la CM03 final (rectificativas del 21/10/2026) restó por encima de las percepciones de Odoo;
+// septiembre además figura en el listado de retenciones SIRCAR de la jurisdicción 905 (comprobante 17702882706).
+const RET_SIRCAR: Record<string, { fecha: string; importe: number; cuenta: string; jur: string; nota: string }> = {
+  "2026-05-905": { fecha: "2026-05-31", importe: 628.50, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 05/2026 rect. 2" },
+  "2026-07-905": { fecha: "2026-07-31", importe: 728.52, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 07/2026 rect. 2" },
+  "2026-08-905": { fecha: "2026-08-31", importe: 1302.00, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "según CM03 08/2026 rect. 2" },
+  "2026-09-905": { fecha: "2026-09-03", importe: 7483.99, cuenta: "1.1.4.02.140", jur: "Corrientes", nota: "SIRCAR comprobante 17702882706, 2% s/ 374.199,50" },
+};
+async function ret_sircar(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const out: Rec[] = [];
+  const acc = await ex("account.account", "search_read", [[["code", "in", [...new Set(Object.values(RET_SIRCAR).map(r => r.cuenta))]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
+  const j = (await ex("account.journal", "read", [[42], ["default_account_id"]]) as Rec[])[0];
+  for (const [k, r] of Object.entries(RET_SIRCAR)) {
+    const ref = `RET-SIRCAR-${k}`;
+    const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (ya.length) { out.push({ ref, ya_existia: ya }); continue; }
+    if (dry) { out.push({ ref, fecha: r.fecha, importe: r.importe }); continue; }
+    const glosa = `Retención IIBB ${r.jur} sufrida · Mercado Libre (SIRCAR) · ${r.nota}`;
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: 42, date: r.fecha, ref, company_id: C, line_ids: [
+      [0, 0, { account_id: id[r.cuenta], name: glosa, debit: r.importe, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+      [0, 0, { account_id: m2o(j.default_account_id), name: glosa, debit: 0, credit: r.importe, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]] }]) as number;
+    await ex("account.move", "action_post", [[mid]]);
+    out.push({ ref, asiento: (await ex("account.move", "read", [[mid], ["name", "date", "state", "amount_total"]]) as Rec[])[0] });
+  }
+  return { ok: true, dry_run: dry, asientos: out };
+}
+
 async function iva_pago(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const mes = String(body.mes || ""); const p = IVA_PAGOS[mes];
   if (!p) return { ok: false, error: "mes fuera de la tabla" };
@@ -795,6 +860,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "iva_liquidacion") return new Response(JSON.stringify(await iva_liquidacion(body)), { headers: h });
     if (body.lote === "reclasif_mo") return new Response(JSON.stringify(await reclasif_mo(body)), { headers: h });
     if (body.lote === "iibb_pago") return new Response(JSON.stringify(await iibb_pago(body)), { headers: h });
+    if (body.lote === "ret_sircar") return new Response(JSON.stringify(await ret_sircar(body)), { headers: h });
     if (body.lote === "iva_pago") return new Response(JSON.stringify(await iva_pago(body)), { headers: h });
     if (body.lote === "iva_plan_cuota") return new Response(JSON.stringify(await iva_plan_cuota(body)), { headers: h });
     if (body.lote === "aut_plan") return new Response(JSON.stringify(await aut_plan(body)), { headers: h });

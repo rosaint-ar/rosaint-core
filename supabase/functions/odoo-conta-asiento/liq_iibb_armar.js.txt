@@ -4,8 +4,9 @@
 //   Haber retención/recaudación = resto de lo que restó la DDJJ (bancos, desfasajes) · Haber IIBB a pagar = a pagar
 const fs = require("fs"), { execFileSync } = require("child_process");
 const D = "C:/Users/diego/Downloads/";
-const DDJJ = { "2026-03": "DDJJ_Mensual_421310401.pdf", "2026-04": "DDJJ_Mensual_424099469.pdf", "2026-05": "DDJJ_Mensual_437304431.pdf",
-  "2026-06": "DDJJ_Mensual_437313416.pdf", "2026-07": "DDJJ_Mensual_437323250.pdf", "2026-08": "DDJJ_Mensual_437336575.pdf", "2026-09": "DDJJ_Mensual_437364683.pdf" };
+const DDJJ = { "2026-03": "DDJJ_Mensual_421310401.pdf", "2026-04": "DDJJ_Mensual_438733610 04-2026 Rect 1.pdf", "2026-05": "DDJJ_Mensual_438734460 05-2026 Rect 2.pdf",
+  "2026-06": "DDJJ_Mensual_438734861 06-2026 Rect 2.pdf", "2026-07": "DDJJ_Mensual_438736177 07-2026 Rect 2.pdf", "2026-08": "DDJJ_Mensual_438737463 08-2026 Rect 2.pdf", "2026-09": "DDJJ_Mensual_438738371 09-2026 Rect 1.pdf" };
+// 22/10/2026: abr–sep con las rectificativas del 21/10 (Corrientes arrastra el saldo a favor). Para reemplazar un asiento ya posteado mandar reemplazar:true.
 const num = (s) => Number(s.replace(/\./g, "").replace(",", "."));
 const r2 = (x) => Math.round(x * 100) / 100;
 const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
