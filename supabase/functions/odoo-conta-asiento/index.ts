@@ -592,14 +592,14 @@ const IVA_PAGOS: Record<string, { fecha: string; capital: number; total: number;
 // por el total, así que la retención no aparecía y la cuenta de retención quedaba negativa).
 // Debe retención sufrida de cada jurisdicción / Haber la cuenta donde se descontó (Mercado Pago o el banco).
 // Fuentes (SIFERE web, bajadas el 22/10/2026), todas cruzadas al centavo contra lo que restó cada CM03 final:
-//   SIRCAR 905 Corrientes de Mercado Libre (sep: comprobante 17702882706, 2% s/ 374.199,50; may–ago según CM03 rect. 2);
+//   SIRCAR 905 Corrientes de Mercado Libre (listado 01/2024–10/2026: las 4 retenciones, con comprobante y fecha);
 //   SIRTAC (tarjetas / sistemas de pago) de Mercado Libre, períodos 03 y 04/2026 (después, solo registros informativos en 0);
 //   SIRCREB del Santander, CBU 0720362488000001774940, julio 2026 $1.548,91 (el único mes con importe).
 type RetLinea = { cuenta: string; jur: string; importe: number };
 const RET_SIRCAR: Record<string, { fecha: string; diario: number; regimen: string; nota: string; lineas: RetLinea[] }> = {
-  "2026-05-905": { fecha: "2026-05-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 05/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 628.50 }] },
-  "2026-07-905": { fecha: "2026-07-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 07/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 728.52 }] },
-  "2026-08-905": { fecha: "2026-08-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "según CM03 08/2026 rect. 2", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 1302.00 }] },
+  "2026-05-905": { fecha: "2026-05-30", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 16093984669, 2% s/ 31.425,00", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 628.50 }] },
+  "2026-07-905": { fecha: "2026-07-20", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 16965530796, 2% s/ 36.426,00", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 728.52 }] },
+  "2026-08-905": { fecha: "2026-08-04", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 17120116411, 2% s/ 65.100,00", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 1302.00 }] },
   "2026-09-905": { fecha: "2026-09-03", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 17702882706, 2% s/ 374.199,50", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 7483.99 }] },
   "SIRTAC-2026-03": { fecha: "2026-03-31", diario: 42, regimen: "Mercado Libre (SIRTAC)", nota: "listado SIRTAC 202603, total 30.504,82", lineas: [
     { cuenta: "1.1.4.02.050", jur: "Buenos Aires", importe: 17723.85 }, { cuenta: "1.1.4.02.110", jur: "Córdoba", importe: 2136.05 },
@@ -632,7 +632,16 @@ async function ret_sircar(body: Rec): Promise<Rec> {
     const ref = k.startsWith("SIR") ? `RET-${k}` : `RET-SIRCAR-${k}`;
     const total = r2(r.lineas.reduce((a, l) => a + l.importe, 0));
     const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
-    if (ya.length) { out.push({ ref, ya_existia: ya }); continue; }
+    if (ya.length) {
+      const m = (await ex("account.move", "read", [[ya[0].id], ["date", "line_ids"]]) as Rec[])[0];
+      if (m.date === r.fecha) { out.push({ ref, ya_existia: ya }); continue; }
+      if (dry) { out.push({ ref, corrige_fecha: [m.date, r.fecha] }); continue; }
+      const ls = await ex("account.move.line", "read", [m.line_ids, ["debit"]]) as Rec[];
+      await ex("account.move", "button_draft", [[ya[0].id]]);
+      await ex("account.move", "write", [[ya[0].id], { date: r.fecha, line_ids: ls.map(l => [1, l.id, { name: (l.debit as number) > 0 ? `Retención IIBB ${r.lineas[0].jur} sufrida · ${r.regimen} · ${r.nota}` : `Retenciones IIBB · ${r.regimen} · ${r.nota}` }]) }]);
+      await ex("account.move", "action_post", [[ya[0].id]]);
+      out.push({ ref, fecha_corregida: (await ex("account.move", "read", [[ya[0].id], ["name", "date", "state"]]) as Rec[])[0] }); continue;
+    }
     if (dry) { out.push({ ref, fecha: r.fecha, diario: r.diario, total }); continue; }
     const j = (await ex("account.journal", "read", [[r.diario], ["default_account_id"]]) as Rec[])[0];
     const sinImp = { tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] };
