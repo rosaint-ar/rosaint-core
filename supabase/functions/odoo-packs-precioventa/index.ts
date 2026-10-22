@@ -39,6 +39,38 @@ async function call(model: string, method: string, args: unknown[], kwargs: Reco
   const uid = await auth(); kwargs.context = { ...CTX, ...((kwargs.context as any) || {}) };
   return await jsonrpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, model, method, args, kwargs]);
 }
+// Alinea Precio de Venta (= L1) y las reglas fijas de Lista 1 Público y Lista 2 Profesionales de Odoo con Core,
+// para los códigos pedidos. Usado por { prolijar } y por { alinear_precios: [códigos] } (ensayo por defecto).
+async function alinearPrecios(codes: string[], dry: boolean, acciones: any[]) {
+  const precios = await corePrecios(codes);
+  const activos = await call("product.product", "search_read",
+    [[["default_code", "in", codes], ["active", "=", true]], ["id", "default_code", "product_tmpl_id"]]);
+  for (const v of activos) {
+    const code = v.default_code, tmplId = v.product_tmpl_id[0];
+    const { l1, l2 } = precios[code] || {};
+    if (l1 == null || l2 == null) { acciones.push({ code, error: "sin precio en Core", l1, l2 }); continue; }
+    const [t] = await call("product.template", "read", [[tmplId], ["list_price"]]);
+    if (Math.abs(t.list_price - l1) > 0.005) {
+      if (!dry) await call("product.template", "write", [[tmplId], { list_price: l1 }]);
+      acciones.push({ code, que: "list_price", antes: t.list_price, ahora: l1 });
+    } else acciones.push({ code, que: "list_price", estado: "ya OK", valor: t.list_price });
+    for (const [listaId, precio] of [[LISTA_PUBLICO, l1], [LISTA_PROF, l2]] as [number, number][]) {
+      const reglas = await call("product.pricelist.item", "search_read",
+        [[["pricelist_id", "=", listaId], ["product_tmpl_id", "=", tmplId], ["applied_on", "=", "1_product"]],
+         ["id", "fixed_price"]]);
+      if (!reglas.length) {
+        let nuevoId = null;
+        if (!dry) nuevoId = await call("product.pricelist.item", "create",
+          [{ pricelist_id: listaId, applied_on: "1_product", product_tmpl_id: tmplId, compute_price: "fixed", fixed_price: precio, min_quantity: 0 }]);
+        acciones.push({ code, que: `regla lista ${listaId}`, accion: "crear", fixed_price: precio, id: nuevoId });
+      } else if (Math.abs(reglas[0].fixed_price - precio) > 0.005) {
+        if (!dry) await call("product.pricelist.item", "write", [[reglas[0].id], { fixed_price: precio }]);
+        acciones.push({ code, que: `regla lista ${listaId}`, accion: "actualizar", antes: reglas[0].fixed_price, ahora: precio });
+      } else acciones.push({ code, que: `regla lista ${listaId}`, estado: "ya OK", valor: reglas[0].fixed_price });
+    }
+  }
+}
+
 async function corePrecios(codes: string[]): Promise<Record<string, { l1: number | null; l2: number | null }>> {
   const out: Record<string, { l1: number | null; l2: number | null }> = {};
   for (const c of codes) out[c] = { l1: null, l2: null };
@@ -839,38 +871,19 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: problemas.length === 0, dry_run: dry, plan, problemas, sin_odoo: sinOdoo, verificacion: verif }, null, 2), { headers: cors });
     }
 
+    // ---- Modo alinear_precios: { alinear_precios: ["10211-AD", ...], dry_run } ----
+    if (Array.isArray(body.alinear_precios) && body.alinear_precios.length) {
+      const dry = body.dry_run !== false; const acciones: any[] = [];
+      await alinearPrecios(body.alinear_precios.map(String), dry, acciones);
+      return new Response(JSON.stringify({ ok: !acciones.some(x => x.error), dry_run: dry, acciones }, null, 2), { headers: cors });
+    }
+
     // ---- Modo prolijar ----
     if (body.prolijar === true) {
       const dry = body.dry_run !== false;
       const acciones: any[] = [];
       const TARGETS = ["13312", "10304"];
-      const precios = await corePrecios(TARGETS);
-      const activos = await call("product.product", "search_read",
-        [[["default_code", "in", TARGETS], ["active", "=", true]], ["id", "default_code", "product_tmpl_id"]]);
-      for (const v of activos) {
-        const code = v.default_code, tmplId = v.product_tmpl_id[0];
-        const { l1, l2 } = precios[code] || {};
-        if (l1 == null || l2 == null) { acciones.push({ code, error: "sin precio en Core", l1, l2 }); continue; }
-        const [t] = await call("product.template", "read", [[tmplId], ["list_price"]]);
-        if (Math.abs(t.list_price - l1) > 0.005) {
-          if (!dry) await call("product.template", "write", [[tmplId], { list_price: l1 }]);
-          acciones.push({ code, que: "list_price", antes: t.list_price, ahora: l1 });
-        } else acciones.push({ code, que: "list_price", estado: "ya OK", valor: t.list_price });
-        for (const [listaId, precio] of [[LISTA_PUBLICO, l1], [LISTA_PROF, l2]] as [number, number][]) {
-          const reglas = await call("product.pricelist.item", "search_read",
-            [[["pricelist_id", "=", listaId], ["product_tmpl_id", "=", tmplId], ["applied_on", "=", "1_product"]],
-             ["id", "fixed_price"]]);
-          if (!reglas.length) {
-            let nuevoId = null;
-            if (!dry) nuevoId = await call("product.pricelist.item", "create",
-              [{ pricelist_id: listaId, applied_on: "1_product", product_tmpl_id: tmplId, compute_price: "fixed", fixed_price: precio, min_quantity: 0 }]);
-            acciones.push({ code, que: `regla lista ${listaId}`, accion: "crear", fixed_price: precio, id: nuevoId });
-          } else if (Math.abs(reglas[0].fixed_price - precio) > 0.005) {
-            if (!dry) await call("product.pricelist.item", "write", [[reglas[0].id], { fixed_price: precio }]);
-            acciones.push({ code, que: `regla lista ${listaId}`, accion: "actualizar", antes: reglas[0].fixed_price, ahora: precio });
-          } else acciones.push({ code, que: `regla lista ${listaId}`, estado: "ya OK", valor: reglas[0].fixed_price });
-        }
-      }
+      await alinearPrecios(TARGETS, dry, acciones);
       const DUPES = ["13310", "13311", "13312"];
       const archivados = await call("product.template", "search_read",
         [[["default_code", "in", DUPES], ["active", "=", false]], ["id", "name", "default_code"]],
