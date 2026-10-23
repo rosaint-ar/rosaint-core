@@ -42,6 +42,13 @@ async function ex(model: string, method: string, args: unknown[], kw: Row = {}):
 const m2o = (v: any) => (Array.isArray(v) ? v[0] : null);
 const m2oName = (v: any) => (Array.isArray(v) ? String(v[1] ?? "") : "");
 const dia = (s: any) => (s ? String(s).slice(0, 10) : null);
+// Dia ARGENTINO (UTC-3, sin horario de verano) de un datetime de Odoo, que viene en UTC.
+// Para la fecha de despacho: una fecha cargada a las 22 h de Argentina ya es "manana" en UTC.
+const diaAR = (s: any) => {
+  if (!s) return null;
+  const t = Date.parse(String(s).replace(" ", "T") + (String(s).length > 10 ? "Z" : "T12:00:00Z"));
+  return isNaN(t) ? dia(s) : new Date(t - 3 * 3600 * 1000).toISOString().slice(0, 10);
+};
 
 // Devuelve el usuario logueado (o null). Valida el token contra Supabase Auth.
 export async function usuarioValido(req: Request): Promise<Row | null> {
@@ -408,7 +415,7 @@ export async function modoPlan() {
   const pedidos = so.map((s) => ({
     id: s.id, numero: s.name, cliente: m2oName(s.partner_id), partner_id: m2o(s.partner_id),
     estado: s.state, entrega: s.delivery_status || null,
-    fecha: dia(s.date_order), compromiso: dia(s.commitment_date),
+    fecha: dia(s.date_order), compromiso: diaAR(s.commitment_date),   // fecha de despacho (dia AR): manda la prioridad desde el 23/10/2026
     tag_ids: s.tag_ids || [], monto: Number(s.amount_total || 0),
     origen_id: m2o(s.source_id), origen: m2oName(s.source_id),
     ml: m2o(s.source_id) === ML_SOURCE, tn: m2o(s.source_id) === TN_SOURCE,
@@ -507,23 +514,50 @@ export async function modoPlan() {
   };
 }
 
-// Pone UNA etiqueta de prioridad en un pedido y saca las otras de prioridad
-// (FLEX, Listo y cualquier otra etiqueta quedan como estaban).
+// Dia habil (lunes a viernes) a "habiles" dias de hoy, en Argentina, como yyyy-mm-dd.
+function diaHabilAR(habiles: number): string {
+  const d = new Date(Date.now() - 3 * 3600 * 1000);
+  d.setUTCHours(12, 0, 0, 0);
+  const finde = () => d.getUTCDay() === 0 || d.getUTCDay() === 6;
+  while (finde()) d.setUTCDate(d.getUTCDate() + 1);
+  for (let n = 0; n < habiles; n++) { d.setUTCDate(d.getUTCDate() + 1); while (finde()) d.setUTCDate(d.getUTCDate() + 1); }
+  return d.toISOString().slice(0, 10);
+}
+
+// Cambia la prioridad de UN pedido. Desde el 23/10/2026 la prioridad es la FECHA DE DESPACHO
+// (commitment_date, la pildora de color del listado de ventas de Odoo); las etiquetas Hoy / 1 dia /
+// 2-3 dias se borraron. prioridad: hoy | 1d (proximo dia habil) | 23d (en 2 dias habiles) |
+// parcial (etiqueta 🔄 Entrega parcial, sin fecha) | ninguna (sin fecha y sin 🔄). O una fecha
+// exacta: fecha = "AAAA-MM-DD". FLEX, Listo y cualquier otra etiqueta quedan como estaban.
 export async function modoEtiquetar(body: Row) {
   const soId = Number(body.so_id);
   const clave = String(body.prioridad || "");
+  const fechaPedida = body.fecha ? String(body.fecha).slice(0, 10) : "";
   if (!soId) throw new Error("Falta so_id");
+  if (fechaPedida && !/^\d{4}-\d{2}-\d{2}$/.test(fechaPedida)) throw new Error("Fecha invalida: " + fechaPedida);
+  if (!fechaPedida && !["hoy", "1d", "23d", "parcial", "ninguna"].includes(clave)) throw new Error("Prioridad desconocida: " + clave);
   const { prioridad } = await leerTags();
-  if (clave !== "ninguna" && !prioridad[clave]) throw new Error("Prioridad desconocida: " + clave);
-  const [so] = await ex("sale.order", "read", [[soId]], { fields: ["name", "company_id", "tag_ids", "state"] }) as Row[];
+  const tagParcial = prioridad.parcial;
+  const [so] = await ex("sale.order", "read", [[soId]], { fields: ["name", "company_id", "tag_ids", "state", "commitment_date"] }) as Row[];
   if (!so) throw new Error("Pedido no encontrado");
   if (m2o(so.company_id) !== 2) throw new Error("El pedido no es de VELAZQUEZ");
-  const cmds: unknown[] = [];
-  for (const [k, id] of Object.entries(prioridad)) if (k !== clave && (so.tag_ids || []).includes(id)) cmds.push([3, id]);
-  if (clave !== "ninguna") cmds.push([4, prioridad[clave]]);
-  await ex("sale.order", "write", [[soId], { tag_ids: cmds }]);
-  const [desp] = await ex("sale.order", "read", [[soId]], { fields: ["tag_ids"] }) as Row[];
-  return { ok: true, numero: so.name, antes: so.tag_ids, despues: desp.tag_ids };
+  const vals: Row = {};
+  const tiene = (so.tag_ids || []).includes(tagParcial);
+  let diaNuevo: string | null = null;
+  if (fechaPedida) diaNuevo = fechaPedida;
+  else if (clave === "hoy") diaNuevo = diaHabilAR(0);
+  else if (clave === "1d") diaNuevo = diaHabilAR(1);
+  else if (clave === "23d") diaNuevo = diaHabilAR(2);
+  // la fecha va a las 12:00 de Argentina (15:00 UTC, como guarda Odoo)
+  vals.commitment_date = diaNuevo ? diaNuevo + " 15:00:00" : false;
+  if (tagParcial) {
+    if (clave === "parcial" && !tiene) vals.tag_ids = [[4, tagParcial]];
+    if (clave !== "parcial" && tiene) vals.tag_ids = [[3, tagParcial]];
+  }
+  await ex("sale.order", "write", [[soId], vals]);
+  const [desp] = await ex("sale.order", "read", [[soId]], { fields: ["tag_ids", "commitment_date"] }) as Row[];
+  return { ok: true, numero: so.name, antes: so.tag_ids, despues: desp.tag_ids, tag_ids: desp.tag_ids,
+    compromiso_antes: diaAR(so.commitment_date), compromiso: diaAR(desp.commitment_date) };
 }
 
 // ====== Recetas de Odoo (solo lectura) ======

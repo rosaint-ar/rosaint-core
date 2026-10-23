@@ -77,6 +77,166 @@ function fmtVat(tipo: string, n: string): string[] {
 }
 function domOr(leaves: unknown[]): unknown[] { const d: unknown[] = []; for (let i = 0; i < leaves.length - 1; i++) d.push("|"); return d.concat(leaves); }
 
+// ───────── FECHA DE DESPACHO AUTOMATICA PARA TIENDA NUBE ─────────
+// En Mercado Libre la fecha de despacho la impone ML. En Tienda Nube no hay tal fecha, asi que la
+// pregunta es otra: CUANDO PODEMOS ENTREGARLO. Se contesta mirando el stock de verdad, en tres
+// niveles: producto terminado -> granel (hay que fraccionar) -> materias primas (hay que elaborar).
+// Los chicos trabajan hasta las 14, asi que pasada esa hora ya nada sale hoy.
+//
+// Los pedidos se miran del MAS VIEJO al mas nuevo y el stock se va descontando a medida que se
+// compromete: si no, dos pedidos se adjudicarian la misma unidad y los dos dirian Hoy.
+//
+// 23/10/2026: antes esto ponia las etiquetas Hoy / 1 dia / 2-3 dias (crm.tag 2, 4, 5) y las
+// recalculaba en cada corrida. Ahora escribe la "Fecha de entrega" del pedido (commitment_date),
+// que Odoo muestra como pildora de color y se mueve sola con el calendario. Y SOLO la propone
+// cuando el pedido todavia no tiene fecha: una vez puesta (por aca o a mano desde el reloj del
+// listado de ventas) manda la persona y no se pisa.
+const HORA_CORTE = 14;   // hasta las 14 se puede preparar y despachar en el dia
+
+function horaAR() { return new Date(Date.now() - 3 * 3600 * 1000).getUTCHours(); }
+// Dia habil (lunes a viernes) a "habiles" dias de hoy, en Argentina. Devuelve la fecha de despacho
+// a las 12:00 AR (15:00 UTC, como guarda Odoo) y el yyyy-mm-dd para mostrar.
+function fechaHabilAR(habiles: number): { odoo: string; dia: string } {
+  const d = new Date(Date.now() - 3 * 3600 * 1000);
+  d.setUTCHours(12, 0, 0, 0);
+  const finde = () => d.getUTCDay() === 0 || d.getUTCDay() === 6;
+  while (finde()) d.setUTCDate(d.getUTCDate() + 1);
+  for (let n = 0; n < habiles; n++) { d.setUTCDate(d.getUTCDate() + 1); while (finde()) d.setUTCDate(d.getUTCDate() + 1); }
+  const dia = d.toISOString().slice(0, 10);
+  return { odoo: dia + " 15:00:00", dia };
+}
+
+// Devuelve, por pedido, hasta donde hay que ir para poder entregarlo:
+//   "listo" | "fraccionar" | "elaborar" | "faltan" , y el detalle de que falta.
+async function analizarTN(sb: any) {
+  // 1) las ventas de Tienda Nube confirmadas y sin entregar del todo
+  const sos = await exec("sale.order", "search_read", [[["source_id", "=", SOURCE_TN], ["company_id", "=", COMPANY],
+    ["state", "=", "sale"], ["delivery_status", "!=", "full"]],
+    ["id", "name", "date_order", "client_order_ref", "tag_ids", "partner_id", "commitment_date"]], { limit: 80, order: "date_order asc" }) as any[];
+  if (!sos.length) return { pedidos: [] as any[], sin_datos: [] as string[] };
+  const lins = await exec("sale.order.line", "search_read", [[["order_id", "in", sos.map((x: any) => x.id)],
+    ["display_type", "=", false], ["is_delivery", "=", false]],
+    ["order_id", "product_id", "product_uom_qty", "qty_delivered", "price_unit"]], { limit: 600 }) as any[];
+  // 2) stock libre de TODO (terminados, packs, combos, graneles, envases, materias primas)
+  const prods = await exec("product.product", "search_read", [[["default_code", "!=", false]],
+    ["default_code", "free_qty"]], { limit: 6000 }) as any[];
+  const libre: Record<string, number> = {};
+  const codigoDeId: Record<number, string> = {};
+  for (const p of prods) { const c = String(p.default_code).trim(); libre[c] = Number(p.free_qty || 0); codigoDeId[p.id] = c; }
+  // 3) como se arma cada cosa
+  const [pres, formu, comp, packs, snapR] = await Promise.all([
+    sb.from("presentaciones").select("codigo_sku,codigo_granel,tamanio_kg,codigo_envase"),
+    sb.from("formulas").select("id,codigo_granel").eq("estado", "vigente"),
+    sb.from("formula_componentes").select("formula_id,codigo_componente,composicion_pct"),
+    sb.from("pack_componentes").select("codigo_pack,codigo_sku,cantidad"),
+    sb.from("prod_plan_snapshot").select("datos").order("id", { ascending: false }).limit(1),
+  ]);
+  const presDe: Record<string, any> = {};
+  for (const p of (pres.data || [])) presDe[String(p.codigo_sku)] = p;
+  const granelDeFormula: Record<number, string> = {};
+  for (const x of (formu.data || [])) granelDeFormula[x.id] = String(x.codigo_granel);
+  const receta: Record<string, Array<{ c: string; pct: number }>> = {};
+  for (const x of (comp.data || [])) {
+    const g = granelDeFormula[x.formula_id]; if (!g) continue;
+    (receta[g] = receta[g] || []).push({ c: String(x.codigo_componente), pct: Number(x.composicion_pct || 0) });
+  }
+  const partesDePack: Record<string, Array<{ c: string; q: number }>> = {};
+  for (const x of (packs.data || [])) {
+    (partesDePack[String(x.codigo_pack)] = partesDePack[String(x.codigo_pack)] || []).push({ c: String(x.codigo_sku), q: Number(x.cantidad || 1) });
+  }
+  // Los COMBOS (61xxx) no estan en pack_componentes: estan en los kits de la foto de Odoo, que
+  // ademas trae los packs. Lo de la foto pisa al respaldo por ser la fuente real.
+  const kits = (((snapR.data || [])[0] || {}).datos || {}).kits || {};
+  for (const k of Object.keys(kits)) {
+    const partes = (kits[k] || []).map((x: any) => ({ c: String(x.c), q: Number(x.q || 1) }));
+    if (partes.length) partesDePack[String(k)] = partes;
+  }
+
+  const porPedido: Record<number, any[]> = {};
+  for (const l of lins) {
+    const oid = l.order_id[0];
+    // Los renglones de recompensa (envio gratis, descuento) tienen precio NEGATIVO y no son nada
+    // que haya que preparar. Si no se descartan, el analisis los toma por productos sin receta y
+    // todos los pedidos terminan en "faltan materiales" (paso en la primera prueba).
+    if (Number(l.price_unit || 0) < 0) continue;
+    const falta = Number(l.product_uom_qty || 0) - Number(l.qty_delivered || 0);
+    if (falta <= 0) continue;
+    const c = codigoDeId[l.product_id && l.product_id[0]] || "";
+    (porPedido[oid] = porPedido[oid] || []).push({ c, q: falta });
+  }
+
+  const tomar = (c: string, q: number) => { const hay = libre[c] || 0; const uso = Math.min(hay, q); libre[c] = hay - uso; return q - uso; };
+  const sin_datos: string[] = []; const pedidos: any[] = [];
+
+  for (const so of sos) {
+    const items = porPedido[so.id] || [];
+    let peor = 0;   // 0 listo, 1 fraccionar, 2 elaborar, 3 faltan
+    const motivos: string[] = [];
+    // los packs y combos se abren en sus partes si no hay stock del pack armado
+    const necesita: Array<{ c: string; q: number }> = [];
+    for (const it of items) {
+      const resto = tomar(it.c, it.q);
+      if (resto <= 0) continue;
+      const partes = partesDePack[it.c];
+      if (partes) { for (const p of partes) necesita.push({ c: p.c, q: p.q * resto }); }
+      else necesita.push({ c: it.c, q: resto });
+    }
+    for (const n of necesita) {
+      const resto = tomar(n.c, n.q);
+      if (resto <= 0) continue;
+      const pr = presDe[n.c];
+      if (!pr) { peor = Math.max(peor, 3); motivos.push(`${n.c}: faltan ${resto} y no se como se arma`); sin_datos.push(n.c); continue; }
+      // hay que fraccionar: hace falta granel y envase
+      const kg = resto * Number(pr.tamanio_kg || 0);
+      const faltaEnvase = pr.codigo_envase ? tomar(String(pr.codigo_envase), resto) : 0;
+      const faltaGranel = tomar(String(pr.codigo_granel), kg);
+      if (faltaEnvase > 0) { peor = Math.max(peor, 3); motivos.push(`faltan ${faltaEnvase} envases ${pr.codigo_envase} para ${n.c}`); continue; }
+      if (faltaGranel <= 0) { peor = Math.max(peor, 1); motivos.push(`fraccionar ${resto} de ${n.c}`); continue; }
+      // hay que elaborar el granel: se miran las materias primas de la formula
+      const rec = receta[String(pr.codigo_granel)];
+      if (!rec || !rec.length) { peor = Math.max(peor, 3); motivos.push(`faltan ${faltaGranel} kg de ${pr.codigo_granel} y no tiene formula vigente`); sin_datos.push(String(pr.codigo_granel)); continue; }
+      const sinMP: string[] = [];
+      for (const m of rec) {
+        const need = faltaGranel * (m.pct / 100);
+        if (need <= 0) continue;
+        const r = tomar(m.c, need);
+        if (r > 0.0001) sinMP.push(`${m.c} (faltan ${r.toFixed(2)} kg)`);
+      }
+      if (sinMP.length) { peor = Math.max(peor, 3); motivos.push(`para ${n.c}: ${sinMP.join(", ")}`); }
+      else { peor = Math.max(peor, 2); motivos.push(`elaborar ${faltaGranel.toFixed(1)} kg de ${pr.codigo_granel} para ${n.c}`); }
+    }
+    const tarde = horaAR() >= HORA_CORTE;
+    // habiles = en cuantos dias habiles se puede despachar (null = no se sabe: faltan materiales)
+    let habiles: number | null = null, cuando = "";
+    if (peor === 0) { habiles = tarde ? 1 : 0; cuando = tarde ? "hay stock, pero ya pasaron las " + HORA_CORTE : "hay stock de todo"; }
+    else if (peor === 1) { habiles = 1; cuando = "solo hay que fraccionar"; }
+    else if (peor === 2) { habiles = 2; cuando = "hay que elaborar granel"; }
+    else { habiles = null; cuando = "faltan materiales"; }
+    const despacho = habiles === null ? null : fechaHabilAR(habiles);
+    pedidos.push({ id: so.id, so: so.name, ref: so.client_order_ref, fecha: String(so.date_order).slice(0, 10),
+      cliente: Array.isArray(so.partner_id) ? so.partner_id[1] : "",
+      despacho, cuando, motivos: motivos.slice(0, 6),
+      fecha_puesta: so.commitment_date || null });
+  }
+  return { pedidos, sin_datos: [...new Set(sin_datos)] };
+}
+// Propone la fecha de despacho que surge del analisis, SOLO a los pedidos que todavia no tienen.
+// escribir=false solo dice que haria. (El nombre quedo de cuando ponia etiquetas.)
+async function aplicarEtiquetasTN(sb: any, escribir: boolean) {
+  const r = await analizarTN(sb);
+  let escritas = 0; const cambios: any[] = []; const fallos: string[] = [];
+  for (const p of r.pedidos) {
+    if (p.fecha_puesta || !p.despacho) continue;   // ya tiene fecha (manda la persona) o faltan materiales
+    cambios.push({ so: p.so, cliente: p.cliente, a: p.despacho.dia, cuando: p.cuando, motivos: p.motivos });
+    if (!escribir) continue;
+    try {
+      await exec("sale.order", "write", [[p.id], { commitment_date: p.despacho.odoo }]);
+      escritas++;
+    } catch (e) { fallos.push(`${p.so}: ${String((e as Error).message || e).slice(0, 140)}`); }
+  }
+  return { pedidos: r.pedidos.length, cambios: cambios.length, escritas, sin_datos: r.sin_datos,
+    detalle: cambios, fallos, todos: r.pedidos.map((p: any) => ({ so: p.so, despacho: p.despacho ? p.despacho.dia : null, fecha_puesta: p.fecha_puesta, cuando: p.cuando })) };
+}
 let TNTOK = "";
 async function tnToken(sb: any): Promise<string> {
   if (TNTOK) return TNTOK;
@@ -229,6 +389,13 @@ async function armar(o: any) {
     else avisos.push(`Descuento del ${pct}% ($${dgw}) sin programa equivalente en Odoo - no se carga.`);
   }
   const envio = envioDe(o);
+  // Cuando no hay renglon de envio, la venta no dice en ningun lado como se entrega. Se deja una
+  // NOTA (no un producto) para que al armar el pedido se vea de una. Pedido de Diego 13/10/2026.
+  // El retiro se reconoce por shipping_pickup_type = pickup (la orden 2485 vino asi: shipping
+  // "pickup-point", codigo ULID, costo 0). Si no hay envio y TAMPOCO es retiro, se avisa en vez
+  // de inventar: algo raro tiene esa orden.
+  const esRetiro = String(o.shipping_pickup_type || "") === "pickup" || String(o.shipping || "") === "pickup-point";
+  const retiro = envio ? "" : (esRetiro ? "RETIRA EN EL LOCAL" : "SIN ENVIO EN LA ORDEN - revisar como se entrega");
   const freeship = envio ? Math.max(0, envio.costo - envio.cobrado) : 0;
   const u = ubicacionDe(o), dir = direccionDe(o);
   const stateId = st[norm(u.provincia)] || false;
@@ -252,7 +419,7 @@ async function armar(o: any) {
     estado_pago: o.payment_status, pago: pagoNom, pago_id: pagoId,
     cliente: { nombre: String(o.contact_name || "").trim(), documento: doc, tipo_doc: tipoDoc, state_id: stateId,
       email: mail || false, telefono: tel, ...u, ...dir },
-    lineas, envio, freeship, descuento, avisos,
+    lineas, envio, retiro, freeship, descuento, avisos,
   };
 }
 async function partnerDe(p: any): Promise<number> {
@@ -281,8 +448,9 @@ async function partnerDe(p: any): Promise<number> {
 }
 async function crearBorrador(p: any) {
   const partnerId = await partnerDe(p);
-  const lines: unknown[] = p.lineas.map((l: any) => [0, 0, { product_id: l.product_id, product_uom_qty: l.qty, price_unit: l.precio, tax_id: [[6, 0, [TAX]]] }]);
-  if (p.envio) lines.push([0, 0, { product_id: p.envio.product, name: p.envio.nombre, product_uom_qty: 1, price_unit: p.envio.costo, tax_id: [[6, 0, [TAX]]], is_delivery: true }]);
+  const lines: unknown[] = p.lineas.map((l: any, i: number) => [0, 0, { sequence: 10 + i, product_id: l.product_id, product_uom_qty: l.qty, price_unit: l.precio, tax_id: [[6, 0, [TAX]]] }]);
+  if (!p.envio && p.retiro) lines.push([0, 0, { sequence: 80, display_type: "line_note", name: p.retiro }]);
+  if (p.envio) lines.push([0, 0, { sequence: 80, product_id: p.envio.product, name: p.envio.nombre, product_uom_qty: 1, price_unit: p.envio.costo, tax_id: [[6, 0, [TAX]]], is_delivery: true }]);
   const vals: any = {
     partner_id: partnerId, company_id: COMPANY, client_order_ref: String(p.numero), date_order: fechaOdoo(p.fecha),
     pricelist_id: PRICELIST, payment_term_id: TERM, warehouse_id: WAREHOUSE, team_id: TEAM, user_id: SALESMAN,
@@ -293,8 +461,8 @@ async function crearBorrador(p: any) {
   const cur = await exec("sale.order.line", "search_read", [[["order_id", "=", soId]], ["product_id"]], {}) as any[];
   const tiene = (pid: number) => cur.some((l) => Array.isArray(l.product_id) && l.product_id[0] === pid);
   const add: unknown[] = []; const rec: string[] = [];
-  if (p.freeship > 0 && !tiene(FREESHIP.product)) { add.push([0, 0, { product_id: FREESHIP.product, name: FREESHIP.nombre, product_uom_qty: 1, price_unit: -p.freeship, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: FREESHIP.reward }]); rec.push("envio gratis"); }
-  if (p.descuento && !tiene(p.descuento.product)) { add.push([0, 0, { product_id: p.descuento.product, name: p.descuento.nombre, product_uom_qty: 1, price_unit: -p.descuento.monto, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: p.descuento.reward }]); rec.push(`descuento ${p.descuento.pct}%`); }
+  if (p.freeship > 0 && !tiene(FREESHIP.product)) { add.push([0, 0, { sequence: 81, product_id: FREESHIP.product, name: FREESHIP.nombre, product_uom_qty: 1, price_unit: -p.freeship, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: FREESHIP.reward }]); rec.push("envio gratis"); }
+  if (p.descuento && !tiene(p.descuento.product)) { add.push([0, 0, { sequence: 60, product_id: p.descuento.product, name: p.descuento.nombre, product_uom_qty: 1, price_unit: -p.descuento.monto, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: p.descuento.reward }]); rec.push(`descuento ${p.descuento.pct}%`); }
   let recompensas = rec.length ? "agregadas por el conector: " + rec.join(", ") : "las puso Odoo solo";
   if (add.length) {
     try { await exec("sale.order", "write", [[soId], { order_line: add }]); }
@@ -324,8 +492,39 @@ async function ordenesTN(desde: string, estado: string | null = "paid") {
   return out;
 }
 const ordenesPagas = (desde: string) => ordenesTN(desde, "paid");
+// Decision de Diego (13/10/2026): se cargan TODAS las ventas de Tienda Nube, no solo las pagas.
+// Las pagas (Mercado Pago, Pago Nube) entran CONFIRMADAS; las de transferencia quedan en
+// PRESUPUESTO hasta que entre la plata, y ahi se confirman solas.
+// Lo muerto no entra: una compra abandonada o un pago anulado no son un presupuesto que sirva.
+const PAGOS_MUERTOS = ["abandoned", "voided", "refunded"];
+function ordenViva(o: any) {
+  return String(o.status || "") !== "cancelled" && !o.cancelled_at &&
+    !PAGOS_MUERTOS.includes(String(o.payment_status || ""));
+}
+// Los presupuestos que quedaron esperando la transferencia: cuando Tienda Nube marca la orden
+// como paga, la venta se confirma sola. Es el otro extremo de cargar sin pagar.
+async function confirmarPagadas(sb: any, orders: any[]) {
+  const pagas = orders.filter((o: any) => String(o.payment_status || "") === "paid").map((o: any) => String(o.number));
+  if (!pagas.length) return { revisados: 0, confirmadas: 0, detalle: [] as string[], fallos: [] as string[] };
+  const sos = await exec("sale.order", "search_read", [[["client_order_ref", "in", pagas], ["company_id", "=", COMPANY],
+    ["state", "=", "draft"], ["source_id", "=", SOURCE_TN]], ["id", "name", "client_order_ref", "amount_total"]], { limit: 40 }) as any[];
+  const detalle: string[] = []; const fallos: string[] = []; let confirmadas = 0;
+  for (const so of sos) {
+    try {
+      await exec("sale.order", "action_confirm", [[so.id]], {});
+      confirmadas++; detalle.push(`${so.name} (orden ${so.client_order_ref})`);
+    } catch (e) { fallos.push(`${so.name}: ${String((e as Error).message || e).slice(0, 140)}`); }
+  }
+  if (confirmadas || fallos.length) {
+    try {
+      await sb.from("tn_odoo_bitacora").insert([{ resultado: confirmadas ? "confirmada" : "error",
+        detalle: (confirmadas ? "se confirmo el pago y pasaron a venta: " + detalle.join(", ") : "") + (fallos.length ? " | fallos: " + fallos.join(" | ") : "") }]);
+    } catch (_) { }
+  }
+  return { revisados: sos.length, confirmadas, detalle, fallos };
+}
 async function pendientes(desde: string) {
-  const orders = await ordenesPagas(desde);
+  const orders = (await ordenesTN(desde, null)).filter(ordenViva);
   const nums = orders.map((o: any) => String(o.number));
   const yaC = nums.length ? await exec("sale.order", "search_read", [[["client_order_ref", "in", nums], ["company_id", "=", COMPANY]], ["client_order_ref"]], {}) as any[] : [];
   const set = new Set(yaC.map((c: any) => String(c.client_order_ref)));
@@ -385,7 +584,7 @@ _servirConGuardia(async (req) => {
         .eq("id", 1).or(`running.eq.false,since.lt.${viejo}`).select();
       if (!got || !got.length) return ok({ ok: true, skip: "ya hay una corrida en curso" });
       try {
-        const { pend } = await pendientes(body.desde || CORTE);
+        const { orders: todasTN, pend } = await pendientes(body.desde || CORTE);
         let cargadas = 0, revisar = 0, errores = 0; const bit: any[] = []; const detalle: any[] = [];
         for (const o of pend) {
           try {
@@ -394,13 +593,31 @@ _servirConGuardia(async (req) => {
             if (bloqueo.length) { revisar++; bit.push({ numero: p.numero, cliente: p.cliente.nombre, total: p.total, resultado: "revisar", detalle: p.avisos.join(" | ").slice(0, 500) }); continue; }
             if (await yaCargada(p.numero)) continue;
             const r = await crearBorrador(p);
+            // Paga = se confirma sola. Sin pagar (transferencia pendiente) = queda presupuesto.
+            // Solo se confirma si el total cierra contra Tienda Nube: si no cierra, se deja en
+            // presupuesto para mirarlo, porque de esa venta sale el armado del pedido.
+            let confirmada = false;
+            if (p.estado_pago === "paid" && r.coincide) {
+              try { await exec("sale.order", "action_confirm", [[r.so_id]], {}); confirmada = true; }
+              catch (e) { bit.push({ numero: p.numero, so_name: r.so_name, resultado: "error", detalle: "no se pudo confirmar: " + String((e as Error).message || e).slice(0, 200) }); }
+            }
             cargadas++;
-            bit.push({ numero: p.numero, so_name: r.so_name, cliente: p.cliente.nombre, total: p.total, resultado: "cargada", detalle: (r.coincide ? "" : "OJO: el total no coincide. ") + r.recompensas });
+            bit.push({ numero: p.numero, so_name: r.so_name, cliente: p.cliente.nombre, total: p.total, resultado: "cargada", detalle: (r.coincide ? "" : "OJO: el total no coincide. ") + (confirmada ? "confirmada (pago " + p.pago + "). " : "queda en presupuesto: el pago figura \"" + p.estado_pago + "\". ") + r.recompensas });
             detalle.push({ orden: p.numero, venta: r.so_name, cliente: p.cliente.nombre, total: r.total_odoo, coincide: r.coincide, recompensas: r.recompensas });
           } catch (e) { errores++; bit.push({ numero: String(o.number), cliente: o.contact_name, total: num(o.total), resultado: "error", detalle: String((e as Error).message || e).slice(0, 400) }); }
         }
+        // Presupuestos que ya cobraron: pasan a venta.
+        let cobradas: any = { revisados: 0, confirmadas: 0, detalle: [], fallos: [] };
+        try { cobradas = await confirmarPagadas(sb, todasTN); } catch (_) { }
+
+        // Pone sola la fecha de despacho a las ventas que no tienen, segun cuando podemos entregarlas
+        // (stock, granel, materias primas y la hora de corte). Va despues de cargar: la venta nueva ya entra con fecha.
+        let etiquetas: any = { pedidos: 0, cambios: 0, escritas: 0, detalle: [], fallos: [] };
+        try { etiquetas = await aplicarEtiquetasTN(sb, true); } catch (e) { etiquetas.fallos = [String((e as Error).message || e).slice(0, 200)]; }
+        if (etiquetas.escritas) bit.push({ resultado: "etiquetada", detalle: etiquetas.detalle.map((x: any) => `${x.so}: despacho ${x.a} (${x.cuando})`).join(" | ").slice(0, 480) });
+        if (etiquetas.fallos && etiquetas.fallos.length) bit.push({ resultado: "etiqueta_falla", detalle: etiquetas.fallos.join(" | ").slice(0, 480) });
         if (bit.length) { try { await sb.from("tn_odoo_bitacora").insert(bit); } catch (_) { } }
-        return ok({ ok: true, pendientes: pend.length, cargadas, revisar, errores, tope: TOPE, detalle });
+        return ok({ ok: true, pendientes: pend.length, cargadas, revisar, errores, tope: TOPE, etiquetadas: etiquetas.escritas, etiquetas, confirmadas_al_cobrar: cobradas.confirmadas, cobradas, detalle });
       } catch (e) {
         // Si la corrida se cae ANTES de recorrer las ordenes (Tienda Nube u Odoo caidos, un 404 de
         // paginado, etc.) hay que dejar rastro: si no, el conector deja de cargar EN SILENCIO y solo
@@ -534,6 +751,37 @@ _servirConGuardia(async (req) => {
       return ok({ ok: true, escritas, saltadas, errores: errores.slice(0, 20) });
     }
 
+    // Agrega la nota de retiro a una venta YA cargada. No toca la que tiene envio, ni repite la
+    // nota si ya esta. Pensado para las que se cargaron antes de que esto existiera.
+    // Pone la fecha de despacho a las ventas de Tienda Nube sin fecha, segun cuando podemos entregarlas. Sin confirmar:true
+    // solo muestra lo que haria, sin tocar Odoo.
+    if (modo === "etiquetar_tn") {
+      const r = await aplicarEtiquetasTN(sb, body.confirmar === true);
+      return ok({ ok: true, ensayo: body.confirmar !== true, hora_ar: horaAR(), corte: HORA_CORTE, ...r });
+    }
+
+    if (modo === "nota_retiro") {
+      const nom = String(body.so || "").trim();
+      if (!nom) return ok({ ok: false, error: "Falta so" });
+      const sos = await exec("sale.order", "search_read", [[["name", "=", nom], ["company_id", "=", COMPANY]],
+        ["id", "name", "client_order_ref", "state"]], { limit: 2 }) as any[];
+      if (!sos.length) return ok({ ok: false, error: `No encontre ${nom}` });
+      const so = sos[0];
+      const lins = await exec("sale.order.line", "search_read", [[["order_id", "=", so.id]],
+        ["name", "is_delivery", "display_type", "sequence"]], { limit: 60 }) as any[];
+      if (lins.some((l: any) => l.is_delivery)) {
+        return ok({ ok: false, error: `${so.name} tiene renglon de envio: no corresponde la nota de retiro` });
+      }
+      const nota = String(body.texto || "RETIRA EN EL LOCAL");
+      if (lins.some((l: any) => l.display_type && String(l.name || "").trim() === nota)) {
+        return ok({ ok: true, ya_estaba: true, so: so.name });
+      }
+      await exec("sale.order", "write", [[so.id], { order_line: [[0, 0, { sequence: 80, display_type: "line_note", name: nota }]] }]);
+      const post = await exec("sale.order.line", "search_read", [[["order_id", "=", so.id]],
+        ["name", "sequence", "display_type", "price_unit"]], { limit: 60, order: "sequence,id" }) as any[];
+      return ok({ ok: true, so: so.name, nota, renglones: post.map((l: any) => ({ orden: l.sequence, texto: l.name, tipo: l.display_type || "producto", precio: l.price_unit })) });
+    }
+
     const id = String(body.tn_id || body.id || "");
     const numero = String(body.numero || "");
     if (!id && !numero) return ok({ ok: false, error: "Falta tn_id o numero" });
@@ -555,13 +803,20 @@ _servirConGuardia(async (req) => {
     if (modo === "preview") return ok({ ok: true, ...p, cliente_existe: !!existe, partner_id: existe?.id ?? null, cliente_hallado_por: existe?.via ?? null, ya_cargada: !!ya, so: ya });
 
     if (modo === "cargar") {
-      if (p.estado_pago !== "paid") return ok({ ok: false, error: `El pago esta en "${p.estado_pago}", solo se cargan las pagas.` });
+      // Ya no se rechazan las que no estan pagas: entran como presupuesto. Lo muerto si se rechaza.
+      if (!ordenViva(o)) return ok({ ok: false, error: `La orden esta cancelada o el pago figura "${p.estado_pago}": no se carga.` });
       if ((p.fecha || "") < CORTE && !body.forzar) return ok({ ok: false, error: `La orden es anterior al corte ${CORTE}. forzar:true para cargarla igual.`, fecha: p.fecha });
       if (ya) return ok({ ok: true, ya_cargada: true, so: ya, msg: "Esa orden ya estaba cargada" });
       const bloqueo = p.avisos.filter((a) => /no se carga|sin producto|Sin documento/i.test(a));
       if (bloqueo.length && !body.forzar) return ok({ ok: false, error: "Necesita revision", avisos: p.avisos });
       const r = await crearBorrador(p);
-      return ok({ ok: true, creada: true, ...r, numero: p.numero, cliente: p.cliente.nombre, avisos: p.avisos });
+      // Misma regla que la carga automatica: paga y con el total en orden -> se confirma.
+      let confirmada = false;
+      if (p.estado_pago === "paid" && r.coincide) {
+        try { await exec("sale.order", "action_confirm", [[r.so_id]], {}); confirmada = true; } catch (_) { }
+      }
+      return ok({ ok: true, creada: true, confirmada, estado_pago: p.estado_pago, ...r,
+        numero: p.numero, cliente: p.cliente.nombre, avisos: p.avisos });
     }
     return ok({ ok: false, error: "modo invalido" });
   } catch (e) { return ok({ ok: false, error: String((e as Error).message || e) }); }

@@ -13,7 +13,9 @@
   const fCorta = (f) => f ? String(f).slice(0, 10).split('-').reverse().slice(0, 2).join('/') : '—';
   const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   function proximoHabil(d = new Date()) { const x = new Date(d); x.setHours(12, 0, 0, 0); do x.setDate(x.getDate() + 1); while (x.getDay() === 0 || x.getDay() === 6); return x; }
-  const CLASE = { hoy: 'hoy', '1d': 'd1', tanda: 'tanda', '23d': 'd23', parcial: 'parcial', sin: 'sin', anticipo: 'anticipo', stock: 'stock' };
+  const CLASE = { hoy: 'hoy', '1d': 'd1', tanda: 'tanda', '23d': 'd23', parcial: 'parcial', sin: 'sin', prog: 'prog', anticipo: 'anticipo', stock: 'stock' };
+  // Botones y opciones que CAMBIAN la fecha de despacho (dicen lo que hacen; el estado lo muestra la píldora)
+  const ACCION = { hoy: 'Hoy', '1d': 'Próximo día hábil', '23d': 'En 2 días hábiles', parcial: '🔄 Entrega parcial', ninguna: 'Sin fecha' };
   const pill = (p) => `<span class="prio ${CLASE[p] || 'sin'}">${esc(P.ETIQUETA[p] || p)}</span>`;
 
   function msg(texto, err = false) {
@@ -94,13 +96,8 @@
   // ---------------- helpers de datos ----------------
   const nombreDe = (c) => (S.snap.stock.find((s) => s.c === c) || {}).n || c;
   const pedidoDe = (id) => S.snap.pedidos.find((p) => p.id === id);
-  function prioDePedido(p) {
-    if (p.ml) return 'hoy';
-    const inv = {}; for (const [k, id] of Object.entries(S.snap.prioridad || {})) inv[id] = k;
-    const ks = (p.tag_ids || []).map((id) => inv[id]).filter(Boolean);
-    if (ks.includes('parcial')) return 'parcial';
-    return ks.sort((a, b) => P.RANGO[a] - P.RANGO[b])[0] || 'sin';
-  }
+  // prioridad = fecha de despacho del pedido (o 🔄 parcial); misma cuenta que el programador
+  function prioDePedido(p) { return P.prioridadDe(p, S.snap.prioridad, new Date()); }
   const esPresupuesto = (p) => (p.estado === 'draft' || p.estado === 'sent') && !p.ml;
   const postergadoActivo = (so, sku) => S.postergados.find((x) => Number(x.so_id) === Number(so) && x.sku === sku && x.hasta > isoLocal(new Date()));
 
@@ -158,7 +155,7 @@
     return `<span class="acc"><button data-acc="post1" data-so="${so}" data-sku="${esc(sku)}" data-num="${esc(numero || '')}" title="Sale de hoy y vuelve el próximo día hábil">+1 día</button><button data-acc="posthasta" data-so="${so}" data-sku="${esc(sku)}" data-num="${esc(numero || '')}" data-et="${esc(etiqueta || '')}">Hasta…</button></span>`;
   }
   function accEtiquetas(so) {
-    return `<span class="acc">${['hoy', '1d', '23d', 'parcial'].map((k) => `<button data-acc="etiq" data-so="${so}" data-prio="${k}">${esc(P.ETIQUETA[k])}</button>`).join('')}</span>`;
+    return `<span class="acc">${['hoy', '1d', '23d', 'parcial'].map((k) => `<button data-acc="etiq" data-so="${so}" data-prio="${k}">${esc(ACCION[k])}</button>`).join('')}</span>`;
   }
 
   // ---------------- plan del día (cantidades editables → Hoja de Producción) ----------------
@@ -362,14 +359,14 @@
       const pz = postergadoActivo(p.id, '*');
       const pt = pats[p.partner_id];
       const par = S.parciales.find((x) => Number(x.so_id) === p.id) || {};
-      const opciones = [['', 'Sin etiqueta'], ['hoy', P.ETIQUETA.hoy], ['1d', P.ETIQUETA['1d']], ['23d', P.ETIQUETA['23d']], ['parcial', P.ETIQUETA.parcial]];
-      const actual = prioDePedido({ ...p, ml: false });
+      const opciones = [['', 'Cambiar fecha…'], ['hoy', ACCION.hoy], ['1d', ACCION['1d']], ['23d', ACCION['23d']], ['parcial', ACCION.parcial], ['ninguna', ACCION.ninguna]];
       return `<div class="ped" id="ped-${p.id}">
         <div class="cab"><span class="num">${esc(p.numero)}</span><span class="cli">${esc(p.cliente)}</span>
           <span class="fecha">del ${fCorta(p.fecha)}${p.ml ? ' · 🟡 Mercado Libre' : p.tn ? ' · Tienda Nube' : ''}${p.estado === 'draft' ? ' · en borrador' : ''}</span>
           ${pz ? `<span class="prio sin">Postergado hasta el ${fCorta(pz.hasta)}</span>` : pill(p.prio)}
           <span class="der">
-            ${p.ml ? '<span class="muted" style="font-size:12px">ML va siempre como Hoy</span>' : `<select class="sel" data-acc="etiqsel" data-so="${p.id}">${opciones.map(([k, t]) => `<option value="${k}" ${k === (actual === 'sin' ? '' : actual) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`}
+            ${p.ml ? '<span class="muted" style="font-size:12px">ML va siempre como Hoy</span>' : `<select class="sel" data-acc="etiqsel" data-so="${p.id}" title="Fecha de despacho: se guarda en Odoo (la píldora del listado de ventas)">${opciones.map(([k, t]) => `<option value="${k}" ${k === '' ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+            <input type="date" class="sel" data-acc="fechasel" data-so="${p.id}" value="${esc(p.compromiso || '')}" title="Fecha de despacho exacta (se guarda en Odoo)">`}
             <span class="acc"><button data-acc="entrega" data-so="${p.id}">Entrega de hoy</button></span>
             ${pz ? `<span class="acc"><button data-acc="volver" data-so="${p.id}" data-sku="*">Volver a programar</button></span>` : accPost(p.id, '*', p.numero, `${p.numero} · pedido entero`)}
           </span></div>
@@ -466,12 +463,13 @@
   }
 
   // ---------------- acciones ----------------
-  async function etiquetar(so, prio) {
+  // Cambia la fecha de despacho (o 🔄 parcial) del pedido en Odoo. fecha = 'AAAA-MM-DD' exacta, o '' para usar prio.
+  async function etiquetar(so, prio, fecha) {
     try {
-      const r = await fn('etiquetar', { so_id: Number(so), prioridad: prio || 'ninguna' });
-      const p = pedidoDe(Number(so)); if (p) p.tag_ids = r.despues;
-      calcular(); msg(`${r.numero}: etiqueta cambiada en Odoo`);
-    } catch (e) { msg('No se pudo etiquetar: ' + e.message, true); }
+      const r = await fn('etiquetar', fecha ? { so_id: Number(so), fecha } : { so_id: Number(so), prioridad: prio || 'ninguna' });
+      const p = pedidoDe(Number(so)); if (p) { p.tag_ids = r.tag_ids || r.despues; p.compromiso = r.compromiso || null; }
+      calcular(); msg(`${r.numero}: ${r.compromiso ? 'despacho el ' + fCorta(r.compromiso) : 'sin fecha de despacho'} (guardado en Odoo)`);
+    } catch (e) { msg('No se pudo cambiar la fecha: ' + e.message, true); }
   }
   async function postergar(so, sku, hasta, motivo) {
     try {
@@ -628,8 +626,10 @@
       guardarCantidad(t.dataset.tipo, t.dataset.cod, t.dataset.nom, v, sug, !!t.dataset.agr);
       return;
     }
+    if (t.dataset?.acc === 'fechasel') { t.disabled = true; etiquetar(t.dataset.so, t.value ? '' : 'ninguna', t.value).finally(() => { t.disabled = false; }); return; }
     if (t.dataset?.acc !== 'etiqsel') return;
-    t.disabled = true; etiquetar(t.dataset.so, t.value).finally(() => { t.disabled = false; });
+    if (!t.value) return;
+    t.disabled = true; etiquetar(t.dataset.so, t.value).finally(() => { t.disabled = false; t.value = ''; });
   });
 
   function abrirTab(id) {

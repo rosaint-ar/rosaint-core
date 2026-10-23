@@ -2,9 +2,13 @@
 // Arma la producción del día a partir de la foto de sync-produccion (modo "plan").
 // Toda la matemática vive acá para poder discutirla; la pantalla solo la muestra.
 //
-// Orden de la fila: 🟥 Hoy (y TODO Mercado Libre) → 🟧 1 día → 🟨 2-3 días →
-// 🔄 cuota del día de los pedidos de entrega parcial → confirmados sin etiqueta →
-// relleno para stock con lo que sobra de capacidad.
+// Orden de la fila: 🟥 Hoy (y TODO Mercado Libre) → 🟧 Mañana → 🟨 2-3 días →
+// 🔄 cuota del día de los pedidos de entrega parcial → confirmados sin fecha → 🟦 programados
+// para más adelante → relleno para stock con lo que sobra de capacidad.
+// La prioridad sale de la FECHA DE DESPACHO del pedido (commitment_date de Odoo, en la foto como
+// p.compromiso, día argentino), en días CORRIDOS: la misma cuenta que la píldora del listado de
+// ventas de Odoo, así el Core y Odoo nunca dicen cosas distintas. Hasta el 23/10/2026 salía de las etiquetas
+// Hoy / 1 día / 2-3 días, que se borraron; 🔄 Entrega parcial sigue siendo etiqueta.
 // Los presupuestos (borrador/enviado que no son de ML) se muestran, no se programan.
 // Capacidad: dos "mesas" en paralelo — elaborar granel (kg/día) y fraccionar (unidades/día).
 // Lo urgente (Hoy, 1 día) entra siempre aunque pase el tope: la pantalla avisa.
@@ -15,8 +19,8 @@
   // se adelanta solo si sobra lugar, antes que el stock genérico.
   // 'tanda' = la entrega que le TOCA hoy/mañana a un cliente que se entrega de a partes (ej. Saracho, 2 baldes):
   // es un compromiso del día, va antes que 2-3 días.
-  const RANGO = { hoy: 0, '1d': 1, tanda: 1.5, '23d': 2, parcial: 3, sin: 4, anticipo: 5, stock: 6 };
-  const ETIQUETA = { hoy: '🟥 Hoy', '1d': '🟧 1 día', tanda: '🔄 Entrega que toca', '23d': '🟨 2-3 días', parcial: '🔄 Parcial', sin: 'Sin etiqueta', anticipo: 'Próxima entrega', stock: 'Para stock' };
+  const RANGO = { hoy: 0, '1d': 1, tanda: 1.5, '23d': 2, parcial: 3, sin: 4, prog: 4.5, anticipo: 5, stock: 6 };
+  const ETIQUETA = { hoy: '🟥 Hoy', '1d': '🟧 Mañana', tanda: '🔄 Entrega que toca', '23d': '🟨 2-3 días', parcial: '🔄 Parcial', sin: 'Sin fecha', prog: '🟦 Programado', anticipo: 'Próxima entrega', stock: 'Para stock' };
   const URGENTE = (p) => p === 'hoy' || p === '1d';
 
   // las fechas 'AAAA-MM-DD' se leen como día local (si no, en Argentina caen el día anterior)
@@ -47,6 +51,21 @@
   }
   const masDias = (f, n) => { const d = d0(f); d.setDate(d.getDate() + Math.round(n)); return d; };
   function proximoHabil(f) { const d = d0(f); do d.setDate(d.getDate() + 1); while (d.getDay() === 0 || d.getDay() === 6); return d; }
+
+  // Prioridad por la fecha de despacho (día AR 'AAAA-MM-DD'), en días corridos (igual que la píldora de Odoo):
+  // hoy o atrasada → hoy · mañana → 1d · en 2 o 3 días → 23d · más lejos → prog · sin fecha → null
+  function prioPorFecha(f, hoy) {
+    if (!f) return null;
+    const dias = Math.round((d0(f) - d0(hoy)) / 864e5);
+    return dias <= 0 ? 'hoy' : dias === 1 ? '1d' : dias <= 3 ? '23d' : 'prog';
+  }
+  // Prioridad de un pedido: Mercado Libre siempre Hoy; 🔄 Entrega parcial (etiqueta); si no, su fecha de despacho.
+  function prioridadDe(p, prioridadTags, hoy) {
+    if (p.ml) return 'hoy';
+    const tagParcial = (prioridadTags || {}).parcial;
+    if (tagParcial && (p.tag_ids || []).includes(tagParcial)) return 'parcial';
+    return prioPorFecha(p.compromiso, hoy) || 'sin';
+  }
 
   // ---------- Lo que se aprende de cómo trabaja la planta (historial de Odoo) ----------
   // Lote de elaboración y tanda de fraccionado = cantidad más repetida por orden de fabricación.
@@ -97,7 +116,6 @@
     const alertas = [];
 
     // ---------- índices ----------
-    const claveTag = {}; for (const [k, id] of Object.entries(snap.prioridad || {})) claveTag[id] = k;
     const stock = {}; for (const s of snap.stock) stock[s.c] = s;
     const nombre = {}; for (const s of snap.stock) nombre[s.c] = s.n;
     const presDe = {}; for (const p of pres) presDe[p.c] = { g: p.g, kg: Number(p.kg) };
@@ -128,11 +146,8 @@
       const presupuesto = (p.estado === 'draft' || p.estado === 'sent') && !p.ml;
       const eh = entregaDe[p.id];
       if (presupuesto && !eh) { aConfirmar.push(p); continue; }
-      const claves = (p.tag_ids || []).map((id) => claveTag[id]).filter(Boolean);
-      let prio = p.ml ? 'hoy'
-        : claves.includes('parcial') ? 'parcial'
-        : claves.sort((a, b) => RANGO[a] - RANGO[b])[0] || 'sin';
-      if (prio === 'sin' && !presupuesto) alertas.push({ tipo: 'sin_etiqueta', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} (${p.cliente}) no tiene etiqueta: entra al final de la fila.` });
+      let prio = prioridadDe(p, snap.prioridad, hoy);
+      if (prio === 'sin' && !presupuesto) alertas.push({ tipo: 'sin_etiqueta', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} (${p.cliente}) no tiene fecha de despacho: entra al final de la fila.` });
       if (p.ml && p.estado === 'draft') alertas.push({ tipo: 'ml_borrador', so_id: p.id, numero: p.numero, cliente: p.cliente, texto: `${p.numero} es una venta de Mercado Libre todavía en borrador en Odoo: se programa igual como Hoy.` });
 
       // explotar kits (packs y combos) en sus productos reales
@@ -169,7 +184,7 @@
       // hoy entra la tanda que le toca; si todavía no le toca, la tanda queda como "próxima entrega".
       // Lo que se cargue a mano para ESTE pedido (prod_plan_parciales) manda sobre el patrón.
       const pt = patrones[p.partner_id];
-      if (pt && !parcialDe[p.id] && (prio === '23d' || prio === 'sin' || prio === 'parcial')) {
+      if (pt && !parcialDe[p.id] && (prio === '23d' || prio === 'sin' || prio === 'prog' || prio === 'parcial')) {
         const ult = ap.ultimaEntrega[p.id];
         const prox = ult ? masDias(ult, pt.dias_entre) : d0(hoy);
         const toca = prox <= manana;
@@ -406,7 +421,7 @@
     if (moViejas.length) alertas.push({ tipo: 'mo_vieja', texto: `${moViejas.length === 1 ? 'Hay 1 orden de fabricación abierta' : `Hay ${moViejas.length} órdenes de fabricación abiertas`} hace más de 2 semanas en Odoo (${moViejas.map((m) => `${m.nombre} ${nombre[m.c] || m.c}`).join(' · ')}): si no se van a hacer, conviene cancelarlas.` });
     // pedido grande sin 🔄 que no entra en un día: probablemente sea de entrega parcial
     const postPorSo = {};
-    for (const x of postergado) if (x.prio === '23d' || x.prio === 'sin') { postPorSo[x.so_id] = postPorSo[x.so_id] || { ...x, q: 0 }; postPorSo[x.so_id].q += x.q; }
+    for (const x of postergado) if (x.prio === '23d' || x.prio === 'sin' || x.prio === 'prog') { postPorSo[x.so_id] = postPorSo[x.so_id] || { ...x, q: 0 }; postPorSo[x.so_id].q += x.q; }
     for (const x of Object.values(postPorSo)) if (x.q >= capU / 2)
       alertas.push({ tipo: 'sugerir_parcial', so_id: x.so_id, numero: x.numero, cliente: x.cliente, texto: `${x.numero} (${x.cliente}) tiene ${x.q} unidades que no entran en el día: si se entrega de a partes, conviene marcarlo 🔄 Entrega parcial.` });
     if (carga.u > capU) alertas.push({ tipo: 'excede', texto: `Entre lo hecho (${r2(hechoU)} u) y lo urgente se fraccionan ${r2(carga.u)} unidades y el tope del día es ${capU}.` });
@@ -465,6 +480,6 @@
     return { lista, faltan: lista.filter((x) => x.falta > 0), sin_stock_en_odoo: sinStock, sin_receta: [...sinReceta] };
   }
 
-  const API = { programar, necesidadMateriales, aBase, diasHabiles, RANGO, ETIQUETA };
+  const API = { programar, necesidadMateriales, aBase, diasHabiles, prioridadDe, prioPorFecha, RANGO, ETIQUETA };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PROGRAMADOR = API;
 })(typeof window !== 'undefined' ? window : globalThis);

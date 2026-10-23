@@ -293,8 +293,8 @@
 <script src="shared/supabase.js?v=202610061904"></script>
 <script src="shared/charts.js"></script>
 <script src="shell/shell.js?v=202610061943"></script>
-<script src="produccion/programador.js?v=202610061443"></script>
-<script src="produccion/plan-del-dia.js?v=202610061443"></script>
+<script src="produccion/programador.js?v=202610231500"></script>
+<script src="produccion/plan-del-dia.js?v=202610231500"></script>
 <script>
 const FN_ESC = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/escandallo-prod';
 const KEY = window.SUPABASE_KEY;
@@ -462,11 +462,13 @@ function renderDesglose(elId, subId, pedidos, fuera, vacio) {
     '</span><span class="item__qty despacho">' + fmt(x.qty) + '</span></div>').join('');
 }
 
-// Manda la ETIQUETA: en estas listas solo entra lo marcado 🟥 Hoy. Un pedido pendiente que
-// nadie marco para hoy NO es para hoy (ej: los pedidos grandes de venta manual, que se entregan
-// escalonados). Igual se informa cuantos quedaron afuera.
-const ETIQUETA_HOY = 2;   // crm.tag 🟥 Hoy en Odoo
-const esDeHoy = (p) => Array.isArray(p.tag_ids) && p.tag_ids.indexOf(ETIQUETA_HOY) >= 0;
+// Manda la FECHA DE DESPACHO: en estas listas solo entra lo que despacha hoy (o ya está atrasado),
+// es decir la píldora roja del listado de ventas de Odoo. Un pedido pendiente sin fecha, o con fecha
+// de más adelante, NO es para hoy (ej: los pedidos grandes de venta manual, que se entregan
+// escalonados). Igual se informa cuántos quedaron afuera. Hasta el 23/10/2026 esto miraba la
+// etiqueta 🟥 Hoy (crm.tag 2), que se borró.
+const hoyAR = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+const esDeHoy = (p) => !!p.compromiso && p.compromiso <= hoyAR();
 
 function cargarPedidosCanal(r) {
   const peds = (r && r.pedidos) || [];

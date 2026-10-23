@@ -1,6 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// tn-seguimientos v19 — SOLO LECTURA. verify_jwt=true. Panel de ventas confirmadas de Odoo + detalle de stock por producto.
+// tn-seguimientos v42 — SOLO LECTURA. verify_jwt=true. Panel de ventas confirmadas de Odoo + stock.
+// v41: fecha_despacho = stock.picking.date_done (respaldo; el real sale de tracking-despacho).
+// v42 (22-10-2026): ① Mercado Libre usa el ESTADO REAL del envio (tabla ml_envio_estado que mantiene
+//   el cron ml-estado-sync, status+substatus del shipment) en vez del delivery_status de Odoo, que se
+//   marca full al cargar la venta y daba TODO como despachado. ② Las ventas SIN transporte asignado ya
+//   no se asumen "retiro": van a la categoria 'sinasignar' (puede faltar cargar el envio). Un retiro de
+//   verdad solo si la linea de envio dice retiro/mostrador.
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -9,13 +15,16 @@ const ODOO_DB = Deno.env.get("ODOO_DB")!;
 const ODOO_LOGIN = Deno.env.get("ODOO_LOGIN")!;
 const ODOO_KEY = Deno.env.get("ODOO_KEY")!;
 const COMPANY_ID = 2;
-const READINESS = [2, 4, 5, 21, 22];
-// Grupo de etiquetas que maneja la pantalla Seguimientos: 2 Hoy, 4 1 dia, 5 2-3 dias,
-// 21 Listo, 22 Entrega parcial. Son EXCLUYENTES entre si: al elegir una se borran las otras.
-// Hasta el 06/10/2026 decia [2,4,5,19]: la 19 no existe en Odoo (Odoo saltea el id que falta,
-// asi que no fallaba: simplemente no aparecian Listo ni Entrega parcial en el desplegable, y
-// una venta que las tenia puestas se mostraba como "sin fecha"). Las crm.tag reales son
-// 2, 4, 5, 20 (FLEX), 21 y 22. La 20 queda afuera a proposito: no es de este grupo.
+// Etiquetas de ESTADO que maneja Seguimientos: 21 ✅ Listo y 22 🔄 Entrega parcial (excluyentes).
+// Desde el 23/10/2026 el "¿para cuándo?" es la FECHA DE DESPACHO del pedido (commitment_date, la
+// pildora de color del listado de ventas de Odoo): las etiquetas 2 Hoy, 4 1 dia y 5 2-3 dias se borraron.
+const READINESS = [21, 22];
+// Dia ARGENTINO (UTC-3) de un datetime de Odoo (que viene en UTC), como AAAA-MM-DD.
+function diaAR(s: unknown): string | null {
+  if (!s) return null;
+  const t = Date.parse(String(s).replace(" ", "T") + "Z");
+  return isNaN(t) ? null : new Date(t - 3 * 3600 * 1000).toISOString().slice(0, 10);
+}
 const STORE_ID = 385079;
 const TN_BASE = `https://api.tiendanube.com/2025-03/${STORE_ID}`;
 const UA = "Rosaint Core - seguimientos (rosaint.ar@gmail.com)";
@@ -45,6 +54,11 @@ function modalidadDe(opcion: string): string { const s = (opcion || "").toLowerC
 function primerNombre(nombre: string): string { const n = (nombre || "").trim().split(/\s+/)[0] || ""; if (!n) return ""; return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase(); }
 function nameTokens(s: string): string[] { return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z ]/g, " ").split(/\s+/).filter((w) => w.length >= 3); }
 function diaUTC(iso: string): number { const d = new Date(iso); return Math.floor(d.getTime() / 86400000); }
+function fechaDespachoDMY(odooDt: string): string {
+  const d = new Date(String(odooDt).replace(" ", "T") + "Z"); if (isNaN(d.getTime())) return "";
+  const art = new Date(d.getTime() - 3 * 3600 * 1000); const p = (n: number) => String(n).padStart(2, "0");
+  return p(art.getUTCDate()) + "/" + p(art.getUTCMonth() + 1) + "/" + art.getUTCFullYear();
+}
 function prodFromLine(l: Rec): Rec { const raw = String(l.name || ""); const m = raw.match(/^\[([^\]]+)\]\s*([\s\S]+)$/); return { sku: m ? m[1] : null, nombre: m ? m[2].trim().split(/\n/)[0] : raw.trim().split(/\n/)[0], cantidad: Number(l.product_uom_qty || 1) }; }
 function esEnvio(f: Rec): boolean {
   const sh = (f.shipping as Rec) || {};
@@ -54,19 +68,20 @@ function esEnvio(f: Rec): boolean {
   if (sh.type === "pickup" && /(env[ií]o nube|andreani|correo|\boca\b|sucursal|punto|hop)/.test(opt)) return true;
   return false;
 }
+// Categoria por tipo de entrega. 'sinasignar' = venta sin transporte cargado en Odoo (NO se asume
+// retiro: puede faltar cargar el envio). 'retiro' solo si la linea lo dice expresamente.
 function categoriaDe(o: Rec, lineLabel: string): string {
   const src = Array.isArray(o.source_id) ? String((o.source_id as unknown[])[1]).toLowerCase() : "";
   if (/mercado libre|meli/.test(src)) return "ml";
   const s = (lineLabel || "").toLowerCase();
-  if (s) { if (/local|rosario/.test(s)) return "rosario"; return "correo"; }
-  return "retiro";
+  if (s) {
+    if (/retir|mostrador/.test(s)) return "retiro";
+    if (/local|rosario/.test(s)) return "rosario";
+    return "correo";
+  }
+  return "sinasignar";
 }
 
-
-// ===== Control de acceso (auditoría 6-oct-2026) =====
-// Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
-// x-cron-key = secreto CONTROL_CRON_KEY) o el propio servidor (service role). La clave pública que
-// está en las páginas NO alcanza: antes dejaba entrar a cualquiera.
 async function _accesoPermitido(req: Request): Promise<boolean> {
   const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
   if (interna && req.headers.get("x-cron-key") === interna) return true;
@@ -118,7 +133,7 @@ _servirConGuardia(async (req: Request) => {
 
     const uid = await odooAuth();
     const odooSince = new Date(sinceMs - 3 * 24 * 3600 * 1000).toISOString().slice(0, 19).replace("T", " ");
-    const odooOrders = await odooExec(uid, "sale.order", "search_read", [[["company_id", "=", COMPANY_ID], ["state", "in", ["sale", "done"]], ["date_order", ">=", odooSince]]], { fields: ["name", "amount_total", "date_order", "partner_id", "delivery_status", "carrier_id", "source_id", "tag_ids", "client_order_ref"], order: "id desc", limit: 800 }) as Rec[];
+    const odooOrders = await odooExec(uid, "sale.order", "search_read", [[["company_id", "=", COMPANY_ID], ["state", "in", ["sale", "done"]], ["date_order", ">=", odooSince]]], { fields: ["name", "amount_total", "date_order", "partner_id", "delivery_status", "carrier_id", "source_id", "tag_ids", "client_order_ref", "commitment_date"], order: "id desc", limit: 800 }) as Rec[];
     const oids = odooOrders.map((o) => o.id as number);
 
     const lineByOrder: Record<number, string> = {};
@@ -131,21 +146,42 @@ _servirConGuardia(async (req: Request) => {
     try { const ls = await odooExec(uid, "sale.order.line", "search_read", [[["order_id", "in", oids], ["is_delivery", "=", false], ["display_type", "=", false]]], { fields: ["order_id", "name", "product_uom_qty", "qty_delivered", "product_id"] }) as Rec[]; for (const l of ls) { const oid = Array.isArray(l.order_id) ? (l.order_id as unknown[])[0] as number : 0; const nm = String(l.name || "").toLowerCase(); if (/descuento|env[ií]o|gratuit|free|reembolso/.test(nm)) continue; (prodByOrder[oid] ||= []).push(l); const pidp = Array.isArray(l.product_id) ? (l.product_id as unknown[])[0] as number : null; if (pidp) allProdIds.add(pidp); } } catch (_e) { /* */ }
     const stockMap: Record<number, number> = {};
     if (allProdIds.size) { try { const prods = await odooExec(uid, "product.product", "read", [[...allProdIds]], { fields: ["qty_available"] }) as Rec[]; for (const p of prods) stockMap[p.id as number] = Number(p.qty_available || 0); } catch (_e) { /* */ } }
+    const fechaDespachoPorOrden: Record<number, string> = {};
+    try {
+      const picks = await odooExec(uid, "stock.picking", "search_read", [[["sale_id", "in", oids], ["state", "=", "done"], ["picking_type_code", "=", "outgoing"]]], { fields: ["sale_id", "date_done"] }) as Rec[];
+      for (const pk of picks) {
+        const soid = Array.isArray(pk.sale_id) ? (pk.sale_id as unknown[])[0] as number : 0;
+        const dd = pk.date_done ? String(pk.date_done) : "";
+        if (!soid || !dd) continue;
+        if (!fechaDespachoPorOrden[soid] || dd > fechaDespachoPorOrden[soid]) fechaDespachoPorOrden[soid] = dd;
+      }
+    } catch (_e) { /* */ }
     let etiquetasOpciones: Rec[] = [];
     try { etiquetasOpciones = await odooExec(uid, "crm.tag", "read", [READINESS], { fields: ["id", "name"] }) as Rec[]; } catch (_e) { /* */ }
+
+    // Estado REAL de despacho de ML (cron ml-estado-sync). Odoo marca delivery_status=full al cargar
+    // la venta de ML -> no sirve para saber si salio. client_order_ref en Odoo puede ser el order_id
+    // O el pack_id, por eso el mapa indexa por los dos.
+    const esMlOrder = (o: Rec) => Array.isArray(o.source_id) && /mercado libre|meli/i.test(String((o.source_id as unknown[])[1]));
+    const mlRefs = [...new Set(odooOrders.filter(esMlOrder).map((o) => String(o.client_order_ref || "").trim()).filter(Boolean))];
+    const mlRef: Record<string, Rec> = {};
+    if (mlRefs.length) {
+      try {
+        const L = mlRefs.join(",");
+        const r = await fetch(`${SB_URL}/rest/v1/ml_envio_estado?select=ml_order_id,pack_id,despachado,entregado,estado_label&or=(ml_order_id.in.(${L}),pack_id.in.(${L}))`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        if (r.ok) { const rows = await r.json() as Rec[]; for (const row of rows) { if (row.ml_order_id) mlRef[String(row.ml_order_id)] = row; if (row.pack_id) mlRef[String(row.pack_id)] = row; } }
+      } catch (_e) { /* */ }
+    }
 
     const idx: Record<string, Rec[]> = {};
     for (const so of odooOrders) { const k = (Math.round(Number(so.amount_total) * 100) / 100).toFixed(2); (idx[k] ||= []).push(so); }
     const tnByOdoo: Record<number, Rec> = {};
-    // 1) cruce exacto: el conector TN→Odoo guarda el número de pedido de TN en client_order_ref
     const porRef: Record<string, Rec> = {};
     for (const so of odooOrders) if (so.client_order_ref) porRef[String(so.client_order_ref).trim()] = so;
     for (const tn of tnList) {
       const so = porRef[String(tn.numero)];
       if (so && !tnByOdoo[so.id as number]) { tnByOdoo[so.id as number] = tn; tn._cruzado = true; }
     }
-    // 2) los que no tienen número: por importe, pero SOLO si además coincide el nombre (antes tomaba
-    //    el de mismo importe aunque fuera otra persona y mostraba teléfono/productos ajenos)
     for (const tn of tnList) {
       if (tn._cruzado) continue;
       const k = (Math.round(Number(tn.total) * 100) / 100).toFixed(2); let cands = idx[k] || [];
@@ -158,8 +194,6 @@ _servirConGuardia(async (req: Request) => {
     }
 
     const out: Rec[] = [];
-    // El stock se reparte: los pedidos más viejos lo toman primero y lo que toma uno ya no cuenta para el
-    // siguiente (antes el mismo stock cubría a todos los pedidos y a cada renglón).
     const stockLibre: Record<number, number> = { ...stockMap };
     const ordenStock = [...odooOrders].sort((a, b) => String(a.date_order).localeCompare(String(b.date_order)));
     const asignado: Record<string, number> = {};
@@ -187,9 +221,18 @@ _servirConGuardia(async (req: Request) => {
       const prov = tn && tn.provincia ? tn.provincia : (p && Array.isArray(p.state_id) ? String((p.state_id as unknown[])[1]) : null);
       const ciudad = tn && tn.ciudad ? tn.ciudad : (p ? (p.city || null) : null);
       const full = String(o.delivery_status || "") === "full";
-      const despachado = tn ? !!tn.despachado : full;
+      // despachado: ML por su estado real; el resto por TN o, si no, por el delivery_status de Odoo.
+      let despachado: boolean; let mlEstado: string | null = null; let mlEntregado = false;
+      if (categoria === "ml") {
+        const me = mlRef[String(o.client_order_ref || "").trim()];
+        if (me) { despachado = !!me.despachado; mlEstado = (me.estado_label as string) || null; mlEntregado = !!me.entregado; }
+        else despachado = full;
+      } else {
+        despachado = tn ? !!tn.despachado : full;
+      }
       const trackingCode = tn ? (tn.tracking_code || null) : null;
-      const transportista = tn ? tn.transportista : (categoria === "rosario" ? "Envío Rosario" : categoria === "retiro" ? "Retiro" : categoria === "ml" ? "Mercado Libre" : "Correo");
+      const transportista = tn ? tn.transportista : (categoria === "rosario" ? "Envío Rosario" : categoria === "retiro" ? "Retiro" : categoria === "sinasignar" ? "Sin asignar" : categoria === "ml" ? "Mercado Libre" : "Correo");
+      const fechaDespachoRaw = fechaDespachoPorOrden[oid] || null;
       let totQty = 0, disp = 0;
       const productos_stock: Rec[] = [];
       for (const l of oLines) {
@@ -197,7 +240,6 @@ _servirConGuardia(async (req: Request) => {
         const deliv = Number(l.qty_delivered || 0);
         const ppid = Array.isArray(l.product_id) ? (l.product_id as unknown[])[0] as number : null;
         const pending = Math.max(q - deliv, 0);
-        // lo que le tocó a ESTE renglón del reparto (si hay dos renglones del mismo producto, se va gastando)
         const k = oid + "|" + ppid; const st = ppid != null ? Math.min(asignado[k] || 0, pending) : 0; if (ppid != null) asignado[k] = (asignado[k] || 0) - st;
         const ready = Math.min(Math.max(deliv, 0) + Math.min(st, pending), q);
         totQty += q; disp += ready;
@@ -213,15 +255,16 @@ _servirConGuardia(async (req: Request) => {
         telefono_wa: telWa, provincia: prov, ciudad, productos, total: Number(o.amount_total || 0), fecha: o.date_order,
         transportista, modalidad: tn ? tn.modalidad : null, numero: tn ? tn.numero : null,
         tracking_code: trackingCode, tracking_url: tn ? (tn.tracking_url || null) : null,
-        shipping_status: tn ? tn.shipping_status : null, despachado,
+        shipping_status: tn ? tn.shipping_status : null, despachado, ml_estado: mlEstado, ml_entregado: mlEntregado,
+        fecha_despacho: fechaDespachoRaw ? fechaDespachoDMY(fechaDespachoRaw) : null, fecha_despacho_iso: fechaDespachoRaw,
         necesita_seguimiento: categoria === "correo" && despachado && !!trackingCode,
         tiene_tn: !!tn, pedido_pdf_url: `${ODOO_URL}/report/pdf/sale.report_saleorder/${oid}`,
-        stock_pct: stockPct, productos_stock, etiqueta,
+        stock_pct: stockPct, productos_stock, etiqueta, despacho_programado: diaAR(o.commitment_date),
       });
     }
 
     const cont = (c: string) => out.filter((x) => x.categoria === c).length;
-    const resumen = { total: out.length, correo: cont("correo"), rosario: cont("rosario"), retiro: cont("retiro"), ml: cont("ml"), para_avisar: out.filter((x) => x.categoria === "correo" && x.necesita_seguimiento).length };
+    const resumen = { total: out.length, correo: cont("correo"), rosario: cont("rosario"), retiro: cont("retiro"), sinasignar: cont("sinasignar"), ml: cont("ml"), para_avisar: out.filter((x) => x.categoria === "correo" && x.necesita_seguimiento).length };
     return new Response(JSON.stringify({ ok: true, odoo_url: ODOO_URL, etiquetas: etiquetasOpciones, resumen, ordenes: out }), { headers: cors });
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: cors, status: 200 }); }
 });
