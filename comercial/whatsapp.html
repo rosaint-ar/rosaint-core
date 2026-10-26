@@ -13,29 +13,41 @@
     :root { --k-reclamo: var(--rojo); --k-pago: var(--acido); --k-pedido: var(--azul); --k-consulta: color-mix(in srgb, var(--azul) 45%, var(--papel)); --k-no: var(--niebla); }
     [data-theme="dark"] { --k-pedido: var(--niebla); --k-consulta: color-mix(in srgb, var(--niebla) 45%, var(--azul)); --k-no: color-mix(in srgb, var(--niebla) 25%, var(--azul)); }
 
-    .wa-lista { display: grid; gap: 8px; }
-    .wa-item { background: var(--r-sup); padding: 14px 18px 14px 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: start; position: relative; animation: m-entra .35s cubic-bezier(.2,.8,.2,1) both; }
+    /* Lectura de un vistazo: quién y cuánto espera · qué pasa · qué hacer. El resto, a un costado o a un clic. */
+    .wa-filtros { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+    .wa-f { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; background: var(--r-sup); border: 1px solid var(--r-li); font: 400 13px var(--sora); color: var(--r-tx); cursor: pointer; }
+    .wa-f i { width: 8px; height: 8px; background: var(--k, var(--r-li)); display: inline-block; }
+    .wa-f .m-num { color: var(--r-mu); }
+    .wa-f.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .wa-f.on .m-num { color: var(--azul); }
+    .wa-f.cero { opacity: .45; cursor: default; }
+    .wa-aviso24 { margin-left: auto; font-size: 13px; color: var(--r-mu); }
+    .wa-aviso24 b { color: var(--rojo); font-family: var(--sora); font-weight: 400; }
+
+    .wa-lista { display: grid; gap: 6px; }
+    .wa-item { background: var(--r-sup); padding: 12px 16px 12px 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 20px; align-items: start; position: relative; animation: m-entra .35s cubic-bezier(.2,.8,.2,1) both; }
     .wa-item::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--k, var(--r-li)); }
-    .wa-item.viejo .wa-espera { color: var(--rojo); }
-    .wa-nombre { font: 400 16px var(--sora); }
-    .wa-tel { color: var(--r-mu); font-size: 12.5px; margin-left: 8px; font-variant-numeric: tabular-nums; }
-    .wa-cat { display: inline-block; font: 500 10px var(--sora); letter-spacing: .1em; text-transform: uppercase; padding: 3px 7px; margin-left: 8px; vertical-align: 2px; background: var(--k); color: var(--azul); }
-    .wa-cat.reclamo { color: var(--papel); } .wa-cat.pedido { color: var(--papel); }
+    .wa-cuerpo { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .wa-l1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .wa-nombre { font: 400 15.5px var(--sora); }
+    .wa-cuando { font-size: 12.5px; color: var(--r-mu); }
+    .wa-item.viejo .wa-cuando { color: var(--rojo); }
+    .wa-cat { font: 500 10px var(--sora); letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; background: var(--k); color: var(--azul); align-self: center; }
+    .wa-cat.reclamo, .wa-cat.pedido { color: var(--papel); }
     [data-theme="dark"] .wa-cat.pedido { color: var(--azul); }
-    .wa-meta { font-size: 12.5px; color: var(--r-mu); text-align: right; white-space: nowrap; }
-    .wa-meta b { color: var(--r-tx); font-family: var(--sora); font-weight: 400; }
-    .wa-resumen { grid-column: 1 / -1; font: 400 15px/1.4 var(--sora); }
-    .wa-accion { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; font-size: 14px; }
-    .wa-accion .filete { width: 28px; flex-shrink: 0; }
-    .wa-accion b { font-weight: 600; }
-    .wa-odoo { grid-column: 1 / -1; font-size: 13px; color: var(--r-mu); background: var(--r-panel); padding: 7px 10px; }
-    .wa-odoo b { color: var(--r-tx); }
-    .wa-odoo a { color: var(--r-tx); }
-    .wa-odoo.ok { background: color-mix(in srgb, var(--acido) 45%, var(--r-sup)); color: var(--azul); }
-    .wa-ult { grid-column: 1 / -1; font-size: 13px; color: var(--r-mu); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .wa-texto { grid-column: 1 / -1; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-    .wa-acciones { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-    .wa-hilo { grid-column: 1 / -1; background: var(--r-bg); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+    .wa-resumen { font: 400 15px/1.4 var(--sans); color: var(--r-tx); }
+    .wa-accion { font-size: 13.5px; line-height: 1.4; color: var(--r-mu); padding-left: 12px; border-left: 3px solid var(--acido); margin-top: 2px; }
+    .wa-accion b { color: var(--r-tx); font-weight: 600; }
+    .wa-odoo { font-size: 12.5px; color: var(--azul); background: color-mix(in srgb, var(--acido) 45%, var(--r-sup)); padding: 3px 8px; align-self: flex-start; margin-top: 3px; }
+    .wa-odoo a { color: inherit; }
+    .wa-texto, .wa-ult { font-size: 13.5px; color: var(--r-mu); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .wa-lado { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .wa-lado .rb.si { padding: 8px 16px; }
+    .wa-links { display: flex; gap: 2px 12px; flex-wrap: wrap; justify-content: flex-end; max-width: 260px; }
+    .wa-links button, .wa-links a { background: none; border: 0; padding: 2px 0; font: 400 12.5px var(--sans); color: var(--r-mu); cursor: pointer; text-decoration: none; }
+    .wa-links button:hover, .wa-links a:hover { color: var(--r-tx); text-decoration: underline; text-decoration-color: var(--acido); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    .wa-acciones { display: none; }
+    .wa-hilo { grid-column: 1 / -1; background: var(--r-bg); padding: 10px 12px; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
     .wa-msg { max-width: 82%; padding: 7px 10px; font-size: 13.5px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; background: var(--r-sup); }
     .wa-msg.out { align-self: flex-end; background: var(--r-panel); }
     .wa-msg small { display: block; font-size: 11px; color: var(--r-mu); margin-top: 2px; }
@@ -72,7 +84,12 @@
     .wa-tpl div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--r-li); }
     .wa-tpl span.st { font: 500 10.5px var(--sora); letter-spacing: .08em; }
     .st-REJECTED { color: var(--rojo); }
-    @media (max-width: 680px) { .wa-item { grid-template-columns: 1fr; } .wa-meta { text-align: left; } .wa-msg { max-width: 95%; } }
+    @media (max-width: 680px) {
+      .wa-item { grid-template-columns: 1fr; gap: 10px; }
+      .wa-lado { flex-direction: row; align-items: center; justify-content: space-between; }
+      .wa-links { justify-content: flex-start; }
+      .wa-msg { max-width: 95%; } .wa-aviso24 { margin-left: 0; width: 100%; }
+    }
   </style>
 </head>
 <body class="marca" data-page="whatsapp" data-title="WhatsApp" data-subtitle="Lo que espera respuesta, y qué hacer en cada chat">
@@ -100,7 +117,7 @@
 
   <!-- ===================== SIN RESPONDER ===================== -->
   <section id="tab-pendientes">
-    <div class="m-datos" id="datos"></div>
+    <div class="wa-filtros" id="datos"></div>
     <div class="wa-lista" id="lista"><div class="m-vacio">Cargando…</div></div>
     <div id="cerrados"></div>
   </section>
@@ -236,25 +253,26 @@ async function cargarOdoo(tels){
 }
 // Renglón de Odoo de un chat. Si pidió o pagó y en Odoo ya hay un pedido o presupuesto de después, se dice
 // claramente (es lo que el resumen del chat no puede saber si se cargó después de etiquetarlo).
+// Solo se muestra cuando cambia lo que hay que hacer: si después del chat ya hay un pedido o un presupuesto en
+// Odoo (el resumen pudo haberse escrito antes). Los datos del cliente quedan en el título del nombre.
 function lineaOdoo(f){
   const c = ODOO[f.telefono];
-  if (c === undefined) return '';
-  if (!c) {
-    const url = '../comercial/crm.html#nuevo=' + encodeURIComponent(f.telefono) + '|' + encodeURIComponent(f.nombre || '');
-    return `<div class="wa-odoo">No está en la base de clientes. <a href="${url}">Cargarlo en Clientes →</a></div>`;
-  }
+  if (!c) return '';
   const desde = diaAR(f.ultimo_del_cliente || f.ultimo_mensaje);
-  const pedido = c.ultima_compra && c.ultima_compra >= desde && c.ultimo_pedido_id > 0;
-  const presu = c.presupuesto_name && c.presupuesto_fecha && c.presupuesto_fecha >= desde;
   const link = (id, n) => `<a href="${ODOO_URL}/odoo/sales/${id}" target="_blank" rel="noopener"><b>${esc(n)}</b></a>`;
-  if (pedido) return `<div class="wa-odoo ok">En Odoo: pedido ${link(c.ultimo_pedido_id, c.ultimo_pedido_name)} confirmado el ${fFecha(c.ultima_compra)}, después de este chat.</div>`;
-  if (presu) return `<div class="wa-odoo ok">En Odoo: presupuesto ${link(c.presupuesto_id, c.presupuesto_name)} armado el ${fFecha(c.presupuesto_fecha)}.</div>`;
-  const partes = [`<b>${esc(c.nombre)}</b> · ${c.es_profesional ? 'profesional' : 'consumidor'}`];
-  if (c.ultimo_pedido_id > 0) partes.push(`último pedido ${link(c.ultimo_pedido_id, c.ultimo_pedido_name)} del ${fFecha(c.ultima_compra)}`);
-  else partes.push('sin pedidos confirmados');
-  if (c.presupuesto_name) partes.push(`presupuesto abierto ${link(c.presupuesto_id, c.presupuesto_name)}`);
-  return `<div class="wa-odoo">${partes.join(' · ')}</div>`;
+  if (c.ultima_compra && c.ultima_compra >= desde && c.ultimo_pedido_id > 0) return `<div class="wa-odoo">Ya hay pedido en Odoo: ${link(c.ultimo_pedido_id, c.ultimo_pedido_name)}, confirmado el ${fFecha(c.ultima_compra)}</div>`;
+  if (c.presupuesto_name && c.presupuesto_fecha && c.presupuesto_fecha >= desde) return `<div class="wa-odoo">Ya hay presupuesto en Odoo: ${link(c.presupuesto_id, c.presupuesto_name)}, del ${fFecha(c.presupuesto_fecha)}</div>`;
+  return '';
 }
+function tituloCliente(f){
+  const c = ODOO[f.telefono];
+  const tel = telLindo(f.telefono);
+  if (c === undefined) return tel;
+  if (!c) return tel + ' · no está en la base de clientes';
+  return `${tel} · ${c.nombre} · ${c.es_profesional ? 'profesional' : 'consumidor'}${c.ultimo_pedido_id > 0 ? ' · último pedido ' + c.ultimo_pedido_name + ' del ' + fFecha(c.ultima_compra) : ' · sin pedidos'}`;
+}
+const linkCargar = f => ODOO[f.telefono] === null
+  ? `<a href="../comercial/crm.html#nuevo=${encodeURIComponent(f.telefono)}|${encodeURIComponent(f.nombre || '')}" title="No está en la base de clientes">Cargar contacto</a>` : '';
 
 // ---------------- Sin responder
 let PEND = [];
@@ -273,9 +291,11 @@ function pintarPendientes(){
   const cuenta = k => abiertos.filter(f => (f.categoria || 'consulta') === k).length;
   const viejos = abiertos.filter(f => f.horas_esperando >= 24).length;
   document.getElementById('t-pend').textContent = abiertos.length || '';
-  document.getElementById('datos').innerHTML = [['reclamo'], ['pago'], ['pedido'], ['consulta']].map(([k]) =>
-    `<button class="m-dato ${filtroCat === k ? 'on' : ''}" style="--c:${CAT[k].k}" onclick="elegirCat('${k}')" title="Mostrar solo estos"><span class="m-num">${cuenta(k)}</span><span class="l">${CAT[k].l}${cuenta(k) === 1 ? '' : 's'}</span></button>`).join('')
-    + `<div class="m-dato" style="--c:var(--rojo)"><span class="m-num">${viejos}</span><span class="l">Esperan más de 24 h</span></div>`;
+  document.getElementById('datos').innerHTML =
+    `<button class="wa-f ${!filtroCat ? 'on' : ''}" onclick="elegirCat(null)">Todos <span class="m-num">${abiertos.length}</span></button>`
+    + ['reclamo', 'pago', 'pedido', 'consulta'].map(k => { const n = cuenta(k);
+      return `<button class="wa-f ${filtroCat === k ? 'on' : ''} ${n ? '' : 'cero'}" style="--k:${CAT[k].k}" ${n ? `onclick="elegirCat('${k}')"` : 'disabled'}><i></i>${CAT[k].l}${n === 1 ? '' : 's'} <span class="m-num">${n}</span></button>`; }).join('')
+    + (viejos ? `<span class="wa-aviso24"><b>${viejos}</b> ${viejos === 1 ? 'espera' : 'esperan'} más de 24 h</span>` : `<span class="wa-aviso24">Ninguno espera más de 24 h</span>`);
 
   let filas = abiertos.filter(f => !filtroCat || (f.categoria || 'consulta') === filtroCat);
   // lo urgente primero; dentro de cada tipo, el que más espera arriba
@@ -294,19 +314,22 @@ function item(f, i, cerrado){
   const c = CAT[f.categoria] || null;
   const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(f.telefono);
   const ultimo = f.ultimo_texto || '[' + (f.ultimo_tipo || 'mensaje') + ']';
-  return `<div class="wa-item ${f.horas_esperando >= 24 && !cerrado ? 'viejo' : ''}" style="--k:${c ? c.k : 'var(--r-li)'};animation-delay:${Math.min(i * .03, .4)}s" data-tel="${esc(f.telefono)}">
-    <div><span class="wa-nombre">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : '<span class="wa-cat" style="--k:var(--r-panel)">Sin leer</span>'}${badgeSeg(f.telefono)}</div>
-    <div class="wa-meta">${cerrado ? 'hace' : 'esperando'} <b class="wa-espera">${hace(f.horas_esperando)}</b>${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</div>
-    ${f.resumen ? `<div class="wa-resumen">${esc(f.resumen)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
-    ${f.accion && !cerrado ? `<div class="wa-accion"><span class="filete"></span><span><b>Qué hacer:</b> ${esc(f.accion)}</span></div>` : ''}
-    ${cerrado ? '' : lineaOdoo(f)}
-    ${f.resumen ? `<div class="wa-ult">Último mensaje: ${esc(ultimo)}</div>` : ''}
-    <div class="wa-acciones">
+  const t = esc(f.telefono);
+  return `<div class="wa-item ${f.horas_esperando >= 24 && !cerrado ? 'viejo' : ''}" style="--k:${c ? c.k : 'var(--r-li)'};animation-delay:${Math.min(i * .03, .4)}s" data-tel="${t}">
+    <div class="wa-cuerpo">
+      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
+      ${f.resumen ? `<div class="wa-resumen">${esc(f.resumen)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
+      ${f.accion && !cerrado ? `<div class="wa-accion"><b>Qué hacer:</b> ${esc(f.accion)}</div>` : ''}
+      ${cerrado ? '' : lineaOdoo(f)}
+    </div>
+    <div class="wa-lado">
       <a class="rb ${cerrado ? 'linea' : 'si'}" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
-      ${cerrado ? `<button class="rb linea" onclick="siRequiere('${esc(f.telefono)}')">Sí espera respuesta</button>`
-                : `<button class="rb linea" onclick="atendido('${esc(f.telefono)}')">Ya lo atendimos</button>
-                   <button class="rb linea" onclick="abrirForm(this, '${esc(f.telefono)}')">Seguimiento</button>`}
-      <button class="rb suave" onclick="verHilo(this, '${esc(f.telefono)}')">Ver conversación</button>
+      <div class="wa-links">
+        ${cerrado ? `<button onclick="siRequiere('${t}')">Sí espera respuesta</button>`
+                  : `<button onclick="atendido('${t}')">Ya lo atendimos</button><button onclick="abrirForm(this, '${t}')">Seguimiento</button>`}
+        <button onclick="verHilo(this, '${t}')">Conversación</button>
+        ${cerrado ? '' : linkCargar(f)}
+      </div>
     </div>
   </div>`;
 }
@@ -315,14 +338,14 @@ function item(f, i, cerrado){
 async function verHilo(btn, tel){
   const it = btn.closest('.wa-item');
   const ya = it.querySelector('.wa-hilo');
-  if (ya) { ya.remove(); btn.textContent = 'Ver conversación'; return; }
+  if (ya) { ya.remove(); btn.textContent = 'Conversación'; return; }
   const { data } = await sb.from('wsp_mensajes').select('sentido, tipo, texto, ts').eq('telefono', tel)
     .not('tipo', 'in', '(' + NO_CUENTAN.join(',') + ')').order('ts', { ascending: false }).limit(12);
   const h = document.createElement('div'); h.className = 'wa-hilo';
   h.innerHTML = (data || []).reverse().map(m => `<div class="wa-msg ${m.sentido}">${esc(m.texto || '[' + (m.tipo || 'mensaje') + ']')}<small>${m.sentido === 'out' ? 'Rosaint' : 'Cliente'} · ${new Date(m.ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></div>`).join('') || '<div class="wa-msg">Sin mensajes</div>';
-  it.insertBefore(h, it.querySelector('.wa-acciones'));
+  it.appendChild(h);
   h.scrollTop = h.scrollHeight;
-  btn.textContent = 'Ocultar conversación';
+  btn.textContent = 'Ocultar';
 }
 
 // Corrige un cierre mal etiquetado: vuelve a la lista como consulta
@@ -375,15 +398,18 @@ async function cargarSeguimientos(){
       const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(s.telefono);
       const ult = s.ultimo_texto ? (s.ultimo_sentido === 'out' ? 'Rosaint: ' : '') + s.ultimo_texto : '';
       return `<div class="wa-item" style="--k:${k};animation-delay:${Math.min(i * .03, .4)}s">
-        <div><span class="wa-nombre">${esc(s.nombre || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(s.telefono))}</span>${s.cliente_escribio ? '<span class="wa-badge escribio">Te escribió después</span>' : ''}</div>
-        <div class="wa-meta"><b>${esc(fechaLinda(s.fecha))}</b></div>
-        ${s.nota ? `<div class="wa-nota">${esc(s.nota)}</div>` : ''}
-        ${ult ? `<div class="wa-ult">Último mensaje: ${esc(ult)}</div>` : ''}
-        <div class="wa-acciones">
+        <div class="wa-cuerpo">
+          <div class="wa-l1"><span class="wa-nombre" title="${esc(telLindo(s.telefono))}">${esc(s.nombre || telLindo(s.telefono))}</span><span class="wa-cuando">${esc(fechaLinda(s.fecha))}</span>${s.cliente_escribio ? '<span class="wa-badge escribio">Te escribió después</span>' : ''}</div>
+          ${s.nota ? `<div class="wa-resumen">${esc(s.nota)}</div>` : ''}
+          ${ult ? `<div class="wa-ult">${esc(ult)}</div>` : ''}
+        </div>
+        <div class="wa-lado">
           <a class="rb si" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
-          <button class="rb linea" onclick="segHecho(${s.id})">Hecho</button>
-          <button class="rb linea" onclick="abrirForm(this, '${esc(s.telefono)}', ${s.id})">Cambiar fecha</button>
-          <button class="rb suave" onclick="verHilo(this, '${esc(s.telefono)}')">Ver conversación</button>
+          <div class="wa-links">
+            <button onclick="segHecho(${s.id})">Hecho</button>
+            <button onclick="abrirForm(this, '${esc(s.telefono)}', ${s.id})">Cambiar fecha</button>
+            <button onclick="verHilo(this, '${esc(s.telefono)}')">Conversación</button>
+          </div>
         </div>
       </div>`;
     }).join('')).join('');
@@ -443,14 +469,17 @@ function pintarChats(){
     const txt = (c.ultimo_sentido === 'out' ? 'Rosaint: ' : '') + (c.ultimo_texto || '[' + (c.ultimo_tipo || 'mensaje') + ']');
     const o = ODOO[c.telefono];
     return `<div class="wa-item" style="--k:${c.ultimo_sentido === 'in' ? 'var(--acido)' : 'var(--r-li)'};animation-delay:${Math.min(i * .02, .3)}s">
-      <div><span class="wa-nombre">${esc(c.nombre || (o && o.nombre) || 'Sin nombre')}</span><span class="wa-tel">${esc(telLindo(c.telefono))}</span>${o === null ? '<span class="wa-badge">No está en la base</span>' : ''}${badgeSeg(c.telefono)}</div>
-      <div class="wa-meta">hace <b>${hace(h)}</b></div>
-      <div class="wa-ult">${esc(txt)}</div>
-      <div class="wa-acciones">
+      <div class="wa-cuerpo">
+        <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(c))}">${esc(c.nombre || (o && o.nombre) || telLindo(c.telefono))}</span><span class="wa-cuando">hace ${hace(h)}</span>${badgeSeg(c.telefono)}</div>
+        <div class="wa-ult">${esc(txt)}</div>
+      </div>
+      <div class="wa-lado">
         <a class="rb linea" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>
-        <button class="rb linea" onclick="abrirForm(this, '${esc(c.telefono)}')">Seguimiento</button>
-        <button class="rb suave" onclick="verHilo(this, '${esc(c.telefono)}')">Ver conversación</button>
-        ${o === null ? `<a class="rb suave" href="../comercial/crm.html#nuevo=${encodeURIComponent(c.telefono)}|${encodeURIComponent(c.nombre || '')}">Cargar en Clientes</a>` : ''}
+        <div class="wa-links">
+          <button onclick="abrirForm(this, '${esc(c.telefono)}')">Seguimiento</button>
+          <button onclick="verHilo(this, '${esc(c.telefono)}')">Conversación</button>
+          ${linkCargar(c)}
+        </div>
       </div>
     </div>`;
   }).join('');
