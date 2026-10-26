@@ -39,7 +39,7 @@ async function presupuestoAbierto(uid,pid){
   return o?{presupuesto_id:o.id,presupuesto_name:o.name,presupuesto_fecha:soloFecha(o.date_order)}:{presupuesto_id:null,presupuesto_name:null,presupuesto_fecha:null};
 }
 
-async function recalcCliente(db,uid,pid,nombre,rst){
+async function recalcCliente(db,uid,pid,nombre,rst,prev){
   // Contacto de RST (company 1): Odoo no deja leerlo. Se conserva el teléfono guardado.
   let cont=null;try{cont=await execKw(uid,"res.partner","read",[[pid]],{fields:["name","phone","mobile"],context:CTX_BOTH});}catch(_){cont=null;}
   const tel=cont?(cont[0]?.mobile||cont[0]?.phone||null):undefined; const nom=nombre||cont?.[0]?.name||('Contacto '+pid);
@@ -51,7 +51,10 @@ async function recalcCliente(db,uid,pid,nombre,rst){
   const nF=ords.length;let primera=null,ultima=null,dias=null,inter=null;
   if(fechas.length){const fo=[...fechas].sort();primera=fo[0];ultima=fo[fo.length-1];dias=daysBetween(HOY,new Date(ultima));if(fo.length>1){const gaps=[];for(let i=1;i<fo.length;i++)gaps.push(daysBetween(new Date(fo[i]),new Date(fo[i-1])));inter=median(gaps);}}
   const ticket=nF?total/nF:0;const seg=(nF===0&&rst)?"ex_rst":segmentar(dias,inter,nF);const wa=normWa(tel);
-  await db.from("cliente_metricas").update({nombre:nom,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),...(await presupuestoAbierto(uid,pid)),primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
+  const presu=await presupuestoAbierto(uid,pid);
+  // ¿Cambió algo de verdad en Odoo? (pedido nuevo o presupuesto nuevo/cerrado). Solo ahí vale re-leer su chat.
+  const cambio=!!prev&&((prev.ultimo_pedido_id??-1)!==(ultId||-1)||(prev.presupuesto_id??null)!==(presu.presupuesto_id??null));
+  await db.from("cliente_metricas").update({nombre:nom,...(tel===undefined?{}:{telefono:tel,telefono_wa:wa}),...presu,primera_compra:primera,ultima_compra:ultima,dias_desde_ultima:dias,total_facturas:nF,facturas_rst:fR,facturas_vel:fV,compras_ml:cML,compras_tn:cTN,compras_directa:cDir,total_gastado:total,ticket_promedio:ticket,intervalo_tipico_dias:inter,score_reactivacion:(inter&&dias!=null)?dias/inter:null,segmento:seg,ultimo_pedido_id:(ultId||-1),ultimo_pedido_name:ultName,sincronizado_at:new Date().toISOString()}).eq("partner_id",pid);
   // PRODUCTOS desde lineas de pedido confirmado
   if(nF>0){
     const dom=[["order_id.state","in",ESTADOS],["order_partner_id","=",pid],["product_id","!=",false]];
@@ -61,6 +64,7 @@ async function recalcCliente(db,uid,pid,nombre,rst){
     if(filas.length){await db.from("cliente_producto").upsert(filas,{onConflict:"partner_id,product_id"});await db.from("cliente_producto").delete().eq("partner_id",pid).not("product_id","in",`(${ids.join(",")})`);}
     else { await db.from("cliente_producto").delete().eq("partner_id",pid); }
   }
+  return cambio ? (wa || (prev && prev.telefono_wa) || null) : null;   // teléfono de WhatsApp si hay que re-leer su chat
 }
 
 
@@ -113,7 +117,7 @@ _servirConGuardia(async(req)=>{
     let recalculados=0;
     if(pids.length){
       // Entran todos los del espejo (profesionales y no profesionales).
-      const {data:ya}=await db.from("cliente_metricas").select("partner_id,nombre,rst_ultima_compra").in("partner_id",pids);
+      const {data:ya}=await db.from("cliente_metricas").select("partner_id,nombre,rst_ultima_compra,ultimo_pedido_id,presupuesto_id,telefono_wa").in("partner_id",pids);
       const mapa=new Map();(ya||[]).forEach(p=>mapa.set(p.partner_id,p));
       // Alta de NO profesionales que compraron por Tienda Nube o venta directa (los de solo Mercado Libre
       // no dejan teléfono: medido 21-10-2026, 3 de 562). Los profesionales los da de alta odoo-espejo-padron.
@@ -123,7 +127,11 @@ _servirConGuardia(async(req)=>{
         const filas=(datos||[]).map(d=>({partner_id:d.id,nombre:d.name||("Contacto "+d.id),vat:d.vat||null,email:d.email||null,es_profesional:false,total_facturas:0,facturas_rst:0,facturas_vel:0,total_gastado:0,segmento:"nunca_compro",verificado_at:new Date().toISOString()}));
         if(filas.length){await db.from("cliente_metricas").upsert(filas,{onConflict:"partner_id",ignoreDuplicates:true});filas.forEach(f=>mapa.set(f.partner_id,f));}
       }
-      for(const [pid,p] of mapa){ await recalcCliente(db,uid,pid,p.nombre,p.rst_ultima_compra); recalculados++; }
+      const tels=[];
+      for(const [pid,p] of mapa){ const wa=await recalcCliente(db,uid,pid,p.nombre,p.rst_ultima_compra,p); if(wa)tels.push(wa); recalculados++; }
+      // Si esos clientes tienen un chat de WhatsApp esperando respuesta, se re-lee con lo nuevo de Odoo
+      // (así el resumen no dice "quiere comprar" algo que ya compró). Si falla, no frena el sync.
+      if(tels.length){ try{ await fetch(SUPABASE_URL+"/functions/v1/wsp-webhook",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+SERVICE_KEY},body:JSON.stringify({accion:"reclasificar",telefonos:tels}),signal:AbortSignal.timeout(40000)}); }catch(_){ } }
     }
     await db.rpc('recalcular_segmentos');
     await db.rpc('detectar_conversiones',{ventana:21});
