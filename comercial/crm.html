@@ -702,11 +702,19 @@ function contactadoHace(pid) {
 }
 const contactoPorWsp = pid => { const e = ESTADO[pid], w = wspDe(POR_PID.get(pid)); return !!(w && w.ult_out && (!e || !e.contactado_at || w.ult_out > e.contactado_at)); };
 // Pidió o pagó por WhatsApp y en Odoo no hay pedido ni presupuesto desde ese día
+// Confirmó una compra o pagó por WhatsApp y el pedido NO aparece en Odoo. El cruce lo hace el servidor cada 15 min
+// (wsp-webhook → cruzarPedidos): busca por teléfono del contacto y de la entrega, número de pedido (Odoo o Tienda
+// Nube), nombre y apellido, o nombre + monto, desde 7 días antes del mensaje (21 si es un pago). Así no avisa de
+// pedidos cargados antes del último mensaje ni de los cargados a otro nombre.
 function pedidoSinCargar(d, w) {
-  if (!w || !['pedido', 'pago'].includes(w.categoria) || !w.ult_in || diasDe(w.ult_in) > DIAS_PEDIDO_WSP) return false;
-  const desde = new Date(w.ult_in).toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+  if (!w || w.es_proveedor || !w.ult_in || diasDe(w.ult_in) > DIAS_PEDIDO_WSP) return false;
+  const confirmo = w.compra_confirmada === true || (w.compra_confirmada == null && ['pedido', 'pago'].includes(w.categoria));
+  if (!confirmo || w.pedido_id || !w.cruce_ts) return false;          // sin compra, ya encontrado o todavía sin buscar
+  if (w.monto && Number(w.monto) < 5000) return false;               // saldos chicos de pedidos ya despachados
+  const desde = new Date(new Date(w.ult_in).getTime() - 7 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
   return !(d && ((d.ultima_compra && d.ultima_compra >= desde) || (d.presupuesto_fecha && d.presupuesto_fecha >= desde)));
 }
+const fmtPesos = n => n ? '$ ' + Math.round(n).toLocaleString('es-AR') : '';
 const telCorto = t => { const x = String(t || '').replace(/^549/, ''); return x.length === 10 ? x.slice(0, 3) + ' ' + x.slice(3, 6) + '-' + x.slice(6) : t; };
 const horaCorta = ts => new Date(ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 function estaContactado(pid) { const d = contactadoHace(pid); return d != null && d < DIAS_CONTACTADO; }
@@ -806,7 +814,7 @@ function calcularMision(d) {
   const eCore = ESTADO[d.partner_id], coreHace = eCore && eCore.contactado_at ? diasDe(eCore.contactado_at) : null;
   if (pedidoSinCargar(d, w) && (coreHace == null || coreHace >= 1)) return {
     tipo: 'pedido_wsp', score: 9500 - diasDe(w.ult_in),
-    razon: `El ${horaCorta(w.ult_in)} ${w.categoria === 'pago' ? 'avisó un pago' : 'hizo un pedido'} por WhatsApp y en Odoo no hay pedido ni presupuesto de después.`,
+    razon: `El ${horaCorta(w.ult_in)} ${w.categoria === 'pago' ? 'mandó un pago' : 'confirmó una compra'} por WhatsApp${w.monto ? ' (' + fmtPesos(w.monto) + ')' : ''} y <b>no encontré el pedido en Odoo</b>: lo busqué por teléfono, nombre, número de pedido y monto.`,
     principal: w.resumen || 'Cargar el pedido en Odoo', tambien: w.accion || null, objetivo: true };
   // el cliente escribió hace poco: la charla está abierta y se atiende en el módulo WhatsApp
   if (w && w.ult_in && diasDe(w.ult_in) < DIAS_CHARLA_ABIERTA && w.categoria !== 'no_requiere') return null;
@@ -874,11 +882,15 @@ function nuevosWsp() {
   const out = []; let i = 0;
   for (const w of Object.values(WSP)) {
     if (w.no_cliente || !w.ult_in || diasDe(w.ult_in) > DIAS_NUEVO_WSP || TELS.has(w.telefono)) continue;
+    // ya está en Odoo con otro teléfono, o el pedido apareció a otro nombre, o es un proveedor: no es un cliente nuevo
+    if (w.es_proveedor || w.partner_odoo_id || w.pedido_id) continue;
     const pide = ['pedido', 'pago', 'consulta', 'reclamo'].includes(w.categoria);
     if (!pide) continue;   // avisos automáticos, despedidas y chats sin leer no son clientes nuevos
     out.push({ d: { partner_id: -(++i), nuevo: true, telefono_wa: w.telefono, nombre: w.nombre || telCorto(w.telefono), es_profesional: false },
       m: { tipo: pedidoSinCargar(null, w) ? 'pedido_wsp' : 'nuevo', score: (pedidoSinCargar(null, w) ? 9400 : 8500) - diasDe(w.ult_in),
-        razon: `Escribió por WhatsApp el ${horaCorta(w.ult_in)} y <b>no está en la base de clientes</b>. Cargalo para no perderlo.`,
+        razon: pedidoSinCargar(null, w)
+          ? `El ${horaCorta(w.ult_in)} ${w.categoria === 'pago' ? 'mandó un pago' : 'confirmó una compra'} por WhatsApp${w.monto ? ' (' + fmtPesos(w.monto) + ')' : ''}, <b>no está en la base</b> y no encontré el pedido en Odoo.`
+          : `Escribió por WhatsApp el ${horaCorta(w.ult_in)} y <b>no está en la base de clientes</b>. Cargalo para no perderlo.`,
         principal: w.resumen || null, tambien: w.accion || null, objetivo: true, nuevo: true } });
   }
   return out;

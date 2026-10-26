@@ -133,6 +133,11 @@ _servirConGuardia(async(req)=>{
       // (así el resumen no dice "quiere comprar" algo que ya compró). Si falla, no frena el sync.
       if(tels.length){ try{ await fetch(SUPABASE_URL+"/functions/v1/wsp-webhook",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+SERVICE_KEY},body:JSON.stringify({accion:"reclasificar",telefonos:tels}),signal:AbortSignal.timeout(40000)}); }catch(_){ } }
     }
+    {
+      // Los chats de WhatsApp que pidieron o pagaron se buscan en los pedidos de Odoo (aunque estén a otro nombre).
+      // Solo lectura de Odoo, sin costo de IA. Si falla, no frena el sync.
+      try{ await fetch(SUPABASE_URL+"/functions/v1/wsp-webhook",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+SERVICE_KEY},body:JSON.stringify({accion:"cruzar_pedidos"}),signal:AbortSignal.timeout(40000)}); }catch(_){ }
+    }
     await db.rpc('recalcular_segmentos');
     await db.rpc('detectar_conversiones',{ventana:21});
     await db.from("odoo_crm_run").update({mensaje:ahora,updated_at:new Date().toISOString()}).eq("run_tag","sync_incremental").eq("fase","marca");

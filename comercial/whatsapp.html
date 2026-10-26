@@ -256,10 +256,15 @@ async function cargarOdoo(tels){
 // Solo se muestra cuando cambia lo que hay que hacer: si después del chat ya hay un pedido o un presupuesto en
 // Odoo (el resumen pudo haberse escrito antes). Los datos del cliente quedan en el título del nombre.
 function lineaOdoo(f){
+  const link = (id, n) => `<a href="${ODOO_URL}/odoo/sales/${id}" target="_blank" rel="noopener"><b>${esc(n)}</b></a>`;
+  // el cruce del servidor encontró el pedido (aunque esté cargado a otro nombre o con otro teléfono)
+  if (f.pedido_id) {
+    const otro = f.pedido_partner && !String(f.pedido_partner).toLowerCase().includes(String(f.nombre || '').toLowerCase().split(' ')[0] || '§');
+    return `<div class="wa-odoo">Ya está en Odoo: ${link(f.pedido_id, f.pedido_name)}${otro ? ' a nombre de <b>' + esc(f.pedido_partner) + '</b>' : ''} (por ${esc(f.pedido_motivo || 'cruce')})</div>`;
+  }
   const c = ODOO[f.telefono];
   if (!c) return '';
   const desde = diaAR(f.ultimo_del_cliente || f.ultimo_mensaje);
-  const link = (id, n) => `<a href="${ODOO_URL}/odoo/sales/${id}" target="_blank" rel="noopener"><b>${esc(n)}</b></a>`;
   if (c.ultima_compra && c.ultima_compra >= desde && c.ultimo_pedido_id > 0) return `<div class="wa-odoo">Ya hay pedido en Odoo: ${link(c.ultimo_pedido_id, c.ultimo_pedido_name)}, confirmado el ${fFecha(c.ultima_compra)}</div>`;
   if (c.presupuesto_name && c.presupuesto_fecha && c.presupuesto_fecha >= desde) return `<div class="wa-odoo">Ya hay presupuesto en Odoo: ${link(c.presupuesto_id, c.presupuesto_name)}, del ${fFecha(c.presupuesto_fecha)}</div>`;
   return '';
@@ -268,10 +273,10 @@ function tituloCliente(f){
   const c = ODOO[f.telefono];
   const tel = telLindo(f.telefono);
   if (c === undefined) return tel;
-  if (!c) return tel + ' · no está en la base de clientes';
+  if (!c) return tel + (f.partner_odoo_nombre ? ' · en Odoo como ' + f.partner_odoo_nombre : ' · no está en la base de clientes');
   return `${tel} · ${c.nombre} · ${c.es_profesional ? 'profesional' : 'consumidor'}${c.ultimo_pedido_id > 0 ? ' · último pedido ' + c.ultimo_pedido_name + ' del ' + fFecha(c.ultima_compra) : ' · sin pedidos'}`;
 }
-const linkCargar = f => ODOO[f.telefono] === null
+const linkCargar = f => ODOO[f.telefono] === null && !f.partner_odoo_nombre && !f.es_proveedor
   ? `<a href="../comercial/crm.html#nuevo=${encodeURIComponent(f.telefono)}|${encodeURIComponent(f.nombre || '')}" title="No está en la base de clientes">Cargar contacto</a>` : '';
 
 // ---------------- Sin responder
@@ -317,7 +322,7 @@ function item(f, i, cerrado){
   const t = esc(f.telefono);
   return `<div class="wa-item ${f.horas_esperando >= 24 && !cerrado ? 'viejo' : ''}" style="--k:${c ? c.k : 'var(--r-li)'};animation-delay:${Math.min(i * .03, .4)}s" data-tel="${t}">
     <div class="wa-cuerpo">
-      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
+      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}${f.es_proveedor ? '<span class="wa-badge" title="El teléfono es de un proveedor en Odoo">Proveedor</span>' : ''}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
       ${f.resumen ? `<div class="wa-resumen">${esc(f.resumen)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
       ${f.accion && !cerrado ? `<div class="wa-accion"><b>Qué hacer:</b> ${esc(f.accion)}</div>` : ''}
       ${cerrado ? '' : lineaOdoo(f)}
