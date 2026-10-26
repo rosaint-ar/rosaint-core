@@ -1,0 +1,90 @@
+/* ══════════════════════════════════════════════════════════════════
+   Identidad Rosaint para las pantallas del Core (manual de marca, edición 21 · kit v20)
+   Sora 400/500 titulares, navegación y datos · Bitter Italic 400 una palabra por pieza ·
+   Source Sans 3 400/600 lectura. Paleta cerrada: azul #34495E · blanco roto #F7F5F2 ·
+   ácido #EAF46B · rojo #F93549 · niebla #DDE4E8. Botón principal ácido con texto azul,
+   sin redondeos. Paneles con un solo corte de 45°. Filete ácido para entradas y acciones.
+   Se carga DESPUÉS de shell.css y antes del <style> de la página.
+   ══════════════════════════════════════════════════════════════════ */
+@font-face { font-family: 'Sora'; src: url('fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'Bitter'; src: url('fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Source Sans 3'; src: url('fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
+
+:root {
+  --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+  --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+  --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel));
+  --r-li: rgba(52, 73, 94, .16); --r-panel: var(--niebla);
+  --r-inv-bg: var(--azul); --r-inv-tx: var(--papel);
+  --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
+}
+[data-theme="dark"] {
+  --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+  --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul));
+  --r-li: rgba(247, 245, 242, .14); --r-panel: color-mix(in srgb, var(--azul) 88%, var(--papel));
+  --r-inv-bg: var(--papel); --r-inv-tx: var(--azul);
+}
+body.marca { background: var(--r-bg); min-height: 100vh; }
+html:has(> body.marca) { background: var(--r-bg); }   /* que no asome el fondo del shell debajo del contenido */
+body.marca::before { display: none; }                 /* sin aurora: base clara y lisa */
+body.marca #app-content, body.marca .m-capa { font-family: var(--sans); color: var(--r-tx); font-size: 15px; }
+body.marca #app-content b { font-weight: 600; }
+body.marca #app-content button, body.marca .m-capa button { border-radius: 0; box-shadow: none; }
+
+/* piezas */
+.eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+.titular { font: 400 30px/1.08 var(--sora); letter-spacing: -.01em; color: var(--r-tx); margin: 6px 0 0; }
+.titular em, .m-cursiva { font-family: var(--bitter); font-style: italic; font-weight: 400; }
+.filete { display: block; width: 40px; height: 3px; background: var(--acido); }
+.corte { clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%); }
+.m-num { font-family: var(--sora); font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* botones: ácido con texto azul, sin redondeo */
+.rb { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 400 13.5px var(--sora); padding: 10px 16px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, transform .12s; white-space: nowrap; color: var(--r-tx); background: transparent; }
+.rb:active { transform: translateY(1px); }
+.rb.si { background: var(--acido); color: var(--azul); }
+.rb.si:hover { background: color-mix(in srgb, var(--acido) 82%, var(--azul)); }
+.rb.linea { border-color: var(--r-li); }
+.rb.linea:hover { border-color: var(--r-tx); }
+.rb.suave { color: var(--r-mu); padding: 10px 8px; }
+.rb.suave:hover { color: var(--r-tx); }
+.rb[disabled] { opacity: .45; cursor: default; }
+.rb svg { width: 16px; height: 16px; }
+
+/* encabezado de módulo y pestañas */
+.m-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.m-cab-acc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.m-vivo { font: 400 12.5px var(--sans); color: var(--r-mu); display: inline-flex; align-items: center; gap: 6px; }
+.m-vivo i { width: 7px; height: 7px; background: var(--acido); display: inline-block; box-shadow: 0 0 0 1px var(--azul) inset; }
+.m-vivo.off i { background: var(--rojo); box-shadow: none; }
+.m-pestanas { display: flex; gap: 28px; border-bottom: 1px solid var(--r-li); margin-bottom: 22px; overflow-x: auto; }
+.m-pest { position: relative; padding: 10px 0 12px; font: 400 15px var(--sora); color: var(--r-mu); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.m-pest .c { font: 400 12px var(--sans); color: var(--r-mu); margin-left: 6px; }
+.m-pest:hover { color: var(--r-tx); }
+.m-pest.on { color: var(--r-tx); font-weight: 500; }
+.m-pest.on::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 40px; height: 3px; background: var(--acido); animation: m-crece .35s ease both; }
+@keyframes m-crece { from { width: 0; } to { width: 40px; } }
+
+/* campos */
+.m-campo { background: var(--r-sup); border: 1px solid var(--r-li); padding: 10px 12px; color: var(--r-tx); font: 400 14px var(--sans); border-radius: 0; }
+.m-campo:focus { outline: none; border-color: var(--r-tx); }
+textarea.m-campo { resize: vertical; line-height: 1.5; }
+
+/* recuadros de cifras */
+.m-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.m-dato { background: var(--r-sup); padding: 14px 16px 12px; position: relative; cursor: default; text-align: left; border: 1px solid transparent; }
+.m-dato::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: var(--c, var(--r-li)); }
+.m-dato .m-num { font-size: 28px; display: block; line-height: 1.1; color: var(--r-tx); }
+.m-dato .l { font: 500 10.5px var(--sora); letter-spacing: .1em; text-transform: uppercase; color: var(--r-mu); }
+button.m-dato { cursor: pointer; }
+button.m-dato:hover { border-color: var(--r-li); }
+button.m-dato.on { border-color: var(--r-tx); }
+
+.m-vacio { text-align: center; padding: 46px 20px; color: var(--r-mu); background: var(--r-sup); }
+.m-vacio h3 { font: 400 21px var(--sora); color: var(--r-tx); margin: 0 0 6px; }
+.m-vacio h3 em { font-family: var(--bitter); font-style: italic; }
+.m-vacio .iso { width: 50px; margin: 0 auto 12px; }
+
+@keyframes m-entra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (max-width: 680px) { .titular { font-size: 25px; } .m-pestanas { gap: 20px; } }
+@media (prefers-reduced-motion: reduce) { body.marca *, body.marca *::before, body.marca *::after { animation: none !important; transition: none !important; } }
