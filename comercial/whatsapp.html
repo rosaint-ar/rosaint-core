@@ -523,7 +523,9 @@ async function cargarCarritos(){
   const pl = document.getElementById('car-plantilla');
   pl.className = 'wa-res' + (aviso ? ' ok' : ''); pl.textContent = aviso;
   const pendientes = CARR.filter(c => !c.compro && !c.enviado);
-  document.getElementById('t-car').textContent = pendientes.length || '';
+  // los de teléfono incompleto quedan en la lista (se ven el mail y el carrito) pero no cuentan como pendientes
+  const contables = pendientes.filter(c => /^549\d{10}$/.test(c.telefono));
+  document.getElementById('t-car').textContent = contables.length || '';
   if (!CARR.length) { lista.innerHTML = '<div class="m-vacio">No hay carritos abandonados en los últimos 15 días.</div>'; return; }
   const grupos = [['Para recordar', pendientes, 'var(--acido)'], ['Ya recordados', CARR.filter(c => !c.compro && c.enviado), 'var(--r-li)'], ['Compraron', CARR.filter(c => c.compro), 'var(--k-pedido)']];
   lista.innerHTML = grupos.filter(g => g[1].length).map(([titulo, filas, k]) =>
@@ -532,11 +534,13 @@ async function cargarCarritos(){
       const prods = c.productos.map(p => (p.cantidad > 1 ? p.cantidad + ' × ' : '') + p.nombre).join(' · ');
       const estado = c.compro ? `<span class="wa-badge compro">Compró${c.compro === true ? '' : ' · #' + esc(c.compro)}</span>`
         : c.enviado ? `<span class="wa-badge">Recordado hace ${hace((Date.now() - new Date(c.enviado.cuando).getTime()) / 36e5)}</span>` : '';
-      const puede = !c.compro && !c.enviado;
+      // 549 + 10 dígitos: si el cliente lo cargó con dígitos de menos, WhatsApp no lo encuentra
+      const telOk = /^549\d{10}$/.test(c.telefono);
+      const puede = !c.compro && !c.enviado && telOk;
       const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(c.telefono);
       return `<div class="wa-item" style="--k:${k};animation-delay:${Math.min(i * .03, .4)}s" data-car="${c.id}">
         <div class="wa-cuerpo">
-          <div class="wa-l1"><span class="wa-nombre" title="${esc(telLindo(c.telefono) + ' · ' + c.email)}">${esc(c.nombre || telLindo(c.telefono))}</span><span class="wa-cuando">lo dejó hace ${hace(h)}</span>${estado}${c.acepta_marketing ? '' : '<span class="wa-badge" title="No aceptó recibir novedades">Sin permiso</span>'}</div>
+          <div class="wa-l1"><span class="wa-nombre" title="${esc(telLindo(c.telefono) + ' · ' + c.email)}">${esc(c.nombre || telLindo(c.telefono))}</span><span class="wa-cuando">lo dejó hace ${hace(h)}</span>${estado}${c.acepta_marketing ? '' : '<span class="wa-badge" title="No aceptó recibir novedades">Sin permiso</span>'}${telOk ? '' : `<span class="wa-badge" title="${esc(c.email)}">Teléfono incompleto</span>`}</div>
           <div class="wa-resumen">$ ${Math.round(c.total).toLocaleString('es-AR')} · ${esc(prods)}</div>
         </div>
         <div class="wa-lado">
