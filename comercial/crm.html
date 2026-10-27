@@ -644,12 +644,13 @@ async function apiGetTodo(path) {
 
 async function cargarDinamico() {
   const desde = new Date(Date.now() - 400 * 86400000).toISOString();
-  const [m, e, c, v, w] = await Promise.all([
+  const [m, e, c, v, w, rt] = await Promise.all([
     apiGetTodo('cliente_metricas?select=*&partner_id=not.in.' + EXCLUIR + '&order=partner_id'),
     apiGetTodo('cliente_estado?select=*&order=partner_id'),
     apiGetTodo('crm_contactos?select=id,partner_id,usuario,motivo,created_at&created_at=gte.' + encodeURIComponent(desde) + '&order=created_at'),
     apiGet('crm_conversiones?select=*&order=fecha_pedido.desc&limit=1000'),
     apiGetTodo('wsp_actividad?select=*').catch(() => []),
+    apiGetTodo('cliente_ritmo?select=*&order=partner_id').catch(() => []),
   ]);
   DATA = m || [];
   ESTADO = {}; (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
@@ -662,6 +663,20 @@ async function cargarDinamico() {
   const deOtro = d => (d.empresa_id && ids.has(d.empresa_id)) || (() => { const x = d.telefono_wa && WSP[d.telefono_wa];
     return !!(x && ['auto', 'confirmado'].includes(x.vinculo_estado) && x.vinculo_partner_id !== d.partner_id && ids.has(x.vinculo_partner_id)); })();
   DATA = DATA.filter(d => d.total_facturas > 0 || d.presupuesto_id || d.segmento === 'ex_rst' || !deOtro(d));
+  // ritmo de compra POR PERSONA (vista cliente_ritmo): junta las fichas duplicadas (mismo teléfono) y los contactos de
+  // empresa, cuenta como una sola compra los pedidos con ≤ 7 días entre sí y ajusta por tamaño (si la última vez llevó
+  // el doble, le dura el doble). La ficha duplicada sin presupuesto no se muestra: sus compras suman en la titular.
+  const RIT = new Map((rt || []).map(r => [r.partner_id, r]));
+  DATA = DATA.filter(d => { const r = RIT.get(d.partner_id); return !r || r.es_titular !== false || d.presupuesto_id; });
+  for (const d of DATA) {
+    const r = RIT.get(d.partner_id); if (!r || !r.compras) continue;
+    Object.assign(d, { total_facturas: r.compras, primera_compra: r.primera, ultima_compra: r.ultima, dias_desde_ultima: r.dias,
+      intervalo_tipico_dias: r.ritmo != null ? Number(r.ritmo) : null, ritmo_aj: r.ritmo_ajustado != null ? Number(r.ritmo_ajustado) : null,
+      factor: r.factor != null ? Number(r.factor) : null, proxima: r.proxima });
+    if (d.segmento !== 'ex_rst') { const ref = d.ritmo_aj, x = ref ? d.dias_desde_ultima / ref : null, dd = d.dias_desde_ultima;
+      d.segmento = x != null ? (x < 1 ? 'activo' : x < 2 ? 'enfriandose' : x < 4 ? 'a_reactivar' : 'dormido')
+        : dd < 60 ? 'activo' : dd < 120 ? 'enfriandose' : dd < 240 ? 'a_reactivar' : 'dormido'; }
+  }
   POR_PID = new Map(DATA.map(d => [d.partner_id, d]));
   TELS = new Set(DATA.map(d => d.telefono_wa).filter(Boolean));
   // números que escriben de parte de un cliente (vínculo automático o confirmado por el vendedor)
@@ -718,6 +733,15 @@ function destinoWa(d) {
   return { tel: d.telefono_wa, nombre: primerNombre(d.nombre), quien: null };
 }
 // días desde el último contacto, venga del Core («Listo») o de un mensaje mandado desde el celular
+// "Compra cada ~28 días; la última vez llevó el doble, le alcanzaba hasta el 23/11"
+function textoRitmo(d) {
+  const base = Math.round(d.intervalo_tipico_dias || d.ritmo_aj), f = d.factor || 1;
+  const futuro = d.proxima && d.proxima >= dayKey(new Date().toISOString());
+  const hasta = d.proxima ? ' hasta el ' + fmtFecha(d.proxima) : '', alc = futuro ? 'le alcanza' : 'le alcanzaba';
+  if (f >= 1.3) return `Compra cada <b>~${base} días</b>; la última vez llevó ${f >= 1.8 ? 'el doble' : 'más de lo habitual'}, ${alc}${hasta}`;
+  if (f <= 0.8) return `Compra cada <b>~${base} días</b>; la última vez llevó menos, ${alc}${hasta}`;
+  return `Compra cada <b>~${base} días</b>`;
+}
 function contactadoHace(pid) {
   const e = ESTADO[pid], w = wspDe(POR_PID.get(pid));
   const a = e && e.contactado_at ? diasDe(e.contactado_at) : null, b = w && w.ult_out ? diasDe(w.ult_out) : null;
@@ -846,7 +870,7 @@ function calcularMision(d) {
     principal: w.resumen || 'Cargar el pedido en Odoo', tambien: w.accion || null, objetivo: true };
   // el cliente escribió hace poco: la charla está abierta y se atiende en el módulo WhatsApp
   if (w && w.ult_in && diasDe(w.ult_in) < DIAS_CHARLA_ABIERTA && w.categoria !== 'no_requiere') return null;
-  const n = d.total_facturas || 0, dias = d.dias_desde_ultima, ritmo = d.intervalo_tipico_dias;
+  const n = d.total_facturas || 0, dias = d.dias_desde_ultima, ritmo = d.ritmo_aj || d.intervalo_tipico_dias;
   const gasto = Math.min((d.total_gastado || 0) / 1e5, 900);
   const clave = productoClave(d.partner_id), sug = sugerido(d.partner_id);
   const yaCompro = clave ? clave.nombre : null;
@@ -866,11 +890,11 @@ function calcularMision(d) {
     const ratio = dias / ritmo;
     if (ratio >= .85 && ratio < 2) return {
       tipo: 'reponer', score: 8000 + gasto,
-      razon: `Compra cada <b>~${Math.round(ritmo)} días</b> y hace <b>${dias}</b> que no pide. Ya le toca reponer.`,
+      razon: `${textoRitmo(d)} y hace <b>${dias}</b> días que no pide. ${ratio < 1 ? 'Está por necesitar: es buen momento para ofrecerle.' : 'Ya le toca reponer.'}`,
       principal: yaCompro, nota: clave ? `lo pidió ${clave.veces} ${clave.veces === 1 ? 'vez' : 'veces'}` : '', tambien: sug, producto: yaCompro, sugerido: sug };
     if (ratio >= 2) return {
       tipo: 'recuperar', score: (ratio < 4 ? 6000 : 4000) + gasto,
-      razon: `Compraba cada <b>~${Math.round(ritmo)} días</b> y hace <b>${dias}</b> que no pide (${ratio.toFixed(1).replace('.', ',')} veces su ritmo).`,
+      razon: `${textoRitmo(d).replace('Compra cada', 'Compraba cada')} y hace <b>${dias}</b> días que no pide (${ratio.toFixed(1).replace('.', ',')} veces su ritmo).`,
       principal: yaCompro, tambien: sug, producto: yaCompro, sugerido: sug };
     return null;
   }

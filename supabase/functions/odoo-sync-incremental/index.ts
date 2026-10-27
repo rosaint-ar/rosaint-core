@@ -112,7 +112,15 @@ _servirConGuardia(async(req)=>{
     const uid=await authO();
     const margen=new Date(new Date(desde+'Z').getTime()-2*3600*1000).toISOString().replace('T',' ').slice(0,19);
     // PEDIDOS confirmados creados/modificados desde la marca
-    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",[...ESTADOS,"draft","sent"]],["write_date",">=",margen]]],{fields:["partner_id","source_id","state"],context:CTX_BOTH});
+    const ords=await execKw(uid,"sale.order","search_read",[[["state","in",[...ESTADOS,"draft","sent","cancel"]],["write_date",">=",margen]]],{fields:["name","partner_id","source_id","state","date_order","amount_untaxed","company_id"],context:CTX_BOTH});
+    // cliente_pedidos: cada pedido confirmado, para el ritmo de compra por persona (vista cliente_ritmo).
+    // Uno cancelado o que volvió a borrador se saca.
+    {
+      const conf=(ords||[]).filter(o=>ESTADOS.includes(o.state)&&pidf(o.company_id)===VEL&&pidf(o.partner_id));
+      if(conf.length) await db.from("cliente_pedidos").upsert(conf.map(o=>({order_id:o.id,partner_id:pidf(o.partner_id),name:o.name,fecha:soloFecha(o.date_order),monto:o.amount_untaxed||0,canal:pidf(o.source_id)===SRC_ML?"ml":pidf(o.source_id)===SRC_TN?"tn":"directa",actualizado:new Date().toISOString()})),{onConflict:"order_id"});
+      const fuera=(ords||[]).filter(o=>!ESTADOS.includes(o.state)).map(o=>o.id);
+      if(fuera.length) await db.from("cliente_pedidos").delete().in("order_id",fuera);
+    }
     const pids=[...new Set((ords||[]).map(m=>pidf(m.partner_id)).filter(x=>x&&x!==15))];
     let recalculados=0;
     if(pids.length){
