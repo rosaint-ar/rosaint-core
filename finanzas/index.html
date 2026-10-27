@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
     .tabs button { font: inherit; font-size: 13px; font-weight: 650; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; box-shadow: var(--shadow-card); }
@@ -80,11 +81,18 @@
     .vacio { padding: 18px; color: var(--muted); font-size: 13px; }
   </style>
 </head>
-<body data-page="finanzas" data-title="Finanzas" data-subtitle="Dinero, cobranzas, pagos, deudas y resultado · datos de Odoo (VELAZQUEZ)">
+<body class="marca puente" data-page="finanzas" data-title="Finanzas" data-subtitle="Dinero, cobranzas, pagos, deudas y resultado · datos de Odoo (VELAZQUEZ)">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Finanzas · Rosaint</span>
+      <h1 class="titular">Dónde está la <em>plata</em>.</h1>
+    </div>
+  </div>
   <div class="tabs" id="tabs">
     <button data-t="resumen" class="on">Resumen</button>
     <button data-t="cuentas">Cuentas</button>
@@ -108,7 +116,7 @@
   const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const INTERNOS = 'Pagos internos';                 // diario que no es una cuenta real de dinero
-  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
+  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Alquiler': 'color-mix(in srgb, var(--structure) 50%, var(--accent))', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const $ = id => document.getElementById(id);
@@ -341,10 +349,10 @@
         <div class="nota">Las facturas en dólares muestran el importe en dólares y su equivalente en pesos al tipo de cambio de la factura; al pagarlas cambia según el día.</div>
       </div>
       <div class="grid2 row-gap">
-        <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, alquiler, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
         <div class="panel"><div class="panel-head"><h2>Sueldos y cadeterías</h2></div><div id="sueldos"></div></div>
       </div>`;
-    const cats = ['Pagos a proveedores', 'Sueldos y honorarios', 'Cadeterías'];
+    const cats = ['Pagos a proveedores', 'Alquiler', 'Sueldos y honorarios', 'Cadeterías'];
     apiladas($('ch-pag'), D.meses, cats.map(k => ({ name: k, color: COL_CAT[k], values: D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === k && f.cuenta !== INTERNOS).map(f => f.salidas[i]))) })));
     const sv = D.sin_vincular || [];
     $('sueldos').innerHTML = sv.length ? `<table class="tbl"><thead><tr><th>Persona</th><th>Cuenta</th><th class="num">Devengado = pagado</th><th class="num">Saldo</th></tr></thead><tbody>${sv.map(x => `<tr><td>${esc(x.contacto)}</td><td class="muted" style="font-size:12px">${esc(x.cuenta)}</td><td class="num">${fmt$(x.importe)}</td><td class="num pos">$ 0</td></tr>`).join('')}</tbody></table>
