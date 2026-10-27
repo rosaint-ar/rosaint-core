@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .ct-top { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; margin-bottom:18px; }
     .ct-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; flex:1; min-width:280px; }
@@ -40,9 +41,16 @@
     @media (max-width: 640px) { .al { grid-template-columns:1fr; } .al .det { grid-column:1; } .al .cuando { text-align:left; } }
   </style>
 </head>
-<body data-page="control" data-title="Control de carga" data-subtitle="Hoja de Producción (Core) contra Fabricación (Odoo) y materiales del plan">
+<body class="marca puente" data-page="control" data-title="Control de carga" data-subtitle="Hoja de Producción (Core) contra Fabricación (Odoo) y materiales del plan">
 <div id="app-shell"></div>
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Producción · Control de carga</span>
+      <h1 class="titular">Que todo <em>cierre</em>.</h1>
+    </div>
+  </div>
   <div class="ct-top">
     <div class="ct-kpis" id="kpis"></div>
     <div class="ct-sync">

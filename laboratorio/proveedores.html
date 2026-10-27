@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .pv-top { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; }
     .pv-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; flex:1; min-width:280px; }
@@ -117,11 +118,18 @@
     @media (max-width:760px) { .pv-form { grid-template-columns:1fr; } }
   </style>
 </head>
-<body data-page="proveedores" data-title="Proveedores" data-subtitle="Quién provee qué, en cuánto tiempo y con qué condiciones">
+<body class="marca puente" data-page="proveedores" data-title="Proveedores" data-subtitle="Quién provee qué, en cuánto tiempo y con qué condiciones">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Abastecimiento · Proveedores</span>
+      <h1 class="titular">Quién nos <em>provee</em>.</h1>
+    </div>
+  </div>
 
   <div class="pv-top">
     <div class="pv-kpis">

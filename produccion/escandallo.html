@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
     .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
@@ -64,10 +65,17 @@
     .trend.down { background: rgba(220,53,69,.12); color: var(--hot); }
   </style>
 </head>
-<body data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo real por producto: materia prima + envase + mano de obra · en vivo desde Odoo">
+<body class="marca puente" data-page="escandallo" data-title="Escandallo de costos" data-subtitle="Costo real por producto: materia prima + envase + mano de obra · en vivo desde Odoo">
 
 <div id="app-shell"></div>
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Producción · Escandallo</span>
+      <h1 class="titular">Cuánto cuesta cada <em>producto</em>.</h1>
+    </div>
+  </div>
 
   <div id="msg" class="msg msg--info">Cargando recetas y producción en vivo…</div>
 

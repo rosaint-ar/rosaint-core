@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .bar-top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .bar-top .sp { flex: 1; }
@@ -92,11 +93,18 @@
     details.ctl summary { cursor: pointer; font-weight: 650; color: var(--text-2); font-size: 13px; }
   </style>
 </head>
-<body data-page="metricas" data-title="Métricas" data-subtitle="Ventas, compras y margen desde marzo 2026 · datos de Odoo (VELAZQUEZ)">
+<body class="marca puente" data-page="metricas" data-title="Métricas" data-subtitle="Ventas, compras y margen desde marzo 2026 · datos de Odoo (VELAZQUEZ)">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">General · Métricas</span>
+      <h1 class="titular">Cómo viene el <em>negocio</em>.</h1>
+    </div>
+  </div>
 
   <div class="bar-top">
     <div class="seg" id="seg-periodo">

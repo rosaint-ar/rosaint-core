@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
     .kpi {
@@ -150,11 +151,18 @@
     @media (max-width: 640px) { .lineas-list .linea { grid-template-columns: 64px minmax(0,1fr) 44px 44px; gap: 6px; } .lineas-list .linea > span { min-width: 0; overflow-wrap: anywhere; } }
   </style>
 </head>
-<body data-page="produccion" data-title="Producción" data-subtitle="Pedidos por entregar · lo que falta elaborar y fraccionar hoy">
+<body class="marca puente" data-page="produccion" data-title="Producción" data-subtitle="Pedidos por entregar · lo que falta elaborar y fraccionar hoy">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Producción · Pedidos</span>
+      <h1 class="titular">Lo que falta <em>entregar</em>.</h1>
+    </div>
+  </div>
 
   <div class="kpi-row">
     <div class="kpi">

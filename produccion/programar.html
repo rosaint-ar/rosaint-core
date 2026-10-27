@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     /* ---- Encabezado: carga del día + actualizar ------------------------- */
     .pg-top { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; margin-bottom:18px; }
@@ -168,9 +169,16 @@
     @media (max-width: 640px) { .pg-bloque, .pg-bloque details { overflow-x: auto; } }
   </style>
 </head>
-<body data-page="programar" data-title="Programar el día" data-subtitle="Qué elaborar y fraccionar hoy, según pedidos, etiquetas, entregas y stock">
+<body class="marca puente" data-page="programar" data-title="Programar el día" data-subtitle="Qué elaborar y fraccionar hoy, según pedidos, etiquetas, entregas y stock">
 <div id="app-shell"></div>
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Producción · Programar el día</span>
+      <h1 class="titular">El plan de <em>hoy</em>.</h1>
+    </div>
+  </div>
 
   <div class="pg-top">
     <div class="pg-kpis" id="kpis"></div>

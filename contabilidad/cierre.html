@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
@@ -39,10 +40,17 @@
     @media (max-width: 640px) { .field input[type=text] { min-width: 0; width: 100%; } }
   </style>
 </head>
-<body data-page="cierre" data-title="Cierre mensual" data-subtitle="Dos mails a la contadora: primero IIBB, después IVA">
+<body class="marca puente" data-page="cierre" data-title="Cierre mensual" data-subtitle="Dos mails a la contadora: primero IIBB, después IVA">
 
 <div id="app-shell"></div>
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Contabilidad · Cierre mensual</span>
+      <h1 class="titular">El cierre del <em>mes</em>.</h1>
+    </div>
+  </div>
 
   <div class="card" style="margin-bottom:14px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:14px;flex-wrap:wrap;">

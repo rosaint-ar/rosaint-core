@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     /* ---- Encabezado: estado general + botón de actualizar ---------------- */
     .rp-top { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px; }
@@ -148,11 +149,18 @@
     }
   </style>
 </head>
-<body data-page="reposicion" data-title="Stock y reposición" data-subtitle="Qué materia prima se está por terminar, cuánto comprar y a quién">
+<body class="marca puente" data-page="reposicion" data-title="Stock y reposición" data-subtitle="Qué materia prima se está por terminar, cuánto comprar y a quién">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Abastecimiento · Stock y reposición</span>
+      <h1 class="titular">Qué hay que <em>reponer</em>.</h1>
+    </div>
+  </div>
 
   <div class="rp-top">
     <div class="rp-kpis">

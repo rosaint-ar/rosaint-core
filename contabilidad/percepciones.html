@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     /* ---- Zona de drop del PDF ---- */
@@ -134,11 +135,18 @@
     @media (max-width: 640px) { .totales .row .lbl, .totales .row .val { min-width: 0; } .totales .row { gap: 8px; } .group, .card { overflow-x: auto; } }
   </style>
 </head>
-<body data-page="percepciones" data-title="Reconocedor de percepciones" data-subtitle="Leé la factura PDF · mapea · agrupa · aplica en Odoo">
+<body class="marca puente" data-page="percepciones" data-title="Reconocedor de percepciones" data-subtitle="Leé la factura PDF · mapea · agrupa · aplica en Odoo">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Contabilidad · Percepciones</span>
+      <h1 class="titular">Cada percepción en su <em>lugar</em>.</h1>
+    </div>
+  </div>
 
   <div class="card">
     <label class="drop" id="drop" for="filePdf">

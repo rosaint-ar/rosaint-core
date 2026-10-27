@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .cn-top { display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; margin-bottom:16px; }
     .cn-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; flex:1; min-width:280px; }
@@ -78,9 +79,16 @@
     @media (max-width: 640px) { table.cn .cod { display:none; } table.cn input { width:76px; } }
   </style>
 </head>
-<body data-page="conteo" data-title="Conteo de inventario" data-subtitle="Producto terminado y graneles · contar, cargar y ver diferencias contra Odoo">
+<body class="marca puente" data-page="conteo" data-title="Conteo de inventario" data-subtitle="Producto terminado y graneles · contar, cargar y ver diferencias contra Odoo">
 <div id="app-shell"></div>
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Producción · Conteo de inventario</span>
+      <h1 class="titular">Contar y <em>comparar</em>.</h1>
+    </div>
+  </div>
   <div id="cuerpo"><div class="cn-vacio">Cargando…</div></div>
   <div class="cn-msg" id="msg"></div>
 </main>

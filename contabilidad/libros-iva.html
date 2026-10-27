@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
     .field { display: flex; flex-direction: column; gap: 6px; }
@@ -37,11 +38,18 @@
     .libro .files { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
   </style>
 </head>
-<body data-page="librosiva" data-title="Libros de IVA (ZIP)" data-subtitle="Reporte de Impuestos de Odoo · para el contador / ARCA">
+<body class="marca puente" data-page="librosiva" data-title="Libros de IVA (ZIP)" data-subtitle="Reporte de Impuestos de Odoo · para el contador / ARCA">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Contabilidad · Libros de IVA</span>
+      <h1 class="titular">Los libros para el <em>contador</em>.</h1>
+    </div>
+  </div>
 
   <div class="card" style="margin-bottom:12px;">
     <div class="controls">
