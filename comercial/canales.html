@@ -433,6 +433,12 @@
     .vo-detalle { margin-top: 8px; }
     .vo-det-box { background: var(--surface-2); border-radius: 6px; padding: 10px 12px; font-size: 13px; }
     .vo-linea { padding: 2px 0; font-size: 12.5px; }
+    /* Pestañas de canal con el mismo aspecto que las del resto del Core (texto Sora, filete ácido) */
+    body.marca .canal-tabs { background: none; padding: 0; gap: 28px; border-bottom: 1px solid var(--r-li); margin-bottom: 20px; }
+    body.marca .canal-tab { flex: 0 0 auto; padding: 10px 0 12px; font: 400 15px var(--sora); color: var(--r-mu); position: relative; }
+    body.marca .canal-tab .icon { display: none; }
+    body.marca .canal-tab.active { background: none; box-shadow: none; color: var(--r-tx); font-weight: 500; }
+    body.marca .canal-tab.active::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 40px; height: 3px; background: var(--acido); }
   </style>
 </head>
 <body class="marca puente" data-page="canales" data-title="Canales" data-subtitle="Venta Directa · Tienda Nube · Mercado Libre">
