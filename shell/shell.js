@@ -16,14 +16,14 @@ const MENU = [
   { type: 'item', id: 'asistente', label: 'Asistente', href: 'asistente/agente.html', status: 'ready' },
   { type: 'item', id: 'manuales',  label: 'Manuales',  href: 'manuales/index.html', status: 'ready' },
 
-  { type: 'group', label: 'Comercial' },
-  { type: 'item', id: 'crm',          label: 'Clientes',     href: 'comercial/crm.html',          status: 'ready' },
-  { type: 'item', id: 'cotizador',    label: 'Cotizador',    href: 'comercial/cotizador.html',    status: 'ready' },
-  { type: 'item', id: 'seguimientos', label: 'Seguimientos', href: 'comercial/seguimientos.html', status: 'ready' },
-  { type: 'item', id: 'whatsapp',     label: 'WhatsApp',     href: 'comercial/whatsapp.html',     status: 'ready' },
-
-  { type: 'group', label: 'Ventas online' },
-  { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',   status: 'ready' },
+  // Todo lo de vender en un solo grupo: atender (Clientes, WhatsApp), cotizar, despachar (Envíos) y los canales.
+  // "Seguimientos" quedó para los recordatorios de chats; la pantalla de envíos conserva su id y su archivo.
+  { type: 'group', label: 'Ventas' },
+  { type: 'item', id: 'crm',           label: 'Clientes',      href: 'comercial/crm.html',           status: 'ready' },
+  { type: 'item', id: 'whatsapp',      label: 'WhatsApp',      href: 'comercial/whatsapp.html',      status: 'ready' },
+  { type: 'item', id: 'cotizador',     label: 'Cotizador',     href: 'comercial/cotizador.html',     status: 'ready' },
+  { type: 'item', id: 'seguimientos',  label: 'Envíos',        href: 'comercial/seguimientos.html',  status: 'ready' },
+  { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',       status: 'ready' },
   { type: 'item', id: 'oportunidades', label: 'Oportunidades', href: 'comercial/oportunidades.html', status: 'ready' },
 
   { type: 'group', label: 'Producto' },
