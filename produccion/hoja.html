@@ -12,6 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="apple-touch-icon" href="../shell/favicon.png">
   <link rel="manifest" href="hoja-manifest.json">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     :root {
       --rojo: #F93549;
@@ -25,8 +26,8 @@
       --gris-20: #E0E0E0;
       --gris-10: #EFEDE9;
       --gris-05: #F7F5F2;
-      --verde: var(--ok);
-      --naranja: var(--warn);
+      --verde: #2E8B57;     /* antes var(--ok)/var(--warn) del shell, que esta pantalla no carga */
+      --naranja: #B8860B;
       --rojo-tint: rgba(249, 53, 73, 0.08);
       --naranja-tint: rgba(255, 140, 0, 0.12);
       --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -364,9 +365,30 @@
       .toolbar-btns { flex-direction: column; }
       .btn-obs { padding: 16px; }
     }
+
+    /* ── Identidad de marca (manual v21): letras, azul, esquinas rectas y acción principal en ácido.
+       Mismos tamaños de tablet (botones y filas grandes) y misma impresión. */
+    body.marca { font-family: var(--sans); color: var(--azul); }
+    body.marca .topbar { background: var(--azul); }
+    body.marca .topbar__title, body.marca .contenido__title, body.marca .modal__title { font-family: var(--sora); font-weight: 500; }
+    body.marca .topbar__fecha-picker input { background: color-mix(in srgb, var(--azul) 70%, #000); border-color: rgba(247,245,242,.25); border-radius: 0; }
+    body.marca .pend-col__label, body.marca .field label, body.marca table.hoja thead th { font-family: var(--sora); font-weight: 500; letter-spacing: .1em; }
+    body.marca table.hoja thead th { background: var(--azul); }
+    body.marca .contenido__title .badge { background: var(--azul); border-radius: 0; font-family: var(--sora); font-weight: 400; }
+    body.marca .tabla-wrap, body.marca .modal, body.marca .search-results, body.marca .toast,
+    body.marca .field input, body.marca .field textarea, body.marca .field select,
+    body.marca table.hoja .del-btn, body.marca table.hoja .edit-btn, body.marca .btn-obs, body.marca .btn-modal-ghost,
+    body.marca .tipo-badge, body.marca .tipo-toggle, body.marca .tipo-toggle button { border-radius: 0; }
+    body.marca .btn-add, body.marca .btn-modal-primary { background: var(--acido); color: var(--azul); border-radius: 0; box-shadow: none; font-family: var(--sora); font-weight: 500; }
+    body.marca .btn-add:active { box-shadow: none; }
+    body.marca .btn-obs, body.marca .btn-modal-ghost { font-family: var(--sora); font-weight: 400; }
+    body.marca .field input:focus, body.marca .field textarea:focus, body.marca .field select:focus { border-color: var(--azul); }
+    body.marca .toast { background: var(--azul); }
+    body.marca .toast.err { background: var(--rojo); }
+    @media print { body.marca table.hoja thead th { background: white !important; } }
   </style>
 </head>
-<body>
+<body class="marca">
 
 <div class="topbar">
   <div class="topbar__logo">ROSAINT</div>
