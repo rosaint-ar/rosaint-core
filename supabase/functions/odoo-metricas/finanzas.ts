@@ -83,6 +83,10 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
   const moveIds = [...new Set(lLiq.map(l => m2oId(l.move_id)).filter((x): x is number => !!x))];
   // contrapartidas de esos asientos
   const lCp = moveIds.length ? await sr("account.move.line", [["move_id", "in", moveIds], ["account_id", "not in", liqIds]], ["move_id", "account_id", "account_type", "balance", "partner_id"]) : [];
+  // Alquiler: el pago va contra el proveedor (a pagar), así que se reconoce por el contacto de las facturas
+  // cargadas en "Alquileres Administrativos" (5.3.1.01.040), hoy el locador del galpón.
+  const alqPartners = new Set((await sr("account.move.line", [...posted, ["account_id.code", "=", "5.3.1.01.040"]], ["partner_id"])).map(l => m2oId(l.partner_id)).filter(Boolean));
+  const catCp = (cp: Rec) => cp.account_type === "liability_payable" && alqPartners.has(m2oId(cp.partner_id)) ? "Alquiler" : categoria(codigo(m2oName(cp.account_id)), String(cp.account_type || ""));
   const cpPorMov: Record<number, Rec[]> = {}; for (const l of lCp) (cpPorMov[m2oId(l.move_id) as number] ||= []).push(l);
   const liqPorMov: Record<number, Rec[]> = {}; for (const l of lLiq) (liqPorMov[m2oId(l.move_id) as number] ||= []).push(l);
 
@@ -107,7 +111,7 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
     let det = "";
     if (Math.abs(neto) >= 0.005) {
       const porCat: Record<string, number> = {};
-      for (const cp of cps) { const cat = categoria(codigo(m2oName(cp.account_id)), String(cp.account_type || "")); porCat[cat] = (porCat[cat] || 0) - ((cp.balance as number) || 0); }
+      for (const cp of cps) { const cat = catCp(cp); porCat[cat] = (porCat[cat] || 0) - ((cp.balance as number) || 0); }
       const totCp = Object.values(porCat).reduce((s, v) => s + v, 0);
       const cuentaMov = String(liq[m2oId(ls[0]?.account_id) as number]?.diario || "");
       for (const [cat, v] of Object.entries(porCat)) if (i !== undefined && Math.abs(totCp) > 0.005) addF(cuentaMov, cat, i, neto * v / totCp);
