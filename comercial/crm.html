@@ -593,13 +593,14 @@ const MIS = {
   nuevo:       { label: 'Nuevo por WhatsApp', ico: 'consulta',     cupo: 2, tpl: null,           d: 'escribió por WhatsApp y no está en la base de clientes' },
   vinculo:     { label: '¿De parte de quién?', ico: 'protocolo',   cupo: 2, tpl: null,           d: 'escribe desde un número que no está en la base, pero parece ser de parte de un cliente' },
   presupuesto: { label: 'Cerrar presupuesto', ico: 'protocolo',    cupo: 5, tpl: 'presupuesto',  d: 'tiene un presupuesto abierto en Odoo: ayudalo a confirmarlo' },
+  carrito:     { label: 'Carrito abandonado', ico: 'presentacion', cupo: 3, tpl: null,           d: 'armó un pedido en la tienda y no lo terminó (sale un recordatorio por WhatsApp)' },
   reponer:     { label: 'Le toca reponer',    ico: 'presentacion', cupo: 3, tpl: 'reponer',      d: 'por su ritmo de compra, ya le toca pedir' },
   segunda:     { label: 'Segunda compra',     ico: 'aplicacion',   cupo: 2, tpl: 'segunda',      d: 'compró una vez hace 3 semanas a 4 meses' },
   recuperar:   { label: 'Recuperar',          ico: 'textura',        cupo: 2, tpl: 'reactivacion', d: 'se atrasó mucho o compró una vez y no volvió' },
   rst:         { label: 'Volver de RST',      ico: 'formula',      cupo: 1, tpl: 'rst',          d: 'compraba en RST y todavía no volvió' },
   primera:     { label: 'Primera compra',     ico: 'formacion',     cupo: 1, tpl: 'nunca_compro', d: 'profesional registrado que nunca compró' },
 };
-const ORDEN_MIS = ['pedido_wsp','presupuesto','vinculo','nuevo','reponer','segunda','recuperar','rst','primera'];
+const ORDEN_MIS = ['pedido_wsp','presupuesto','carrito','vinculo','nuevo','reponer','segunda','recuperar','rst','primera'];
 // WhatsApp (wsp_actividad, al día por el webhook): un mensaje enviado desde el celular cuenta como contacto,
 // y si el cliente escribió hace poco la charla está abierta y se atiende en el módulo WhatsApp.
 const DIAS_CHARLA_ABIERTA = 3, DIAS_PEDIDO_WSP = 10, DIAS_NUEVO_WSP = 14;
@@ -681,6 +682,7 @@ async function load(primera) {
     pintarActualizado();
     renderAll();
     if (primera) { celebrarNuevos(); revisarInsignias(true); cargarFichas(); }
+    cargarCarritos();   // la tienda tarda unos segundos: las tareas de carritos aparecen cuando llegan
   } catch (err) {
     document.getElementById('plan').innerHTML = '<div class="vacio" style="grid-column:1/-1"><h3>No se pudieron cargar los datos</h3><div>' + esc(err.message) + '</div></div>';
   }
@@ -897,7 +899,45 @@ function candidatos() {
   const out = [];
   for (const d of DATA) { const m = misionDe(d); if (m) out.push({ d, m }); }
   out.push(...nuevosWsp());
+  out.push(...carritosTareas());
   return out.sort((a, b) => b.m.score - a.m.score);
+}
+// Carritos abandonados de Tienda Nube (los lee wsp-webhook): los que todavía no compraron, nadie les escribió
+// después y tienen un celular válido. El detalle y la estadística de recuperados están en WhatsApp › Carritos.
+const FN_WSP = window.SUPABASE_URL + '/functions/v1/wsp-webhook';
+let CARRITOS = [], CARR_PLANTILLA = '', CARR_TEXTO = '';
+async function llamarWsp(body) {
+  const { data: sess } = await sb.auth.getSession();
+  const r = await fetch(FN_WSP, { method: 'POST', headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + (sess && sess.session ? sess.session.access_token : ''), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+async function cargarCarritos() {
+  try {
+    const r = await llamarWsp({ accion: 'carritos' });
+    if (!r.ok) return;
+    CARRITOS = (r.carritos || []).filter(c => !c.compro && !c.enviado && /^549\d{10}$/.test(c.telefono));
+    CARR_PLANTILLA = r.plantilla; CARR_TEXTO = r.texto || '';
+    if (tab === 'hoy') renderHoy();
+  } catch (_) { /* sin la tienda, el plan sigue igual */ }
+}
+function carritosTareas() {
+  return CARRITOS.map((c, i) => {
+    const dias = Math.floor(diasDe(c.creado));
+    return { d: { partner_id: -(5000 + i), carrito: c, telefono_wa: c.telefono, nombre: c.nombre || telCorto(c.telefono), es_profesional: false },
+      m: { tipo: 'carrito', score: 9200 - dias * 10 + Math.min(c.total / 1e4, 90),
+        razon: `Armó un pedido de <b>${fmtMoney(c.total)}</b> en la tienda ${dias < 1 ? 'hoy' : dias === 1 ? 'ayer' : 'hace ' + dias + ' días'} y no lo terminó.`,
+        principal: c.productos.map(p => (p.cantidad > 1 ? p.cantidad + ' × ' : '') + p.nombre).join(' · ') } };
+  });
+}
+async function enviarCarrito(i, btn) {
+  const c = CARRITOS[i]; if (!c) return;
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  const { data: u } = await sb.auth.getUser();
+  try {
+    const r = await llamarWsp({ accion: 'carrito_enviar', checkout_id: c.id, usuario: u && u.user ? u.user.email : null });
+    if (!r.ok) throw new Error(r.error);
+    CARRITOS.splice(i, 1); renderHoy();
+  } catch (e) { btn.disabled = false; btn.textContent = 'Enviar recordatorio'; alert('No se pudo enviar: ' + e.message); }
 }
 // Números que escribieron por WhatsApp y no están en la base de clientes (para cargarlos)
 function nuevosWsp() {
@@ -930,7 +970,7 @@ function armarPlan(cuantos) {
   if (filtroMis) return todos.filter(x => x.m.tipo === filtroMis).slice(0, cuantos);
   const elegidos = [], usados = new Set();
   for (const t of ORDEN_MIS) {
-    const cupo = ['presupuesto', 'pedido_wsp'].includes(t) ? MIS[t].cupo : Math.ceil(MIS[t].cupo * cuantos / META_DIARIA);
+    const cupo = ['presupuesto', 'pedido_wsp', 'carrito'].includes(t) ? MIS[t].cupo : Math.ceil(MIS[t].cupo * cuantos / META_DIARIA);
     todos.filter(x => x.m.tipo === t).slice(0, cupo).forEach(x => { if (elegidos.length < cuantos) { elegidos.push(x); usados.add(x.d.partner_id); } });
   }
   for (const x of todos) { if (elegidos.length >= cuantos) break; if (!usados.has(x.d.partner_id)) { elegidos.push(x); usados.add(x.d.partner_id); } }
@@ -1041,6 +1081,21 @@ function lineaWsp(d) {
 }
 function tareaHtml(d, m, i) {
   const M = MIS[m.tipo];
+  if (d.carrito) { const c = d.carrito, k = CARRITOS.indexOf(c);
+    const msj = CARR_TEXTO.replace('{{1}}', c.primer_nombre).replace('{{2}}', c.productos_texto).replace('{{3}}', '[link al carrito]');
+    return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
+    <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
+    <h4 class="t-nombre">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
+    <p class="t-por">${m.razon}</p>
+    <div class="t-ofre"><span class="eyebrow">Lo que dejó</span>${esc(m.principal)}</div>
+    ${msj ? `<div class="t-wsp" title="${esc(msj)}"><span class="eyebrow">El mensaje que le llega</span>«${esc(msj.replace(/\s+/g, ' ').slice(0, 150))}…»</div>` : ''}
+    <div class="t-acc">
+      ${CARR_PLANTILLA === 'APPROVED' ? `<button class="rb si" onclick="enviarCarrito(${k}, this)">Enviar recordatorio</button>` : '<span class="rb suave">El mensaje espera la aprobación de Meta</span>'}
+      <a class="rb linea" href="https://api.whatsapp.com/send?phone=${d.telefono_wa}" target="_blank" rel="noopener">Escribirle yo</a>
+      <a class="rb suave" href="${esc(c.url)}" target="_blank" rel="noopener">Ver carrito</a>
+      <a class="rb suave" href="whatsapp.html#carritos" title="Retocar el mensaje o ver la estadística de recuperados">Editar</a>
+    </div>
+  </article>`; }
   if (d.vinculo) { const w = WSP[d.telefono_wa] || {}; return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
     <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
     <h4 class="t-nombre">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
