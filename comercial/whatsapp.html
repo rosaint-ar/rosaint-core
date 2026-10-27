@@ -140,6 +140,7 @@
   <!-- ===================== CARRITOS ===================== -->
   <section id="tab-carritos" hidden>
     <p class="wa-intro">Carritos que quedaron sin pagar en la tienda (últimos 15 días). Los que después compraron pasan solos a «Compraron». El recordatorio sale desde el número de Rosaint, una sola vez por carrito, y si contesta el chat aparece en «Sin responder». Cada mensaje cuesta unos US$ 0,06.</p>
+    <div class="wa-filtros" id="car-stats"></div>
     <div class="wa-res" id="car-plantilla"></div>
     <div class="wa-lista" id="car-lista"><div class="m-vacio">Cargando…</div></div>
   </section>
@@ -519,6 +520,7 @@ async function cargarCarritos(){
   try { r = await api({ accion: 'carritos' }); if (!r.ok) throw new Error(r.error); }
   catch (e) { lista.innerHTML = '<div class="m-vacio">No se pudo consultar: ' + esc(e.message) + '</div>'; return; }
   CARR = r.carritos || []; CAR_TEXTO = r.texto || ''; CAR_PLANTILLA = r.plantilla;
+  pintarStatsCarritos();
   const aviso = PLANTILLA_EST[CAR_PLANTILLA] ?? ('Estado del mensaje en Meta: ' + CAR_PLANTILLA);
   const pl = document.getElementById('car-plantilla');
   pl.className = 'wa-res' + (aviso ? ' ok' : ''); pl.textContent = aviso;
@@ -527,13 +529,13 @@ async function cargarCarritos(){
   const contables = pendientes.filter(c => /^549\d{10}$/.test(c.telefono));
   document.getElementById('t-car').textContent = contables.length || '';
   if (!CARR.length) { lista.innerHTML = '<div class="m-vacio">No hay carritos abandonados en los últimos 15 días.</div>'; return; }
-  const grupos = [['Para recordar', pendientes, 'var(--acido)'], ['Ya recordados', CARR.filter(c => !c.compro && c.enviado), 'var(--r-li)'], ['Compraron', CARR.filter(c => c.compro), 'var(--k-pedido)']];
+  const grupos = [['Para recordar', pendientes, 'var(--acido)'], ['Ya contactados', CARR.filter(c => !c.compro && c.enviado), 'var(--r-li)'], ['Compraron', CARR.filter(c => c.compro), 'var(--k-pedido)']];
   lista.innerHTML = grupos.filter(g => g[1].length).map(([titulo, filas, k]) =>
     `<div class="wa-grupo">${titulo} · ${filas.length}</div>` + filas.map((c, i) => {
       const h = (Date.now() - new Date(c.creado).getTime()) / 36e5;
       const prods = c.productos.map(p => (p.cantidad > 1 ? p.cantidad + ' × ' : '') + p.nombre).join(' · ');
       const estado = c.compro ? `<span class="wa-badge compro">Compró${c.compro === true ? '' : ' · #' + esc(c.compro)}</span>`
-        : c.enviado ? `<span class="wa-badge">Recordado hace ${hace((Date.now() - new Date(c.enviado.cuando).getTime()) / 36e5)}</span>` : '';
+        : c.enviado ? `<span class="wa-badge">${c.enviado.por === 'manual' ? 'Le escribiste' : 'Recordatorio'} hace ${hace((Date.now() - new Date(c.enviado.cuando).getTime()) / 36e5)}</span>${c.enviado.respondio ? '<span class="wa-badge escribio">Respondió</span>' : ''}` : '';
       // 549 + 10 dígitos: si el cliente lo cargó con dígitos de menos, WhatsApp no lo encuentra
       const telOk = /^549\d{10}$/.test(c.telefono);
       const puede = !c.compro && !c.enviado && telOk;
@@ -553,6 +555,20 @@ async function cargarCarritos(){
         </div>
       </div>`;
     }).join('')).join('');
+}
+// Recuperados: de los carritos contactados (con el botón o a mano desde WhatsApp), cuántos contestaron y compraron
+async function pintarStatsCarritos(){
+  const { data } = await sb.from('wsp_carritos').select('enviado, enviado_por, respondio, compro, monto_orden, total');
+  const f = data || [];
+  const compraron = f.filter(x => x.compro);
+  const plata = compraron.reduce((a, x) => a + Number(x.monto_orden || x.total || 0), 0);
+  const pct = f.length ? Math.round(compraron.length / f.length * 100) : 0;
+  const chip = (n, l) => `<span class="wa-f" style="cursor:default">${l} <span class="m-num">${n}</span></span>`;
+  const chipsVacio = !f.length;
+  document.getElementById('car-stats').innerHTML = chipsVacio ? '' : chip(f.length, 'Contactados')
+    + chip(f.filter(x => x.respondio).length, 'Respondieron')
+    + chip(compraron.length + ` · ${pct}%`, 'Compraron')
+    + `<span class="wa-aviso24">Recuperado: <b>$ ${Math.round(plata).toLocaleString('es-AR')}</b></span>`;
 }
 // Muestra el mensaje tal cual le va a llegar; el nombre y los productos se pueden retocar antes de mandar
 function formCarrito(btn, id){
