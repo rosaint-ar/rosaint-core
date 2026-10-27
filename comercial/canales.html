@@ -477,6 +477,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061943"></script>
+<script src="../shared/sync-al-abrir.js?v=202610271"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Canales — Venta Directa / Tienda Nube / Mercado Libre.
@@ -1313,6 +1314,12 @@ async function cargarPromociones() {
     renderControlDescuentos();
     renderPromos();
     $('#btnSyncPromos').addEventListener('click', sincronizarPromos);
+    // Al abrir, si las promociones se trajeron hace más de una hora, se vuelven a leer de ML (una vez por visita)
+    if (!AUTO_PROMOS_HECHO && window.syncAlAbrir) {
+      AUTO_PROMOS_HECHO = true;
+      const ult = PROMOS.map(p => p.sincronizado_en).filter(Boolean).sort().pop() || null;
+      syncAlAbrir({ clave: 'ml-promos', maxMin: 60, ultimo: async () => ult, correr: () => sincronizarPromos(true) });
+    }
   } catch (err) {
     $('#promo-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
   }
@@ -1466,14 +1473,15 @@ function renderPromoCard(p) {
     </details>`;
 }
 
-async function sincronizarPromos() {
+let AUTO_PROMOS_HECHO = false;
+async function sincronizarPromos(auto) {
   const btn = $('#btnSyncPromos'); const prev = btn.textContent;
   btn.disabled = true; btn.textContent = 'Sincronizando…';
   try {
     const { data, error } = await sb.functions.invoke('ml-promos-sync', { body: {} });
     if (error) throw new Error(error.message);
     if (data && data.ok === false) throw new Error(data.error || 'Error');
-    toast(`✓ ${data.promos} promociones · ${data.items} productos`, 'ok');
+    if (auto !== true) toast(`✓ ${data.promos} promociones · ${data.items} productos`, 'ok');
     await cargarPromociones();
   } catch (err) {
     toast('Error: ' + err.message, 'err');
@@ -1537,6 +1545,12 @@ async function cargarPublicaciones() {
     $('#btnSyncPubs').addEventListener('click', sincronizarPubs);
     $('#btnSyncAds').addEventListener('click', sincronizarAdsGasto);
     autoSyncAds();
+    // Al abrir, si las publicaciones se trajeron de ML hace más de 30 minutos, se vuelven a leer (una vez por visita)
+    if (!AUTO_PUBS_HECHO && window.syncAlAbrir) {
+      AUTO_PUBS_HECHO = true;
+      const ult = PUBS.map(p => p.sincronizado_en).filter(Boolean).sort().pop() || null;
+      syncAlAbrir({ clave: 'ml-pubs', maxMin: 30, ultimo: async () => ult, correr: () => sincronizarPubs(true) });
+    }
   } catch (err) {
     $('#pub-content').innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`;
   }
@@ -1926,7 +1940,8 @@ function renderAdsCell7d(p) {
   return `<span style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;"><span class="rentab-pill ${cls}" title="${tip}">${n.toFixed(0)}%</span>${flecha}</span>`;
 }
 
-async function sincronizarPubs() {
+let AUTO_PUBS_HECHO = false;
+async function sincronizarPubs(auto) {
   const btn = $('#btnSyncPubs');
   btn.classList.add('spin'); btn.disabled = true;
   const prev = btn.innerHTML; btn.innerHTML = prev.replace('Sincronizar con ML', 'Sincronizando…');
@@ -1938,7 +1953,7 @@ async function sincronizarPubs() {
     if (data.nuevas) partes.push(`+${data.nuevas} nuevas`);
     if (data.eliminadas) partes.push(`−${data.eliminadas} eliminadas`);
     partes.push(`${data.actualizadas} actualizadas`);
-    toast('✓ ' + partes.join(' · '), 'ok');
+    if (auto !== true || data.nuevas || data.eliminadas) toast('✓ ' + partes.join(' · '), 'ok');
     await cargarPublicaciones();
   } catch (err) { toast('Error: ' + err.message, 'err'); }
   finally { btn.classList.remove('spin'); btn.disabled = false; btn.innerHTML = prev; }

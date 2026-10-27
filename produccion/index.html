@@ -255,6 +255,7 @@
 <script src="../shell/shell.js?v=202610061943"></script>
 <script src="programador.js?v=202610231500"></script>
 <script src="plan-del-dia.js?v=202610231500"></script>
+<script src="../shared/sync-al-abrir.js?v=202610271"></script>
 <script>
 const SYNC_URL = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
 // La función pide la sesión del usuario (escribe y borra tablas): sin sesión no se sincroniza.
@@ -294,6 +295,7 @@ async function cargarDatos() {
   renderElaborar(r);
   renderFraccionar(r);
   renderPedidos(r.pedidos);
+  return r.creado;
 }
 
 let _kpiAnimado = false;
@@ -359,7 +361,7 @@ function renderPedidos(pedidos) {
 }
 
 // Actualizar: pide a Odoo una foto nueva (la misma que usa Programar el día) y recalcula
-async function sincronizar() {
+async function sincronizar(auto) {
   const btn = document.getElementById('btn-sync');
   const originalTxt = btn.innerHTML;
   btn.disabled = true;
@@ -369,7 +371,7 @@ async function sincronizar() {
     const r = await fetch(SYNC_URL, { method: 'POST', headers: await syncHeaders(), body: JSON.stringify({ modo: 'plan' }) }).then(r => r.json());
     if (!r.ok) throw new Error(r.error || 'desconocido');
     await cargarDatos();
-    showMsg('ok', 'Datos de Odoo actualizados');
+    if (auto !== true) showMsg('ok', 'Datos de Odoo actualizados');
   } catch (e) {
     console.error(e);
     showMsg('err', 'Error: ' + e.message);
@@ -434,7 +436,8 @@ async function sincronizarCatalogo() {
 
 document.getElementById('btn-sync').addEventListener('click', sincronizar);
 document.getElementById('btn-sync-catalogo').addEventListener('click', sincronizarCatalogo);
-cargarDatos();
+// Se ve la última foto al instante y, si tiene más de 20 minutos, se pide una nueva a Odoo (igual que Programar el día)
+cargarDatos().then(creado => window.syncAlAbrir && syncAlAbrir({ clave: 'plan', maxMin: 20, ultimo: async () => creado || null, correr: () => sincronizar(true) }));
 </script>
 </body>
 </html>

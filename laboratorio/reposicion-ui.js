@@ -99,7 +99,7 @@
     return data[0].datos;
   }
 
-  async function actualizar() {
+  async function actualizar(auto) {
     const btn = $('#btn-actualizar');
     btn.disabled = true; btn.textContent = 'Leyendo Odoo…';
     try {
@@ -115,7 +115,7 @@
       DATOS = j.datos; GENERADO = j.generado_en;
       await cargarDemanda();
       recalcular(); pintarTodo();
-      toast('Actualizado desde Odoo');
+      if (auto !== true) toast('Actualizado desde Odoo');
     } catch (e) {
       toast('No se pudo actualizar: ' + e.message, 'err');
     } finally {
@@ -742,6 +742,8 @@
       await cargarDemanda();
       recalcular();
       pintarTodo();
+      // Se ve la última foto al instante y, si tiene más de una hora, se lee Odoo de nuevo en segundo plano
+      if (window.syncAlAbrir) syncAlAbrir({ clave: 'reposicion', maxMin: 60, ultimo: async () => GENERADO, correr: () => actualizar(true) });
     } catch (e) {
       console.error(e);
       toast('No se pudo cargar: ' + e.message, 'err');

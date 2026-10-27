@@ -109,7 +109,7 @@
     catch (e) { SINFO = []; console.warn('supplierinfo:', e.message); }
   }
 
-  async function sincronizar() {
+  async function sincronizar(auto) {
     const btn = $('#btn-sync');
     btn.disabled = true; btn.textContent = 'Leyendo Odoo…';
     try {
@@ -118,7 +118,7 @@
       await cargar();
       await cargarSupplierinfo();
       pintarTodo();
-      toast(`Odoo: ${r.partners} proveedores · ${r.creados} nuevos, ${r.actualizados} actualizados`);
+      if (auto !== true || r.creados) toast(`Odoo: ${r.partners} proveedores · ${r.creados} nuevos, ${r.actualizados} actualizados`);
     } catch (e) {
       toast('No se pudo sincronizar: ' + e.message, 'err');
     } finally {
@@ -772,10 +772,15 @@
       pintarTodo();
       // Las condiciones de pago y lo que Odoo tiene cargado llegan después: la
       // pantalla ya es útil sin ellas y así no se queda en blanco esperando.
-      // Al abrir NO se sincroniza (eso escribe): para eso está el botón.
       try { TERMINOS = (await fn({ modo: 'terminos' })).terminos || []; } catch (e) { console.warn(e); }
       await cargarSupplierinfo();
       pintarTodo();
+      // Al abrir se trae de Odoo si la última lectura tiene más de 6 horas (solo escribe en la tabla de
+      // proveedores del Core, no en Odoo). Los proveedores cambian poco: más seguido no hace falta.
+      if (window.syncAlAbrir) syncAlAbrir({
+        clave: 'proveedores', maxMin: 360, correr: () => sincronizar(true),
+        ultimo: async () => (await sb.from('proveedores').select('sincronizado_en').order('sincronizado_en', { ascending: false, nullsFirst: false }).limit(1)).data?.[0]?.sincronizado_en || null,
+      });
     } catch (e) {
       console.error(e);
       toast('No se pudo cargar: ' + e.message, 'err');

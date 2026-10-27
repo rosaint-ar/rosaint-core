@@ -321,10 +321,14 @@ document.getElementById('saludo').innerHTML = saludoPorHora() + ', <span class="
 document.getElementById('hoy').textContent = fmtFechaLarga(new Date());
 const HOY = new Date().toLocaleDateString('en-CA');
 
+let _graficoUlt = 0;
 async function cargarTodo(manual) {
   _planP = null; // cada actualización calcula el plan de nuevo
   document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), cargarGraficoProduccion(), cargarWhatsApp(), cargarSeguimientos(), cargarVencimientos()]);
+  // El gráfico de producción es mensual y su función lee Odoo: cada 15 minutos alcanza (antes, cada minuto)
+  const grafico = manual || Date.now() - _graficoUlt > 15 * 60000;
+  if (grafico) _graficoUlt = Date.now();
+  await Promise.all([cargarUSD(), cargarProduccion(), cargarActividadesHoy(), cargarPortafolio(), cargarAlertas(), cargarMLStatus(), grafico ? cargarGraficoProduccion() : null, cargarWhatsApp(), cargarSeguimientos(), cargarVencimientos()]);
   firstLoad = false;
 }
 

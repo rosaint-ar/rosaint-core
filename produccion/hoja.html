@@ -1017,6 +1017,28 @@ cargarTodo();
 
 // Auto-refresh cada 90s (por si otra tablet sincroniza)
 setInterval(() => { cargarActividades().then(cargarPendientes); }, 90000);
+
+// El buscador de «Agregar producto» usa la foto de stock y catálogo de Odoo (prod_stock). Antes solo se
+// actualizaba con un botón de Producción y había quedado en agosto: al abrir la Hoja, si tiene más de una
+// hora, se trae de nuevo en segundo plano (solo catálogo y stock: no borra nada ni toca las recetas).
+async function stockAlDia() {
+  try {
+    const { data } = await sb.from('prod_stock').select('actualizado_en').order('actualizado_en', { ascending: false }).limit(1);
+    const ult = data && data[0] ? new Date(data[0].actualizado_en).getTime() : 0;
+    if (Date.now() - ult < 60 * 60000) return;
+    const { data: ses } = await sb.auth.getSession();
+    const headers = { Authorization: 'Bearer ' + (ses?.session?.access_token || ''), apikey: window.SUPABASE_KEY, 'Content-Type': 'application/json' };
+    const url = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/sync-produccion';
+    for (let offset = 0, vueltas = 0; vueltas < 20; vueltas++) {
+      const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ modo: 'catalogo', offset, limit: 100 }) }).then(x => x.json());
+      if (!r.ok) throw new Error(r.error || 'sin respuesta');
+      if (!r.has_more || !r.procesados) break;
+      offset += r.limit;
+    }
+    await cargarProductos();
+  } catch (e) { console.warn('stock al día:', e.message); }
+}
+setTimeout(stockAlDia, 3000);   // después de que la Hoja ya cargó lo suyo
 </script>
 
 </body>
