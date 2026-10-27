@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ingresar · Rosaint CORE</title>
   <link rel="icon" type="image/png" href="shell/favicon.png">
+  <link rel="stylesheet" href="shared/marca/marca.css?v=202610271">
   <style>
     :root {
       --rojo: #F93549;
@@ -88,9 +89,23 @@
     }
     .hint a { color: var(--rojo); text-decoration: none; }
     .hint a:hover { text-decoration: underline; }
+
+    /* Identidad de marca (manual v21): mismas letras, esquinas rectas y botón ácido que el resto del Core */
+    body.marca { font-family: var(--sans); color: var(--r-tx); }
+    body.marca .card { border-radius: 0; box-shadow: none; clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%); }
+    body.marca .brand__tag { font-family: var(--sora); font-weight: 500; color: var(--r-mu); }
+    body.marca .tabs { background: none; padding: 0; gap: 0; border-bottom: 1px solid var(--r-li); border-radius: 0; }
+    body.marca .tab-btn { font: 400 14px var(--sora); color: var(--r-mu); border-radius: 0; position: relative; }
+    body.marca .tab-btn.active { background: none; box-shadow: none; color: var(--r-tx); font-weight: 500; }
+    body.marca .tab-btn.active::after { content: ''; position: absolute; left: 50%; bottom: -1px; width: 40px; margin-left: -20px; height: 3px; background: var(--acido); }
+    body.marca .field label { font-family: var(--sora); font-weight: 500; letter-spacing: .1em; color: var(--r-mu); }
+    body.marca .field input { border-radius: 0; border: 1px solid var(--r-li); font-family: var(--sans); }
+    body.marca .field input:focus { border-color: var(--r-tx); }
+    body.marca .btn { border-radius: 0; background: var(--acido); color: var(--azul); font: 400 15px var(--sora); }
+    body.marca .msg { border-radius: 0; }
   </style>
 </head>
-<body>
+<body class="marca">
 
 <div class="card">
   <div class="brand">
