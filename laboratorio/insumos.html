@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .status-bar {
       display: flex; gap: 24px; padding: 12px 18px; flex-wrap: wrap;
@@ -106,11 +107,18 @@
     .toast.ok { background: var(--ok); color: var(--on-accent); }
   </style>
 </head>
-<body data-page="laboratorio" data-title="Insumos y envases" data-subtitle="Catálogo · precios USD · conversión ARS">
+<body class="marca puente" data-page="laboratorio" data-title="Insumos y envases" data-subtitle="Catálogo · precios USD · conversión ARS">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Laboratorio · Insumos y envases</span>
+      <h1 class="titular">Insumos y <em>envases</em>.</h1>
+    </div>
+  </div>
 
   <div class="status-bar">
     <span><span class="k">USD hoy:</span> <span class="v" id="s-usd">—</span></span>

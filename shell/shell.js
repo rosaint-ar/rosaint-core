@@ -272,7 +272,8 @@ function renderTopbar(pageTitle, pageSub) {
   // Buscador = ir a una pantalla: sugiere las secciones del menú y Enter abre la elegida
   // (antes era un campo que no hacía nada).
   const secciones = MENU.filter((m) => m.type === 'item' && m.status !== 'soon');
-  const buscador = el('input', { type: 'text', placeholder: 'Ir a…', 'aria-label': 'Ir a una pantalla', list: 'shell-secciones' });
+  // autocomplete off: sin esto Chrome lo autocompleta con un mail guardado
+  const buscador = el('input', { type: 'text', name: 'ir-a-pantalla', placeholder: 'Ir a…', 'aria-label': 'Ir a una pantalla', list: 'shell-secciones', autocomplete: 'off' });
   const sugerencias = el('datalist', { id: 'shell-secciones' }, secciones.map((m) => el('option', { value: m.label })));
   buscador.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;

@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
     .toolbar .search { flex: 1; min-width: 220px; }
@@ -116,11 +117,18 @@
     .toast.ok { background: var(--ok); color: var(--on-accent); }
   </style>
 </head>
-<body data-page="catalogo" data-title="Presentaciones" data-subtitle="SKUs · granel + envase + etiqueta + tamaño">
+<body class="marca puente" data-page="catalogo" data-title="Presentaciones" data-subtitle="SKUs · granel + envase + etiqueta + tamaño">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Catálogo · Presentaciones</span>
+      <h1 class="titular">Cada SKU, <em>armado</em>.</h1>
+    </div>
+  </div>
 
   <div class="toolbar">
     <div class="search">
