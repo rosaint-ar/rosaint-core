@@ -104,7 +104,7 @@
 /* ---- paneles ---- */
 #hoja .inci {
   background: #F7F5F2; border-left: 2.5pt solid #EAF46B; padding: 6pt 9pt;
-  font-size: 8.8pt; line-height: 1.46;
+  font-size: 8.8pt; line-height: 1.38;   /* es una enumeración, no lectura corrida */
 }
 #hoja .aviso {
   background: #F7F5F2; border-left: 2.5pt solid #F93549; padding: 6pt 9pt; margin-top: 4pt;

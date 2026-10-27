@@ -493,6 +493,17 @@ function partirTitulo(nombre) {
   return m ? { cursiva: m[1], firme: m[2] } : { cursiva: '', firme: nombre };
 }
 
+// Con 3 o más activos el bloque va en dos columnas: es el más largo de las
+// fichas faciales y a ancho completo obliga a achicar toda la ficha.
+function activosHoja(a, lista) {
+  if (!a || !a.length) return '';
+  if (a.length < 3) return `<h2>Principios activos</h2><ul>${lista(a)}</ul>`;
+  const mitad = Math.ceil(a.length / 2);
+  return '<h2>Principios activos</h2><div class="dos">' +
+         `<div><ul>${lista(a.slice(0, mitad))}</ul></div>` +
+         `<div><ul>${lista(a.slice(mitad))}</ul></div></div>`;
+}
+
 function renderHoja() {
   const lista = a => (Array.isArray(a) && a.length) ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
   const texto = t => t ? t.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') : '';
@@ -550,10 +561,12 @@ ${(F.aplicaciones?.length || F.caracteristicas?.length) ? `<div class="dos">
   <div>${sec('Características', lista(F.caracteristicas))}</div>
 </div>` : ''}
 
-${sec('Principios activos', lista(F.principios_activos))}
+${activosHoja(F.principios_activos, lista)}
 ${sec('Modo de uso', texto(F.modo_uso))}
-${sec('Conservación', texto(F.conservacion))}
-${sec('Precauciones y advertencias', texto(F.precauciones))}
+${(F.conservacion || F.precauciones) ? `<div class="dos">
+  <div>${sec('Conservación', texto(F.conservacion))}</div>
+  <div>${sec('Precauciones y advertencias', texto(F.precauciones))}</div>
+</div>` : ''}
 ${F.advertencias ? `<div class="aviso">${esc(F.advertencias)}</div>` : ''}
 
 <footer>
