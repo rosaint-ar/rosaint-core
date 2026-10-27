@@ -360,6 +360,7 @@
       const pt = pats[p.partner_id];
       const par = S.parciales.find((x) => Number(x.so_id) === p.id) || {};
       const opciones = [['', 'Cambiar fecha…'], ['hoy', ACCION.hoy], ['1d', ACCION['1d']], ['23d', ACCION['23d']], ['parcial', ACCION.parcial], ['ninguna', ACCION.ninguna]];
+      const actual = prioDePedido({ ...p, ml: false });   // 'parcial' muestra el ritmo de entrega del pedido
       return `<div class="ped" id="ped-${p.id}">
         <div class="cab"><span class="num">${esc(p.numero)}</span><span class="cli">${esc(p.cliente)}</span>
           <span class="fecha">del ${fCorta(p.fecha)}${p.ml ? ' · 🟡 Mercado Libre' : p.tn ? ' · Tienda Nube' : ''}${p.estado === 'draft' ? ' · en borrador' : ''}</span>
