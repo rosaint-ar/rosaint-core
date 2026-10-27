@@ -591,6 +591,7 @@ const canalesDe = d => CANALES.filter(c => (d[c[2]] || 0) > 0).map(c => c[1]);
 const MIS = {
   pedido_wsp:  { label: 'Pedido sin cargar',  ico: 'envio',        cupo: 5, tpl: null,           d: 'pidió o pagó por WhatsApp y en Odoo no hay pedido ni presupuesto de después' },
   nuevo:       { label: 'Nuevo por WhatsApp', ico: 'consulta',     cupo: 2, tpl: null,           d: 'escribió por WhatsApp y no está en la base de clientes' },
+  vinculo:     { label: '¿De parte de quién?', ico: 'protocolo',   cupo: 2, tpl: null,           d: 'escribe desde un número que no está en la base, pero parece ser de parte de un cliente' },
   presupuesto: { label: 'Cerrar presupuesto', ico: 'protocolo',    cupo: 5, tpl: 'presupuesto',  d: 'tiene un presupuesto abierto en Odoo: ayudalo a confirmarlo' },
   reponer:     { label: 'Le toca reponer',    ico: 'presentacion', cupo: 3, tpl: 'reponer',      d: 'por su ritmo de compra, ya le toca pedir' },
   segunda:     { label: 'Segunda compra',     ico: 'aplicacion',   cupo: 2, tpl: 'segunda',      d: 'compró una vez hace 3 semanas a 4 meses' },
@@ -598,12 +599,12 @@ const MIS = {
   rst:         { label: 'Volver de RST',      ico: 'formula',      cupo: 1, tpl: 'rst',          d: 'compraba en RST y todavía no volvió' },
   primera:     { label: 'Primera compra',     ico: 'formacion',     cupo: 1, tpl: 'nunca_compro', d: 'profesional registrado que nunca compró' },
 };
-const ORDEN_MIS = ['pedido_wsp','presupuesto','nuevo','reponer','segunda','recuperar','rst','primera'];
+const ORDEN_MIS = ['pedido_wsp','presupuesto','vinculo','nuevo','reponer','segunda','recuperar','rst','primera'];
 // WhatsApp (wsp_actividad, al día por el webhook): un mensaje enviado desde el celular cuenta como contacto,
 // y si el cliente escribió hace poco la charla está abierta y se atiende en el módulo WhatsApp.
 const DIAS_CHARLA_ABIERTA = 3, DIAS_PEDIDO_WSP = 10, DIAS_NUEVO_WSP = 14;
 
-let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONTACTOS = [], WSP = {}, POR_PID = new Map(), TELS = new Set();
+let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONTACTOS = [], WSP = {}, POR_PID = new Map(), TELS = new Set(), VINC = {};
 let tab = 'hoy', filtroMis = null, extraPlan = 0, limiteLista = 60;
 let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas', canal: 'todos', tipo: 'prof', estado: 'activos' };
 let pendingContact = null, MODAL_PID = null;
@@ -657,6 +658,11 @@ async function cargarDinamico() {
   WSP = {}; (w || []).forEach(x => { WSP[x.telefono] = x; });
   POR_PID = new Map(DATA.map(d => [d.partner_id, d]));
   TELS = new Set(DATA.map(d => d.telefono_wa).filter(Boolean));
+  // números que escriben de parte de un cliente (vínculo automático o confirmado por el vendedor)
+  VINC = {};
+  for (const w of Object.values(WSP)) if (w.vinculo_partner_id && ['auto', 'confirmado'].includes(w.vinculo_estado)) {
+    (VINC[w.vinculo_partner_id] = VINC[w.vinculo_partner_id] || []).push(w); TELS.add(w.telefono);
+  }
   MISION_CACHE = new Map();
 }
 async function load(primera) {
@@ -693,7 +699,18 @@ function pintarActualizado() {
 
 // ─── Estado de cada cliente ───
 const diasDe = ts => ts ? (Date.now() - new Date(ts).getTime()) / 86400000 : null;
-const wspDe = d => (d && d.telefono_wa && WSP[d.telefono_wa]) || null;
+const actividadDe = w => Math.max(w.ult_in ? new Date(w.ult_in).getTime() : 0, w.ult_out ? new Date(w.ult_out).getTime() : 0);
+function wspDe(d) {
+  if (!d) return null;
+  const lista = [d.telefono_wa && WSP[d.telefono_wa], ...(VINC[d.partner_id] || [])].filter(Boolean);
+  return lista.sort((a, b) => actividadDe(b) - actividadDe(a))[0] || null;
+}
+// a qué número escribirle y cómo saludar: si el que habla es otro (Blas por Candela), a él y por su nombre
+function destinoWa(d) {
+  const w = wspDe(d);
+  if (w && w.telefono !== d.telefono_wa && (VINC[d.partner_id] || []).includes(w)) return { tel: w.telefono, nombre: primerNombre(w.nombre) || primerNombre(d.nombre), quien: w.nombre };
+  return { tel: d.telefono_wa, nombre: primerNombre(d.nombre), quien: null };
+}
 // días desde el último contacto, venga del Core («Listo») o de un mensaje mandado desde el celular
 function contactadoHace(pid) {
   const e = ESTADO[pid], w = wspDe(POR_PID.get(pid));
@@ -717,6 +734,11 @@ function pedidoSinCargar(d, w) {
 const fmtPesos = n => n ? '$ ' + Math.round(n).toLocaleString('es-AR') : '';
 const telCorto = t => { const x = String(t || '').replace(/^549/, ''); return x.length === 10 ? x.slice(0, 3) + ' ' + x.slice(3, 6) + '-' + x.slice(6) : t; };
 const horaCorta = ts => new Date(ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+// fecha del último contacto: el «Listo» del Core o el último WhatsApp nuestro (también desde el celular)
+function fechaContacto(pid) {
+  const e = ESTADO[pid], w = wspDe(POR_PID.get(pid));
+  return [e && e.contactado_at, w && w.ult_out].filter(Boolean).sort().pop() || null;
+}
 function estaContactado(pid) { const d = contactadoHace(pid); return d != null && d < DIAS_CONTACTADO; }
 function estaArchivado(pid) { const e = ESTADO[pid]; return !!(e && e.archivado); }
 const presuAbierto = d => d.presupuesto_name && d.presupuesto_fecha && diasDesde(d.presupuesto_fecha) <= DIAS_PRESU;
@@ -883,6 +905,13 @@ function nuevosWsp() {
   for (const w of Object.values(WSP)) {
     if (w.no_cliente || !w.ult_in || diasDe(w.ult_in) > DIAS_NUEVO_WSP || TELS.has(w.telefono)) continue;
     // ya está en Odoo con otro teléfono, o el pedido apareció a otro nombre, o es un proveedor: no es un cliente nuevo
+    if (w.vinculo_estado === 'sugerido' && w.vinculo_partner_id) {
+      out.push({ d: { partner_id: -(++i), nuevo: true, vinculo: true, telefono_wa: w.telefono, nombre: w.nombre || telCorto(w.telefono), es_profesional: false },
+        m: { tipo: 'vinculo', score: 8600 - diasDe(w.ult_in),
+          razon: `Escribe desde un número que no está en la base. Parece ser <b>de parte de ${esc(w.vinculo_nombre)}</b>: coincide ${esc(w.vinculo_motivo || '')}.`,
+          principal: w.resumen || null, objetivo: true, nuevo: true } });
+      continue;
+    }
     if (w.es_proveedor || w.partner_odoo_id || w.pedido_id) continue;
     const pide = ['pedido', 'pago', 'consulta', 'reclamo'].includes(w.categoria);
     if (!pide) continue;   // avisos automáticos, despedidas y chats sin leer no son clientes nuevos
@@ -1006,11 +1035,23 @@ function elegirMision(t) { filtroMis = filtroMis === t ? null : t; extraPlan = 0
 
 function lineaWsp(d) {
   const w = wspDe(d); if (!w) return '';
-  const ult = (w.ult_in && (!w.ult_out || w.ult_in > w.ult_out)) ? ['Cliente', w.ult_in, w.ult_in_texto] : ['Rosaint', w.ult_out, w.ult_out_texto];
+  const otro = w.telefono !== d.telefono_wa && (VINC[d.partner_id] || []).includes(w) ? primerNombre(w.nombre) || telCorto(w.telefono) : null;
+  const ult = (w.ult_in && (!w.ult_out || w.ult_in > w.ult_out)) ? [otro ? otro + ' (de su parte)' : 'Cliente', w.ult_in, w.ult_in_texto] : ['Rosaint', w.ult_out, w.ult_out_texto];
   return `<div class="t-wsp"><span class="eyebrow">Último WhatsApp · ${horaCorta(ult[1])}</span>${ult[0]}: «${esc(String(ult[2] || '').slice(0, 110))}»</div>`;
 }
 function tareaHtml(d, m, i) {
   const M = MIS[m.tipo];
+  if (d.vinculo) { const w = WSP[d.telefono_wa] || {}; return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
+    <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
+    <h4 class="t-nombre">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
+    <p class="t-por">${m.razon}</p>
+    ${m.principal ? `<div class="t-ofre"><span class="eyebrow">Qué escribió</span>${esc(m.principal)}</div>` : ''}
+    ${lineaWsp(d)}
+    <div class="t-acc">
+      <button class="rb si" onclick="confirmarVinculo('${d.telefono_wa}', 'confirmado')">Sí, es de parte de ${esc(primerNombre(w.vinculo_nombre) || 'ese cliente')}</button>
+      <button class="rb linea" onclick="confirmarVinculo('${d.telefono_wa}', 'rechazado')">No</button>
+    </div>
+  </article>`; }
   if (d.nuevo) return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
     <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
     <h4 class="t-nombre" onclick="abrirNuevoWsp('${d.telefono_wa}')" title="Cargarlo en la base">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
@@ -1038,7 +1079,7 @@ function tareaHtml(d, m, i) {
     ${datos.length ? `<div class="t-datos">${datos.join('')}</div>` : ''}
     ${lineaWsp(d)}
     <div class="t-acc">
-      ${m.tipo === 'pedido_wsp' ? `<a class="rb si" href="https://api.whatsapp.com/send?phone=${d.telefono_wa}" target="_blank" rel="noopener" onclick="pedirConfirmacion(${d.partner_id})">Abrir chat</a><a class="rb linea" href="${ODOO_URL}/odoo/sales/new" target="_blank" rel="noopener">Cargar en Odoo</a>` : `<button class="rb si" onclick="abrirMensaje(${d.partner_id})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>WhatsApp</button>`}
+      ${m.tipo === 'pedido_wsp' ? `<a class="rb si" href="https://api.whatsapp.com/send?phone=${destinoWa(d).tel}" target="_blank" rel="noopener" onclick="pedirConfirmacion(${d.partner_id})">Abrir chat</a><a class="rb linea" href="${ODOO_URL}/odoo/sales/new" target="_blank" rel="noopener">Cargar en Odoo</a>` : `<button class="rb si" onclick="abrirMensaje(${d.partner_id})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>WhatsApp</button>`}
       <button class="rb linea" onclick="marcarContactado(${d.partner_id}, '${m.tipo}')" title="Ya le escribí">Listo</button>
       <button class="rb suave" onclick="archivar(${d.partner_id})" title="No volver a mostrarlo">Archivar</button>
     </div>
@@ -1324,7 +1365,7 @@ function renderPlantilla(txt, c) {
 }
 function ctxDe(d, m) {
   const minus = s => s || '';   // el nombre del producto va como figura en el catálogo
-  return { nombre: primerNombre(d.nombre), empresa: EMPRESA, quien: VEND ? `Soy ${VEND}, de ${EMPRESA}` : 'Te escribimos de ' + EMPRESA,
+  return { nombre: destinoWa(d).nombre, empresa: EMPRESA, quien: VEND ? `Soy ${VEND}, de ${EMPRESA}` : 'Te escribimos de ' + EMPRESA,
     link: d.es_profesional ? LINK_LISTA : LINK_TIENDA, producto: minus(m && m.producto), sugerido: minus(m && m.sugerido), presupuesto: d.presupuesto_name || '' };
 }
 function buildMsg(d) {
@@ -1339,14 +1380,15 @@ function abrirMensaje(pid) {
   const m = misionDe(d);
   MODAL_PID = pid;
   document.getElementById('modalTipo').textContent = momentaneoOn() ? 'Mensaje de campaña' : m ? MIS[m.tipo].label : 'Mensaje';
-  document.getElementById('modalWho').textContent = d.nombre + ' · +' + d.telefono_wa;
+  const dest = destinoWa(d);
+  document.getElementById('modalWho').textContent = (dest.quien ? dest.quien + ', de parte de ' + d.nombre : d.nombre) + ' · +' + dest.tel;
   document.getElementById('modalText').value = buildMsg(d);
   document.getElementById('modal').classList.add('show');
 }
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
 document.getElementById('modalSend').onclick = () => {
   const d = DATA.find(x => x.partner_id === MODAL_PID); if (!d) return;
-  window.open('https://api.whatsapp.com/send?phone=' + d.telefono_wa + '&text=' + encodeURIComponent(document.getElementById('modalText').value), '_blank');
+  window.open('https://api.whatsapp.com/send?phone=' + destinoWa(d).tel + '&text=' + encodeURIComponent(document.getElementById('modalText').value), '_blank');
   closeModal();
   pedirConfirmacion(MODAL_PID);
 };
@@ -1604,16 +1646,17 @@ function abrirDrawer(c, d, isNew) {
     intel = `<div class="intel">
       <div class="que-hacer corte">
         <span class="eyebrow">${m ? MIS[m.tipo].label : cont ? 'Ya contactado' : arch ? 'Archivado' : 'Sin tarea pendiente'}</span>
-        <h4>${m ? 'Qué hacer' : cont ? 'Contactado el ' + fmtFecha(dayKey(ESTADO[d.partner_id].contactado_at)) : 'Nada urgente'}</h4>
+        <h4>${m ? 'Qué hacer' : cont ? 'Contactado el ' + fmtFecha(dayKey(fechaContacto(d.partner_id))) : 'Nada urgente'}</h4>
         <p>${m ? m.razon : cont ? `Vuelve a la lista de tareas a los ${DIAS_CONTACTADO} días si no compra.` : d.dias_desde_ultima != null && d.dias_desde_ultima < DIAS_RECIENTE ? 'Compró hace muy poco.' : presuAbierto(d) ? 'Tiene un presupuesto recién armado.' : 'Está dentro de su ritmo de compra.'}</p>
         ${m && m.principal ? `<p><b>${m.tipo === 'presupuesto' ? 'Objetivo' : 'Ofrecele'}:</b> ${esc(m.principal)}${m.tambien && m.tambien !== m.principal ? ` · también: ${esc(m.tambien)}` : ''}</p>` : sug ? `<p><b>Le puede interesar:</b> ${esc(sug)}</p>` : ''}
         <div class="acc-fila">
           ${d.telefono_wa ? `<button class="rb si" onclick="abrirMensaje(${d.partner_id})">Escribir por WhatsApp</button>` : `<button class="rb linea" disabled>Sin teléfono: cargalo abajo</button>`}
-          ${cont ? `<button class="rb linea" onclick="desmarcarDrawer(${d.partner_id})">Deshacer contacto</button>` : `<button class="rb linea" onclick="marcarDrawer(${d.partner_id})">Ya le escribí</button>`}
+          ${cont && ESTADO[d.partner_id] && ESTADO[d.partner_id].contactado_at ? `<button class="rb linea" onclick="desmarcarDrawer(${d.partner_id})">Deshacer contacto</button>` : `<button class="rb linea" onclick="marcarDrawer(${d.partner_id})">Ya le escribí</button>`}
           ${arch ? `<button class="rb linea" onclick="recuperarDrawer(${d.partner_id})">Recuperar</button>` : `<button class="rb suave" onclick="archivarDrawer(${d.partner_id})">Archivar</button>`}
         </div>
       </div>
-      ${(() => { const w = wspDe(d); if (!w) return ''; return `<div class="nota"><b>WhatsApp:</b> ${w.ult_out ? 'le escribieron el ' + horaCorta(w.ult_out) : 'nunca le escribimos'}${w.ult_in ? ' · escribió el ' + horaCorta(w.ult_in) : ''}${w.resumen && w.categoria !== 'no_requiere' ? '<br>' + esc(w.resumen) + (w.accion ? ' · <b>' + esc(w.accion) + '</b>' : '') : ''} · <a href="whatsapp.html#chats" style="color:inherit">ver en WhatsApp</a></div>`; })()}
+      ${(() => { const w = wspDe(d); if (!w) return ''; return `<div class="nota"><b>WhatsApp${w.telefono !== d.telefono_wa ? ' de ' + esc(w.nombre || telCorto(w.telefono)) + ' (de su parte)' : ''}:</b> ${w.ult_out ? 'le escribieron el ' + horaCorta(w.ult_out) : 'nunca le escribimos'}${w.ult_in ? ' · escribió el ' + horaCorta(w.ult_in) : ''}${w.resumen && w.categoria !== 'no_requiere' ? '<br>' + esc(w.resumen) + (w.accion ? ' · <b>' + esc(w.accion) + '</b>' : '') : ''} · <a href="whatsapp.html#chats" style="color:inherit">ver en WhatsApp</a></div>`; })()}
+      ${(VINC[d.partner_id] || []).filter(w => w.telefono !== d.telefono_wa).map(w => `<div class="nota"><b>También escribe por este cliente:</b> ${esc(w.nombre || '')} (${esc(telCorto(w.telefono))}) · detectado por ${esc(w.vinculo_motivo || 'cruce')} <a href="#" style="color:inherit" onclick="confirmarVinculo('${w.telefono}', 'rechazado'); return false;">no es así</a></div>`).join('')}
       <div class="istat">
         <div class="b"><div class="v">${dias == null ? '—' : dias === 0 ? 'hoy' : dias + ' d'}</div><div class="l">sin comprar</div></div>
         <div class="b"><div class="v">${d.total_facturas || 0}</div><div class="l">compras</div></div>
@@ -1679,6 +1722,18 @@ async function abrirNuevoWsp(tel, nombre) {
     if (ya) { FICHA[ya.id] = ya; toastF('Ya está en Odoo como ' + ya.name); abrirDrawer(ya, POR_PID.get(ya.id) || null, false); return; }
   } catch (e) { console.warn('búsqueda en Odoo', e.message); }
   abrirDrawer({ id: null, company_type: 'person', category_id: [], name: nombre, phone: fmtTel(tel), _prof: false, _wsp: tel }, null, true);
+}
+async function confirmarVinculo(tel, estado) {
+  const card = [...document.querySelectorAll('.tarea')].find(c => c.innerHTML.includes(tel));
+  if (card) card.classList.add('sale');
+  const r = await api('wsp_chat_estado?on_conflict=telefono', { method: 'POST', body: JSON.stringify({ telefono: tel, vinculo_estado: estado, actualizado: new Date().toISOString() }) });
+  if (!r.ok) { toastF('No se pudo guardar (HTTP ' + r.status + ')'); return; }
+  if (WSP[tel]) WSP[tel].vinculo_estado = estado;
+  const w = WSP[tel] || {};
+  VINC = {}; TELS = new Set(DATA.map(d => d.telefono_wa).filter(Boolean));
+  for (const x of Object.values(WSP)) if (x.vinculo_partner_id && ['auto', 'confirmado'].includes(x.vinculo_estado)) { (VINC[x.vinculo_partner_id] = VINC[x.vinculo_partner_id] || []).push(x); TELS.add(x.telefono); }
+  MISION_CACHE = new Map();
+  setTimeout(() => { renderAll(); toastF(estado === 'confirmado' ? (w.nombre || 'Ese número') + ' queda vinculado a ' + (w.vinculo_nombre || 'el cliente') : 'Listo, no se vuelve a sugerir', estado === 'confirmado'); }, card ? 380 : 0);
 }
 async function marcarNoCliente(tel) {
   const card = [...document.querySelectorAll('.tarea')].find(c => c.innerHTML.includes(tel));

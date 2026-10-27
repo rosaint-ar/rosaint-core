@@ -32,6 +32,9 @@
     .wa-nombre { font: 400 15.5px var(--sora); }
     .wa-cuando { font-size: 12.5px; color: var(--r-mu); }
     .wa-item.viejo .wa-cuando { color: var(--rojo); }
+    .wa-de { font-size: 12.5px; color: var(--r-mu); }
+    .wa-de b { color: var(--r-tx); font-weight: 600; }
+    .wa-de button { background: none; border: 0; padding: 0 0 0 6px; font: 400 12.5px var(--sans); color: var(--r-tx); cursor: pointer; text-decoration: underline; text-decoration-color: var(--acido); text-decoration-thickness: 2px; text-underline-offset: 3px; }
     .wa-cat { font: 500 10px var(--sora); letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; background: var(--k); color: var(--azul); align-self: center; }
     .wa-cat.reclamo, .wa-cat.pedido { color: var(--papel); }
     [data-theme="dark"] .wa-cat.pedido { color: var(--azul); }
@@ -288,7 +291,25 @@ function tituloCliente(f){
   if (!c) return tel + (f.partner_odoo_nombre ? ' · en Odoo como ' + f.partner_odoo_nombre : ' · no está en la base de clientes');
   return `${tel} · ${c.nombre} · ${c.es_profesional ? 'profesional' : 'consumidor'}${c.ultimo_pedido_id > 0 ? ' · último pedido ' + c.ultimo_pedido_name + ' del ' + fFecha(c.ultima_compra) : ' · sin pedidos'}`;
 }
-const linkCargar = f => ODOO[f.telefono] === null && !f.partner_odoo_nombre && !f.es_proveedor
+// Número que escribe "de parte de" un cliente de Odoo (lo detecta el servidor cruzando dirección, CUIT, email,
+// monto de la cotización o el teléfono de un pedido). Si el nombre es el mismo, no hace falta aclararlo.
+const sinTildes = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const mismaPersona = (a, b) => { const x = sinTildes(a).split(/[^a-z]+/).filter(t => t.length >= 3)[0]; return !!x && sinTildes(b).includes(x.slice(0, 4)); };
+function etiquetaVinculo(f){
+  if (!f.vinculo_nombre || f.vinculo_estado === 'rechazado') return '';
+  const t = esc(f.telefono);
+  if (f.vinculo_estado === 'sugerido')
+    return `<span class="wa-de" title="${esc(f.vinculo_motivo || '')}">¿De parte de <b>${esc(f.vinculo_nombre)}</b>? <button onclick="vincular('${t}', 'confirmado')">Sí</button><button onclick="vincular('${t}', 'rechazado')">No</button></span>`;
+  if (mismaPersona(f.nombre, f.vinculo_nombre)) return '';
+  return `<span class="wa-de" title="Detectado por ${esc(f.vinculo_motivo || 'cruce')}">de parte de <b>${esc(f.vinculo_nombre)}</b> <button onclick="vincular('${t}', 'rechazado')" title="No es de parte de este cliente">deshacer</button></span>`;
+}
+async function vincular(tel, estado){
+  const { error } = await sb.from('wsp_chat_estado').upsert({ telefono: tel, vinculo_estado: estado, actualizado: new Date().toISOString() }, { onConflict: 'telefono' });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  const f = PEND.find(x => x.telefono === tel); if (f) f.vinculo_estado = estado;
+  pintarPendientes();
+}
+const linkCargar = f => ODOO[f.telefono] === null && !f.partner_odoo_nombre && !f.es_proveedor && !(f.vinculo_nombre && f.vinculo_estado !== 'rechazado')
   ? `<a href="../comercial/crm.html#nuevo=${encodeURIComponent(f.telefono)}|${encodeURIComponent(f.nombre || '')}" title="No está en la base de clientes">Cargar contacto</a>` : '';
 
 // ---------------- Sin responder
@@ -334,7 +355,7 @@ function item(f, i, cerrado){
   const t = esc(f.telefono);
   return `<div class="wa-item ${f.horas_esperando >= 24 && !cerrado ? 'viejo' : ''}" style="--k:${c ? c.k : 'var(--r-li)'};animation-delay:${Math.min(i * .03, .4)}s" data-tel="${t}">
     <div class="wa-cuerpo">
-      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}${f.es_proveedor ? '<span class="wa-badge" title="El teléfono es de un proveedor en Odoo">Proveedor</span>' : ''}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
+      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}${f.es_proveedor ? '<span class="wa-badge" title="El teléfono es de un proveedor en Odoo">Proveedor</span>' : ''}${etiquetaVinculo(f)}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
       ${f.resumen ? `<div class="wa-resumen">${esc(f.resumen)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
       ${f.accion && !cerrado ? `<div class="wa-accion"><b>Qué hacer:</b> ${esc(f.accion)}</div>` : ''}
       ${cerrado ? '' : lineaOdoo(f)}
