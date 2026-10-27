@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .conn-card {
       background: var(--surface); border: 1px solid var(--border);
@@ -91,11 +92,18 @@
     .toast.ok { background: var(--ok); color: var(--on-accent); }
   </style>
 </head>
-<body data-page="sistema" data-title="Integraciones" data-subtitle="Estado de las conexiones y tareas programadas">
+<body class="marca puente" data-page="sistema" data-title="Integraciones" data-subtitle="Estado de las conexiones y tareas programadas">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Sistema · Integraciones</span>
+      <h1 class="titular">Cada conexión, con su <em>estado</em>.</h1>
+    </div>
+  </div>
 
   <h2 class="section-title">Conexiones externas <span class="cnt" id="cnt-conn">—</span></h2>
 

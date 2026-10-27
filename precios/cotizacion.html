@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .current-box {
       background: var(--surface); border: 1px solid var(--border);
@@ -57,11 +58,18 @@
     }
   </style>
 </head>
-<body data-page="precios" data-title="Cotización del dólar" data-subtitle="USD oficial venta (BNA)">
+<body class="marca puente" data-page="precios" data-title="Cotización del dólar" data-subtitle="USD oficial venta (BNA)">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Precios · Cotización del dólar</span>
+      <h1 class="titular">El dólar del <em>día</em>.</h1>
+    </div>
+  </div>
 
   <div class="current-box">
     <div>

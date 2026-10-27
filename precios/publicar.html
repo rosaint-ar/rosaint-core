@@ -7,6 +7,7 @@
   <meta name="app-root" content="../">
   <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <style>
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -89,11 +90,18 @@
     .instructions strong { color: var(--text); }
   </style>
 </head>
-<body data-page="precios" data-title="Publicar lista pública" data-subtitle="Genera el HTML estático de la Lista Profesional">
+<body class="marca puente" data-page="precios" data-title="Publicar lista pública" data-subtitle="Genera el HTML estático de la Lista Profesional">
 
 <div id="app-shell"></div>
 
 <main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Precios · Publicar lista</span>
+      <h1 class="titular">La lista <em>pública</em>.</h1>
+    </div>
+  </div>
 
   <div class="kpi-row">
     <div class="kpi">
