@@ -85,6 +85,35 @@ button.m-dato.on { border-color: var(--r-tx); }
 .m-vacio h3 em { font-family: var(--bitter); font-style: italic; }
 .m-vacio .iso { width: 50px; margin: 0 auto 12px; }
 
+/* ── Puente: pantallas hechas con las piezas del shell (.card, .btn, .kpi, .badge, tablas) que pasan a la marca
+   sin reescribir su CSS. Se activa con <body class="marca puente">: traduce los tokens del shell a los de la
+   marca (sin redondeos ni sombras, colores de la paleta, tipografías del manual). */
+body.marca.puente {
+  --bg: var(--r-bg); --surface: var(--r-sup); --surface-3: var(--r-bg);
+  --surface-2: color-mix(in srgb, var(--r-panel) 45%, var(--r-sup));
+  --border: var(--r-li); --border-2: color-mix(in srgb, var(--r-tx) 28%, transparent);
+  --text: var(--r-tx); --text-2: color-mix(in srgb, var(--r-tx) 82%, var(--r-bg)); --muted: var(--r-mu);
+  --structure: var(--r-tx);
+  --accent: var(--r-tx); --accent-press: var(--r-tx); --on-accent: var(--r-bg);
+  --accent-tint: color-mix(in srgb, var(--acido) 40%, transparent); --accent-glow: transparent;
+  --hot: var(--rojo);
+  --radius: 0; --radius-sm: 0; --radius-lg: 0;
+  --font-ui: var(--sans);
+  --shadow-card: none; --shadow: none; --shadow-lg: none; --value-glow: none;
+}
+body.marca.puente #app-content h1, body.marca.puente #app-content h2, body.marca.puente #app-content h3 { font-family: var(--sora); font-weight: 400; letter-spacing: -.01em; }
+body.marca.puente .card, body.marca.puente .kpi, body.marca.puente .table-wrap { border-color: transparent; }
+body.marca.puente .kpi .v, body.marca.puente .kpi .num { font-family: var(--sora); font-weight: 400; }
+body.marca.puente .kpi:hover { transform: none; }
+body.marca.puente .kpi::after { background: var(--acido); }
+body.marca.puente .btn { border-radius: 0; font-family: var(--sora); font-weight: 400; }
+body.marca.puente .btn.primary { background: var(--acido); color: var(--azul); box-shadow: none; }
+body.marca.puente .btn.primary:hover { background: color-mix(in srgb, var(--acido) 82%, var(--azul)); transform: none; box-shadow: none; }
+body.marca.puente .badge, body.marca.puente .pill, body.marca.puente .chip { border-radius: 0; font-family: var(--sora); font-weight: 500; }
+body.marca.puente .input, body.marca.puente input, body.marca.puente select, body.marca.puente textarea { border-radius: 0; }
+body.marca.puente .input:focus { box-shadow: none; border-color: var(--r-tx); }
+body.marca.puente table.tbl th { font-family: var(--sora); font-weight: 500; letter-spacing: .08em; }
+
 @keyframes m-entra { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @media (max-width: 680px) { .titular { font-size: 25px; } .m-pestanas { gap: 20px; } }
 @media (prefers-reduced-motion: reduce) { body.marca *, body.marca *::before, body.marca *::after { animation: none !important; transition: none !important; } }
