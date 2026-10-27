@@ -1,0 +1,136 @@
+/* ════════════════════════════════════════════════════════════════════════
+   Ficha técnica imprimible · sistema visual del Manual de Marca, edición 21
+   Es el mismo diseño que se aprobó el 27/10/2026 para las fichas en PDF.
+
+   Reglas del manual que esta hoja respeta y NO hay que romper:
+   · Sora solo en Regular 400 y Medium 500 ("evitar titulares pesados por
+     defecto"): nunca 600 ni 700. El eje se fija con font-variation-settings
+     porque si no Chrome instancia la variable en SemiBold.
+   · Bitter Italic 400: una sola palabra por pieza, al mismo cuerpo que Sora
+     e interlínea 1,08, sin margen propio entre las dos líneas del titular.
+   · Source Sans 3 para textos, fichas y tablas.
+   · Paleta cerrada: #34495E azul · #F7F5F2 blanco roto · #EAF46B ácido
+     · #F93549 rojo · #DDE4E8 niebla. Nada fuera de esta lista.
+   · Los titulares no se justifican ni se cortan con guiones; el cuerpo sí va
+     justificado, que es como salen los PDF de Rosaint a terceros.
+
+   La hoja vive fuera de la pantalla (no en display:none) para poder medirla
+   antes de imprimir y ajustar la escala: ver ajustarHoja() en ver.html.
+   ════════════════════════════════════════════════════════════════════════ */
+
+#hoja {
+  position: fixed; left: -99999px; top: 0;
+  width: 182mm;                 /* A4 menos los márgenes laterales de 14 mm */
+  background: #fff; color: #34495E;
+  font-family: 'Source Sans 3', system-ui, sans-serif; font-weight: 400;
+  font-size: 9.2pt; line-height: 1.46; text-align: justify;
+  hyphens: auto; -webkit-hyphens: auto;
+}
+
+/* La hoja ocupa el alto útil del A4 (297 menos los dos márgenes de 11 mm),
+   así el pie cae siempre en el mismo lugar, haya mucho o poco texto.
+   --ajuste lo escribe ajustarHoja(): el zoom encoge también la hoja, por eso
+   la altura se divide por el mismo factor. */
+#hoja .hoja {
+  position: relative;
+  min-height: calc(275mm / var(--ajuste, 1));
+  padding-bottom: 26pt;
+}
+
+#hoja * { box-sizing: border-box; }
+
+/* ---- cabecera ---- */
+#hoja .cab {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  border-bottom: .8pt solid #DDE4E8; padding-bottom: 6pt; margin-bottom: 11pt;
+}
+#hoja .firma { width: 108pt; height: auto; display: block; }
+#hoja .cab .der { text-align: right; font-size: 7.4pt; line-height: 1.46; color: #6C777E; }
+#hoja .cab .der b {
+  display: block; font-family: 'Sora'; font-weight: 500; font-variation-settings: "wght" 500;
+  font-size: 8pt; color: #34495E; letter-spacing: .04em;
+}
+
+/* ---- titular: dos voces, un solo bloque ---- */
+#hoja .tit { margin: 0 0 4pt; font-size: 22pt; line-height: 1.08; text-align: left; hyphens: none; }
+#hoja .tit span { display: block; }
+#hoja .tit .cursiva { font-family: 'Bitter'; font-style: italic; font-weight: 400; }
+#hoja .tit .firme {
+  font-family: 'Sora'; font-weight: 500; font-variation-settings: "wght" 500; letter-spacing: -.015em;
+}
+#hoja .bajada { font-size: 9.2pt; color: #6C777E; margin: 0 0 7pt; text-align: left; hyphens: none; }
+#hoja .regla { height: 2pt; background: #F93549; width: 100%; margin-bottom: 0; }
+
+/* ---- secciones ---- */
+#hoja h2 {
+  font-family: 'Sora'; font-weight: 500; font-variation-settings: "wght" 500;
+  font-size: 7.3pt; text-transform: uppercase; letter-spacing: .12em; color: #34495E;
+  margin: 9pt 0 3pt; text-align: left; hyphens: none;
+  break-after: avoid; page-break-after: avoid;
+}
+#hoja p { margin: 0 0 4pt; }
+#hoja ul { list-style: none; margin: 0 0 4pt; padding: 0; }
+#hoja ul li { position: relative; padding-left: 11pt; margin-bottom: 2pt; }
+#hoja ul li::before {
+  content: ""; position: absolute; left: 1pt; top: 4.4pt; width: 3.2pt; height: 3.2pt;
+  background: #34495E; transform: rotate(45deg);
+}
+
+/* ---- presentaciones: pares cortos en una línea, con el rótulo adentro ---- */
+#hoja .pres {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2pt 18pt;
+  margin-top: 9pt; padding-bottom: 4pt; border-bottom: .5pt solid #DDE4E8;
+}
+#hoja .pres span { white-space: nowrap; }
+#hoja .pres b { font-weight: 600; font-variation-settings: "wght" 600; }
+#hoja .pres .rotulo {
+  font-family: 'Sora'; font-weight: 500; font-variation-settings: "wght" 500;
+  font-size: 7.3pt; text-transform: uppercase; letter-spacing: .12em; color: #34495E; margin-right: 2pt;
+}
+
+/* ---- características: rótulo y valor a todo el ancho, así ninguno parte en dos ---- */
+#hoja .fq { width: 100%; border-collapse: collapse; }
+#hoja .fq td { padding: 3pt 0; border-bottom: .5pt solid #DDE4E8; vertical-align: baseline; }
+#hoja .fq tr:last-child td { border-bottom: none; }
+#hoja .fq td.k {
+  width: 22%; font-family: 'Sora'; font-weight: 400; font-variation-settings: "wght" 400;
+  font-size: 7.2pt; text-transform: uppercase; letter-spacing: .06em; color: #6C777E;
+}
+#hoja .muestra {
+  display: inline-block; width: 16pt; height: 9.5pt; border-radius: 1.5pt;
+  border: .5pt solid #DDE4E8; margin-right: 6pt; vertical-align: -1pt;
+}
+
+/* ---- paneles ---- */
+#hoja .inci {
+  background: #F7F5F2; border-left: 2.5pt solid #EAF46B; padding: 6pt 9pt;
+  font-size: 8.8pt; line-height: 1.46;
+}
+#hoja .aviso {
+  background: #F7F5F2; border-left: 2.5pt solid #F93549; padding: 6pt 9pt; margin-top: 4pt;
+}
+#hoja .dos { display: flex; gap: 16pt; align-items: flex-start; }
+#hoja .dos > div { flex: 1; min-width: 0; }
+
+#hoja footer {
+  position: absolute; left: 0; right: 0; bottom: 0; padding-top: 5pt;
+  border-top: .8pt solid #DDE4E8; font-size: 6.9pt; color: #6C777E;
+  display: flex; justify-content: space-between;
+}
+
+#hoja table, #hoja .pres, #hoja .inci, #hoja .aviso, #hoja .dos, #hoja footer, #hoja ul li, #hoja tr {
+  break-inside: avoid; page-break-inside: avoid;
+}
+
+#hoja .sello {
+  position: fixed; top: 46%; left: 50%; transform: translate(-50%,-50%) rotate(-26deg);
+  font-family: 'Sora'; font-weight: 500; font-variation-settings: "wght" 500;
+  font-size: 62pt; color: rgba(249,53,73,.055); letter-spacing: .12em; z-index: -1;
+}
+
+@media print {
+  @page { size: A4; margin: 11mm 14mm; }
+  body { background: #fff !important; }
+  body > *:not(#hoja) { display: none !important; }
+  #hoja { position: static; left: auto; width: auto; }
+}

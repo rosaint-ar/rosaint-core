@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
   <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
   <link rel="stylesheet" href="fichas.css">
+  <link rel="stylesheet" href="hoja.css?v=202610271">
 </head>
 <body class="marca puente" data-page="fichas" data-title="Ficha técnica" data-subtitle="Contenido, INCI, datos técnicos y rótulo del producto">
 
@@ -178,7 +179,7 @@ function renderCab() {
   $('#b-editar')?.addEventListener('click', () => { editando = true; render(); });
   $('#b-cancelar')?.addEventListener('click', () => { editando = false; render(); });
   $('#b-guardar')?.addEventListener('click', guardar);
-  $('#b-imprimir')?.addEventListener('click', () => window.print());
+  $('#b-imprimir')?.addEventListener('click', imprimirHoja);
   $('#b-tienda')?.addEventListener('click', () => copiar(htmlTienda(),
     F.estado === 'aprobada'
       ? 'HTML copiado: pegalo en la descripción del producto en Tienda Nube.'
@@ -475,34 +476,112 @@ async function copiar(texto, mensaje) {
   FX.toast(mensaje, 'ok');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Hoja imprimible · sistema visual del Manual de Marca (edición 21).
+// El diseño y sus reglas están explicados en hoja.css. Lo que se imprime es
+// SIEMPRE esta hoja: el resto de la pantalla se oculta en @media print.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// "Gel Criógeno «Efecto Intenso» 250 g" -> "250 g". Si no reconoce la unidad,
+// deja el nombre entero antes que inventar.
+const contenidoSku = s => (String(s).match(/(\d+(?:[.,]\d+)?\s*(?:kg|g|ml|cc|lts|lt|l)\b)\s*$/i) || [, s])[1];
+
+// El titular son dos voces del mismo cuerpo: la categoría en Bitter cursiva y
+// lo que distingue al producto en Sora. Una sola cursiva por pieza (manual).
+function partirTitulo(nombre) {
+  const m = String(nombre).match(/^(Gel|Crema base|Crema|Aceite para masajes|Aceite|Óleo|Oleo|Solución)\s+(.*)$/i);
+  return m ? { cursiva: m[1], firme: m[2] } : { cursiva: '', firme: nombre };
+}
+
 function renderHoja() {
-  const sec = (t, cuerpo) => cuerpo ? `<section class="h-sec"><h2>${t}</h2>${cuerpo}</section>` : '';
   const lista = a => (Array.isArray(a) && a.length) ? `<ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
   const texto = t => t ? t.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') : '';
-  const datos = datosTecnicos().filter(([l]) => l !== 'Vida útil');
-  const tabla = datos.length ? `<table class="h-tabla">${datos.map(([l, v]) => `<tr><th>${l}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : '';
-  const conservacion = [F.conservacion, F.vida_util_meses != null ? `Vida útil: ${F.vida_util_meses} meses en su envase original cerrado.` : '']
-    .filter(Boolean).join('\n\n');
+  const sec = (t, cuerpo) => cuerpo ? `<h2>${t}</h2>${cuerpo}` : '';
+
+  const t = partirTitulo(nombreProducto());
+  const muestra = F.color_hex ? `<span class="muestra" style="background:${esc(F.color_hex)}"></span>` : '';
+  const fq = [
+    ['Aspecto', esc(F.aspecto)],
+    ['Color', F.color ? muestra + esc(F.color) : null],
+    ['Olor', esc(F.olor)],
+    ['Vida útil', F.vida_util_meses != null ? `${F.vida_util_meses} meses` : null],
+  ].filter(([, v]) => v);
+
+  const pres = PRES.map(p => {
+    const nom = NOMBRES_IT[p.codigo_sku] || p.descripcion_comercial || p.codigo_sku;
+    return `<span><b>${esc(p.codigo_sku)}</b> · ${esc(contenidoSku(nom))}</span>`;
+  }).join('');
+
+  // Los índices de color no se parten entre renglones.
+  const inci = EST?.inci_declarado
+    ? esc(EST.inci_declarado).replace(/\bCI\s+(\d)/g, 'CI\u00A0$1').replace(/\.?$/, '.')
+    : '';
+
+  const marca = F.estado !== 'aprobada' ? 'BORRADOR'
+    : EST?.inci_desactualizado ? 'DESACTUALIZADA' : '';
 
   $('#hoja').innerHTML = `
-    ${F.estado !== 'aprobada' ? '<div class="h-borrador">BORRADOR</div>' : EST?.inci_desactualizado ? '<div class="h-borrador">DESACTUALIZADA — la fórmula cambió después de aprobar</div>' : ''}
-    <header class="h-cab">
-      <div class="h-marca"><img src="../shell/logo.svg" alt=""><div><b>ROSAINT</b><span>Cosmética profesional</span></div></div>
-      <div class="h-doc"><b>Ficha técnica</b><span>${esc(F.revision || 'Sin aprobar')}</span><span>${new Date().toLocaleDateString('es-AR')}</span></div>
-    </header>
-    <div class="h-titulo"><h1>${esc(nombreProducto())}</h1><p>Código ${esc(COD)}</p></div>
-    ${sec('Descripción', texto(F.descripcion))}
-    ${sec('Características destacadas', lista(F.caracteristicas))}
-    ${sec('Beneficios', lista(F.beneficios))}
-    ${sec('Aplicaciones', lista(F.aplicaciones))}
-    ${sec('Principios activos', lista(F.principios_activos))}
-    ${sec('Modo de uso', texto(F.modo_uso))}
-    ${sec('Especificaciones', tabla)}
-    ${sec('Conservación', texto(conservacion))}
-    ${sec('Precauciones', texto([F.precauciones, F.advertencias].filter(Boolean).join('\n\n')))}
-    ${sec('Ingredientes (INCI)', EST?.inci_declarado ? `<p class="h-inci">${esc(EST.inci_declarado)}.</p>` : '')}
-    ${sec('Presentaciones', PRES.length ? `<p>${PRES.map(p => esc(NOMBRES_IT[p.codigo_sku] || p.codigo_sku)).join(' · ')}</p>` : '')}
-    <footer class="h-pie"><span>Rosaint · rosaint.online</span><span>${esc(COD)} · ${esc(F.revision || 'borrador')}</span></footer>`;
+${marca ? `<div class="sello">${marca}</div>` : ''}
+<div class="hoja">
+
+<div class="cab">
+  <img class="firma" src="../shared/marca/logo-h-azul.svg" alt="Rosaint">
+  <div class="der"><b>Ficha técnica</b>Código ${esc(COD)} · Revisión ${esc(F.revision || 'sin aprobar')}<br>${new Date().toLocaleDateString('es-AR')}</div>
+</div>
+
+<div class="tit">
+  ${t.cursiva ? `<span class="cursiva">${esc(t.cursiva)}</span>` : ''}
+  <span class="firme">${esc(t.firme)}</span>
+</div>
+${F.denominacion_rotulo ? `<p class="bajada">${esc(F.denominacion_rotulo)}</p>` : ''}
+<div class="regla"></div>
+
+${sec('Descripción', texto(F.descripcion))}
+
+${pres ? `<div class="pres"><span class="rotulo">Presentaciones</span>${pres}</div>` : ''}
+
+${fq.length ? `<h2>Características fisicoquímicas y organolépticas</h2>
+<table class="fq">${fq.map(([k, v]) => `<tr><td class="k">${k}</td><td>${v}</td></tr>`).join('')}</table>` : ''}
+
+${inci ? `<h2>Composición · Nomenclatura INCI</h2><div class="inci">${inci}</div>` : ''}
+
+${(F.aplicaciones?.length || F.caracteristicas?.length) ? `<div class="dos">
+  <div>${sec('Aplicaciones', lista(F.aplicaciones))}</div>
+  <div>${sec('Características', lista(F.caracteristicas))}</div>
+</div>` : ''}
+
+${sec('Principios activos', lista(F.principios_activos))}
+${sec('Modo de uso', texto(F.modo_uso))}
+${sec('Conservación', texto(F.conservacion))}
+${sec('Precauciones y advertencias', texto(F.precauciones))}
+${F.advertencias ? `<div class="aviso">${esc(F.advertencias)}</div>` : ''}
+
+<footer>
+  <span>Cosmética profesional · © ROSAINT ${new Date().getFullYear()}</span>
+  <span>rosaint.online${F.estado !== 'aprobada' ? ' · documento en borrador' : ''}</span>
+</footer>
+
+</div>`;
+}
+
+// Una ficha, una hoja: si el contenido no entra en el alto útil del A4 se
+// achica lo justo (nunca por debajo de 0,88; de ahí para abajo que corte).
+function ajustarHoja() {
+  const h = $('#hoja'), caja = h?.querySelector('.hoja');
+  if (!caja) return;
+  h.style.removeProperty('zoom');
+  caja.style.setProperty('--ajuste', 1);
+  const utilPx = 275 / 25.4 * 96;              // alto útil del A4 en píxeles CSS
+  const alto = caja.scrollHeight;
+  const factor = alto > utilPx ? Math.max(0.88, Math.floor(utilPx / alto * 100) / 100) : 1;
+  h.style.zoom = factor;
+  caja.style.setProperty('--ajuste', factor);
+}
+
+function imprimirHoja() {
+  renderHoja();
+  ajustarHoja();
+  window.print();
 }
 
 cargar();
