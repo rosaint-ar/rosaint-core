@@ -84,6 +84,8 @@
     .wa-tpl div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--r-li); }
     .wa-tpl span.st { font: 500 10.5px var(--sora); letter-spacing: .08em; }
     .st-REJECTED { color: var(--rojo); }
+    .wa-badge.compro { background: var(--k-pedido); color: var(--papel); }
+    .wa-prev { background: var(--r-bg); padding: 10px 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; border-left: 3px solid #25D366; }
     @media (max-width: 680px) {
       .wa-item { grid-template-columns: 1fr; gap: 10px; }
       .wa-lado { flex-direction: row; align-items: center; justify-content: space-between; }
@@ -112,6 +114,7 @@
     <button class="m-pest on" data-tab="pendientes" onclick="setTab('pendientes')">Sin responder<span class="c" id="t-pend"></span></button>
     <button class="m-pest" data-tab="seguimientos" onclick="setTab('seguimientos')">Seguimientos<span class="c" id="t-seg"></span></button>
     <button class="m-pest" data-tab="chats" onclick="setTab('chats')">Chats</button>
+    <button class="m-pest" data-tab="carritos" onclick="setTab('carritos')">Carritos<span class="c" id="t-car"></span></button>
     <button class="m-pest" data-tab="conector" onclick="setTab('conector')">Conector</button>
   </nav>
 
@@ -132,6 +135,13 @@
   <section id="tab-chats" hidden>
     <input class="m-campo wa-buscar" id="chat-buscar" placeholder="Buscar por nombre o teléfono…" oninput="pintarChats()" autocomplete="off">
     <div class="wa-lista" id="chat-lista"><div class="m-vacio">Cargando…</div></div>
+  </section>
+
+  <!-- ===================== CARRITOS ===================== -->
+  <section id="tab-carritos" hidden>
+    <p class="wa-intro">Carritos que quedaron sin pagar en la tienda (últimos 15 días). Los que después compraron pasan solos a «Compraron». El recordatorio sale desde el número de Rosaint, una sola vez por carrito, y si contesta el chat aparece en «Sin responder». Cada mensaje cuesta unos US$ 0,06.</p>
+    <div class="wa-res" id="car-plantilla"></div>
+    <div class="wa-lista" id="car-lista"><div class="m-vacio">Cargando…</div></div>
   </section>
 
   <!-- ===================== CONECTOR ===================== -->
@@ -210,10 +220,11 @@ let filtroCat = null;
 
 function setTab(t){
   document.querySelectorAll('.m-pest').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  for (const s of ['pendientes', 'seguimientos', 'chats', 'conector']) document.getElementById('tab-' + s).hidden = t !== s;
+  for (const s of ['pendientes', 'seguimientos', 'chats', 'carritos', 'conector']) document.getElementById('tab-' + s).hidden = t !== s;
   if (t === 'conector') { estado(); estadoSuscripcion(); }
   if (t === 'chats') cargarChats();
   if (t === 'seguimientos') cargarSeguimientos();
+  if (t === 'carritos') cargarCarritos();
   history.replaceState(null, '', '#' + t);
 }
 
@@ -498,6 +509,77 @@ async function refrescarTodo(){
   if (!document.getElementById('tab-chats').hidden) await cargarChats();
 }
 
+// ---------------- Carritos abandonados de Tienda Nube: un recordatorio por WhatsApp, a mano, de a uno
+let CARR = [], CAR_TEXTO = '', CAR_PLANTILLA = '';
+const PLANTILLA_EST = { APPROVED: '', PENDING: 'Meta está revisando el mensaje (suele tardar de minutos a un día). El botón se habilita cuando lo apruebe.', REJECTED: 'Meta rechazó el mensaje: hay que reescribirlo.', no_creada: 'El mensaje todavía no fue enviado a Meta para aprobar.' };
+async function cargarCarritos(){
+  const lista = document.getElementById('car-lista');
+  if (!CARR.length) lista.innerHTML = '<div class="m-vacio">Consultando la tienda…</div>';
+  let r;
+  try { r = await api({ accion: 'carritos' }); if (!r.ok) throw new Error(r.error); }
+  catch (e) { lista.innerHTML = '<div class="m-vacio">No se pudo consultar: ' + esc(e.message) + '</div>'; return; }
+  CARR = r.carritos || []; CAR_TEXTO = r.texto || ''; CAR_PLANTILLA = r.plantilla;
+  const aviso = PLANTILLA_EST[CAR_PLANTILLA] ?? ('Estado del mensaje en Meta: ' + CAR_PLANTILLA);
+  const pl = document.getElementById('car-plantilla');
+  pl.className = 'wa-res' + (aviso ? ' ok' : ''); pl.textContent = aviso;
+  const pendientes = CARR.filter(c => !c.compro && !c.enviado);
+  document.getElementById('t-car').textContent = pendientes.length || '';
+  if (!CARR.length) { lista.innerHTML = '<div class="m-vacio">No hay carritos abandonados en los últimos 15 días.</div>'; return; }
+  const grupos = [['Para recordar', pendientes, 'var(--acido)'], ['Ya recordados', CARR.filter(c => !c.compro && c.enviado), 'var(--r-li)'], ['Compraron', CARR.filter(c => c.compro), 'var(--k-pedido)']];
+  lista.innerHTML = grupos.filter(g => g[1].length).map(([titulo, filas, k]) =>
+    `<div class="wa-grupo">${titulo} · ${filas.length}</div>` + filas.map((c, i) => {
+      const h = (Date.now() - new Date(c.creado).getTime()) / 36e5;
+      const prods = c.productos.map(p => (p.cantidad > 1 ? p.cantidad + ' × ' : '') + p.nombre).join(' · ');
+      const estado = c.compro ? `<span class="wa-badge compro">Compró${c.compro === true ? '' : ' · #' + esc(c.compro)}</span>`
+        : c.enviado ? `<span class="wa-badge">Recordado hace ${hace((Date.now() - new Date(c.enviado.cuando).getTime()) / 36e5)}</span>` : '';
+      const puede = !c.compro && !c.enviado;
+      const wa = 'https://api.whatsapp.com/send?phone=' + encodeURIComponent(c.telefono);
+      return `<div class="wa-item" style="--k:${k};animation-delay:${Math.min(i * .03, .4)}s" data-car="${c.id}">
+        <div class="wa-cuerpo">
+          <div class="wa-l1"><span class="wa-nombre" title="${esc(telLindo(c.telefono) + ' · ' + c.email)}">${esc(c.nombre || telLindo(c.telefono))}</span><span class="wa-cuando">lo dejó hace ${hace(h)}</span>${estado}${c.acepta_marketing ? '' : '<span class="wa-badge" title="No aceptó recibir novedades">Sin permiso</span>'}</div>
+          <div class="wa-resumen">$ ${Math.round(c.total).toLocaleString('es-AR')} · ${esc(prods)}</div>
+        </div>
+        <div class="wa-lado">
+          ${puede ? `<button class="rb si" onclick="formCarrito(this, ${c.id})">Enviar recordatorio</button>` : `<a class="rb linea" href="${wa}" target="_blank" rel="noopener">Abrir chat</a>`}
+          <div class="wa-links">
+            <a href="${esc(c.url)}" target="_blank" rel="noopener">Ver carrito</a>
+            ${puede ? `<a href="${wa}" target="_blank" rel="noopener">Escribirle yo</a>` : ''}
+            <button onclick="verHilo(this, '${esc(c.telefono)}')">Conversación</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')).join('');
+}
+// Muestra el mensaje tal cual le va a llegar; el nombre y los productos se pueden retocar antes de mandar
+function formCarrito(btn, id){
+  const it = btn.closest('.wa-item');
+  const abierto = it.querySelector('.wa-form');
+  document.querySelectorAll('.wa-form').forEach(f => f.remove());
+  if (abierto) return;
+  const c = CARR.find(x => x.id === id);
+  const f = document.createElement('div'); f.className = 'wa-form';
+  f.innerHTML = `<div class="fila"><input class="m-campo" maxlength="40" value="${esc(c.primer_nombre)}" placeholder="Nombre">
+      <input class="m-campo" maxlength="120" value="${esc(c.productos_texto)}" placeholder="Productos" style="flex:3"></div>
+    <div class="wa-prev"></div>
+    <div class="fila" style="align-items:center"><button type="button" class="rb si">Enviar por WhatsApp</button><span class="wa-cuando"></span></div>`;
+  const [n, p] = f.querySelectorAll('.m-campo');
+  const prev = f.querySelector('.wa-prev'), btnE = f.querySelector('.rb.si'), info = f.querySelector('.fila:last-child .wa-cuando');
+  const pintar = () => { prev.textContent = CAR_TEXTO.replace('{{1}}', n.value.trim()).replace('{{2}}', p.value.trim()).replace('{{3}}', c.url); };
+  n.oninput = p.oninput = pintar; pintar();
+  if (CAR_PLANTILLA !== 'APPROVED') { btnE.disabled = true; info.textContent = 'Se habilita cuando Meta apruebe el mensaje.'; }
+  btnE.onclick = async () => {
+    if (!n.value.trim() || !p.value.trim()) return;
+    btnE.disabled = true; info.textContent = 'Enviando…';
+    const { data: u } = await sb.auth.getUser();
+    try {
+      const r = await api({ accion: 'carrito_enviar', checkout_id: id, nombre: n.value.trim(), productos: p.value.trim(), usuario: u && u.user ? u.user.email : null });
+      if (!r.ok) throw new Error(r.error);
+      f.remove(); cargarCarritos();
+    } catch (e) { info.textContent = 'No se pudo enviar: ' + e.message; btnE.disabled = false; }
+  };
+  it.appendChild(f);
+}
+
 // ---------------- Conector
 async function estado(){
   const n = document.getElementById('c-numero');
@@ -582,7 +664,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
   await cargarSeguimientos();
   await cargarPendientes();
   const t = location.hash.slice(1);
-  if (['seguimientos', 'chats', 'conector'].includes(t)) setTab(t);
+  if (['seguimientos', 'chats', 'carritos', 'conector'].includes(t)) setTab(t);
 })();
 </script>
 </body>
