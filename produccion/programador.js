@@ -515,6 +515,16 @@
       })(),
       objetivo_dias: objetivoDias, objetivo_granel: objetivoGr,
     };
+    // Sin duplicar: si el granel es de los que se guardan (tabla de granel base), lo que necesitan sus
+    // productos se suma a ESA propuesta y el producto no propone una elaboración aparte. Los graneles
+    // finos (de a 2 kg) no están en esa tabla: su elaboración se ve solo en la fila del producto.
+    const extraGr = {};
+    for (const x of paraStock.productos) if (x.elaborar_kg > 0 && granelStock[x.granel]) { extraGr[x.granel] = (extraGr[x.granel] || 0) + x.elaborar_kg; x.granel_base = true; }
+    for (const g of paraStock.graneles) {
+      const extra = extraGr[g.c] || 0; if (!extra) continue;
+      const pendiente = Math.max(g.propuesta_kg - g.hoy_kg, Math.ceil(extra / g.lote - 1e-9) * g.lote);
+      g.propuesta_kg = r2(g.hoy_kg + pendiente); g.para_productos_kg = r2(extra);
+    }
 
     // ---------- 5) armado del resultado ----------
     const conNombre = (o) => ({ ...o, nombre: nombre[o.c] || o.c });

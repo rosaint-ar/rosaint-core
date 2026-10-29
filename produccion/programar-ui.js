@@ -9,6 +9,7 @@
   const S = { snap: null, snapCreado: null, cfg: null, parciales: [], clientes: [], postergados: [], pres: [], subg: [], dia: [], entregas: [], hoja: [], plan: null };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const r2 = (x) => Math.round(x * 100) / 100;
   const fmt = (n, d = 1) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: d });
   const fCorta = (f) => f ? String(f).slice(0, 10).split('-').reverse().slice(0, 2).join('/') : '—';
   const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -403,22 +404,23 @@
     const tend = (t) => t === 'sube' ? '<span class="tend sube" title="Las últimas 4 semanas se vendió más que el promedio">↑ sube</span>' : t === 'baja' ? '<span class="tend baja" title="Las últimas 4 semanas se vendió menos que el promedio">↓ baja</span>' : '';
     const alcanza = (d) => d == null ? '—' : d <= 0 ? '<b class="urg">0 días</b>' : d < 1 ? '<b class="urg">menos de 1 día</b>' : d < 2 ? `<b class="urg">${fmt(d)} días</b>` : `${fmt(d)} días`;
     const cada = (x) => x.cada ? `cada ${fmt(x.cada, 0)} días${x.ultima ? `<div class="muted">última ${fCorta(x.ultima)}</div>` : ''}` : (x.ultima ? `última ${fCorta(x.ultima)}` : 'sin historial');
-    const boton = (tipo, c, n, q, unidad) => { const ya = enDia(tipo, c); return q > 0 ? `<span class="acc"><button data-acc="sumarstock" data-tipo="${tipo}" data-cod="${esc(c)}" data-nom="${esc(n)}" data-q="${q}">${ya ? 'Sumar' : 'Agregar'} ${fmt(q)} ${unidad}</button></span>` : ''; };
+    // granel: el botón deja la elaboración del día en la propuesta (si ya hay algo en el plan, completa la diferencia)
+    const botonGr = (g) => { const ya = enDia('elaborar', g.c), falta = r2(g.propuesta_kg - (ya ? ya.cantidad : 0)); return falta > 0 ? `<span class="acc"><button data-acc="granelhasta" data-cod="${esc(g.c)}" data-nom="${esc(g.nombre)}" data-hasta="${g.propuesta_kg}">${ya ? 'Completar' : 'Agregar'} ${fmt(falta)} kg</button></span>` : (ya ? '<span class="ok">en el plan de hoy</span>' : ''); };
     // producto: si el granel no alcanza, el botón suma también la elaboración (nunca fraccionar sin granel)
-    const botonProd = (x) => { const q = x.propuesta - x.hoy; return `<span class="acc"><button data-acc="sumarstock" data-tipo="fraccionar" data-cod="${esc(x.c)}" data-nom="${esc(x.nombre)}" data-q="${q}"${x.elaborar_kg > 0 ? ` data-gr="${esc(x.granel)}" data-grnom="${esc(x.granel_nombre)}" data-grkg="${x.elaborar_kg}"` : ''}>${enDia('fraccionar', x.c) ? 'Sumar' : 'Agregar'} ${fmt(q)} u${x.elaborar_kg > 0 ? ` + elaborar ${fmt(x.elaborar_kg, 2)} kg` : ''}</button></span>`; };
+    const botonProd = (x) => { const q = x.propuesta - x.hoy; return `<span class="acc"><button data-acc="sumarstock" data-tipo="fraccionar" data-cod="${esc(x.c)}" data-nom="${esc(x.nombre)}" data-q="${q}" data-gr="${esc(x.granel)}" data-grnom="${esc(x.granel_nombre)}" data-lote="${x.lote_granel}" title="Si con lo que ya está en el plan no alcanza el granel, también suma lo que falta elaborar (en el lote de siempre)">${enDia('fraccionar', x.c) ? 'Sumar' : 'Agregar'} ${fmt(q)} u${x.elaborar_kg > 0 ? ' + el granel que falte' : ''}</button></span>`; };
     const gr = ps.graneles;
     const grHtml = gr.length ? `<table class="pg-tabla"><thead><tr><th>Granel</th><th class="num">Se usa por semana</th><th class="num">Libre</th><th class="num">Para pedidos</th><th>Alcanza</th><th>Se hace</th><th class="num">Lote</th><th>Propuesta</th><th></th></tr></thead><tbody>
       ${gr.map((g) => `<tr class="${g.propuesta_kg > 0 ? '' : 'dim'}"><td><span class="cod">${esc(g.c)}</span> ${esc(g.nombre)}${g.dia_anterior ? '<div class="muted">se prepara el día anterior</div>' : ''}</td>
         <td class="num">${fmt(g.por_semana)} kg ${tend(g.tendencia)}</td><td class="num">${fmt(g.libre)} kg</td><td class="num">${g.comprometido ? fmt(g.comprometido) + ' kg' : '—'}</td>
         <td class="nw">${alcanza(g.cobertura_dias)}${g.se_agota && g.cobertura_dias < 20 ? `<div class="muted">hasta el ${fCorta(g.se_agota)}</div>` : ''}</td><td class="nw muted">${cada(g)}</td><td class="num">${fmt(g.lote)} kg</td>
-        <td>${g.propuesta_kg > 0 ? `<b>${fmt(g.propuesta_kg)} kg</b>${g.hoy_kg ? `<div class="ok">${fmt(g.hoy_kg)} kg ya en el plan de hoy</div>` : g.motivo ? `<div class="muted">${esc(g.motivo)}</div>` : ''}` : '<span class="muted">alcanza</span>'}</td>
-        <td>${g.propuesta_kg > g.hoy_kg ? boton('elaborar', g.c, g.nombre, g.propuesta_kg - g.hoy_kg, 'kg') : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Sin datos de granel.</div>';
+        <td>${g.propuesta_kg > 0 ? `<b>${fmt(g.propuesta_kg)} kg</b>${g.para_productos_kg ? `<div class="muted">incluye lo que piden los productos de abajo</div>` : ''}${g.hoy_kg ? `<div class="ok">${fmt(g.hoy_kg)} kg ya en el plan de hoy</div>` : g.motivo ? `<div class="muted">${esc(g.motivo)}</div>` : ''}` : '<span class="muted">alcanza</span>'}</td>
+        <td>${g.propuesta_kg > 0 ? botonGr(g) : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Sin datos de granel.</div>';
     const pr = ps.productos;
     const prHtml = pr.length ? `<table class="pg-tabla"><thead><tr><th>Producto</th><th class="num">Se vende por semana</th><th class="num">Stock libre</th><th>Alcanza</th><th>Se fracciona</th><th>Propuesta</th><th></th></tr></thead><tbody>
       ${pr.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> ${esc(x.nombre)}</td><td class="num">${fmt(x.por_semana)} u ${tend(x.tendencia)}</td>
         <td class="num">${fmt(Math.max(0, x.stock_libre), 0)} u${x.stock_libre < 0 ? `<div class="muted">faltan ${fmt(-x.stock_libre, 0)} para pedidos</div>` : ''}</td>
         <td class="nw">${alcanza(x.cobertura_dias)}${x.se_agota && x.cobertura_dias >= 1 && x.cobertura_dias < 20 ? `<div class="muted">hasta el ${fCorta(x.se_agota)}</div>` : ''}</td><td class="nw muted">${x.tanda > 1 ? `de a ${fmt(x.tanda, 0)}, ` : ''}${cada(x)}</td>
-        <td><b>${fmt(x.propuesta, 0)} u</b>${x.hoy ? `<div class="ok">${fmt(x.hoy, 0)} ya en el plan de hoy</div>` : ''}${x.elaborar_kg > 0 ? `<div class="urg" style="font-size:12px">antes elaborar ${fmt(x.elaborar_kg, 2)} kg de ${esc(x.granel_nombre)}</div><div class="muted">con el granel que hay salen ${fmt(x.alcanza_con_granel, 0)} u</div>` : ''}</td>
+        <td><b>${fmt(x.propuesta, 0)} u</b>${x.hoy ? `<div class="ok">${fmt(x.hoy, 0)} ya en el plan de hoy</div>` : ''}${x.elaborar_kg > 0 ? (x.granel_base ? `<div class="muted">granel: en la propuesta de arriba · con lo que hay salen ${fmt(x.alcanza_con_granel, 0)} u</div>` : `<div class="urg" style="font-size:12px">antes elaborar ${fmt(x.elaborar_kg, 2)} kg de ${esc(x.granel_nombre)}</div><div class="muted">con el granel que hay salen ${fmt(x.alcanza_con_granel, 0)} u</div>`) : ''}</td>
         <td>${x.propuesta > x.hoy ? botonProd(x) : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Todos los productos con rotación tienen stock para más de ' + ps.objetivo_dias + ' días.</div>';
     $('tab-stock').innerHTML = `
       <div class="pg-nota">Lo que conviene fabricar <b>para stock</b>, de lo más urgente a lo menos, <b>entre o no entre hoy</b>. Sigue el ritmo: el consumo mezcla las últimas 4 semanas (pesan más) con los últimos 4 meses, sin contar los pedidos grandes, que ya figuran en "para pedidos". Las cantidades van en el <b>lote o la tanda de siempre</b> (lo aprende de Odoo). Cuando hay pocos pedidos, el plan de Hoy se completa solo con esto; con <b>Agregar</b> lo sumás a mano.</div>
@@ -616,9 +618,23 @@
       const tipo = t.dataset.tipo, c = t.dataset.cod, q = Number(t.dataset.q);
       const ya = filasDelDia().find((x) => x.tipo === tipo && x.codigo === c);
       t.disabled = true;
-      // primero el granel que hace falta (si no alcanza el que hay), después las unidades
-      if (t.dataset.gr) { const yg = filasDelDia().find((x) => x.tipo === 'elaborar' && x.codigo === t.dataset.gr); try { await guardarCantidad('elaborar', t.dataset.gr, t.dataset.grnom, (yg ? yg.cantidad : 0) + Number(t.dataset.grkg), yg ? yg.sugerido : null, !yg || yg.agregado); } catch (e) { t.disabled = false; return; } }
-      try { await guardarCantidad(tipo, c, t.dataset.nom, (ya ? ya.cantidad : 0) + q, ya ? ya.sugerido : null, !ya || ya.agregado); msg(`Sumado al plan de hoy: ${t.dataset.nom}`); }
+      try { await guardarCantidad(tipo, c, t.dataset.nom, (ya ? ya.cantidad : 0) + q, ya ? ya.sugerido : null, !ya || ya.agregado); msg(`Sumado al plan de hoy: ${t.dataset.nom}`);
+        // con las unidades ya en el plan, el control de materiales dice si falta granel: se completa solo lo que falta
+        const fg = t.dataset.gr && (S.mat?.faltan || []).find((x) => x.granel && x.c === t.dataset.gr);
+        if (fg) {
+          const lote = Number(t.dataset.lote) || 1, kg = Math.ceil(fg.falta / lote - 1e-9) * lote;
+          const yg = filasDelDia().find((x) => x.tipo === 'elaborar' && x.codigo === fg.c);
+          await guardarCantidad('elaborar', fg.c, t.dataset.grnom, (yg ? yg.cantidad : 0) + kg, yg ? yg.sugerido : null, !yg || yg.agregado);
+          msg(`Sumado ${t.dataset.nom} y ${fmt(kg, 2)} kg de ${t.dataset.grnom} para elaborar`);
+        }
+      }
+      finally { t.disabled = false; }
+    }
+    else if (a === 'granelhasta') {
+      const yg = filasDelDia().find((x) => x.tipo === 'elaborar' && x.codigo === t.dataset.cod), hasta = Number(t.dataset.hasta);
+      if (yg && yg.cantidad >= hasta) return msg('Ya está en el plan de hoy');
+      t.disabled = true;
+      try { await guardarCantidad('elaborar', t.dataset.cod, t.dataset.nom, hasta, yg ? yg.sugerido : null, !yg || yg.agregado); msg(`${t.dataset.nom}: ${fmt(hasta)} kg en el plan de hoy`); }
       finally { t.disabled = false; }
     }
     else if (a === 'copiar') { await navigator.clipboard.writeText(textoLista()); msg('Lista copiada'); }
