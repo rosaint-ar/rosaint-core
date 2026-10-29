@@ -207,18 +207,19 @@
     const m = S.mat; if (!m) return '';
     // si algo no se pudo revisar (no está en el stock de Odoo o le falta la receta), no se afirma que alcance
     const sinVerificar = m.sin_stock_en_odoo.length + m.sin_receta.length > 0;
-    const fila = (x) => `<tr class="${x.falta ? 'falta' : ''}"><td class="cod">${esc(x.c)}</td><td><b>${esc(x.nombre)}</b></td><td class="num">${cantMat(x.necesita, x.uom)}</td><td class="num">${cantMat(x.hay, x.uom)}${x.usado_hoy > 0 ? `<div class="muted" style="font-size:11px">ya se usaron ${cantMat(x.usado_hoy, x.uom)} hoy, sin pasar a Odoo</div>` : ""}</td>
+    const fila = (x) => `<tr class="${x.falta ? 'falta' : ''}"><td class="cod">${esc(x.c)}</td><td><b>${esc(x.nombre)}</b></td><td class="num">${cantMat(x.necesita, x.uom)}</td><td class="num">${cantMat(x.hay, x.uom)}${x.se_elabora > 0 ? `<div class="muted" style="font-size:11px">contando ${cantMat(x.se_elabora, x.uom)} que se elaboran hoy</div>` : ''}${x.usado_hoy > 0 ? `<div class="muted" style="font-size:11px">ya se usaron ${cantMat(x.usado_hoy, x.uom)} hoy, sin pasar a Odoo</div>` : ""}</td>
       <td class="num">${x.falta ? `<b class="rojo">${cantMat(x.falta, x.uom)}</b>` : '✓'}</td><td class="muted">${x.para.map((c) => esc(nombreDe(c))).join(', ')}</td></tr>`;
     const cab = '<thead><tr><th>Código</th><th>Material</th><th class="num">Necesita</th><th class="num">Hay en Odoo</th><th class="num">Falta</th><th>Para</th></tr></thead>';
     return `<div class="pg-bloque mat ${m.faltan.length ? 'conFaltas' : ''}"><header><h3>Materiales</h3>
-      <span class="meta">${m.faltan.length ? `Faltan ${m.faltan.length} para hacer este plan` : sinVerificar ? `No se puede confirmar que alcance todo (${m.lista.length} revisados)` : `Alcanzan las materias primas y envases (${m.lista.length} revisados)`}${m.sin_stock_en_odoo.length ? ` · no figuran en el stock de Odoo: ${esc(m.sin_stock_en_odoo.map(nombreDe).join(', '))}` : ''}${m.sin_receta.length ? ` · sin receta o sin envase cargado: ${esc(m.sin_receta.map(nombreDe).join(', '))}` : ''}</span>
+      <span class="meta">${m.faltan.length ? `Faltan ${m.faltan.length} para hacer este plan` : sinVerificar ? `No se puede confirmar que alcance todo (${m.lista.length} revisados)` : `Alcanzan el granel, las materias primas y los envases (${m.lista.length} revisados)`}${m.sin_stock_en_odoo.length ? ` · no figuran en el stock de Odoo: ${esc(m.sin_stock_en_odoo.map(nombreDe).join(', '))}` : ''}${m.sin_receta.length ? ` · sin receta o sin envase cargado: ${esc(m.sin_receta.map(nombreDe).join(', '))}` : ''}</span>
       ${m.faltan.length ? '<span class="der"><a class="btn secondary" href="../laboratorio/reposicion.html">Ir a Stock y reposición</a></span>' : ''}</header>
       ${m.faltan.length ? `<table class="pg-tabla">${cab}<tbody>${m.faltan.map(fila).join('')}</tbody></table>` : ''}
       <details class="todos"><summary>Ver todos los materiales del plan (${m.lista.length})</summary><table class="pg-tabla">${cab}<tbody>${m.lista.map(fila).join('')}</tbody></table></details></div>`;
   }
   // ¿a esta tarea le falta algún material?
   function faltaPara(cod) { return (S.mat?.faltan || []).filter((x) => x.para.includes(cod)); }
-  const chipFalta = (cod) => { const fx = faltaPara(cod); return fx.length ? ` <span class="prio hoy" title="${esc(fx.map((x) => x.nombre).join(', '))}">falta ${fx.length === 1 ? esc(fx[0].nombre.split(' ').slice(0, 3).join(' ')) : fx.length + ' materiales'}</span>` : ''; };
+  const chipFalta = (cod) => { const fx = faltaPara(cod); if (!fx.length) return ''; const g = fx.find((x) => x.granel);
+    return ` <span class="prio hoy" title="${esc(fx.map((x) => `${x.nombre}: faltan ${cantMat(x.falta, x.uom)}`).join(' · '))}">${g ? `falta granel: ${cantMat(g.falta, 'kg')} — elaborar antes` : `falta ${fx.length === 1 ? esc(fx[0].nombre.split(' ').slice(0, 3).join(' ')) : fx.length + ' materiales'}`}</span>`; };
   function bloqueHecho() {
     const h = S.plan.hecho_hoy;
     if (!h.length) return '';
@@ -403,6 +404,8 @@
     const alcanza = (d) => d == null ? '—' : d <= 0 ? '<b class="urg">0 días</b>' : d < 1 ? '<b class="urg">menos de 1 día</b>' : d < 2 ? `<b class="urg">${fmt(d)} días</b>` : `${fmt(d)} días`;
     const cada = (x) => x.cada ? `cada ${fmt(x.cada, 0)} días${x.ultima ? `<div class="muted">última ${fCorta(x.ultima)}</div>` : ''}` : (x.ultima ? `última ${fCorta(x.ultima)}` : 'sin historial');
     const boton = (tipo, c, n, q, unidad) => { const ya = enDia(tipo, c); return q > 0 ? `<span class="acc"><button data-acc="sumarstock" data-tipo="${tipo}" data-cod="${esc(c)}" data-nom="${esc(n)}" data-q="${q}">${ya ? 'Sumar' : 'Agregar'} ${fmt(q)} ${unidad}</button></span>` : ''; };
+    // producto: si el granel no alcanza, el botón suma también la elaboración (nunca fraccionar sin granel)
+    const botonProd = (x) => { const q = x.propuesta - x.hoy; return `<span class="acc"><button data-acc="sumarstock" data-tipo="fraccionar" data-cod="${esc(x.c)}" data-nom="${esc(x.nombre)}" data-q="${q}"${x.elaborar_kg > 0 ? ` data-gr="${esc(x.granel)}" data-grnom="${esc(x.granel_nombre)}" data-grkg="${x.elaborar_kg}"` : ''}>${enDia('fraccionar', x.c) ? 'Sumar' : 'Agregar'} ${fmt(q)} u${x.elaborar_kg > 0 ? ` + elaborar ${fmt(x.elaborar_kg, 2)} kg` : ''}</button></span>`; };
     const gr = ps.graneles;
     const grHtml = gr.length ? `<table class="pg-tabla"><thead><tr><th>Granel</th><th class="num">Se usa por semana</th><th class="num">Libre</th><th class="num">Para pedidos</th><th>Alcanza</th><th>Se hace</th><th class="num">Lote</th><th>Propuesta</th><th></th></tr></thead><tbody>
       ${gr.map((g) => `<tr class="${g.propuesta_kg > 0 ? '' : 'dim'}"><td><span class="cod">${esc(g.c)}</span> ${esc(g.nombre)}${g.dia_anterior ? '<div class="muted">se prepara el día anterior</div>' : ''}</td>
@@ -415,8 +418,8 @@
       ${pr.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> ${esc(x.nombre)}</td><td class="num">${fmt(x.por_semana)} u ${tend(x.tendencia)}</td>
         <td class="num">${fmt(Math.max(0, x.stock_libre), 0)} u${x.stock_libre < 0 ? `<div class="muted">faltan ${fmt(-x.stock_libre, 0)} para pedidos</div>` : ''}</td>
         <td class="nw">${alcanza(x.cobertura_dias)}${x.se_agota && x.cobertura_dias >= 1 && x.cobertura_dias < 20 ? `<div class="muted">hasta el ${fCorta(x.se_agota)}</div>` : ''}</td><td class="nw muted">${x.tanda > 1 ? `de a ${fmt(x.tanda, 0)}, ` : ''}${cada(x)}</td>
-        <td><b>${fmt(x.propuesta, 0)} u</b>${x.hoy ? `<div class="ok">${fmt(x.hoy, 0)} ya en el plan de hoy</div>` : x.granel_libre <= 0 ? '<div class="muted">hay que elaborar el granel</div>' : ''}</td>
-        <td>${x.propuesta > x.hoy ? boton('fraccionar', x.c, x.nombre, x.propuesta - x.hoy, 'u') : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Todos los productos con rotación tienen stock para más de ' + ps.objetivo_dias + ' días.</div>';
+        <td><b>${fmt(x.propuesta, 0)} u</b>${x.hoy ? `<div class="ok">${fmt(x.hoy, 0)} ya en el plan de hoy</div>` : ''}${x.elaborar_kg > 0 ? `<div class="urg" style="font-size:12px">antes elaborar ${fmt(x.elaborar_kg, 2)} kg de ${esc(x.granel_nombre)}</div><div class="muted">con el granel que hay salen ${fmt(x.alcanza_con_granel, 0)} u</div>` : ''}</td>
+        <td>${x.propuesta > x.hoy ? botonProd(x) : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Todos los productos con rotación tienen stock para más de ' + ps.objetivo_dias + ' días.</div>';
     $('tab-stock').innerHTML = `
       <div class="pg-nota">Lo que conviene fabricar <b>para stock</b>, de lo más urgente a lo menos, <b>entre o no entre hoy</b>. Sigue el ritmo: el consumo mezcla las últimas 4 semanas (pesan más) con los últimos 4 meses, sin contar los pedidos grandes, que ya figuran en "para pedidos". Las cantidades van en el <b>lote o la tanda de siempre</b> (lo aprende de Odoo). Cuando hay pocos pedidos, el plan de Hoy se completa solo con esto; con <b>Agregar</b> lo sumás a mano.</div>
       <div class="pg-bloque"><header><h3>Granel base</h3><span class="meta">Se guarda en granel · objetivo ${ps.objetivo_granel} días hábiles</span></header><div class="pg-scroll">${grHtml}</div></div>
@@ -613,6 +616,8 @@
       const tipo = t.dataset.tipo, c = t.dataset.cod, q = Number(t.dataset.q);
       const ya = filasDelDia().find((x) => x.tipo === tipo && x.codigo === c);
       t.disabled = true;
+      // primero el granel que hace falta (si no alcanza el que hay), después las unidades
+      if (t.dataset.gr) { const yg = filasDelDia().find((x) => x.tipo === 'elaborar' && x.codigo === t.dataset.gr); try { await guardarCantidad('elaborar', t.dataset.gr, t.dataset.grnom, (yg ? yg.cantidad : 0) + Number(t.dataset.grkg), yg ? yg.sugerido : null, !yg || yg.agregado); } catch (e) { t.disabled = false; return; } }
       try { await guardarCantidad(tipo, c, t.dataset.nom, (ya ? ya.cantidad : 0) + q, ya ? ya.sugerido : null, !ya || ya.agregado); msg(`Sumado al plan de hoy: ${t.dataset.nom}`); }
       finally { t.disabled = false; }
     }

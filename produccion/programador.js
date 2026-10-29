@@ -495,11 +495,24 @@
     const hoyStock = {}; for (const f of Object.values(fraccionar)) hoyStock[f.c] = f.motivos.filter((m) => m.prio === 'stock').reduce((a, m) => a + m.q, 0);
     const paraStock = {
       graneles: Object.values(granelStock).sort((a, b) => a.cobertura_dias - b.cobertura_dias).map((r) => ({ ...r, nombre: nombre[r.c] || r.c })),
-      productos: candidatos.map((r) => {
-        const sugerido = Math.max(0, Math.ceil(r.por_dia * objetivoDias - Math.max(0, r.stock_libre)));
-        const tf = r.tanda && r.tanda > 1 ? r.tanda : 1;
-        return { ...r, nombre: nombre[r.c] || r.c, granel: presDe[r.c]?.g, propuesta: Math.max(tf, Math.ceil(sugerido / tf) * tf), hoy: hoyStock[r.c] || 0, granel_libre: r2(dispGr[presDe[r.c]?.g] || 0) };
-      }),
+      // Cada propuesta usa el granel que queda (después del plan de hoy, de lo más urgente a lo menos);
+      // si no alcanza, dice cuánto granel hay que elaborar antes, en el lote de siempre. Nunca se
+      // propone fraccionar sin granel.
+      productos: (() => {
+        const resto = { ...dispGr };
+        return candidatos.map((r) => {
+          const sugerido = Math.max(0, Math.ceil(r.por_dia * objetivoDias - Math.max(0, r.stock_libre)));
+          const tf = r.tanda && r.tanda > 1 ? r.tanda : 1;
+          const propuesta = Math.max(tf, Math.ceil(sugerido / tf) * tf), hoyQ = hoyStock[r.c] || 0;
+          const pr = presDe[r.c], g = pr.g, falta = Math.max(0, propuesta - hoyQ);
+          const libreAntes = Math.max(0, resto[g] || 0), nec = falta * pr.kg;
+          let elaborarKg = 0;
+          if (nec > libreAntes + 1e-9) { const lote = loteDe(g); elaborarKg = Math.ceil((nec - libreAntes) / lote - 1e-9) * lote; }
+          resto[g] = libreAntes + elaborarKg - nec;
+          return { ...r, nombre: nombre[r.c] || r.c, granel: g, granel_nombre: nombre[g] || g, propuesta, hoy: hoyQ, granel_libre: r2(libreAntes),
+            alcanza_con_granel: Math.min(falta, Math.floor(libreAntes / pr.kg + 1e-9)), elaborar_kg: r2(elaborarKg), lote_granel: loteDe(g) };
+        });
+      })(),
       objetivo_dias: objetivoDias, objetivo_granel: objetivoGr,
     };
 
@@ -561,7 +574,29 @@
       if (h.c.startsWith('9')) explotar(h.c, extra, true);
       else { const p = presDe[h.c]; if (p && p.env) sumar(p.env, extra, h.c, true); }
     }
+    // Granel: lo que piden las unidades a fraccionar y los graneles que se usan como ingrediente, contra
+    // lo libre en Odoo + lo que se elabora hoy (plan) ± lo hecho hoy que todavía no está en Odoo.
+    const gr = {};
+    const G = (c) => (gr[c] = gr[c] || { c, plan: 0, uso: 0, prod: 0, elab: 0, para: new Set() });
+    for (const f of fraccionar) { const p = presDe[f.c]; if (p && p.g && Number(f.q) > 0) { const x = G(p.g); x.plan += Number(f.q) * Number(p.kg); x.para.add(f.c); } }
+    for (const e of elaborar) {
+      if (!(Number(e.kg) > 0)) continue;
+      G(e.c).elab += Number(e.kg);
+      for (const k of comp[e.c] || []) if (k.c.startsWith('9')) { const x = G(k.c); x.plan += Number(e.kg) * k.pct / 100; x.para.add(e.c); }
+    }
+    for (const h of hechoHoy) {
+      const extra = Number(h.q) - Number(h.en_odoo || 0); if (!(extra > 0)) continue;
+      if (h.c.startsWith('9')) { G(h.c).prod += extra; for (const k of comp[h.c] || []) if (k.c.startsWith('9')) G(k.c).uso += extra * k.pct / 100; }
+      else { const p = presDe[h.c]; if (p && p.g) G(p.g).uso += extra * Number(p.kg); }
+    }
     const lista = [], sinStock = [];
+    for (const x of Object.values(gr)) {
+      if (!(x.plan > 0)) continue;
+      const st = stock[x.c];
+      const hay = Math.max(0, Number(st?.libre || 0)) + x.prod - x.uso + x.elab;
+      const falta = x.plan - hay;
+      lista.push({ c: x.c, nombre: st?.n || x.c, uom: 'kg', necesita: r2(x.plan), hay: r2(Math.max(0, hay)), falta: falta > 0.005 ? Math.round(falta * 1000) / 1000 : 0, usado_hoy: r2(x.uso), para: [...x.para], granel: true, se_elabora: r2(x.elab) });
+    }
     for (const x of Object.values(nec)) {
       const st = stock[x.c];
       if (!st) { if (x.plan > 0 && !NO_SE_STOCKEA.has(x.c)) sinStock.push(x.c); continue; }
