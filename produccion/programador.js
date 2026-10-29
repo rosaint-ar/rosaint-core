@@ -453,9 +453,12 @@
       const proy = (dispGr[g] || 0) - (futuroGr[g] || 0);
       const cob = r2(Math.max(0, proy) / rd);
       const falta = objetivoGr * rd - proy;
-      const prop = falta > 0 ? tandas(g, Math.min(falta, 3 * maxDe(g))) : { total: 0 };
+      const hechoHoyKg = r2(Math.max(hechoPor[g]?.q || 0, enOdooHoy[g] || 0));
+      const yaHoy = hechoHoyKg > 0 && cob >= 1;
+      const prop = falta > 0 && !yaHoy ? tandas(g, Math.min(falta, 3 * maxDe(g))) : { total: 0 };
       granelStock[g] = { c: g, por_dia: r2(rd), por_semana: r2(rd * 5), libre: r2(dispGr[g] || 0), comprometido: r2(futuroGr[g] || 0), proyectado: r2(proy), cobertura_dias: cob,
-        tendencia: tendenciaDe(kg, usoGrRec[g] || 0), se_agota: seAgota(cob), lote, lote_max: maxDe(g), propuesta_kg: prop.total, ...fr, dia_anterior: diaAnterior.has(g), hoy_kg: 0 };
+        tendencia: tendenciaDe(kg, usoGrRec[g] || 0), se_agota: seAgota(cob), lote, lote_max: maxDe(g), propuesta_kg: prop.total, ...fr, dia_anterior: diaAnterior.has(g), hoy_kg: 0,
+        objetivo_kg: r2(objetivoGr * rd), falta_kg: r2(Math.max(0, falta)), hecho_hoy_kg: hechoHoyKg, motivo: yaHoy && falta > 0 ? `ya se elaboraron ${hechoHoyKg} kg hoy: se vuelve a hacer cuando toque` : undefined };
     }
     // elaborar granel para guardar: de a lotes enteros, lo que entre en el tope de kg del día
     function elaborarParaStock(r) {
@@ -530,21 +533,29 @@
           let elaborarKg = 0;
           if (nec > libreAntes + 1e-9) elaborarKg = tandas(g, nec - libreAntes).total;
           resto[g] = libreAntes + elaborarKg - nec;
-          return { ...r, nombre: nombre[r.c] || r.c, granel: g, granel_nombre: nombre[g] || g, propuesta, hoy: hoyQ, granel_libre: r2(libreAntes),
+          return { ...r, nombre: nombre[r.c] || r.c, granel: g, granel_nombre: nombre[g] || g, propuesta, hoy: hoyQ, objetivo_u: r2(r.por_dia * objetivoDias), sugerido_u: sugerido, rota: r.por_semana >= Number(cfg.rotacion_min_semana || 1), granel_libre: r2(libreAntes),
             alcanza_con_granel: Math.min(falta, Math.floor(libreAntes / pr.kg + 1e-9)), elaborar_kg: r2(elaborarKg), lote_granel: loteDe(g), tandas_granel: tandas(g, elaborarKg) };
         });
       })(),
       objetivo_dias: objetivoDias, objetivo_granel: objetivoGr,
     };
-    // Sin duplicar: si el granel es de los que se guardan (tabla de granel base), lo que necesitan sus
-    // productos se suma a ESA propuesta y el producto no propone una elaboración aparte. Los graneles
-    // finos (de a 2 kg) no están en esa tabla: su elaboración se ve solo en la fila del producto.
-    const extraGr = {};
-    for (const x of paraStock.productos) if (x.elaborar_kg > 0 && granelStock[x.granel]) { extraGr[x.granel] = (extraGr[x.granel] || 0) + x.elaborar_kg; x.granel_base = true; }
-    for (const g of paraStock.graneles) {
-      const extra = extraGr[g.c] || 0; if (!extra) continue;
-      const pendiente = Math.max(g.propuesta_kg - g.hoy_kg, tandas(g.c, extra).total);
-      g.propuesta_kg = r2(g.hoy_kg + pendiente); g.para_productos_kg = r2(extra);
+    // Sin duplicar: el granel que se guarda (tabla de granel base) tiene UNA propuesta, la de sus días de
+    // consumo (ya incluye lo que venden sus productos). Sus productos no proponen otra elaboración: dicen
+    // cuántas unidades salen con el granel libre y remiten a esa propuesta. Los graneles finos (de a 2 kg)
+    // no están en esa tabla: su elaboración se ve solo en la fila del producto.
+    // y se propone solo lo que sale con el granel libre (nunca fraccionar sin granel); lo que pide el objetivo
+    // de días queda como dato, para cuando se vuelva a elaborar ese granel
+    for (const x of paraStock.productos) if (granelStock[x.granel]) {
+      const gs = granelStock[x.granel], quiere = Math.max(0, x.propuesta - x.hoy);
+      x.granel_base = true; x.elaborar_kg = 0; x.objetivo_prop = x.propuesta;
+      x.falta_granel = x.alcanza_con_granel < quiere;
+      if (x.falta_granel) { x.propuesta = x.hoy + x.alcanza_con_granel; x.granel_prop_kg = r2(gs.propuesta_kg - gs.hoy_kg); x.granel_cob = gs.cobertura_dias; }
+    }
+    // Si para unas pocas unidades hay que elaborar un lote varias veces más grande (ej. 20 kg de
+    // Descontracturante para 2 potes de 1 kg), no es stock: ese producto se hace a pedido.
+    for (const x of paraStock.productos) {
+      const nec = Math.max(0, x.propuesta - x.hoy) * (presDe[x.c]?.kg || 0);
+      if (!x.granel_base && x.elaborar_kg > 0 && x.elaborar_kg > 3 * nec) { x.a_pedido = true; x.rota = false; }
     }
     for (const g of paraStock.graneles) { const p = g.propuesta_kg - g.hoy_kg; g.tandas = p > 0 ? reparto(g.c, p) : null; }
 
