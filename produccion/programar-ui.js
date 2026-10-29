@@ -148,7 +148,8 @@
       <div class="pg-kpi"><div class="k">Avisos</div><div class="v" style="color:${pl.alertas.length ? 'var(--warn)' : 'var(--ok)'}">${pl.alertas.length}</div><div class="sub">${pl.postergados.length} cosas postergadas a mano</div></div>`;
     $('n-pedidos').textContent = confirmados.length;
     $('n-post').textContent = pl.postergados.length;
-    pintarHoy(); pintarPedidos(); pintarPostergados(); pintarClientes(); pintarAjustes();
+    $('n-stock').textContent = pl.para_stock.graneles.filter((g) => g.propuesta_kg > 0).length + pl.para_stock.productos.length;
+    pintarHoy(); pintarPedidos(); pintarStock(); pintarPostergados(); pintarClientes(); pintarAjustes();
   }
 
   function accPost(so, sku, numero, etiqueta) {
@@ -303,7 +304,7 @@
     const elab = `
       <div class="pg-bloque"><header><h3>Elaborar</h3><span class="meta">${fmt(kgTot, 0)} kg · tope ${fmt(pl.carga.cap_kg, 0)} kg</span></header>
       ${de('elaborar').map((f) => `<div class="fila elab${f.cantidad === 0 ? ' anulada' : ''}"><div class="cod">${esc(f.codigo)}</div>
-        <div><div class="nom">${esc(f.nombre)}${chipFalta(f.codigo)}</div>${f.x ? `<div class="m-nota">lote habitual ${fmt(f.x.lote)} kg${f.x.kg > f.x.lote ? ` (${fmt(f.x.kg / f.x.lote, 1)} lotes)` : ''} · para ${f.x.para.map((c) => esc(nombreDe(c))).join(', ')}</div>` : ''}</div>
+        <div><div class="nom">${esc(f.nombre)}${chipFalta(f.codigo)}</div>${f.x ? `<div class="m-nota">lote habitual ${fmt(f.x.lote)} kg${f.x.kg > f.x.lote ? ` (${fmt(f.x.kg / f.x.lote, 1)} lotes)` : ''}${f.x.para.length ? ` · para ${f.x.para.map((c) => esc(nombreDe(c))).join(', ')}` : ''}${f.x.stock_kg ? ` · <b>${fmt(f.x.stock_kg)} kg para stock</b> (el granel alcanzaba para ${fmt(f.x.stock_cob)} días)` : ''}</div>` : ''}</div>
         ${inputCant(f, 'kg')}</div>`).join('') || '<div class="pg-vacio">No hace falta elaborar granel hoy: alcanza con lo que hay.</div>'}
       ${formAgregar('elaborar')}</div>`;
 
@@ -393,6 +394,35 @@
           <td class="num">$ ${fmt(p.monto, 0)}</td><td class="muted">${p.lineas.map((l) => `${esc(l.n)} × ${fmt(l.pend, 0)}`).join(' · ')}</td><td><span class="acc"><button data-acc="entrega" data-so="${p.so_id}">Entrega de hoy</button></span></td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">No hay presupuestos abiertos.</div>'}</div>`;
   }
 
+  // Panorama para stock: todo lo que conviene hacer, por urgencia, entre o no entre hoy.
+  // Lu elige: "Agregar" lo suma al plan del día (queda guardado como cualquier cambio a mano).
+  function pintarStock() {
+    const ps = S.plan.para_stock, filas = filasDelDia();
+    const enDia = (tipo, c) => filas.find((x) => x.tipo === tipo && x.codigo === c);
+    const tend = (t) => t === 'sube' ? '<span class="tend sube" title="Las últimas 4 semanas se vendió más que el promedio">↑ sube</span>' : t === 'baja' ? '<span class="tend baja" title="Las últimas 4 semanas se vendió menos que el promedio">↓ baja</span>' : '';
+    const alcanza = (d) => d == null ? '—' : d <= 0 ? '<b class="urg">0 días</b>' : d < 1 ? '<b class="urg">menos de 1 día</b>' : d < 2 ? `<b class="urg">${fmt(d)} días</b>` : `${fmt(d)} días`;
+    const cada = (x) => x.cada ? `cada ${fmt(x.cada, 0)} días${x.ultima ? `<div class="muted">última ${fCorta(x.ultima)}</div>` : ''}` : (x.ultima ? `última ${fCorta(x.ultima)}` : 'sin historial');
+    const boton = (tipo, c, n, q, unidad) => { const ya = enDia(tipo, c); return q > 0 ? `<span class="acc"><button data-acc="sumarstock" data-tipo="${tipo}" data-cod="${esc(c)}" data-nom="${esc(n)}" data-q="${q}">${ya ? 'Sumar' : 'Agregar'} ${fmt(q)} ${unidad}</button></span>` : ''; };
+    const gr = ps.graneles;
+    const grHtml = gr.length ? `<table class="pg-tabla"><thead><tr><th>Granel</th><th class="num">Se usa por semana</th><th class="num">Libre</th><th class="num">Para pedidos</th><th>Alcanza</th><th>Se hace</th><th class="num">Lote</th><th>Propuesta</th><th></th></tr></thead><tbody>
+      ${gr.map((g) => `<tr class="${g.propuesta_kg > 0 ? '' : 'dim'}"><td><span class="cod">${esc(g.c)}</span> ${esc(g.nombre)}${g.dia_anterior ? '<div class="muted">se prepara el día anterior</div>' : ''}</td>
+        <td class="num">${fmt(g.por_semana)} kg ${tend(g.tendencia)}</td><td class="num">${fmt(g.libre)} kg</td><td class="num">${g.comprometido ? fmt(g.comprometido) + ' kg' : '—'}</td>
+        <td class="nw">${alcanza(g.cobertura_dias)}${g.se_agota && g.cobertura_dias < 20 ? `<div class="muted">hasta el ${fCorta(g.se_agota)}</div>` : ''}</td><td class="nw muted">${cada(g)}</td><td class="num">${fmt(g.lote)} kg</td>
+        <td>${g.propuesta_kg > 0 ? `<b>${fmt(g.propuesta_kg)} kg</b>${g.hoy_kg ? `<div class="ok">${fmt(g.hoy_kg)} kg ya en el plan de hoy</div>` : g.motivo ? `<div class="muted">${esc(g.motivo)}</div>` : ''}` : '<span class="muted">alcanza</span>'}</td>
+        <td>${g.propuesta_kg > g.hoy_kg ? boton('elaborar', g.c, g.nombre, g.propuesta_kg - g.hoy_kg, 'kg') : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Sin datos de granel.</div>';
+    const pr = ps.productos;
+    const prHtml = pr.length ? `<table class="pg-tabla"><thead><tr><th>Producto</th><th class="num">Se vende por semana</th><th class="num">Stock libre</th><th>Alcanza</th><th>Se fracciona</th><th>Propuesta</th><th></th></tr></thead><tbody>
+      ${pr.map((x) => `<tr><td><span class="cod">${esc(x.c)}</span> ${esc(x.nombre)}</td><td class="num">${fmt(x.por_semana)} u ${tend(x.tendencia)}</td>
+        <td class="num">${fmt(Math.max(0, x.stock_libre), 0)} u${x.stock_libre < 0 ? `<div class="muted">faltan ${fmt(-x.stock_libre, 0)} para pedidos</div>` : ''}</td>
+        <td class="nw">${alcanza(x.cobertura_dias)}${x.se_agota && x.cobertura_dias >= 1 && x.cobertura_dias < 20 ? `<div class="muted">hasta el ${fCorta(x.se_agota)}</div>` : ''}</td><td class="nw muted">${x.tanda > 1 ? `de a ${fmt(x.tanda, 0)}, ` : ''}${cada(x)}</td>
+        <td><b>${fmt(x.propuesta, 0)} u</b>${x.hoy ? `<div class="ok">${fmt(x.hoy, 0)} ya en el plan de hoy</div>` : x.granel_libre <= 0 ? '<div class="muted">hay que elaborar el granel</div>' : ''}</td>
+        <td>${x.propuesta > x.hoy ? boton('fraccionar', x.c, x.nombre, x.propuesta - x.hoy, 'u') : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="pg-vacio">Todos los productos con rotación tienen stock para más de ' + ps.objetivo_dias + ' días.</div>';
+    $('tab-stock').innerHTML = `
+      <div class="pg-nota">Lo que conviene fabricar <b>para stock</b>, de lo más urgente a lo menos, <b>entre o no entre hoy</b>. Sigue el ritmo: el consumo mezcla las últimas 4 semanas (pesan más) con los últimos 4 meses, sin contar los pedidos grandes, que ya figuran en "para pedidos". Las cantidades van en el <b>lote o la tanda de siempre</b> (lo aprende de Odoo). Cuando hay pocos pedidos, el plan de Hoy se completa solo con esto; con <b>Agregar</b> lo sumás a mano.</div>
+      <div class="pg-bloque"><header><h3>Granel base</h3><span class="meta">Se guarda en granel · objetivo ${ps.objetivo_granel} días hábiles</span></header><div class="pg-scroll">${grHtml}</div></div>
+      <div class="pg-bloque"><header><h3>Producto terminado con rotación</h3><span class="meta">Objetivo ${ps.objetivo_dias} días hábiles de venta</span></header><div class="pg-scroll">${prHtml}</div></div>`;
+  }
+
   function pintarPostergados() {
     const hoy = isoLocal(new Date());
     const act = S.postergados.filter((x) => x.hasta > hoy);
@@ -456,6 +486,7 @@
         ${campo('cap_kg_dia', 'Tope de elaboración por día (kg)', c.cap_kg_dia, 'Lo que se puede elaborar de granel en un día.')}
         ${campo('cap_u_dia', 'Tope de fraccionado por día (unidades)', c.cap_u_dia, 'Envases que se llenan en un día.')}
         ${campo('dias_stock_objetivo', 'Días de stock a cubrir', c.dias_stock_objetivo, 'Con el lugar que sobra, se fabrica para tener esta cantidad de días de venta.')}
+        ${campo('dias_stock_granel', 'Días de granel base a cubrir', c.dias_stock_granel ?? 4, 'Gel Neutro, Clásica, Masajes…: se elabora para tener esta cantidad de días hábiles de consumo.')}
         ${campo('umbral_pedido_grande', 'Pedido grande desde (unidades)', c.umbral_pedido_grande, 'Los renglones de este tamaño o más no cuentan para el ritmo de venta diario.')}
         ${campo('semanas_parcial_default', 'Semanas para un 🔄 sin ritmo', c.semanas_parcial_default, 'Si un pedido parcial no tiene ritmo ni patrón, se reparte en estas semanas.')}
         ${campo('graneles_dia_anterior', 'Se preparan el día anterior', (c.graneles_dia_anterior || []).join(', '), 'Códigos de granel que necesitan reposar (ej. 90302 solución de Carbopol).', 'text')}
@@ -578,6 +609,13 @@
       await guardarCantidad(tipo, prod.c, prod.n, ya ? ya.cantidad + q : q, ya ? ya.sugerido : null, !ya || ya.agregado);
       msg(ya ? `Sumado a ${prod.n}` : `Agregado: ${prod.n}`);
     }
+    else if (a === 'sumarstock') {
+      const tipo = t.dataset.tipo, c = t.dataset.cod, q = Number(t.dataset.q);
+      const ya = filasDelDia().find((x) => x.tipo === tipo && x.codigo === c);
+      t.disabled = true;
+      try { await guardarCantidad(tipo, c, t.dataset.nom, (ya ? ya.cantidad : 0) + q, ya ? ya.sugerido : null, !ya || ya.agregado); msg(`Sumado al plan de hoy: ${t.dataset.nom}`); }
+      finally { t.disabled = false; }
+    }
     else if (a === 'copiar') { await navigator.clipboard.writeText(textoLista()); msg('Lista copiada'); }
     else if (a === 'imprimir') imprimirPlan();
     else if (a === 'guardarritmo' || a === 'borrarritmo') {
@@ -608,7 +646,7 @@
     else if (a === 'guardarajustes') {
       const v = (id) => $('aj-' + id).value;
       const fila = {
-        cap_kg_dia: Number(v('cap_kg_dia')), cap_u_dia: Number(v('cap_u_dia')), dias_stock_objetivo: Number(v('dias_stock_objetivo')),
+        cap_kg_dia: Number(v('cap_kg_dia')), cap_u_dia: Number(v('cap_u_dia')), dias_stock_objetivo: Number(v('dias_stock_objetivo')), dias_stock_granel: Number(v('dias_stock_granel')),
         umbral_pedido_grande: Number(v('umbral_pedido_grande')), semanas_parcial_default: Number(v('semanas_parcial_default')),
         graneles_dia_anterior: v('graneles_dia_anterior').split(/[\s,;]+/).filter(Boolean), actualizado: new Date().toISOString(),
       };

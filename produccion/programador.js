@@ -198,7 +198,7 @@
           if (toca) { demanda.push({ ...base, prio: RANGO[prio] < RANGO.tanda ? prio : 'tanda', q: tq }); resto -= tq; }
           const sig = Math.min(resto, t || tq);
           if (sig > 0) { demanda.push({ ...base, prio: 'anticipo', q: sig }); resto -= sig; }
-          if (resto > 0) masAdelante.push({ ...base, prio, q: resto, motivo: 'próximas entregas' });
+          if (resto > 0) masAdelante.push({ ...base, prio, q: resto, motivo: 'próximas entregas', por_dia: (t || tq) / Math.max(1, pt.dias_entre * 5 / 7) });
         }
         continue;
       }
@@ -238,7 +238,7 @@
         acum += hoyQ;
         const base = { c: r.c, prio, so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, kit: r.kit || null, nota: notaParcial };
         if (hoyQ > 0) demanda.push({ ...base, q: hoyQ });
-        if (r.pend - hoyQ > 0) masAdelante.push({ ...base, q: r.pend - hoyQ, motivo: 'cuota de próximos días' });
+        if (r.pend - hoyQ > 0) masAdelante.push({ ...base, q: r.pend - hoyQ, motivo: 'cuota de próximos días', por_dia: factor < 1 ? r.pend * factor : null });
       }
     }
     demanda.sort((a, b) => RANGO[a.prio] - RANGO[b.prio] || String(a.fecha).localeCompare(String(b.fecha)) || String(a.numero).localeCompare(String(b.numero)));
@@ -362,25 +362,106 @@
     }
 
     // ---------- 3) ritmo de venta (solo renglones chicos: los pedidos grandes se planifican como pedido) ----------
+    // Sigue el ritmo: mezcla las últimas 4 semanas (pesan más) con toda la ventana, así una suba o una
+    // baja reciente se nota sin que una semana rara lo mueva todo.
     const desde = new Date(snap.desde + 'T12:00:00');
     const diasVentana = Math.max(1, diasHabiles(desde, hoy) - 1);
-    const vendido = {};
+    const desdeRec = masDias(hoy, -28), diasRec = Math.max(1, diasHabiles(desdeRec, hoy) - 1);
+    const pesoRec = diasVentana >= 2 * diasRec ? Number(cfg.peso_reciente ?? 0.6) : 0;
+    const mezcla = (largo, rec) => (1 - pesoRec) * largo / diasVentana + pesoRec * rec / diasRec;
+    const tendenciaDe = (largo, rec) => { if (!pesoRec || largo <= 0) return null; const t = (rec / diasRec) / (largo / diasVentana); return t >= 1.3 ? 'sube' : t <= 0.7 ? 'baja' : 'pareja'; };
+    const vendido = {}, vendidoRec = {};
     for (const v of snap.ventas) {
       if (v.q >= umbral) continue;
+      const rec = v.f && d0(v.f) >= d0(desdeRec);
       const comps = snap.kits[v.c];
-      if (comps) for (const k of comps) vendido[k.c] = (vendido[k.c] || 0) + v.q * k.q;
-      else vendido[v.c] = (vendido[v.c] || 0) + v.q;
+      for (const k of comps || [{ c: v.c, q: 1 }]) {
+        vendido[k.c] = (vendido[k.c] || 0) + v.q * k.q;
+        if (rec) vendidoRec[k.c] = (vendidoRec[k.c] || 0) + v.q * k.q;
+      }
     }
-    const pendFuturo = {}; for (const x of [...postergado, ...masAdelante]) pendFuturo[x.c] = (pendFuturo[x.c] || 0) + x.q;
+    // cada cuánto se hace cada cosa (días hábiles entre órdenes de fabricación) y cuándo fue la última
+    const fechasDe = {}; for (const m of snap.mo || []) (fechasDe[m.c] = fechasDe[m.c] || new Set()).add(m.f);
+    const frecuencia = (c) => {
+      const fs = [...(fechasDe[c] || [])].sort(); if (!fs.length) return { cada: null, ultima: null };
+      const gaps = []; for (let i = 1; i < fs.length; i++) gaps.push(diasHabiles(fs[i - 1], fs[i]) - 1);
+      return { cada: gaps.length ? Math.max(1, Math.round(mediana(gaps))) : null, ultima: fs[fs.length - 1], veces: fs.length };
+    };
+    // fecha en que se termina: hoy + N días hábiles
+    const seAgota = (dias) => { if (dias == null) return null; let d = d0(hoy), n = Math.floor(dias); while (n > 0) { d = proximoHabil(d); n--; } return iso(d); };
+    const enHorizonte = (x, dias) => x.por_dia > 0 ? Math.min(x.q, x.por_dia * dias) : x.q;
+    const objetivoDias = Number(cfg.dias_stock_objetivo || 10);
+    const pendFuturo = {}; for (const x of [...postergado, ...masAdelante]) pendFuturo[x.c] = (pendFuturo[x.c] || 0) + enHorizonte(x, objetivoDias);
     const ritmo = {};
     for (const [c, q] of Object.entries(vendido)) {
-      const rd = q / diasVentana;
+      const rd = mezcla(q, vendidoRec[c] || 0);
       const proy = (dispPT[c] || 0) - (pendFuturo[c] || 0);
-      ritmo[c] = { c, por_dia: r2(rd), por_semana: r2(rd * 5), stock_libre: proy, cobertura_dias: rd > 0 ? r2(Math.max(0, proy) / rd) : null };
+      const cob = rd > 0 ? r2(Math.max(0, proy) / rd) : null;
+      ritmo[c] = { c, por_dia: r2(rd), por_semana: r2(rd * 5), stock_libre: proy, cobertura_dias: cob, tendencia: tendenciaDe(q, vendidoRec[c] || 0), se_agota: seAgota(cob), ...frecuencia(c), tanda: ap.tanda[c] || null };
+    }
+
+    // ---------- 3b) stock de GRANEL ----------
+    // Las bases (Gel Neutro, Clásica, Masajes, Criógeno…) se elaboran en lotes grandes y se guardan en
+    // granel; lo que se stockea de verdad es eso. Consumo = las ventas CHICAS de cada producto pasadas a
+    // kg de su granel (igual que el ritmo: los pedidos grandes no son goteo y entran como comprometido; si
+    // se sacara de las órdenes de fabricación se contarían dos veces) + lo que usan como ingrediente otros
+    // graneles (ej. la solución de Carbopol en el Gel Neutro). Se le resta lo comprometido en pedidos
+    // de los próximos días.
+    const objetivoGr = Number(cfg.dias_stock_granel || 4);
+    const dUso = {}, dRec = {}, dFut = {};
+    for (const [c, q] of Object.entries(vendido)) { const pr = presDe[c]; if (!pr) continue; dUso[pr.g] = (dUso[pr.g] || 0) + q * pr.kg; dRec[pr.g] = (dRec[pr.g] || 0) + (vendidoRec[c] || 0) * pr.kg; }
+    for (const x of [...postergado, ...masAdelante]) { const pr = presDe[x.c]; if (pr) dFut[pr.g] = (dFut[pr.g] || 0) + enHorizonte(x, objetivoGr) * pr.kg; }
+    const padresDe = {}; for (const [g, subs] of Object.entries(subDe)) for (const sg of subs) (padresDe[sg.c] = padresDe[sg.c] || []).push({ g, pct: sg.pct });
+    const memo = {};
+    // total de un granel = lo directo + lo que se lleva cada granel que lo usa como ingrediente
+    function totalGr(g, prof = 0) {
+      if (memo[g]) return memo[g];
+      const t = { uso: dUso[g] || 0, rec: dRec[g] || 0, fut: dFut[g] || 0 };
+      if (prof < 4) for (const pa of padresDe[g] || []) { const x = totalGr(pa.g, prof + 1), f = pa.pct / 100; t.uso += x.uso * f; t.rec += x.rec * f; t.fut += x.fut * f; }
+      return (memo[g] = t);
+    }
+    const usoGr = {}, usoGrRec = {}, futuroGr = {};
+    for (const g of new Set([...Object.keys(dUso), ...Object.keys(padresDe)])) { const t = totalGr(g); if (t.uso > 0) { usoGr[g] = t.uso; usoGrRec[g] = t.rec; futuroGr[g] = t.fut; } }
+    const loteMinStock = Number(cfg.lote_min_granel_stock || 10);
+    const granelStock = {};
+    for (const [g, kg] of Object.entries(usoGr)) {
+      const rd = mezcla(kg, usoGrRec[g] || 0); if (rd <= 0) continue;
+      const lote = loteDe(g), fr = frecuencia(g);
+      // se guarda en granel lo que se elabora en lotes grandes, seguido y con consumo de verdad; los finos
+      // (de a 2 kg) y lo que se hace de vez en cuando (Masajes AD, Bakuchiol) se hacen para el producto
+      if (lote < loteMinStock || rd * 5 < Number(cfg.kg_semana_min_granel_stock || 5) || !fr.cada || fr.cada > 10) continue;
+      const proy = (dispGr[g] || 0) - (futuroGr[g] || 0);
+      const cob = r2(Math.max(0, proy) / rd);
+      const falta = objetivoGr * rd - proy;
+      const lotes = falta > 0 ? Math.min(3, Math.max(1, Math.ceil(falta / lote))) : 0;
+      granelStock[g] = { c: g, por_dia: r2(rd), por_semana: r2(rd * 5), libre: r2(dispGr[g] || 0), comprometido: r2(futuroGr[g] || 0), proyectado: r2(proy), cobertura_dias: cob,
+        tendencia: tendenciaDe(kg, usoGrRec[g] || 0), se_agota: seAgota(cob), lote, propuesta_kg: lotes * lote, ...fr, dia_anterior: diaAnterior.has(g), hoy_kg: 0 };
+    }
+    // elaborar granel para guardar: de a lotes enteros, lo que entre en el tope de kg del día
+    function elaborarParaStock(r) {
+      for (let n = Math.round(r.propuesta_kg / r.lote); n >= 1; n--) {
+        const kg = n * r.lote, est = nuevoEst();
+        let ok = true;
+        for (const s of subDe[r.c] || []) { const sub = planGranel(s.c, kg * s.pct / 100, est); if (!sub.ok) { ok = false; break; } }
+        if (!ok) {
+          // le falta un ingrediente que se prepara el día anterior: queda como tarea para mañana
+          for (const [s, x] of Object.entries(est.prep)) { const p = (preparar[s] = preparar[s] || { c: s, nec: 0, tengo: 0 }); p.nec += x.nec; p.tengo = x.tengo; }
+          r.motivo = 'falta un ingrediente que se prepara el día anterior'; return;
+        }
+        if (carga.kg + est.kg + kg > capKg) continue;
+        est.gr[r.c] = (dispGr[r.c] || 0) + kg; est.elab[r.c] = (est.elab[r.c] || 0) + kg; est.kg += kg;
+        aplicar(est);
+        elaborar[r.c].stock = (elaborar[r.c].stock || 0) + kg;
+        r.hoy_kg = kg; return;
+      }
+      r.motivo = 'no entra en el tope de kg de hoy';
     }
 
     // ---------- 4) relleno para stock con la capacidad que sobra ----------
-    const objetivoDias = Number(cfg.dias_stock_objetivo || 10);
+    // Orden: granel que se termina en menos de 2 días (si falta, se frena todo) → productos terminados
+    // con rotación → el resto del granel que está por debajo del objetivo.
+    const grOrden = Object.values(granelStock).filter((r) => r.propuesta_kg > 0).sort((a, b) => a.cobertura_dias - b.cobertura_dias || b.por_dia - a.por_dia);
+    for (const r of grOrden) if (r.cobertura_dias < 2 && !postergadoA(0, r.c)) elaborarParaStock(r);
     const candidatos = Object.values(ritmo)
       .filter((r) => r.c.startsWith('1') && presDe[r.c] && r.por_dia * 20 >= 1 && r.cobertura_dias !== null && r.cobertura_dias < objetivoDias)
       .sort((a, b) => a.cobertura_dias - b.cobertura_dias || b.por_dia - a.por_dia);
@@ -405,15 +486,28 @@
         if (est.kg > 0 && (pasada === 'con_granel' || carga.kg + est.kg > capKg)) continue;
         aplicar(est);
         for (const g of Object.keys(est.elab)) elaborar[g].para.add(r.c);
-        sumarFracc(r.c, q, { prio: 'stock', q, nota: `cubre ${r.cobertura_dias} días, objetivo ${objetivoDias}` });
+        sumarFracc(r.c, q, { prio: 'stock', q, nota: `alcanza para ${r.cobertura_dias} días, objetivo ${objetivoDias}` });
       }
     }
+    for (const r of grOrden) if (r.cobertura_dias >= 2 && !r.hoy_kg && !postergadoA(0, r.c)) elaborarParaStock(r);
+
+    // Panorama para stock: TODO lo que convendría hacer, por urgencia, entre o no entre hoy
+    const hoyStock = {}; for (const f of Object.values(fraccionar)) hoyStock[f.c] = f.motivos.filter((m) => m.prio === 'stock').reduce((a, m) => a + m.q, 0);
+    const paraStock = {
+      graneles: Object.values(granelStock).sort((a, b) => a.cobertura_dias - b.cobertura_dias).map((r) => ({ ...r, nombre: nombre[r.c] || r.c })),
+      productos: candidatos.map((r) => {
+        const sugerido = Math.max(0, Math.ceil(r.por_dia * objetivoDias - Math.max(0, r.stock_libre)));
+        const tf = r.tanda && r.tanda > 1 ? r.tanda : 1;
+        return { ...r, nombre: nombre[r.c] || r.c, granel: presDe[r.c]?.g, propuesta: Math.max(tf, Math.ceil(sugerido / tf) * tf), hoy: hoyStock[r.c] || 0, granel_libre: r2(dispGr[presDe[r.c]?.g] || 0) };
+      }),
+      objetivo_dias: objetivoDias, objetivo_granel: objetivoGr,
+    };
 
     // ---------- 5) armado del resultado ----------
     const conNombre = (o) => ({ ...o, nombre: nombre[o.c] || o.c });
     const tareasFracc = Object.values(fraccionar).map((f) => ({ ...conNombre(f), granel: presDe[f.c]?.g, kg: r2(f.q * (presDe[f.c]?.kg || 0)), etiqueta: ETIQUETA[f.prio] }))
       .sort((a, b) => RANGO[a.prio] - RANGO[b.prio] || b.q - a.q);
-    const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), para: [...e.para], dia_anterior: diaAnterior.has(e.c) }));
+    const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), para: [...e.para], stock_kg: r2(e.stock || 0), stock_cob: granelStock[e.c]?.cobertura_dias ?? null, dia_anterior: diaAnterior.has(e.c) }));
     const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); const falta = Math.max(0, p.nec - p.tengo); return { c: p.c, nombre: nombre[p.c] || p.c, kg: Math.ceil(falta / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; }).filter((p) => p.kg > 0);
     // lo que se prepara para mañana se elabora HOY: ocupa capacidad del día
     carga.kg += tareasPrep.reduce((a, p) => a + p.kg, 0);
@@ -434,7 +528,7 @@
       fraccionar: tareasFracc, elaborar: tareasElab, preparar: tareasPrep,
       de_stock: deStock.map(conNombre), postergado: postergado.map(conNombre), mas_adelante: masAdelante.map(conNombre),
       a_confirmar: aConfirmar.map((p) => ({ so_id: p.id, numero: p.numero, cliente: p.cliente, fecha: p.fecha, estado: p.estado, monto: p.monto, lineas: p.lineas })),
-      ritmo, alertas,
+      ritmo, para_stock: paraStock, alertas,
       postergados: Object.values(posDe),
       entregas_hoy: Object.values(entregaDe),
       aprendido: { lotes: ap.lote, tandas: ap.tanda, patrones },
