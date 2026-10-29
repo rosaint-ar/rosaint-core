@@ -73,10 +73,15 @@
   // producto (si es constante) y cada cuántos días.
   function aprender(snap) {
     const porProd = {}; for (const m of snap.mo || []) (porProd[m.c] = porProd[m.c] || []).push(m.q);
-    const lote = {}, tanda = {};
+    const lote = {}, tanda = {}, loteMax = {};
     for (const [c, qs] of Object.entries(porProd)) {
       const mo = moda(qs);
-      if (c.startsWith('9')) lote[c] = mo.parte >= 0.25 ? mo.valor : Math.round(mediana(qs));
+      if (c.startsWith('9')) {
+        lote[c] = mo.parte >= 0.25 ? mo.valor : Math.round(mediana(qs));
+        const n = {}; for (const q of qs) n[q] = (n[q] || 0) + 1;
+        const rep2 = Object.keys(n).map(Number).filter((q) => n[q] >= 2);
+        loteMax[c] = Math.max(lote[c], ...(rep2.length ? rep2 : qs));
+      }
       else tanda[c] = mo.valor;
     }
     // entregas agrupadas por pedido → por entrega (picking)
@@ -106,10 +111,10 @@
       for (const [sku, qs] of Object.entries(c.porSku)) { const mo = moda(qs); if (qs.length >= 3 && mo.parte >= 0.6) tandas[sku] = mo.valor; }
       patrones[c.p] = { p: c.p, cli: c.cli, pedidos: c.pedidos, pedidos_partidos: c.multi, entregas_por_pedido: Math.round(mediana(c.n_entregas)), dias_entre: Math.max(1, Math.round(mediana(c.intervalos))), tandas, aprendido: true };
     }
-    return { lote, tanda, patrones, ultimaEntrega, entregasHechas };
+    return { lote, tanda, loteMax, patrones, ultimaEntrega, entregasHechas };
   }
 
-  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [], entregas = [], hoja = [] }) {
+  function programar({ snap, cfg, parciales = [], clientes = [], pres = [], subg = [], hoy = new Date(), postergados = [], entregas = [], hoja = [], lotes = [] }) {
     const capU = Number(cfg.cap_u_dia), capKg = Number(cfg.cap_kg_dia);
     const umbral = Number(cfg.umbral_pedido_grande || 10);
     const diaAnterior = new Set(cfg.graneles_dia_anterior || []);
@@ -122,7 +127,22 @@
     const subDe = {}; for (const s of subg) (subDe[s.g] = subDe[s.g] || []).push({ c: s.c, pct: Number(s.pct) });
     const parcialDe = {}; for (const p of parciales) parcialDe[p.so_id] = p;
     const ap = aprender(snap);
-    const loteDe = (g) => ap.lote[g] || 10;
+    // Lote habitual y tanda máxima: lo fijado a mano (prod_plan_lotes) manda sobre lo aprendido de Odoo
+    const loteMano = {}; for (const l of lotes) loteMano[l.codigo] = l;
+    const loteDe = (g) => Number(loteMano[g]?.lote) || ap.lote[g] || 10;
+    const maxDe = (g) => Math.max(loteDe(g), Number(loteMano[g]?.lote_max) || ap.loteMax[g] || loteDe(g));
+    // Cuánto elaborar para tener kg y en cuántas tandas. Una sola tanda nunca pasa la máxima que se hace
+    // (ej. Masajes: 40 kg = 2 tandas de 20). Si alcanza con una, se hace el lote de siempre (Clásica 35).
+    // Las tandas se redondean de a 5 kg en los lotes grandes (de a lote en los chicos).
+    const reparto = (g, kg) => { const n = Math.max(1, Math.ceil(kg / maxDe(g) - 1e-9)); return { n, tanda: r2(kg / n), max: maxDe(g) }; };
+    function tandas(g, kg) {
+      if (!(kg > 1e-9)) return { total: 0, n: 0, tanda: 0 };
+      const lote = loteDe(g), max = maxDe(g), paso = lote >= 10 ? 5 : lote;
+      if (kg <= lote + 1e-9) return { total: lote, n: 1, tanda: lote };
+      const n = Math.ceil(kg / max - 1e-9);
+      const t = Math.min(max, Math.max(lote, Math.ceil(kg / n / paso - 1e-9) * paso));
+      return { total: r2(n * t), n, tanda: r2(t) };
+    }
     // patrón de entrega del cliente: lo cargado a mano (prod_plan_clientes) manda sobre lo aprendido
     const patrones = JSON.parse(JSON.stringify(ap.patrones));
     for (const c of clientes) {
@@ -286,8 +306,8 @@
       const tengo = est.gr[g] ?? dispGr[g] ?? 0;
       if (tengo >= kg - 1e-9) { est.gr[g] = tengo - kg; return { ok: true }; }
       if (prof > 5) return { ok: false, motivo: `receta de ${g} demasiado profunda` };
-      const falta = kg - tengo, lote = loteDe(g);
-      const hacer = Math.ceil(falta / lote) * lote;
+      const falta = kg - tengo;
+      const hacer = tandas(g, falta).total;
       for (const s of subDe[g] || []) {
         const nec = hacer * s.pct / 100;
         const tengoS = est.gr[s.c] ?? dispGr[s.c] ?? 0;
@@ -433,14 +453,15 @@
       const proy = (dispGr[g] || 0) - (futuroGr[g] || 0);
       const cob = r2(Math.max(0, proy) / rd);
       const falta = objetivoGr * rd - proy;
-      const lotes = falta > 0 ? Math.min(3, Math.max(1, Math.ceil(falta / lote))) : 0;
+      const prop = falta > 0 ? tandas(g, Math.min(falta, 3 * maxDe(g))) : { total: 0 };
       granelStock[g] = { c: g, por_dia: r2(rd), por_semana: r2(rd * 5), libre: r2(dispGr[g] || 0), comprometido: r2(futuroGr[g] || 0), proyectado: r2(proy), cobertura_dias: cob,
-        tendencia: tendenciaDe(kg, usoGrRec[g] || 0), se_agota: seAgota(cob), lote, propuesta_kg: lotes * lote, ...fr, dia_anterior: diaAnterior.has(g), hoy_kg: 0 };
+        tendencia: tendenciaDe(kg, usoGrRec[g] || 0), se_agota: seAgota(cob), lote, lote_max: maxDe(g), propuesta_kg: prop.total, ...fr, dia_anterior: diaAnterior.has(g), hoy_kg: 0 };
     }
     // elaborar granel para guardar: de a lotes enteros, lo que entre en el tope de kg del día
     function elaborarParaStock(r) {
-      for (let n = Math.round(r.propuesta_kg / r.lote); n >= 1; n--) {
-        const kg = n * r.lote, est = nuevoEst();
+      const opciones = [...new Set([r.propuesta_kg, ...Array.from({ length: Math.ceil(r.propuesta_kg / r.lote) }, (_, i) => tandas(r.c, (i + 1) * r.lote).total)])].filter((k) => k <= r.propuesta_kg + 1e-9).sort((a, b) => b - a);
+      for (const kg of opciones) {
+        const est = nuevoEst();
         let ok = true;
         for (const s of subDe[r.c] || []) { const sub = planGranel(s.c, kg * s.pct / 100, est); if (!sub.ok) { ok = false; break; } }
         if (!ok) {
@@ -507,10 +528,10 @@
           const pr = presDe[r.c], g = pr.g, falta = Math.max(0, propuesta - hoyQ);
           const libreAntes = Math.max(0, resto[g] || 0), nec = falta * pr.kg;
           let elaborarKg = 0;
-          if (nec > libreAntes + 1e-9) { const lote = loteDe(g); elaborarKg = Math.ceil((nec - libreAntes) / lote - 1e-9) * lote; }
+          if (nec > libreAntes + 1e-9) elaborarKg = tandas(g, nec - libreAntes).total;
           resto[g] = libreAntes + elaborarKg - nec;
           return { ...r, nombre: nombre[r.c] || r.c, granel: g, granel_nombre: nombre[g] || g, propuesta, hoy: hoyQ, granel_libre: r2(libreAntes),
-            alcanza_con_granel: Math.min(falta, Math.floor(libreAntes / pr.kg + 1e-9)), elaborar_kg: r2(elaborarKg), lote_granel: loteDe(g) };
+            alcanza_con_granel: Math.min(falta, Math.floor(libreAntes / pr.kg + 1e-9)), elaborar_kg: r2(elaborarKg), lote_granel: loteDe(g), tandas_granel: tandas(g, elaborarKg) };
         });
       })(),
       objetivo_dias: objetivoDias, objetivo_granel: objetivoGr,
@@ -522,16 +543,17 @@
     for (const x of paraStock.productos) if (x.elaborar_kg > 0 && granelStock[x.granel]) { extraGr[x.granel] = (extraGr[x.granel] || 0) + x.elaborar_kg; x.granel_base = true; }
     for (const g of paraStock.graneles) {
       const extra = extraGr[g.c] || 0; if (!extra) continue;
-      const pendiente = Math.max(g.propuesta_kg - g.hoy_kg, Math.ceil(extra / g.lote - 1e-9) * g.lote);
+      const pendiente = Math.max(g.propuesta_kg - g.hoy_kg, tandas(g.c, extra).total);
       g.propuesta_kg = r2(g.hoy_kg + pendiente); g.para_productos_kg = r2(extra);
     }
+    for (const g of paraStock.graneles) { const p = g.propuesta_kg - g.hoy_kg; g.tandas = p > 0 ? reparto(g.c, p) : null; }
 
     // ---------- 5) armado del resultado ----------
     const conNombre = (o) => ({ ...o, nombre: nombre[o.c] || o.c });
     const tareasFracc = Object.values(fraccionar).map((f) => ({ ...conNombre(f), granel: presDe[f.c]?.g, kg: r2(f.q * (presDe[f.c]?.kg || 0)), etiqueta: ETIQUETA[f.prio] }))
       .sort((a, b) => RANGO[a.prio] - RANGO[b.prio] || b.q - a.q);
-    const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), para: [...e.para], stock_kg: r2(e.stock || 0), stock_cob: granelStock[e.c]?.cobertura_dias ?? null, dia_anterior: diaAnterior.has(e.c) }));
-    const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); const falta = Math.max(0, p.nec - p.tengo); return { c: p.c, nombre: nombre[p.c] || p.c, kg: Math.ceil(falta / lote) * lote, lote, texto: 'preparar hoy para poder elaborar mañana' }; }).filter((p) => p.kg > 0);
+    const tareasElab = Object.values(elaborar).map((e) => ({ ...conNombre(e), kg: r2(e.kg), lote: loteDe(e.c), lote_max: maxDe(e.c), tandas: reparto(e.c, e.kg), para: [...e.para], stock_kg: r2(e.stock || 0), stock_cob: granelStock[e.c]?.cobertura_dias ?? null, dia_anterior: diaAnterior.has(e.c) }));
+    const tareasPrep = Object.values(preparar).map((p) => { const lote = loteDe(p.c); const falta = Math.max(0, p.nec - p.tengo); const kg = tandas(p.c, falta).total; return { c: p.c, nombre: nombre[p.c] || p.c, kg, lote, tandas: reparto(p.c, kg || lote), texto: 'preparar hoy para poder elaborar mañana' }; }).filter((p) => p.kg > 0);
     // lo que se prepara para mañana se elabora HOY: ocupa capacidad del día
     carga.kg += tareasPrep.reduce((a, p) => a + p.kg, 0);
     const moViejas = snap.mo_abiertas.filter((m) => m.inicio && (d0(hoy) - d0(m.inicio)) / 864e5 > 14);
@@ -554,7 +576,7 @@
       ritmo, para_stock: paraStock, alertas,
       postergados: Object.values(posDe),
       entregas_hoy: Object.values(entregaDe),
-      aprendido: { lotes: ap.lote, tandas: ap.tanda, patrones },
+      aprendido: { lotes: ap.lote, lotes_max: ap.loteMax, tandas: ap.tanda, patrones, lotes_mano: loteMano },
     };
   }
 

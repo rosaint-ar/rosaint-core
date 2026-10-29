@@ -50,17 +50,18 @@
       sb.from('presentaciones').select('codigo_sku,codigo_granel,tamanio_kg,codigo_envase'),
       sb.from('formulas').select('id,codigo_granel').eq('estado', 'vigente'),
       sb.from('formula_componentes').select('formula_id,codigo_componente,composicion_pct').range(0, 4999),
+      sb.from('prod_plan_lotes').select('*'),
     ]);
     const err = q.find((x) => x.error);
     if (err) throw new Error(err.error.message);
-    const [snapR, cfg, par, cli, pos, ent, hoja, diaR, pr, fo, fc] = q.map((x) => x.data);
+    const [snapR, cfg, par, cli, pos, ent, hoja, diaR, pr, fo, fc, lotes] = q.map((x) => x.data);
     if (!snapR.length) throw new Error('todavía no hay foto de Odoo: abrí "Programar el día" una vez');
     const snap = snapR[0].datos, creado = new Date(snapR[0].creado);
     const pres = pr.map((p) => ({ c: p.codigo_sku, g: p.codigo_granel, kg: p.tamanio_kg, env: p.codigo_envase }));
     const gDe = {}; for (const f of fo) gDe[f.id] = f.codigo_granel;
     const subg = fc.filter((x) => gDe[x.formula_id] && String(x.codigo_componente).startsWith('9'))
       .map((x) => ({ g: gDe[x.formula_id], c: x.codigo_componente, pct: x.composicion_pct }));
-    const plan = root.PROGRAMADOR.programar({ snap, cfg, parciales: par, clientes: cli, postergados: pos, entregas: ent, hoja, pres, subg, hoy });
+    const plan = root.PROGRAMADOR.programar({ snap, cfg, parciales: par, clientes: cli, postergados: pos, entregas: ent, hoja, pres, subg, hoy, lotes });
     const nombreDe = (c) => (snap.stock.find((s) => s.c === c) || {}).n || c;
     const r = { snap, creado, plan, hoja, filas: filasDelDia(plan, diaR, nombreDe), nombreDe };
     r.pendientes = pendientes(r);
