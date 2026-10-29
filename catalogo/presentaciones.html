@@ -615,7 +615,8 @@ $('#mpBtnCancel').addEventListener('click', cerrarModal);
 $('#modalPres').addEventListener('click', e => { if (e.target.id === 'modalPres') cerrarModal(); });
 
 window.abrirEditar = abrirEditar;
-cargar();
+// ?editar=CÓDIGO abre directo la edición (lo usa la ficha rápida del producto)
+cargar().then(() => { const e = new URLSearchParams(location.search).get('editar'); if (e && PRES.some(p => p.codigo_sku === e)) abrirEditar(e); });
 </script>
 </body>
 </html>

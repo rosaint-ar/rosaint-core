@@ -404,6 +404,11 @@ async function mount() {
   // Grilla de accesos rápidos (si la página la pide, típicamente el Dashboard)
   const gridHost = document.getElementById('module-accesos');
   if (gridHost) renderModuleGrid(root, gridHost);
+
+  // Ficha rápida del producto: tocar un código abre precios, canales y costo (solo en las secciones de producto)
+  const fp = document.createElement('script');
+  fp.src = root + 'shared/ficha-producto.js?v=202610291';
+  document.head.appendChild(fp);
 }
 
 if (document.readyState === 'loading') {

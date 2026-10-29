@@ -773,6 +773,8 @@ $('#fab-descartar').addEventListener('click', () => {
 });
 
 $('#search').addEventListener('input', render);
+// ?sku=CÓDIGO llega filtrado a ese producto (lo usa la ficha rápida del producto)
+{ const s = new URLSearchParams(location.search).get('sku'); if (s) $('#search').value = s; }
 $('#filter-linea').addEventListener('change', render);
 $('#filter-vinculo').addEventListener('change', render);
 $('#filter-cambios').addEventListener('change', render);
