@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reseñas · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <style>
+    /* Identidad Rosaint: mismo criterio que Envíos y Clientes (manual de marca, edición 21). */
+    @font-face { font-family: 'Sora'; src: url('../shared/marca/fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Bitter'; src: url('../shared/marca/fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Source Sans 3'; src: url('../shared/marca/fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
+    :root {
+      --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+      --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+      --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel)); --r-li: rgba(52, 73, 94, .16);
+      --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
+    }
+    [data-theme="dark"] {
+      --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+      --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul)); --r-li: rgba(247, 245, 242, .14);
+    }
+    body { background: var(--r-bg); }
+    body::before { display: none; }
+    #app-content { font-family: var(--sans); color: var(--r-tx); font-size: 15px; }
+    .eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+    .titular { font: 400 30px/1.08 var(--sora); letter-spacing: -.01em; margin: 5px 0 0; }
+    .titular em { font-family: var(--bitter); font-style: italic; }
+    .filete { display: block; width: 40px; height: 3px; background: var(--acido); margin-top: 12px; }
+    .cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .regla { font-size: 13.5px; color: var(--r-mu); max-width: 760px; margin: 0 0 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .kpi { background: var(--r-sup); border: 1px solid var(--r-li); padding: 14px 16px; }
+    .kpi b { display: block; font: 400 26px/1.1 var(--sora); }
+    .kpi span { font-size: 12.5px; color: var(--r-mu); }
+    .kpi.alerta { border-color: var(--rojo); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .chip { font: 400 11.5px var(--sora); padding: 5px 11px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-mu); cursor: pointer; }
+    .chip.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .lista { display: grid; gap: 10px; }
+    .resena { background: var(--r-sup); border: 1px solid var(--r-li); padding: 16px 18px; display: grid; gap: 6px; }
+    .resena .linea { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--r-mu); }
+    .estrellas { color: var(--rojo); letter-spacing: 2px; font-size: 16px; }
+    .resena h3 { font: 500 15px var(--sora); margin: 0; }
+    .resena p { margin: 0; white-space: pre-wrap; }
+    .marca { font: 500 10.5px var(--sora); text-transform: uppercase; letter-spacing: .08em; padding: 2px 7px; border: 1px solid var(--r-li); }
+    .marca.ok { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+    .acciones select { font: inherit; padding: 6px 8px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); }
+    .vacio { padding: 28px; text-align: center; color: var(--r-mu); border: 1px dashed var(--r-li); }
+    .error { color: var(--rojo); }
+  </style>
+</head>
+<body data-page="resenas" data-title="Reseñas" data-subtitle="Opiniones de rosaint.online: moderar y publicar">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="cab">
+    <div>
+      <span class="eyebrow">Ventas · Reseñas</span>
+      <h1 class="titular">Lo que dicen de cada <em>producto</em>.</h1>
+      <span class="filete"></span>
+    </div>
+  </div>
+  <p class="regla">Se publican <b>todas</b>, buenas y malas: es la regla de Google para mostrar las estrellas. Rechazá solo spam, insultos, datos personales, opiniones que no hablan del producto o duplicadas. Lo publicado aparece en la ficha de la web en unos minutos.</p>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="chips" id="chips"></div>
+  <div class="lista" id="lista"><div class="vacio">Cargando…</div></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script>
+  // Tablas en Supabase Rosaint: resenas (las opiniones) y resenas_pedidos (a quién se le pidió por mail).
+  // Las altas llegan solas desde rosaint.online/opinar/ (función resenas); acá solo se modera.
+  const MOTIVOS = { spam: 'Spam', insultos: 'Insultos', datos_personales: 'Datos personales', no_es_del_producto: 'No habla del producto', duplicada: 'Duplicada' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fecha = d => new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+  let filtro = 'pendiente', filas = [], quien = '';
+
+  async function cargar() {
+    const [r, p] = await Promise.all([
+      sb.from('resenas').select('id,origen,pedido_tn,sku,producto_path,producto_nombre,puntaje,titulo,texto,autor,verificada,estado,motivo_rechazo,creada_en,publicada_en,moderada_por').order('creada_en', { ascending: false }).limit(1000),
+      sb.from('resenas_pedidos').select('pedido_tn,enviado_en,recordatorio_en,respondido_en,baja').gt('pedido_tn', 0),
+    ]);
+    if (r.error || p.error) { document.getElementById('lista').innerHTML = `<div class="vacio error">No se pudieron leer las reseñas: ${esc((r.error || p.error).message)}</div>`; return; }
+    filas = r.data.filter(x => x.motivo_rechazo !== 'prueba');
+    const pub = filas.filter(x => x.estado === 'publicada'), pend = filas.filter(x => x.estado === 'pendiente');
+    const prom = pub.length ? (pub.reduce((s, x) => s + x.puntaje, 0) / pub.length).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—';
+    const ped = p.data, enviados = ped.filter(x => x.enviado_en).length, respondieron = ped.filter(x => x.respondido_en).length;
+    document.getElementById('kpis').innerHTML = [
+      [pend.length, 'por moderar', pend.length > 0],
+      [pub.length, 'publicadas'],
+      [prom, 'promedio publicado'],
+      [ped.length, 'pedidos despachados en seguimiento'],
+      [enviados, 'mails de pedido enviados'],
+      [enviados ? Math.round(respondieron / enviados * 100) + '%' : '—', 'contestaron el mail'],
+    ].map(([n, t, a]) => `<div class="kpi${a ? ' alerta' : ''}"><b>${n}</b><span>${t}</span></div>`).join('');
+    pintar();
+  }
+
+  function pintar() {
+    const cuenta = e => filas.filter(x => x.estado === e).length;
+    document.getElementById('chips').innerHTML = [['pendiente', 'Por moderar'], ['publicada', 'Publicadas'], ['rechazada', 'Rechazadas']]
+      .map(([k, t]) => `<button class="chip${filtro === k ? ' on' : ''}" data-filtro="${k}">${t} · ${cuenta(k)}</button>`).join('');
+    const lista = filas.filter(x => x.estado === filtro);
+    document.getElementById('lista').innerHTML = lista.length ? lista.map(tarjeta).join('') : `<div class="vacio">${filtro === 'pendiente' ? 'No hay reseñas por moderar.' : 'Nada en esta lista.'}</div>`;
+  }
+
+  function tarjeta(x) {
+    const origen = x.origen === 'trusty' ? '<span class="marca">Importada de Trusty</span>' : (x.verificada ? '<span class="marca ok">Compra verificada</span>' : '');
+    let acciones = '';
+    if (x.estado === 'pendiente') acciones = `<button class="btn primary" data-publicar="${x.id}">Publicar</button>
+      <select data-motivo="${x.id}"><option value="">Rechazar por…</option>${Object.entries(MOTIVOS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+      <button class="btn secondary" data-rechazar="${x.id}">Rechazar</button>`;
+    else if (x.estado === 'rechazada') acciones = `<span>Motivo: ${esc(MOTIVOS[x.motivo_rechazo] || x.motivo_rechazo || '—')}</span><button class="btn secondary" data-volver="${x.id}">Volver a moderar</button>`;
+    return `<article class="resena">
+      <div class="linea"><span class="estrellas" aria-label="${x.puntaje} de 5">${'★'.repeat(x.puntaje)}${'☆'.repeat(5 - x.puntaje)}</span><span>${fecha(x.creada_en)}${x.pedido_tn ? ' · pedido TN ' + esc(x.pedido_tn) : ''}</span></div>
+      <div class="linea"><a href="https://rosaint.online${esc(x.producto_path)}" target="_blank" rel="noopener">${esc(x.producto_nombre || x.producto_path)}</a><span>${esc(x.autor)} ${origen}</span></div>
+      ${x.titulo ? `<h3>${esc(x.titulo)}</h3>` : ''}${x.texto ? `<p>${esc(x.texto)}</p>` : ''}
+      ${x.moderada_por && x.estado !== 'pendiente' ? `<div class="linea"><span>Moderada por ${esc(x.moderada_por)}${x.publicada_en ? ' · ' + fecha(x.publicada_en) : ''}</span></div>` : ''}
+      ${acciones ? `<div class="acciones">${acciones}</div>` : ''}
+    </article>`;
+  }
+
+  async function cambiar(id, cambios, boton) {
+    boton.disabled = true;
+    const { error } = await sb.from('resenas').update({ ...cambios, moderada_por: quien || 'Core' }).eq('id', id);
+    if (error) { boton.disabled = false; alert('No se pudo guardar: ' + error.message); return; }
+    Object.assign(filas.find(x => x.id === id), cambios, { moderada_por: quien || 'Core' });
+    cargar();
+  }
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.filtro) { filtro = b.dataset.filtro; pintar(); return; }
+    if (b.dataset.publicar) cambiar(b.dataset.publicar, { estado: 'publicada', publicada_en: new Date().toISOString(), motivo_rechazo: null }, b);
+    if (b.dataset.rechazar) {
+      const motivo = document.querySelector(`[data-motivo="${b.dataset.rechazar}"]`).value;
+      if (!motivo) { alert('Elegí el motivo del rechazo.'); return; }
+      cambiar(b.dataset.rechazar, { estado: 'rechazada', motivo_rechazo: motivo }, b);
+    }
+    if (b.dataset.volver) cambiar(b.dataset.volver, { estado: 'pendiente', motivo_rechazo: null, publicada_en: null }, b);
+  });
+
+  (async () => {
+    try { const { data } = await sb.auth.getUser(); quien = data?.user?.email || ''; } catch {}
+    cargar();
+  })();
+</script>
+</body>
+</html>
