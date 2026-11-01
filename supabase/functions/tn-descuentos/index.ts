@@ -11,13 +11,18 @@
 // Abierta a propósito (la llama Tienda Nube, sin sesión de Core): no escribe nada en la tienda, solo
 // devuelve el descuento a quien pregunta. Tienda Nube corta a los 800 ms: todo en memoria y el
 // registro se guarda después de responder.
+// UN SOLO CALLBACK POR APP: la app 35324 también tiene la promoción «Rosaint · Rutinas complementarias
+// 5%» (motor PHP en rosaint.online, rosaint-rutinas-v38.php). Tienda Nube llama a UNA sola URL, así que
+// esta función le reenvía cada bolsa de Rosaint al motor de rutinas (en paralelo) y junta sus comandos con
+// los nuestros. La URL con su clave vive en el secreto RUTINAS_CALLBACK_URL (nunca en el código).
+const RUTINAS = Deno.env.get("RUTINAS_CALLBACK_URL") || "";
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const H = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" };
 type Rec = Record<string, any>;
 
 // Una sola consulta (función SQL tn_descuentos_datos). La URL registrada en Tienda Nube lleva
-// ?forceFunctionRegion=us-west-2 para correr al lado de la base. Si lo guardado tiene más de 15 s
+// ?forceFunctionRegion=sa-east-1 (ver abajo): la base queda lejos, por eso la memoria. Si lo guardado tiene más de 15 s
 // se responde con eso igual y se refresca por detrás (hasta 5 min); solo la primera vez se espera.
 let cache: { leido: number; tiendas: Rec[]; reglas: Rec[]; prueba: Set<string> } | null = null;
 let refrescando: Promise<void> | null = null;
@@ -77,47 +82,70 @@ function registrar(fila: Rec) {
 const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
 const sinCambios = () => new Response(null, { status: 204 });
 
+// Pide al motor de rutinas sus comandos para esta bolsa (solo Rosaint). Corta a los 600 ms: si no llega,
+// se responde igual con lo nuestro (Tienda Nube corta a los 800 ms y dejaría la bolsa sin cambios).
+async function comandosRutinas(raw: string, store: number): Promise<{ cmds: Rec[]; estado: string }> {
+  if (store !== 385079 || !RUTINAS) return { cmds: [], estado: RUTINAS ? '' : 'rutinas sin configurar' };
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 600);
+  try {
+    const r = await fetch(RUTINAS, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw, signal: ctl.signal });
+    if (r.status === 204) return { cmds: [], estado: 'rutinas 204' };
+    if (!r.ok) return { cmds: [], estado: 'rutinas ' + r.status };
+    const j = await r.json(); return { cmds: Array.isArray(j?.commands) ? j.commands : [], estado: 'rutinas ' + (j?.commands?.length || 0) + ' cmd' };
+  } catch (e) { return { cmds: [], estado: 'rutinas error ' + String((e as Error).name || e) }; }
+  finally { clearTimeout(t); }
+}
+
+// Nuestros comandos (bonificación de envío). Devuelve también la fila del registro.
+async function comandosEnvio(b: Rec, store: number, cart: number, t0: number): Promise<{ cmds: Rec[]; log: Rec }> {
+  const d = await datos();
+  const tienda = d.tiendas.find((x) => Number(x.store_id) === store);
+  // Tienda que no conocemos o apagada: no tocamos nada.
+  if (!tienda || !tienda.habilitada || !tienda.promotion_id) return { cmds: [], log: { store_id: store || null, cart_id: cart || null, respuesta: 'tienda no habilitada' } };
+  if (b.execution_tier && b.execution_tier !== 'cross_items') return { cmds: [], log: { store_id: store, cart_id: cart, respuesta: 'tier ' + b.execution_tier } };
+  const prueba = d.prueba.has(`${store}|${cart}`);
+  const reglas = d.reglas.filter((r) => Number(r.store_id) === store && (r.activa || prueba));
+  const porCat: Record<string, number> = {};
+  let unidades = 0;
+  for (const p of b.products || []) {
+    const q = Number(p.quantity) || 0; unidades += q;
+    for (const c of p.categories || []) porCat[c.id] = (porCat[c.id] || 0) + q;
+  }
+  const subtotal = Number(b.totals?.subtotal ?? 0);
+  const envio = b.shipping?.cost == null || b.shipping.cost === '' ? null : Number(b.shipping.cost);
+  const mejor = evaluarReglas(reglas, { unidades, unidades_por_categoria: porCat, subtotal }, { precio: envio, medio: '?', entrega: '?' });
+  const tiene = (b.promotions || []).some((p: Rec) => p.id === tienda.promotion_id);
+  const base = { store_id: store, cart_id: cart, envio, cp: b.shipping?.postalcode ?? null, unidades, subtotal, prueba, payload: prueba ? b : null };
+  if (mejor && mejor.descuento > 0) return { log: { ...base, respuesta: 'descuento', descuento: mejor.descuento, regla: mejor.regla + (mejor.estimado ? ' · sobre envío de referencia' : '') },
+    cmds: [{ command: 'create_or_update_discount', specs: { promotion_id: tienda.promotion_id, currency: b.currency || 'ARS',
+      display_text: { 'es-ar': mejor.texto, es: mejor.texto }, discount_specs: { type: 'fixed', amount: mejor.descuento.toFixed(2) } } }] };
+  if (tiene) return { log: { ...base, respuesta: 'quitar' }, cmds: [{ command: 'remove_discount', specs: { scope: 'cart', promotion_ids: [tienda.promotion_id] } }] };
+  return { log: { ...base, respuesta: 'sin descuento' }, cmds: [] };
+}
+
 Deno.serve(async (req: Request) => {
   const t0 = Date.now();
-  if (req.method !== "POST") return new Response("ok");
+  if (req.method !== 'POST') return new Response('ok');
+  const raw = await req.text();
   let b: Rec;
-  try { b = await req.json(); } catch { return sinCambios(); }
+  try { b = JSON.parse(raw); } catch { return sinCambios(); }
   const store = Number(b.store_id), cart = Number(b.cart_id);
-  try {
-    const d = await datos();
-    const tienda = d.tiendas.find((x) => Number(x.store_id) === store);
-    // Tienda que no conocemos o apagada: no tocamos nada.
-    if (!tienda || !tienda.habilitada || !tienda.promotion_id) { registrar({ store_id: store || null, cart_id: cart || null, respuesta: "tienda no habilitada", ms: Date.now() - t0 }); return sinCambios(); }
-    if (b.execution_tier && b.execution_tier !== "cross_items") return sinCambios();
-    const prueba = d.prueba.has(`${store}|${cart}`);
-    const reglas = d.reglas.filter((r) => Number(r.store_id) === store && (r.activa || prueba));
-    const porCat: Record<string, number> = {};
-    let unidades = 0;
-    for (const p of b.products || []) {
-      const q = Number(p.quantity) || 0; unidades += q;
-      for (const c of p.categories || []) porCat[c.id] = (porCat[c.id] || 0) + q;
-    }
-    const subtotal = Number(b.totals?.subtotal ?? 0);
-    const envio = b.shipping?.cost == null || b.shipping.cost === "" ? null : Number(b.shipping.cost);
-    const mejor = evaluarReglas(reglas, { unidades, unidades_por_categoria: porCat, subtotal }, { precio: envio, medio: "?", entrega: "?" });
-    const tiene = (b.promotions || []).some((p: Rec) => p.id === tienda.promotion_id);
-    const base = { store_id: store, cart_id: cart, envio, cp: b.shipping?.postalcode ?? null, unidades, subtotal, prueba, payload: prueba ? b : null };
-    if (mejor && mejor.descuento > 0) {
-      const monto = mejor.descuento.toFixed(2);
-      registrar({ ...base, respuesta: "descuento", descuento: mejor.descuento, regla: mejor.regla + (mejor.estimado ? " · sobre envío de referencia" : ""), ms: Date.now() - t0 });
-      return json({ commands: [{ command: "create_or_update_discount", specs: {
-        promotion_id: tienda.promotion_id, currency: b.currency || "ARS",
-        display_text: { "es-ar": mejor.texto, es: mejor.texto }, discount_specs: { type: "fixed", amount: monto },
-      } }] });
-    }
-    if (tiene) {
-      registrar({ ...base, respuesta: "quitar", ms: Date.now() - t0 });
-      return json({ commands: [{ command: "remove_discount", specs: { scope: "cart", promotion_ids: [tienda.promotion_id] } }] });
-    }
-    registrar({ ...base, respuesta: "sin descuento", ms: Date.now() - t0 });
-    return sinCambios();
-  } catch (e) {
-    registrar({ store_id: store || null, cart_id: cart || null, respuesta: "error: " + String((e as Error).message || e).slice(0, 300), ms: Date.now() - t0 });
-    return sinCambios();
+  // Tienda Nube consulta por separado cada nivel: «line_item» (rutinas, descuento por producto) y
+  // «cross_items» (nuestra bonificación, sobre la bolsa). Cada uno va solo a quien le corresponde, así el
+  // de rutinas no espera a la base y el nuestro no espera a rosaint.online. Sin nivel => los dos.
+  // La URL registrada lleva ?forceFunctionRegion=sa-east-1 (al lado de Tienda Nube y de rosaint.online).
+  const tier = String(b.execution_tier || '');
+  const pRutinas = tier === 'cross_items' ? Promise.resolve({ cmds: [] as Rec[], estado: '' }) : comandosRutinas(raw, store);
+  let nuestros: { cmds: Rec[]; log: Rec };
+  if (tier === 'line_item') nuestros = { cmds: [], log: { store_id: store || null, cart_id: cart || null, respuesta: 'tier line_item' } };
+  else {
+    try { nuestros = await comandosEnvio(b, store, cart, t0); }
+    catch (e) { nuestros = { cmds: [], log: { store_id: store || null, cart_id: cart || null, respuesta: 'error: ' + String((e as Error).message || e).slice(0, 300) } }; }
   }
+  const rut = await pRutinas;
+  const commands = [...rut.cmds, ...nuestros.cmds];
+  // cart_id 0 = latido del cron «tn-descuentos-latido» (mantiene caliente la conexión con rutinas): no se registra.
+  if (cart === 0) return json({ latido: true, rutinas: rut.estado, ms: Date.now() - t0 });
+  registrar({ ...nuestros.log, respuesta: [nuestros.log.respuesta, rut.estado].filter(Boolean).join(' · '), ms: Date.now() - t0 });
+  return commands.length ? json({ commands }) : sinCambios();
 });
