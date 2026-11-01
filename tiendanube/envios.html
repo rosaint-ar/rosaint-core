@@ -113,7 +113,7 @@
     <p class="regla-txt">Cada regla descuenta una parte del envío cuando la bolsa cumple las condiciones. Si varias se cumplen, gana la que más descuenta. Si el envío ya es gratis (por la promo de envío gratis), no se descuenta nada. Las condiciones vacías no filtran. <b>Activa</b> = la ven todas las clientas en el checkout; <b>borrador</b> = solo en las bolsas de prueba de esta pantalla.</p>
     <div class="aviso"><b>Cómo lo calcula Tienda Nube (probado el 1/11):</b> el descuento se recalcula cada vez que cambia la bolsa, no cuando la clienta elige el envío. Por eso:
       <br>• <b>Monto fijo</b> («Bonificación de envío −$4.000»): se aplica siempre, desde que la bolsa cumple la regla. Es la opción segura.
-      <br>• <b>% del envío</b>: solo se aplica si el envío ya estaba elegido cuando cambió la bolsa (por ejemplo, si la web lo preelige antes de pasar al checkout). Si la clienta cambia de envío en el checkout, queda el descuento calculado con el envío anterior. Poné un <b>tope</b>.
+      <br>• <b>% del envío</b>: si el envío ya estaba elegido cuando cambió la bolsa, se calcula sobre el envío real. Si todavía no lo eligió, se calcula sobre el <b>envío de referencia</b> de la regla (sin referencia, no se aplica). Si la clienta cambia de envío en el checkout, queda el descuento anterior hasta que cambie la bolsa. Poné un <b>tope</b>.
       <br>• Las condiciones por correo (Correo/Andreani) o por domicilio/sucursal solo sirven en el simulador: el checkout no informa cuál eligió.</div>
     <div style="margin-bottom:12px"><button class="btn primary" id="nueva">+ Agregar regla</button></div>
     <div id="form-regla"></div>
@@ -255,7 +255,8 @@
     if (r.entrega !== 'todas') c.push(ENTREGAS[r.entrega].toLowerCase());
     if (r.desde || r.hasta) c.push(`vigente ${r.desde ? 'desde ' + r.desde : ''}${r.hasta ? ' hasta ' + r.hasta : ''}`);
     const d = r.descuento_tipo === 'porcentaje' ? `${Number(r.descuento_valor)}% del envío` : `${plata(r.descuento_valor)} del envío`;
-    return `${d}${r.tope != null ? ` (tope ${plata(r.tope)})` : ''} · ${c.length ? c.join(' · ') : 'cualquier bolsa'}`;
+    const ref = r.descuento_tipo === 'porcentaje' ? (r.referencia_envio ? ` (antes de elegir el envío: sobre ${plata(r.referencia_envio)})` : ' (solo con el envío ya elegido)') : '';
+    return `${d}${ref}${r.tope != null ? ` (tope ${plata(r.tope)})` : ''} · ${c.length ? c.join(' · ') : 'cualquier bolsa'}`;
   }
   function pintarReglas() {
     $('#reglas').innerHTML = REGLAS.length ? REGLAS.map(r => `<article class="regla">
@@ -272,9 +273,10 @@
     const cats = CATEGORIAS.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(c => `<label><input type="checkbox" value="${c.id}" ${(r.categoria_ids || []).includes(c.id) ? 'checked' : ''}>${esc(c.nombre)}</label>`).join('');
     $('#form-regla').innerHTML = `<div class="panel"><h2>${r.id ? 'Editar regla' : 'Nueva regla'}</h2><div class="form-regla">
       <label class="campo todo">Nombre (interno) <input id="f-nombre" value="${esc(v('nombre'))}" placeholder="Ej.: 50% del envío en compras de $30.000 a $50.000"></label>
-      <label class="campo">Descuento <select id="f-tipo"><option value="monto" ${v('descuento_tipo', 'monto') === 'monto' ? 'selected' : ''}>Monto fijo ($) · se aplica siempre</option><option value="porcentaje" ${v('descuento_tipo') === 'porcentaje' ? 'selected' : ''}>% del envío · solo con envío ya elegido</option></select></label>
+      <label class="campo">Descuento <select id="f-tipo"><option value="monto" ${v('descuento_tipo', 'monto') === 'monto' ? 'selected' : ''}>Monto fijo ($) · se aplica siempre</option><option value="porcentaje" ${v('descuento_tipo') === 'porcentaje' ? 'selected' : ''}>% del envío · con envío de referencia</option></select></label>
       <label class="campo">Valor <input id="f-valor" type="number" min="0" step="any" value="${esc(v('descuento_valor'))}" placeholder="Ej.: 4000 o 50"></label>
       <label class="campo">Tope en $ (opcional) <input id="f-tope" type="number" min="0" step="any" value="${esc(v('tope'))}"></label>
+      <label class="campo">Envío de referencia $ (solo %) <input id="f-ref" type="number" min="0" step="any" value="${esc(v('referencia_envio'))}" placeholder="Ej.: 8400"></label>
       <label class="campo">Texto que ve la clienta <input id="f-texto" value="${esc(v('texto', 'Bonificación de envío'))}"></label>
       <label class="campo">Compra desde $ <input id="f-min" type="number" min="0" step="any" value="${esc(v('min_monto'))}"></label>
       <label class="campo">Compra hasta $ <input id="f-max" type="number" min="0" step="any" value="${esc(v('max_monto'))}"></label>
@@ -297,7 +299,7 @@
     if (b.id === 'f-guardar') {
       const fila = {
         store_id: STORE, nombre: $('#f-nombre').value.trim(), descuento_tipo: $('#f-tipo').value, descuento_valor: numo('#f-valor'),
-        tope: numo('#f-tope'), texto: $('#f-texto').value.trim() || 'Descuento en el envío', min_monto: numo('#f-min'), max_monto: numo('#f-max'),
+        tope: numo('#f-tope'), referencia_envio: $('#f-tipo').value === 'porcentaje' ? numo('#f-ref') : null, texto: $('#f-texto').value.trim() || 'Descuento en el envío', min_monto: numo('#f-min'), max_monto: numo('#f-max'),
         min_unidades: numo('#f-uni'), medio: $('#f-medio').value, entrega: $('#f-entrega').value, desde: $('#f-desde').value || null,
         hasta: $('#f-hasta').value || null, prioridad: numo('#f-prio') ?? 100,
         categoria_ids: [...document.querySelectorAll('#f-cats input:checked')].map(i => Number(i.value)), actualizado_por: quien || 'Core',

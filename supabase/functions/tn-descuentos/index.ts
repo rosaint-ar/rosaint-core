@@ -36,14 +36,15 @@ async function datos() {
 }
 
 // Misma lógica que tn-envios (simulador), con una diferencia medida el 1/11/2026: Tienda Nube NO vuelve
-// a llamar cuando la clienta elige el envío y manda shipping.cost vacío. Sin costo (precio null) solo
-// aplican las reglas de MONTO FIJO; las de porcentaje y las que filtran por correo o por
+// a llamar cuando la clienta elige el envío y manda shipping.cost vacío. Sin costo (precio null)
+// aplican las de MONTO FIJO y las de % que tengan «envío de referencia» (se calcula sobre ese monto);
+// cuando el envío llega, el % se calcula sobre el real. Las que filtran por correo o por
 // domicilio/sucursal quedan para el simulador. Envío explícitamente en 0 (gratis) => nada.
 function evaluarReglas(reglas: Rec[], carrito: Rec, opcion: Rec, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10)) {
   const sinCosto = opcion.precio == null;
   if (!sinCosto && !(opcion.precio > 0)) return null;
   const vale = reglas.filter((r) => {
-    if (sinCosto && r.descuento_tipo !== "monto") return false;
+    if (sinCosto && r.descuento_tipo !== "monto" && !(Number(r.referencia_envio) > 0)) return false;
     if (r.desde && hoy < r.desde) return false;
     if (r.hasta && hoy > r.hasta) return false;
     if (r.medio !== "todos" && r.medio !== opcion.medio) return false;
@@ -58,11 +59,12 @@ function evaluarReglas(reglas: Rec[], carrito: Rec, opcion: Rec, hoy = new Date(
   });
   let mejor: Rec | null = null;
   for (const r of vale) {
-    let d = r.descuento_tipo === "porcentaje" ? opcion.precio * Number(r.descuento_valor) / 100 : Number(r.descuento_valor);
+    const base = sinCosto ? Number(r.referencia_envio) : opcion.precio;
+    let d = r.descuento_tipo === "porcentaje" ? base * Number(r.descuento_valor) / 100 : Number(r.descuento_valor);
     if (r.tope != null) d = Math.min(d, Number(r.tope));
     d = Math.round(d * 100) / 100;
     if (!sinCosto) d = Math.min(d, opcion.precio);
-    if (!mejor || d > mejor.descuento || (d === mejor.descuento && r.prioridad < mejor.prioridad)) mejor = { regla: r.nombre, texto: r.texto, descuento: d, prioridad: r.prioridad };
+    if (!mejor || d > mejor.descuento || (d === mejor.descuento && r.prioridad < mejor.prioridad)) mejor = { regla: r.nombre, texto: r.texto, descuento: d, prioridad: r.prioridad, estimado: sinCosto && r.descuento_tipo === "porcentaje" };
   }
   return mejor;
 }
@@ -102,7 +104,7 @@ Deno.serve(async (req: Request) => {
     const base = { store_id: store, cart_id: cart, envio, cp: b.shipping?.postalcode ?? null, unidades, subtotal, prueba, payload: prueba ? b : null };
     if (mejor && mejor.descuento > 0) {
       const monto = mejor.descuento.toFixed(2);
-      registrar({ ...base, respuesta: "descuento", descuento: mejor.descuento, regla: mejor.regla, ms: Date.now() - t0 });
+      registrar({ ...base, respuesta: "descuento", descuento: mejor.descuento, regla: mejor.regla + (mejor.estimado ? " · sobre envío de referencia" : ""), ms: Date.now() - t0 });
       return json({ commands: [{ command: "create_or_update_discount", specs: {
         promotion_id: tienda.promotion_id, currency: b.currency || "ARS",
         display_text: { "es-ar": mejor.texto, es: mejor.texto }, discount_specs: { type: "fixed", amount: monto },
