@@ -379,14 +379,53 @@ async function promosEnvio(): Promise<Set<string>> {
   } catch { _promosEnvio = new Set(); }
   return _promosEnvio;
 }
+// Productos de eventos de Core (tn_eventos / tn_evento_items: CyberMonday, Black Friday...). El precio del evento
+// es un precio promocional de Tienda Nube; en Odoo el renglon va a su precio normal y la diferencia sale en un
+// renglon aparte con el nombre del evento, para poder medirlo (pedido de Diego 1/11).
+let _eventos: any[] | null = null;
+async function itemsEvento(): Promise<any[]> {
+  if (_eventos) return _eventos;
+  try {
+    const u = Deno.env.get("SUPABASE_URL"), k = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const r = await fetch(`${u}/rest/v1/tn_evento_items?select=sku,promo_evento,promo_antes,price_antes,aplicado_en,revertido_en,descuento_pct,tn_eventos!inner(nombre,linea_odoo,store_id)&tn_eventos.store_id=eq.${STORE}&promo_evento=not.is.null&aplicado_en=not.is.null`,
+      { headers: { apikey: k!, Authorization: `Bearer ${k}` } });
+    _eventos = r.ok ? await r.json() : [];
+  } catch { _eventos = []; }
+  return _eventos!;
+}
+const EVENTO_PRODUCTO = { codigo: "DESC-EVENTO-TN", nombre: "Descuento eventos Tienda Nube" };
+async function productoEvento(): Promise<number> {
+  const hit = await exec("product.product", "search_read", [[["default_code", "=", EVENTO_PRODUCTO.codigo]], ["id"]], { limit: 1, context: { active_test: false } }) as any[];
+  if (hit.length) return hit[0].id;
+  const tmpl = await exec("product.template", "create", [{ name: EVENTO_PRODUCTO.nombre, default_code: EVENTO_PRODUCTO.codigo, type: "service",
+    sale_ok: true, purchase_ok: false, list_price: 0, taxes_id: [[6, 0, [TAX]]], company_id: COMPANY }], {}) as number;
+  const v = await exec("product.product", "search_read", [[["product_tmpl_id", "=", tmpl]], ["id"]], { limit: 1 }) as any[];
+  return v[0].id;
+}
 async function armar(o: any) {
   const avisos: string[] = [];
-  const map = await skuMap(), st = await estados();
+  const map = await skuMap(), st = await estados(), evItems = await itemsEvento();
+  const creada = new Date(o.created_at).getTime();
+  const eventos: Record<string, { nombre: string; monto: number }> = {};
   const lineas = (o.products || []).map((p: any) => {
     const sku = String(p.sku || "").trim();
     const pid = map[sku] || null; if (!pid) avisos.push(`Codigo sin producto en Odoo: ${sku || "(vacio)"} - ${p.name}`);
-    return { sku, nombre: p.name, qty: num(p.quantity), precio: num(p.price), product_id: pid };
+    const qty = num(p.quantity); let precio = num(p.price); let evento = null;
+    // Vendido durante el evento y al precio del evento: el renglon vuelve al precio normal y la diferencia va aparte.
+    const ev = evItems.find((x) => x.sku === sku && creada >= new Date(x.aplicado_en).getTime()
+      && (!x.revertido_en || creada < new Date(x.revertido_en).getTime()) && Math.abs(num(x.promo_evento) - precio) < 0.5);
+    if (ev) {
+      const normal = ev.promo_antes !== null ? num(ev.promo_antes) : num(ev.price_antes);
+      if (normal > precio) {
+        const nombre = ev.tn_eventos.linea_odoo || `Descuento ${ev.tn_eventos.nombre}`;
+        eventos[nombre] = eventos[nombre] || { nombre, monto: 0 };
+        eventos[nombre].monto = Math.round((eventos[nombre].monto + (normal - precio) * qty) * 100) / 100;
+        evento = { nombre, pct: ev.descuento_pct, precio_evento: precio }; precio = normal;
+      }
+    }
+    return { sku, nombre: p.name, qty, precio, product_id: pid, evento };
   });
+  const descuentoEventos = Object.values(eventos);
   const subtotal = num(o.subtotal);
   const dgw = num(o.discount_gateway);
   const dcup = num(o.discount_coupon);
@@ -438,7 +477,8 @@ async function armar(o: any) {
       if (Math.abs(enOdoo - bonifEnvio) >= 0.01) avisos.push(`Bonificacion de envio: ${pct}% del envio da $${enOdoo.toFixed(2)} y Tienda Nube desconto $${bonifEnvio.toFixed(2)} (diferencia por redondeo del %).`);
     }
   }
-  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0) - (bonificacion ? bonificacion.en_odoo : 0);
+  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0) - (bonificacion ? bonificacion.en_odoo : 0)
+    - descuentoEventos.reduce((a, e) => a + e.monto, 0);
   if (Math.abs(esperado - num(o.total)) > 0.5) {
     // Con un descuento de por medio, un total que no cierra quiere decir que Odoo quedaria por otro
     // monto que el cobrado (ej. una bonificacion que Tienda Nube guardo distinto): se frena.
@@ -454,7 +494,7 @@ async function armar(o: any) {
     estado_pago: o.payment_status, pago: pagoNom, pago_id: pagoId,
     cliente: { nombre: String(o.contact_name || "").trim(), documento: doc, tipo_doc: tipoDoc, state_id: stateId,
       email: mail || false, telefono: tel, ...u, ...dir },
-    lineas, envio, retiro, freeship, descuento, bonificacion, avisos,
+    lineas, envio, retiro, freeship, descuento, bonificacion, eventos: descuentoEventos, avisos,
   };
 }
 async function partnerDe(p: any): Promise<number> {
@@ -486,6 +526,11 @@ async function crearBorrador(p: any) {
   const lines: unknown[] = p.lineas.map((l: any, i: number) => [0, 0, { sequence: 10 + i, product_id: l.product_id, product_uom_qty: l.qty, price_unit: l.precio, tax_id: [[6, 0, [TAX]]] }]);
   if (!p.envio && p.retiro) lines.push([0, 0, { sequence: 80, display_type: "line_note", name: p.retiro }]);
   if (p.envio) lines.push([0, 0, { sequence: 80, product_id: p.envio.product, name: p.envio.nombre, product_uom_qty: 1, price_unit: p.envio.costo, tax_id: [[6, 0, [TAX]]], is_delivery: true, ...(p.bonificacion ? { discount: p.bonificacion.pct } : {}) }]);
+  // Descuento de eventos (CyberMonday...): renglon negativo propio, sin reward_id para que Odoo no lo recalcule.
+  if ((p.eventos || []).length) {
+    const prodEv = await productoEvento();
+    (p.eventos as any[]).forEach((e, i) => lines.push([0, 0, { sequence: 55 + i, product_id: prodEv, name: e.nombre, product_uom_qty: 1, price_unit: -e.monto, tax_id: [[6, 0, [TAX]]] }]));
+  }
   const vals: any = {
     partner_id: partnerId, company_id: COMPANY, client_order_ref: String(p.numero), date_order: fechaOdoo(p.fecha),
     pricelist_id: PRICELIST, payment_term_id: TERM, warehouse_id: WAREHOUSE, team_id: TEAM, user_id: SALESMAN,
@@ -817,6 +862,9 @@ _servirConGuardia(async (req) => {
         ["name", "sequence", "display_type", "price_unit"]], { limit: 60, order: "sequence,id" }) as any[];
       return ok({ ok: true, so: so.name, nota, renglones: post.map((l: any) => ({ orden: l.sequence, texto: l.name, tipo: l.display_type || "producto", precio: l.price_unit })) });
     }
+
+    // Producto de Odoo para el renglon de descuento de eventos: lo crea si falta y devuelve su id.
+    if (modo === "producto_evento") return ok({ ok: true, product_id: await productoEvento(), codigo: EVENTO_PRODUCTO.codigo });
 
     const id = String(body.tn_id || body.id || "");
     const numero = String(body.numero || "");

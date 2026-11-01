@@ -158,8 +158,11 @@ async function calcular(token: string) {
     objetivo[c.codigo] = { price, promo: Math.round(price * (1 - Number(c.descuento_pct) / 100) * 100) / 100, tipo: "combo" };
   }
   const tienda = await leerTienda(token);
+  // Productos con un evento activo (Core → Tienda Nube → Eventos): su precio promocional lo maneja tn-eventos hasta que termine.
+  const enEvento = new Set((await tnSbGet("tn_evento_items?select=sku,tn_eventos!inner(estado)&estado=eq.aplicado&tn_eventos.estado=eq.activo")).map((r) => r.sku));
   const filas: Rec[] = []; const sinCore: Rec[] = [];
   for (const v of tienda) {
+    if (enEvento.has(v.sku)) continue;
     const o = objetivo[v.sku];
     if (!o) { sinCore.push({ sku: v.sku, nombre: v.nombre }); continue; }
     const cambia = !igual(v.price, o.price) || !igual(v.promo, o.promo);
