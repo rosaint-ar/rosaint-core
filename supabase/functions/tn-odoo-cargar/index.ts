@@ -426,9 +426,19 @@ async function armar(o: any) {
   const pagoId = PAGOS[pagoNom.toLowerCase()] || null;
   if (!pagoId) avisos.push(`Medio de pago sin equivalente: "${pagoNom}".`);
   if (/expreso/i.test(String(o.shipping_option_code || ""))) avisos.push("Correo Expreso - se carga como envio a domicilio nacional, revisar.");
-  const bonificacion = bonifEnvio > 0 ? { product: FREESHIP.product, nombre: "Bonificacion de envio (Tienda Nube)", monto: bonifEnvio } : null;
-  if (bonificacion && !envio) avisos.push(`Bonificacion de envio de $${bonifEnvio} sin renglon de envio - revisar.`);
-  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0) - (bonificacion ? bonificacion.monto : 0);
+  // Va en la casilla «Desc. %» del MISMO renglon de envio (pedido de Diego 1/11). Odoo guarda el % con
+  // 2 decimales: si el % redondeado no da el monto exacto al centavo, se avisa la diferencia.
+  let bonificacion: any = null;
+  if (bonifEnvio > 0) {
+    if (!envio || !(envio.costo > 0)) avisos.push(`Bonificacion de envio de $${bonifEnvio} sin renglon de envio - no se carga.`);
+    else {
+      const pct = Math.min(100, Math.round((bonifEnvio / envio.costo) * 10000) / 100);
+      const enOdoo = Math.round(envio.costo * pct) / 100;
+      bonificacion = { monto: bonifEnvio, pct, en_odoo: enOdoo };
+      if (Math.abs(enOdoo - bonifEnvio) >= 0.01) avisos.push(`Bonificacion de envio: ${pct}% del envio da $${enOdoo.toFixed(2)} y Tienda Nube desconto $${bonifEnvio.toFixed(2)} (diferencia por redondeo del %).`);
+    }
+  }
+  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0) - (bonificacion ? bonificacion.en_odoo : 0);
   if (Math.abs(esperado - num(o.total)) > 0.5) {
     // Con un descuento de por medio, un total que no cierra quiere decir que Odoo quedaria por otro
     // monto que el cobrado (ej. una bonificacion que Tienda Nube guardo distinto): se frena.
@@ -475,7 +485,7 @@ async function crearBorrador(p: any) {
   const partnerId = await partnerDe(p);
   const lines: unknown[] = p.lineas.map((l: any, i: number) => [0, 0, { sequence: 10 + i, product_id: l.product_id, product_uom_qty: l.qty, price_unit: l.precio, tax_id: [[6, 0, [TAX]]] }]);
   if (!p.envio && p.retiro) lines.push([0, 0, { sequence: 80, display_type: "line_note", name: p.retiro }]);
-  if (p.envio) lines.push([0, 0, { sequence: 80, product_id: p.envio.product, name: p.envio.nombre, product_uom_qty: 1, price_unit: p.envio.costo, tax_id: [[6, 0, [TAX]]], is_delivery: true }]);
+  if (p.envio) lines.push([0, 0, { sequence: 80, product_id: p.envio.product, name: p.envio.nombre, product_uom_qty: 1, price_unit: p.envio.costo, tax_id: [[6, 0, [TAX]]], is_delivery: true, ...(p.bonificacion ? { discount: p.bonificacion.pct } : {}) }]);
   const vals: any = {
     partner_id: partnerId, company_id: COMPANY, client_order_ref: String(p.numero), date_order: fechaOdoo(p.fecha),
     pricelist_id: PRICELIST, payment_term_id: TERM, warehouse_id: WAREHOUSE, team_id: TEAM, user_id: SALESMAN,
@@ -488,9 +498,7 @@ async function crearBorrador(p: any) {
   const add: unknown[] = []; const rec: string[] = [];
   if (p.freeship > 0 && !tiene(FREESHIP.product)) { add.push([0, 0, { sequence: 81, product_id: FREESHIP.product, name: FREESHIP.nombre, product_uom_qty: 1, price_unit: -p.freeship, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: FREESHIP.reward }]); rec.push("envio gratis"); }
   if (p.descuento && !tiene(p.descuento.product)) { add.push([0, 0, { sequence: 60, product_id: p.descuento.product, name: p.descuento.nombre, product_uom_qty: 1, price_unit: -p.descuento.monto, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: p.descuento.reward }]); rec.push(`descuento ${p.descuento.pct}%`); }
-  // Bonificacion de envio de Core: renglon negativo comun (SIN marca de recompensa, para que Odoo no
-  // lo recalcule como envio gratis total si alguien toca «Recompensas»).
-  if (p.bonificacion && !tiene(p.bonificacion.product)) { add.push([0, 0, { sequence: 82, product_id: p.bonificacion.product, name: p.bonificacion.nombre, product_uom_qty: 1, price_unit: -p.bonificacion.monto, tax_id: [[6, 0, [TAX]]] }]); rec.push("bonificacion de envio"); }
+  if (p.bonificacion) rec.push(`bonificacion de envio ${p.bonificacion.pct}% en el renglon de envio`);
   let recompensas = rec.length ? "agregadas por el conector: " + rec.join(", ") : "las puso Odoo solo";
   if (add.length) {
     try { await exec("sale.order", "write", [[soId], { order_line: add }]); }
