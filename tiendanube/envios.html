@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Envíos y descuentos · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <style>
+    /* Identidad Rosaint: mismo criterio que Reseñas y Envíos (manual de marca, edición 21). */
+    @font-face { font-family: 'Sora'; src: url('../shared/marca/fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Bitter'; src: url('../shared/marca/fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Source Sans 3'; src: url('../shared/marca/fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
+    :root {
+      --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+      --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+      --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel)); --r-li: rgba(52, 73, 94, .16);
+      --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
+    }
+    [data-theme="dark"] {
+      --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+      --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul)); --r-li: rgba(247, 245, 242, .14);
+    }
+    body { background: var(--r-bg); }
+    body::before { display: none; }
+    #app-content { font-family: var(--sans); color: var(--r-tx); font-size: 15px; }
+    .eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+    .titular { font: 400 30px/1.08 var(--sora); letter-spacing: -.01em; margin: 5px 0 0; }
+    .titular em { font-family: var(--bitter); font-style: italic; }
+    .filete { display: block; width: 40px; height: 3px; background: var(--acido); margin-top: 12px; }
+    .cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .regla-txt { font-size: 13.5px; color: var(--r-mu); max-width: 780px; margin: 0 0 16px; }
+    .aviso { background: var(--r-sup); border: 1px solid var(--r-li); border-left: 3px solid var(--acido); padding: 12px 14px; font-size: 13.5px; margin-bottom: 18px; max-width: 900px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .chip { font: 400 11.5px var(--sora); padding: 6px 12px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-mu); cursor: pointer; }
+    .chip.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .panel { background: var(--r-sup); border: 1px solid var(--r-li); padding: 16px 18px; margin-bottom: 14px; }
+    .panel h2 { font: 500 14px var(--sora); margin: 0 0 10px; }
+    .fila { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .campo { display: grid; gap: 4px; font-size: 12.5px; color: var(--r-mu); }
+    .campo input, .campo select { font: inherit; font-size: 14px; padding: 7px 9px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); min-width: 0; }
+    .campo.ancho { flex: 1 1 320px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; font: 500 11px var(--sora); letter-spacing: .06em; text-transform: uppercase; color: var(--r-mu); padding: 8px 8px; border-bottom: 1px solid var(--r-li); }
+    td { padding: 8px 8px; border-bottom: 1px solid var(--r-li); vertical-align: top; }
+    td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .tachado { text-decoration: line-through; color: var(--r-mu); }
+    .paga { font-weight: 600; }
+    .marca { font: 500 10.5px var(--sora); text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border: 1px solid var(--r-li); white-space: nowrap; }
+    .marca.ok { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .marca.alerta { border-color: var(--rojo); color: var(--rojo); }
+    .sub { font-size: 12.5px; color: var(--r-mu); }
+    .vacio { padding: 22px; text-align: center; color: var(--r-mu); border: 1px dashed var(--r-li); }
+    .error { color: var(--rojo); }
+    .bolsa-item { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--r-li); }
+    .bolsa-item input { width: 64px; font: inherit; padding: 4px 6px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); }
+    .x { background: none; border: 0; color: var(--r-mu); cursor: pointer; font-size: 18px; }
+    .reglas { display: grid; gap: 10px; }
+    .regla { background: var(--r-sup); border: 1px solid var(--r-li); padding: 14px 16px; display: grid; gap: 6px; }
+    .regla .linea { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .regla h3 { font: 500 15px var(--sora); margin: 0; }
+    .form-regla { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+    .form-regla .todo { grid-column: 1 / -1; }
+    .cats { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; padding: 6px; border: 1px solid var(--r-li); }
+    .cats label { font-size: 13px; display: flex; gap: 4px; align-items: center; padding: 2px 6px; border: 1px solid var(--r-li); }
+    @media (max-width: 700px) { .titular { font-size: 24px; } table { font-size: 13px; } }
+  </style>
+</head>
+<body data-page="tn-envios" data-title="Envíos y descuentos" data-subtitle="Tienda Nube · cotizar, reglas de descuento y medidas">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="cab">
+    <div>
+      <span class="eyebrow">Tienda Nube · Rosaint</span>
+      <h1 class="titular">Lo que paga la clienta por el <em>envío</em>.</h1>
+      <span class="filete"></span>
+    </div>
+  </div>
+  <div class="aviso" id="estado-app"><b>La app de descuentos todavía no está autorizada en la tienda.</b> Podés armar reglas y ver con «Cotizar» cuánto pagaría la clienta, pero en el checkout todavía no se descuenta nada. Para que cobre el envío rebajado (con cualquier medio de pago) falta darle a la app el permiso de descuentos en el Partners Portal de Tienda Nube.</div>
+
+  <div class="chips" id="pestanas">
+    <button class="chip on" data-tab="cotizar">Cotizar una bolsa</button>
+    <button class="chip" data-tab="reglas">Reglas de descuento</button>
+    <button class="chip" data-tab="medidas">Peso y medidas</button>
+  </div>
+
+  <!-- COTIZAR -->
+  <section id="tab-cotizar">
+    <p class="regla-txt">Arma una bolsa de prueba en la tienda y pide las tarifas al mismo calculador que usa el checkout. Las reglas (activas y en borrador) se aplican encima para ver cuánto pagaría la clienta. Las bolsas de prueba no son de ninguna clienta.</p>
+    <div class="panel">
+      <div class="fila">
+        <label class="campo ancho">Producto
+          <input id="buscar" list="lista-prod" placeholder="Escribí el nombre o el código…" autocomplete="off">
+          <datalist id="lista-prod"></datalist>
+        </label>
+        <label class="campo">Cantidad <input id="cant" type="number" min="1" value="1" style="width:80px"></label>
+        <button class="btn secondary" id="sumar">Sumar a la bolsa</button>
+      </div>
+      <div id="bolsa" style="margin-top:12px"></div>
+      <div class="fila" style="margin-top:14px">
+        <label class="campo">Código postal <input id="cp" value="1414" style="width:110px"></label>
+        <span class="sub">Rápidos: <a href="#" data-cp="5800">5800 Río Cuarto</a> · <a href="#" data-cp="1414">1414 CABA</a> · <a href="#" data-cp="2000">2000 Rosario</a> · <a href="#" data-cp="8400">8400 Bariloche</a> · <a href="#" data-cp="9410">9410 Ushuaia</a></span>
+        <button class="btn primary" id="cotizar">Cotizar</button>
+      </div>
+    </div>
+    <div id="resultado"></div>
+  </section>
+
+  <!-- REGLAS -->
+  <section id="tab-reglas" hidden>
+    <p class="regla-txt">Cada regla descuenta una parte del envío cuando la bolsa cumple las condiciones. Si varias se cumplen, gana la que más descuenta. Si el envío ya es gratis (por la promo de envío gratis), no se descuenta nada. Las condiciones vacías no filtran.</p>
+    <div style="margin-bottom:12px"><button class="btn primary" id="nueva">+ Agregar regla</button></div>
+    <div id="form-regla"></div>
+    <div class="reglas" id="reglas"><div class="vacio">Cargando…</div></div>
+  </section>
+
+  <!-- MEDIDAS -->
+  <section id="tab-medidas" hidden>
+    <p class="regla-txt">Peso y medidas de cada variante, tal como los guarda Tienda Nube (peso en kg, medidas en cm). El correo cobra por el mayor entre el peso real y el «peso por tamaño» (largo × ancho × alto ÷ 6.000), y en una bolsa se suman los de todos los productos. La tarifa mínima vale hasta 500 g y 3.000 cm³.</p>
+    <div id="medidas"><div class="vacio">Cargando…</div></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script>
+  // Función tn-envios (servidor): productos | cotizar | promos. Reglas: tabla tn_envio_reglas.
+  // Hoy solo Rosaint (385079). Augusta (1142221) se suma acá hasta que tenga su propio Core.
+  const STORE = 385079;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const $ = s => document.querySelector(s);
+  const plata = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 });
+  const MEDIOS = { todos: 'Todos los correos', correo: 'Correo Argentino', andreani: 'Andreani' };
+  const ENTREGAS = { todas: 'Domicilio y sucursal', domicilio: 'Solo a domicilio', sucursal: 'Solo a sucursal' };
+  let PRODUCTOS = [], CATEGORIAS = [], REGLAS = [], BOLSA = [], quien = '';
+
+  async function llamar(cuerpo) {
+    const { data: s } = await sb.auth.getSession();
+    const r = await fetch(window.SUPABASE_URL + '/functions/v1/tn-envios', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + (s?.session?.access_token || '') },
+      body: JSON.stringify({ store: STORE, ...cuerpo }),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Error del servidor');
+    return j;
+  }
+
+  // ---- pestañas
+  document.getElementById('pestanas').addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]'); if (!b) return;
+    document.querySelectorAll('#pestanas .chip').forEach(x => x.classList.toggle('on', x === b));
+    for (const t of ['cotizar', 'reglas', 'medidas']) document.getElementById('tab-' + t).hidden = t !== b.dataset.tab;
+    history.replaceState(null, '', '#' + b.dataset.tab);
+  });
+
+  // ---- productos (para el buscador y para medidas)
+  function etiquetaVar(p, v) { return `${p.nombre}${v.valores ? ' · ' + v.valores : ''}${v.sku ? ' [' + v.sku + ']' : ''}`; }
+  async function cargarProductos() {
+    try {
+      const j = await llamar({ accion: 'productos' });
+      PRODUCTOS = j.productos; CATEGORIAS = j.categorias;
+      $('#lista-prod').innerHTML = PRODUCTOS.filter(p => p.publicado).flatMap(p => p.variantes.map(v => `<option value="${esc(etiquetaVar(p, v))}">`)).join('');
+      pintarMedidas(); pintarReglas();
+    } catch (e) {
+      $('#medidas').innerHTML = `<div class="vacio error">No se pudieron leer los productos: ${esc(e.message)}</div>`;
+    }
+  }
+  function buscarVariante(texto) {
+    for (const p of PRODUCTOS) for (const v of p.variantes) if (etiquetaVar(p, v) === texto) return { p, v };
+    return null;
+  }
+
+  // ---- bolsa
+  function pintarBolsa() {
+    $('#bolsa').innerHTML = BOLSA.length ? BOLSA.map((i, k) => `<div class="bolsa-item"><span>${esc(i.nombre)} <span class="sub">${plata(i.precio)} c/u</span></span>
+      <span><input type="number" min="1" value="${i.q}" data-q="${k}"> <button class="x" data-quitar="${k}" title="Quitar">×</button></span></div>`).join('')
+      + `<div class="sub" style="margin-top:6px">Subtotal aprox.: ${plata(BOLSA.reduce((s, i) => s + i.q * (i.precio || 0), 0))}</div>`
+      : '<div class="sub">La bolsa está vacía.</div>';
+  }
+  $('#sumar').addEventListener('click', () => {
+    const hit = buscarVariante($('#buscar').value);
+    if (!hit) { alert('Elegí un producto de la lista.'); return; }
+    const q = Math.max(1, Number($('#cant').value) || 1);
+    const ya = BOLSA.find(i => i.vid === hit.v.id);
+    if (ya) ya.q += q; else BOLSA.push({ pid: hit.p.id, vid: hit.v.id, q, nombre: etiquetaVar(hit.p, hit.v), precio: hit.v.precio });
+    $('#buscar').value = ''; $('#cant').value = 1; pintarBolsa();
+  });
+  $('#bolsa').addEventListener('input', e => { const k = e.target.dataset.q; if (k != null) BOLSA[k].q = Math.max(1, Number(e.target.value) || 1); });
+  $('#bolsa').addEventListener('click', e => { const k = e.target.dataset.quitar; if (k != null) { BOLSA.splice(k, 1); pintarBolsa(); } });
+  document.querySelectorAll('[data-cp]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); $('#cp').value = a.dataset.cp; }));
+
+  $('#cotizar').addEventListener('click', async () => {
+    if (!BOLSA.length) { alert('Sumá al menos un producto.'); return; }
+    const b = $('#cotizar'); b.disabled = true; $('#resultado').innerHTML = '<div class="vacio">Cotizando con la tienda…</div>';
+    try {
+      const j = await llamar({ accion: 'cotizar', cp: $('#cp').value, items: BOLSA });
+      const filas = j.opciones.map(o => {
+        const d = o.descuento;
+        return `<tr><td>${esc(o.nombre)}${o.lugares > 1 ? ` <span class="sub">(${o.lugares} lugares, el más barato)</span>` : ''}<div class="sub">${esc(diasTxt(o.dias))}</div></td>
+          <td class="n${d ? ' tachado' : ''}">${o.precio > 0 ? plata(o.precio) : 'Gratis'}</td>
+          <td>${d ? `${esc(d.regla)} <span class="marca ${d.activa ? 'ok' : ''}">${d.activa ? 'activa' : 'borrador'}</span><div class="sub">La clienta ve: «${esc(d.texto)}» −${plata(d.descuento)}</div>` : '<span class="sub">—</span>'}</td>
+          <td class="n paga">${o.precio_cliente > 0 ? plata(o.precio_cliente) : 'Gratis'}</td></tr>`;
+      }).join('');
+      $('#resultado').innerHTML = `<div class="panel"><h2>CP ${esc($('#cp').value)} · ${j.carrito.unidades} unidades · subtotal ${plata(j.carrito.subtotal)}</h2>
+        ${j.avisos.length ? `<p class="error">${j.avisos.map(esc).join('<br>')}</p>` : ''}
+        ${filas ? `<table><thead><tr><th>Envío</th><th class="n">Tarifa real</th><th>Regla que aplica</th><th class="n">Paga la clienta</th></tr></thead><tbody>${filas}</tbody></table>` : '<div class="vacio">La tienda no devolvió opciones de envío para ese código postal.</div>'}</div>`;
+    } catch (e) {
+      $('#resultado').innerHTML = `<div class="vacio error">${esc(e.message)}</div>`;
+    } finally { b.disabled = false; }
+  });
+  function diasTxt(s) {
+    const m = String(s || '').match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
+    if (!m) return s || '';
+    const f = d => new Date(d + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+    return `Llega entre el ${f(m[1])} y el ${f(m[2])}`;
+  }
+
+  // ---- reglas
+  async function cargarReglas() {
+    const { data, error } = await sb.from('tn_envio_reglas').select('*').eq('store_id', STORE).order('prioridad').order('creado_en');
+    if (error) { $('#reglas').innerHTML = `<div class="vacio error">No se pudieron leer las reglas: ${esc(error.message)}</div>`; return; }
+    REGLAS = data; pintarReglas();
+  }
+  const nombreCat = id => (CATEGORIAS.find(c => c.id === Number(id)) || {}).nombre || ('categoría ' + id);
+  function resumen(r) {
+    const c = [];
+    if (r.categoria_ids?.length) c.push('productos de ' + r.categoria_ids.map(nombreCat).join(', '));
+    if (r.min_unidades != null) c.push(`${r.min_unidades} unidades o más`);
+    if (r.min_monto != null) c.push(`compra desde ${plata(r.min_monto)}`);
+    if (r.max_monto != null) c.push(`hasta ${plata(r.max_monto)}`);
+    if (r.medio !== 'todos') c.push(MEDIOS[r.medio]);
+    if (r.entrega !== 'todas') c.push(ENTREGAS[r.entrega].toLowerCase());
+    if (r.desde || r.hasta) c.push(`vigente ${r.desde ? 'desde ' + r.desde : ''}${r.hasta ? ' hasta ' + r.hasta : ''}`);
+    const d = r.descuento_tipo === 'porcentaje' ? `${Number(r.descuento_valor)}% del envío` : `${plata(r.descuento_valor)} del envío`;
+    return `${d}${r.tope != null ? ` (tope ${plata(r.tope)})` : ''} · ${c.length ? c.join(' · ') : 'cualquier bolsa'}`;
+  }
+  function pintarReglas() {
+    $('#reglas').innerHTML = REGLAS.length ? REGLAS.map(r => `<article class="regla">
+      <div class="linea"><h3>${esc(r.nombre)}</h3><span class="marca ${r.activa ? 'ok' : ''}">${r.activa ? 'Activa' : 'Borrador'}</span></div>
+      <div>${esc(resumen(r))}</div>
+      <div class="sub">La clienta ve: «${esc(r.texto)}» · prioridad ${r.prioridad}${r.actualizado_por ? ' · ' + esc(r.actualizado_por) : ''}</div>
+      <div class="fila"><button class="btn secondary" data-editar="${r.id}">Editar</button>
+        <button class="btn secondary" data-alternar="${r.id}">${r.activa ? 'Pasar a borrador' : 'Activar'}</button>
+        <button class="btn secondary" data-borrar="${r.id}">Eliminar</button></div>
+    </article>`).join('') : '<div class="vacio">Todavía no hay reglas. Agregá la primera con «+ Agregar regla».</div>';
+  }
+  function abrirForm(r = {}) {
+    const v = (k, def = '') => r[k] ?? def;
+    const cats = CATEGORIAS.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(c => `<label><input type="checkbox" value="${c.id}" ${(r.categoria_ids || []).includes(c.id) ? 'checked' : ''}>${esc(c.nombre)}</label>`).join('');
+    $('#form-regla').innerHTML = `<div class="panel"><h2>${r.id ? 'Editar regla' : 'Nueva regla'}</h2><div class="form-regla">
+      <label class="campo todo">Nombre (interno) <input id="f-nombre" value="${esc(v('nombre'))}" placeholder="Ej.: 50% del envío en compras de $30.000 a $50.000"></label>
+      <label class="campo">Descuento <select id="f-tipo"><option value="porcentaje" ${v('descuento_tipo', 'porcentaje') === 'porcentaje' ? 'selected' : ''}>% del envío</option><option value="monto" ${v('descuento_tipo') === 'monto' ? 'selected' : ''}>Monto fijo ($)</option></select></label>
+      <label class="campo">Valor <input id="f-valor" type="number" min="0" step="any" value="${esc(v('descuento_valor', 50))}"></label>
+      <label class="campo">Tope en $ (opcional) <input id="f-tope" type="number" min="0" step="any" value="${esc(v('tope'))}"></label>
+      <label class="campo">Texto que ve la clienta <input id="f-texto" value="${esc(v('texto', 'Envío al 50%'))}"></label>
+      <label class="campo">Compra desde $ <input id="f-min" type="number" min="0" step="any" value="${esc(v('min_monto'))}"></label>
+      <label class="campo">Compra hasta $ <input id="f-max" type="number" min="0" step="any" value="${esc(v('max_monto'))}"></label>
+      <label class="campo">Unidades mínimas <input id="f-uni" type="number" min="1" value="${esc(v('min_unidades'))}"></label>
+      <label class="campo">Correo <select id="f-medio">${Object.entries(MEDIOS).map(([k, t]) => `<option value="${k}" ${v('medio', 'todos') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="campo">Entrega <select id="f-entrega">${Object.entries(ENTREGAS).map(([k, t]) => `<option value="${k}" ${v('entrega', 'todas') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="campo">Desde (fecha) <input id="f-desde" type="date" value="${esc(v('desde'))}"></label>
+      <label class="campo">Hasta (fecha) <input id="f-hasta" type="date" value="${esc(v('hasta'))}"></label>
+      <label class="campo">Prioridad (menor gana en empate) <input id="f-prio" type="number" value="${esc(v('prioridad', 100))}"></label>
+      <div class="campo todo">Solo si la bolsa tiene productos de estas categorías (las unidades mínimas cuentan solo esos productos). Ninguna marcada = cualquier producto.<div class="cats" id="f-cats">${cats || '<span class="sub">Cargando categorías…</span>'}</div></div>
+    </div><div class="fila" style="margin-top:12px"><button class="btn primary" id="f-guardar" data-id="${r.id || ''}">Guardar</button><button class="btn secondary" id="f-cancelar">Cancelar</button></div></div>`;
+    $('#form-regla').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  const numo = id => { const x = $(id).value; return x === '' ? null : Number(x); };
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'nueva') abrirForm();
+    if (b.id === 'f-cancelar') $('#form-regla').innerHTML = '';
+    if (b.dataset.editar) abrirForm(REGLAS.find(r => r.id === b.dataset.editar));
+    if (b.id === 'f-guardar') {
+      const fila = {
+        store_id: STORE, nombre: $('#f-nombre').value.trim(), descuento_tipo: $('#f-tipo').value, descuento_valor: numo('#f-valor'),
+        tope: numo('#f-tope'), texto: $('#f-texto').value.trim() || 'Descuento en el envío', min_monto: numo('#f-min'), max_monto: numo('#f-max'),
+        min_unidades: numo('#f-uni'), medio: $('#f-medio').value, entrega: $('#f-entrega').value, desde: $('#f-desde').value || null,
+        hasta: $('#f-hasta').value || null, prioridad: numo('#f-prio') ?? 100,
+        categoria_ids: [...document.querySelectorAll('#f-cats input:checked')].map(i => Number(i.value)), actualizado_por: quien || 'Core',
+      };
+      if (!fila.nombre) { alert('Poné un nombre.'); return; }
+      if (!(fila.descuento_valor > 0)) { alert('El valor del descuento tiene que ser mayor que 0.'); return; }
+      if (fila.descuento_tipo === 'porcentaje' && fila.descuento_valor > 100) { alert('El porcentaje no puede pasar de 100.'); return; }
+      b.disabled = true;
+      const q = b.dataset.id ? sb.from('tn_envio_reglas').update(fila).eq('id', b.dataset.id) : sb.from('tn_envio_reglas').insert(fila);
+      const { error } = await q;
+      b.disabled = false;
+      if (error) { alert('No se pudo guardar: ' + error.message); return; }
+      $('#form-regla').innerHTML = ''; cargarReglas();
+    }
+    if (b.dataset.alternar) {
+      const r = REGLAS.find(x => x.id === b.dataset.alternar);
+      const { error } = await sb.from('tn_envio_reglas').update({ activa: !r.activa, actualizado_por: quien || 'Core' }).eq('id', r.id);
+      if (error) alert('No se pudo cambiar: ' + error.message); else cargarReglas();
+    }
+    if (b.dataset.borrar) {
+      const r = REGLAS.find(x => x.id === b.dataset.borrar);
+      if (!confirm(`¿Eliminar la regla «${r.nombre}»?`)) return;
+      const { error } = await sb.from('tn_envio_reglas').delete().eq('id', r.id);
+      if (error) alert('No se pudo eliminar: ' + error.message); else cargarReglas();
+    }
+  });
+
+  // ---- peso y medidas
+  function pintarMedidas() {
+    const vars = PRODUCTOS.flatMap(p => p.variantes.map(v => ({ p, v })));
+    const grupos = new Map();
+    for (const x of vars) {
+      const k = `${Math.round((x.v.peso || 0) * 1000)} g · ${x.v.ancho || 0}×${x.v.alto || 0}×${x.v.prof || 0} cm`;
+      const g = grupos.get(k) || { k, n: 0, pub: 0, peso: x.v.peso || 0, vol: (x.v.ancho || 0) * (x.v.alto || 0) * (x.v.prof || 0) };
+      g.n++; if (x.p.publicado) g.pub++; grupos.set(k, g);
+    }
+    const alerta = x => !x.v.peso || !x.v.ancho || !x.v.alto || !x.v.prof;
+    const raras = vars.filter(alerta);
+    $('#medidas').innerHTML = `<div class="panel"><h2>${vars.length} variantes en ${PRODUCTOS.length} productos</h2>
+      <table><thead><tr><th>Peso y medidas</th><th class="n">Variantes</th><th class="n">Publicadas</th><th class="n">Peso que cobra el correo</th></tr></thead><tbody>
+      ${[...grupos.values()].sort((a, b) => b.n - a.n).map(g => `<tr><td>${esc(g.k)}</td><td class="n">${g.n}</td><td class="n">${g.pub}</td><td class="n">${Math.round(Math.max(g.peso * 1000, g.vol / 6))} g</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="panel"><h2>Sin peso o sin medidas · ${raras.length}</h2>${raras.length ? `<table><tbody>${raras.map(x => `<tr><td>${esc(etiquetaVar(x.p, x.v))}</td><td>${x.p.publicado ? '<span class="marca alerta">publicado</span>' : '<span class="marca">sin publicar</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="sub">Todas las variantes tienen peso y medidas.</div>'}</div>`;
+  }
+
+  (async () => {
+    try { const { data } = await sb.auth.getUser(); quien = data?.user?.email || ''; } catch {}
+    const t = location.hash.slice(1); if (t) document.querySelector(`[data-tab="${t}"]`)?.click();
+    pintarBolsa(); cargarReglas(); cargarProductos();
+  })();
+</script>
+</body>
+</html>

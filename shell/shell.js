@@ -23,9 +23,13 @@ const MENU = [
   { type: 'item', id: 'whatsapp',      label: 'WhatsApp',      href: 'comercial/whatsapp.html',      status: 'ready' },
   { type: 'item', id: 'cotizador',     label: 'Cotizador',     href: 'comercial/cotizador.html',     status: 'ready' },
   { type: 'item', id: 'seguimientos',  label: 'Envíos',        href: 'comercial/seguimientos.html',  status: 'ready' },
-  { type: 'item', id: 'resenas',       label: 'Reseñas',       href: 'comercial/resenas.html',       status: 'ready' },
   { type: 'item', id: 'canales',       label: 'Canales',       href: 'comercial/canales.html',       status: 'ready' },
   { type: 'item', id: 'oportunidades', label: 'Oportunidades', href: 'comercial/oportunidades.html', status: 'ready' },
+
+  // Herramientas propias para Tienda Nube (primero Rosaint; Augusta se suma acá hasta tener su Core).
+  { type: 'group', label: 'Tienda Nube' },
+  { type: 'item', id: 'resenas',   label: 'Reseñas',              href: 'comercial/resenas.html', status: 'ready' },
+  { type: 'item', id: 'tn-envios', label: 'Envíos y descuentos',  href: 'tiendanube/envios.html', status: 'ready' },
 
   { type: 'group', label: 'Producto' },
   { type: 'item', id: 'laboratorio', label: 'Laboratorio',     href: 'laboratorio/index.html', status: 'ready' },
@@ -138,6 +142,7 @@ const MODULE_ICONS = {
   cotizador:      '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5z"/><path d="M8 13h8M8 17h5"/></svg>',
   crm:            '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.5M21 20a5.6 5.6 0 0 0-4-5.4"/></svg>',
   resenas:        '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>',
+  'tn-envios':    '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/><path d="M15.5 14.5l3-1.4"/></svg>',
   seguimientos:   '<svg viewBox="0 0 24 24"><path d="M1 3h13v11H1z"/><path d="M14 7h4l3 3v4h-7z"/><circle cx="6" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></svg>',
   whatsapp:       '<svg viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/></svg>',
   canales:        '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.8l7.4-3.6M8.3 13.2l7.4 3.6"/></svg>',
