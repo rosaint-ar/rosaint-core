@@ -140,6 +140,8 @@ async function cotizar(store: number, body: Rec) {
     if (r.ok) carro = await r.json(); else avisos.push(`No se pudo sumar ${i.nombre || i.vid} x${i.q} (¿sin stock?)`);
   }
   const [cid, hash] = atob(c.id.slice(5).replace(/-/g, "+").replace(/_/g, "/")).split(".");
+  // Bolsa de prueba: en el checkout, el callback tn-descuentos le aplica también las reglas en borrador.
+  await fetch(`${SB_URL}/rest/v1/tn_carritos_prueba`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ store_id: store, cart_id: Number(cid) }) }).catch(() => {});
   const p = await mcpLlamar(store, "get_shipping_methods", { cart_id: Number(cid), cart_hash: hash, zipcode: cp, country_code: "AR" });
   // unidades por categoría (para las reglas)
   const tok = await token(store);
@@ -173,6 +175,15 @@ async function cotizar(store: number, body: Rec) {
   return { carrito, opciones, avisos, bolsa: c.id };
 }
 
+// Link al checkout real de una bolsa de prueba, para ver el descuento ahí (no se paga nada).
+async function checkout(store: number, bolsa: string) {
+  if (!/^cart_[A-Za-z0-9_-]+$/.test(bolsa || "")) throw new Error("Bolsa inválida");
+  const r = await fetch(`https://storefront-api.tiendanube.com/unstable/stores/${store}/carts/${bolsa}/checkout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.checkout_url) throw new Error("La tienda no devolvió el checkout (" + r.status + ")");
+  return { checkout_url: j.checkout_url };
+}
+
 _servirConGuardia(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -182,6 +193,7 @@ _servirConGuardia(async (req: Request) => {
     let out: Rec;
     if (body.accion === "productos") out = await productos(store);
     else if (body.accion === "cotizar") out = await cotizar(store, body);
+    else if (body.accion === "checkout") out = await checkout(store, String(body.bolsa || ""));
     else if (body.accion === "promos") out = await mcpLlamar(store, "get_free_shipping_promotions", {});
     else throw new Error("Acción desconocida");
     return new Response(JSON.stringify({ ok: true, tienda: TIENDAS[store].nombre, store, ...out }), { headers: cors });
