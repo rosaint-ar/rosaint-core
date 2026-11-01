@@ -368,6 +368,17 @@ function ubicacionDe(o: any) {
   }
   return { localidad: loc, provincia: prov, cp };
 }
+// Promociones de Tienda Nube que son la bonificacion de envio de Core (public.tn_descuentos_tiendas).
+let _promosEnvio: Set<string> | null = null;
+async function promosEnvio(): Promise<Set<string>> {
+  if (_promosEnvio) return _promosEnvio;
+  try {
+    const u = Deno.env.get("SUPABASE_URL"), k = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const r = await fetch(`${u}/rest/v1/tn_descuentos_tiendas?select=promotion_id&store_id=eq.${STORE}`, { headers: { apikey: k!, Authorization: `Bearer ${k}` } });
+    _promosEnvio = new Set(((await r.json()) as any[]).map((x) => String(x.promotion_id || "")).filter(Boolean));
+  } catch { _promosEnvio = new Set(); }
+  return _promosEnvio;
+}
 async function armar(o: any) {
   const avisos: string[] = [];
   const map = await skuMap(), st = await estados();
@@ -381,7 +392,14 @@ async function armar(o: any) {
   const dcup = num(o.discount_coupon);
   const dprom = num(o.promotional_discount?.total_discount_amount);
   if (dcup > 0) avisos.push(`Tiene cupon de $${dcup} - no se carga.`);
-  if (dprom > 0) avisos.push(`Tiene descuento promocional de $${dprom} - no se carga.`);
+  // Bonificacion de envio de Core (app de descuentos, tn-descuentos): entra como renglon negativo de
+  // envio. Cualquier OTRA promocion sigue frenando la carga, como antes.
+  const idsEnvio = await promosEnvio();
+  const bonifEnvio = Math.round(((o.promotional_discount?.promotions_applied || []) as any[])
+    .filter((x) => idsEnvio.has(String(x.promotion_id || "")) || /^env[ií]o con descuento$/i.test(String(x.promotion_name || "").trim()))
+    .reduce((a, x) => a + num(x.total_discount_amount), 0) * 100) / 100;
+  const promOtras = Math.round((dprom - bonifEnvio) * 100) / 100;
+  if (promOtras > 0.5) avisos.push(`Tiene descuento promocional de $${promOtras} - no se carga.`);
   let descuento: any = null;
   if (dgw > 0) {
     const pct = subtotal > 0 ? Math.round((dgw / subtotal) * 100) : 0;
@@ -408,8 +426,15 @@ async function armar(o: any) {
   const pagoId = PAGOS[pagoNom.toLowerCase()] || null;
   if (!pagoId) avisos.push(`Medio de pago sin equivalente: "${pagoNom}".`);
   if (/expreso/i.test(String(o.shipping_option_code || ""))) avisos.push("Correo Expreso - se carga como envio a domicilio nacional, revisar.");
-  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0);
-  if (Math.abs(esperado - num(o.total)) > 0.5) avisos.push(`El total no cierra: calculado $${esperado.toFixed(2)} vs Tienda Nube $${num(o.total).toFixed(2)}.`);
+  const bonificacion = bonifEnvio > 0 ? { product: FREESHIP.product, nombre: "Bonificacion de envio (Tienda Nube)", monto: bonifEnvio } : null;
+  if (bonificacion && !envio) avisos.push(`Bonificacion de envio de $${bonifEnvio} sin renglon de envio - revisar.`);
+  const esperado = lineas.reduce((a: number, l: any) => a + l.precio * l.qty, 0) + (envio ? envio.costo : 0) - freeship - (descuento ? descuento.monto : 0) - (bonificacion ? bonificacion.monto : 0);
+  if (Math.abs(esperado - num(o.total)) > 0.5) {
+    // Con un descuento de por medio, un total que no cierra quiere decir que Odoo quedaria por otro
+    // monto que el cobrado (ej. una bonificacion que Tienda Nube guardo distinto): se frena.
+    const conDescuento = num(o.discount) > 0 || dprom > 0 || dcup > 0 || dgw > 0;
+    avisos.push(`El total no cierra: calculado $${esperado.toFixed(2)} vs Tienda Nube $${num(o.total).toFixed(2)}${conDescuento ? " (tiene descuento) - no se carga" : ""}.`);
+  }
   const mail = String(o.contact_email || "").trim().toLowerCase();
   const tel = telOdoo(o.contact_phone || o.billing_phone);
   if (!mail) avisos.push("Sin mail.");
@@ -419,7 +444,7 @@ async function armar(o: any) {
     estado_pago: o.payment_status, pago: pagoNom, pago_id: pagoId,
     cliente: { nombre: String(o.contact_name || "").trim(), documento: doc, tipo_doc: tipoDoc, state_id: stateId,
       email: mail || false, telefono: tel, ...u, ...dir },
-    lineas, envio, retiro, freeship, descuento, avisos,
+    lineas, envio, retiro, freeship, descuento, bonificacion, avisos,
   };
 }
 async function partnerDe(p: any): Promise<number> {
@@ -463,6 +488,9 @@ async function crearBorrador(p: any) {
   const add: unknown[] = []; const rec: string[] = [];
   if (p.freeship > 0 && !tiene(FREESHIP.product)) { add.push([0, 0, { sequence: 81, product_id: FREESHIP.product, name: FREESHIP.nombre, product_uom_qty: 1, price_unit: -p.freeship, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: FREESHIP.reward }]); rec.push("envio gratis"); }
   if (p.descuento && !tiene(p.descuento.product)) { add.push([0, 0, { sequence: 60, product_id: p.descuento.product, name: p.descuento.nombre, product_uom_qty: 1, price_unit: -p.descuento.monto, tax_id: [[6, 0, [TAX]]], is_reward_line: true, reward_id: p.descuento.reward }]); rec.push(`descuento ${p.descuento.pct}%`); }
+  // Bonificacion de envio de Core: renglon negativo comun (SIN marca de recompensa, para que Odoo no
+  // lo recalcule como envio gratis total si alguien toca «Recompensas»).
+  if (p.bonificacion && !tiene(p.bonificacion.product)) { add.push([0, 0, { sequence: 82, product_id: p.bonificacion.product, name: p.bonificacion.nombre, product_uom_qty: 1, price_unit: -p.bonificacion.monto, tax_id: [[6, 0, [TAX]]] }]); rec.push("bonificacion de envio"); }
   let recompensas = rec.length ? "agregadas por el conector: " + rec.join(", ") : "las puso Odoo solo";
   if (add.length) {
     try { await exec("sale.order", "write", [[soId], { order_line: add }]); }
