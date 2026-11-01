@@ -114,7 +114,8 @@
     <div class="aviso"><b>Cómo lo calcula Tienda Nube (probado el 1/11):</b> el descuento se recalcula cada vez que cambia la bolsa, no cuando la clienta elige el envío. Por eso:
       <br>• <b>Monto fijo</b> («Bonificación de envío −$4.000»): se aplica siempre, desde que la bolsa cumple la regla. Es la opción segura.
       <br>• <b>% del envío</b>: si el envío ya estaba elegido cuando cambió la bolsa, se calcula sobre el envío real. Si todavía no lo eligió, se calcula sobre el <b>envío de referencia</b> de la regla (sin referencia, no se aplica). Si la clienta cambia de envío en el checkout, queda el descuento anterior hasta que cambie la bolsa. Poné un <b>tope</b>.
-      <br>• Las condiciones por correo (Correo/Andreani) o por domicilio/sucursal solo sirven en el simulador: el checkout no informa cuál eligió.</div>
+      <br>• Las condiciones por correo (Correo/Andreani) o por domicilio/sucursal solo sirven en el simulador: el checkout no informa cuál eligió.
+      <br>• <b>Margen:</b> salvo que la regla diga «se suma», no se aplica si la bolsa ya tiene otro descuento (rutina 5%, cupón, productos en oferta como el Cyber).</div>
     <div style="margin-bottom:12px"><button class="btn primary" id="nueva">+ Agregar regla</button></div>
     <div id="form-regla"></div>
     <div class="reglas" id="reglas"><div class="vacio">Cargando…</div></div>
@@ -254,6 +255,7 @@
     if (r.medio !== 'todos') c.push(MEDIOS[r.medio]);
     if (r.entrega !== 'todas') c.push(ENTREGAS[r.entrega].toLowerCase());
     if (r.desde || r.hasta) c.push(`vigente ${r.desde ? 'desde ' + r.desde : ''}${r.hasta ? ' hasta ' + r.hasta : ''}`);
+    c.push(r.acumula ? 'se suma a otros descuentos' : 'no se suma a otros descuentos');
     const d = r.descuento_tipo === 'porcentaje' ? `${Number(r.descuento_valor)}% del envío` : `${plata(r.descuento_valor)} del envío`;
     const ref = r.descuento_tipo === 'porcentaje' ? (r.referencia_envio ? ` (antes de elegir el envío: sobre ${plata(r.referencia_envio)})` : ' (solo con el envío ya elegido)') : '';
     return `${d}${ref}${r.tope != null ? ` (tope ${plata(r.tope)})` : ''} · ${c.length ? c.join(' · ') : 'cualquier bolsa'}`;
@@ -286,6 +288,7 @@
       <label class="campo">Desde (fecha) <input id="f-desde" type="date" value="${esc(v('desde'))}"></label>
       <label class="campo">Hasta (fecha) <input id="f-hasta" type="date" value="${esc(v('hasta'))}"></label>
       <label class="campo">Prioridad (menor gana en empate) <input id="f-prio" type="number" value="${esc(v('prioridad', 100))}"></label>
+      <label class="campo todo" style="flex-direction:row;display:flex;gap:8px;align-items:center"><input id="f-acumula" type="checkbox" ${r.acumula ? 'checked' : ''}> Se suma a otros descuentos (rutina 5%, cupones, productos en oferta). Apagado = cuida el margen: si la bolsa ya tiene otro descuento, no se aplica.</label>
       <div class="campo todo">Solo si la bolsa tiene productos de estas categorías (las unidades mínimas cuentan solo esos productos). Ninguna marcada = cualquier producto.<div class="cats" id="f-cats">${cats || '<span class="sub">Cargando categorías…</span>'}</div></div>
     </div><div class="fila" style="margin-top:12px"><button class="btn primary" id="f-guardar" data-id="${r.id || ''}">Guardar</button><button class="btn secondary" id="f-cancelar">Cancelar</button></div></div>`;
     $('#form-regla').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -303,6 +306,7 @@
         min_unidades: numo('#f-uni'), medio: $('#f-medio').value, entrega: $('#f-entrega').value, desde: $('#f-desde').value || null,
         hasta: $('#f-hasta').value || null, prioridad: numo('#f-prio') ?? 100,
         categoria_ids: [...document.querySelectorAll('#f-cats input:checked')].map(i => Number(i.value)), actualizado_por: quien || 'Core',
+        acumula: $('#f-acumula').checked,
       };
       if (!fila.nombre) { alert('Poné un nombre.'); return; }
       if (!(fila.descuento_valor > 0)) { alert('El valor del descuento tiene que ser mayor que 0.'); return; }

@@ -21,12 +21,12 @@ const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const H = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" };
 type Rec = Record<string, any>;
 
-// La configuración (tiendas, reglas, bolsas de prueba) se lee del archivo público tn-publico/tn-descuentos.json
+// La configuración (tiendas, reglas, bolsas de prueba) se lee del archivo público tn-publico/tn-descuentos-v2.json
 // que publica tn-envios (accion publicar_descuentos) cada vez que cambia algo: lo sirve la CDN cerca de
 // sa-east-1, mucho más rápido que ir a la base en us-west-2. Si el archivo falla, se lee la base
 // (función SQL tn_descuentos_datos). Si lo guardado tiene más de 15 s se responde con eso igual y se refresca por
 // detrás (hasta 5 min); solo la primera vez se espera.
-const ARCHIVO = `${SB_URL}/storage/v1/object/public/tn-publico/tn-descuentos.json`;
+const ARCHIVO = `${SB_URL}/storage/v1/object/public/tn-publico/tn-descuentos-v2.json`;
 let cache: { leido: number; tiendas: Rec[]; reglas: Rec[]; prueba: Set<string> } | null = null;
 let refrescando: Promise<void> | null = null;
 function refrescar() {
@@ -117,14 +117,24 @@ async function comandosEnvio(b: Rec, store: number, cart: number, t0: number): P
   }
   const subtotal = Number(b.totals?.subtotal ?? 0);
   const envio = b.shipping?.cost == null || b.shipping.cost === '' ? null : Number(b.shipping.cost);
-  const mejor = evaluarReglas(reglas, { unidades, unidades_por_categoria: porCat, subtotal }, { precio: envio, medio: '?', entrega: '?' });
   const tiene = (b.promotions || []).some((p: Rec) => p.id === tienda.promotion_id);
+  // CUIDAR EL MARGEN (pedido de Diego 1/11): la bonificación no se suma a otros descuentos, salvo las
+  // reglas marcadas «acumula». totals.total_discount trae también NUESTRA bonificación anterior, por
+  // eso solo se usa cuando la nuestra no está; la rutina se reconoce por sus pares de productos.
+  const variantes = new Set((b.products || []).map((p: Rec) => Number(p.variant_id)));
+  const otros = (b.coupons || []).length ? 'cupón'
+    : (b.products || []).some((p: Rec) => Number(p.compare_at_price) > Number(p.price)) ? 'producto en oferta'
+    : (tienda.excluir_pares || []).some((par: number[]) => par.every((v) => variantes.has(Number(v)))) ? 'rutina'
+    : (!tiene && Number(b.totals?.total_discount || 0) > 0) ? 'otro descuento' : '';
+  const aplicables = otros ? reglas.filter((r) => r.acumula) : reglas;
+  const mejor = evaluarReglas(aplicables, { unidades, unidades_por_categoria: porCat, subtotal }, { precio: envio, medio: '?', entrega: '?' });
   const base = { store_id: store, cart_id: cart, envio, cp: b.shipping?.postalcode ?? null, unidades, subtotal, prueba, payload: prueba ? b : null };
   if (mejor && mejor.descuento > 0) return { log: { ...base, respuesta: 'descuento', descuento: mejor.descuento, regla: mejor.regla + (mejor.estimado ? ' · sobre envío de referencia' : '') },
     cmds: [{ command: 'create_or_update_discount', specs: { promotion_id: tienda.promotion_id, currency: b.currency || 'ARS',
       display_text: { 'es-ar': mejor.texto, es: mejor.texto }, discount_specs: { type: 'fixed', amount: mejor.descuento.toFixed(2) } } }] };
-  if (tiene) return { log: { ...base, respuesta: 'quitar' }, cmds: [{ command: 'remove_discount', specs: { scope: 'cart', promotion_ids: [tienda.promotion_id] } }] };
-  return { log: { ...base, respuesta: 'sin descuento' }, cmds: [] };
+  const porque = otros && reglas.length ? ` (no acumula: ${otros})` : '';
+  if (tiene) return { log: { ...base, respuesta: 'quitar' + porque }, cmds: [{ command: 'remove_discount', specs: { scope: 'cart', promotion_ids: [tienda.promotion_id] } }] };
+  return { log: { ...base, respuesta: 'sin descuento' + porque }, cmds: [] };
 }
 
 Deno.serve(async (req: Request) => {

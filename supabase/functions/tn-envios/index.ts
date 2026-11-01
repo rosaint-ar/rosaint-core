@@ -153,12 +153,21 @@ async function cotizar(store: number, body: Rec) {
     const prod = await tnGet(store, tok, `/products/${li.product_id}?fields=categories`);
     for (const cat of prod?.categories || []) porCat[cat.id] = (porCat[cat.id] || 0) + li.quantity;
   }
-  const subtotal = Number(carro.cost?.total ?? carro.cost?.subtotal ?? 0);
-  const { data: reglas } = await (async () => {
-    const r = await fetch(`${SB_URL}/rest/v1/tn_envio_reglas?store_id=eq.${store}&select=*`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
-    return { data: r.ok ? await r.json() : [] };
-  })();
-  const carrito = { unidades, unidades_por_categoria: porCat, subtotal };
+  // Igual que el callback: monto de lista (Tienda Nube manda totals.subtotal antes de descuentos).
+  const subtotal = Math.round((carro.line_items || []).reduce((s: number, l: Rec) => s + Number(l.cost?.unit_price || 0) * l.quantity, 0) * 100) / 100;
+  const hdr = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` };
+  const [reglas, tiendaCfg] = await Promise.all([
+    fetch(`${SB_URL}/rest/v1/tn_envio_reglas?store_id=eq.${store}&select=*`, { headers: hdr }).then((r) => r.ok ? r.json() : []),
+    fetch(`${SB_URL}/rest/v1/tn_descuentos_tiendas?store_id=eq.${store}&select=excluir_pares`, { headers: hdr }).then((r) => r.ok ? r.json() : []),
+  ]);
+  // Mismo criterio de margen que tn-descuentos: si hay otro descuento, solo valen las reglas «acumula».
+  const variantes = new Set((carro.line_items || []).map((l: Rec) => Number(l.variant_id)));
+  const otros = (carro.coupons || []).length ? "cupón"
+    : (carro.line_items || []).some((l: Rec) => Number(l.cost?.compare_at_unit_price || 0) > Number(l.cost?.unit_price || 0)) ? "producto en oferta"
+    : ((tiendaCfg as Rec[])[0]?.excluir_pares || []).some((par: number[]) => par.every((v) => variantes.has(Number(v)))) ? "rutina"
+    : (carro.line_items || []).some((l: Rec) => (l.discounts || []).length) ? "otro descuento" : "";
+  if (otros) avisos.push(`La bolsa tiene ${otros}: solo se aplican las reglas que se suman a otros descuentos.`);
+  const carrito = { unidades, unidades_por_categoria: porCat, subtotal, otros };
   const vistos = new Map<string, Rec>();
   for (const o of [...(p.home_delivery || []), ...(p.pickup_points || [])]) {
     const nombre = String(o.original_name || o.name || "");
@@ -170,21 +179,21 @@ async function cotizar(store: number, body: Rec) {
     vistos.set(clave, { nombre: o.option_type === "pickup" ? `${medio === "correo" ? "Correo Argentino" : medio === "andreani" ? "Andreani" : "Retiro"} a sucursal` : String(o.name || nombre), medio, entrega: o.option_type === "pickup" ? "sucursal" : entrega, precio, dias: o.delivery_days || "", lugares: (previo?.lugares || 0) + 1 });
   }
   const opciones = [...vistos.values()].map((o) => {
-    const d = evaluarReglas((reglas as Rec[]).filter((r) => r.activa || body.incluir_borradores !== false), carrito, o);
+    const d = evaluarReglas((reglas as Rec[]).filter((r) => (r.activa || body.incluir_borradores !== false) && (!otros || r.acumula)), carrito, o);
     return { ...o, descuento: d, precio_cliente: d ? Math.round((o.precio - d.descuento) * 100) / 100 : o.precio };
   }).sort((a, b) => a.precio - b.precio);
   return { carrito, opciones, avisos, bolsa: c.id };
 }
 
 // Publica la configuración del callback tn-descuentos (tiendas, reglas, bolsas de prueba) en el archivo
-// público tn-publico/tn-descuentos.json. El callback lo lee por la CDN (cerca de Tienda Nube) en vez de
+// público tn-publico/tn-descuentos-v2.json. El callback lo lee por la CDN (cerca de Tienda Nube) en vez de
 // ir a la base en us-west-2 en cada consulta. Lo disparan los triggers de las tres tablas.
 async function publicarDescuentos() {
   const r = await fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }, body: "{}" });
   if (!r.ok) throw new Error("datos " + r.status);
   const datos = { ...(await r.json()), publicado: new Date().toISOString() };
-  const up = await fetch(`${SB_URL}/storage/v1/object/tn-publico/tn-descuentos.json`, { method: "POST",
-    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", "x-upsert": "true", "cache-control": "max-age=20" },
+  const up = await fetch(`${SB_URL}/storage/v1/object/tn-publico/tn-descuentos-v2.json`, { method: "POST",
+    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", "x-upsert": "true", "cache-control": "max-age=10, stale-while-revalidate=86400, stale-if-error=86400" },
     body: JSON.stringify(datos) });
   if (!up.ok) throw new Error("subida " + up.status + ": " + (await up.text()).slice(0, 200));
   return { publicado: datos.publicado, reglas: datos.reglas.length, prueba: datos.prueba.length };
