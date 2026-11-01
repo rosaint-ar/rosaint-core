@@ -441,7 +441,12 @@ async function armar(o: any) {
   if (promOtras > 0.5) avisos.push(`Tiene descuento promocional de $${promOtras} - no se carga.`);
   let descuento: any = null;
   if (dgw > 0) {
-    const pct = subtotal > 0 ? Math.round((dgw / subtotal) * 100) : 0;
+    // Tienda Nube calcula el descuento del medio de pago sobre el subtotal YA rebajado por las promociones
+    // (medido en 20 pedidos de Augusta: siempre da 20,00% de subtotal - promociones). Con la bonificacion de
+    // envio pasa lo mismo: sin restarla, un 15% por transferencia se leeria como 13% y no se cargaria.
+    const pctDe = (b: number) => b > 0 ? Math.round((dgw / b) * 100) : 0;
+    const pctRebajado = pctDe(subtotal - bonifEnvio);
+    const pct = DESCUENTOS[pctRebajado] ? pctRebajado : pctDe(subtotal);
     if (DESCUENTOS[pct]) descuento = { ...DESCUENTOS[pct], monto: dgw, pct };
     else avisos.push(`Descuento del ${pct}% ($${dgw}) sin programa equivalente en Odoo - no se carga.`);
   }
