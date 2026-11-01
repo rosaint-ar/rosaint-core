@@ -142,6 +142,7 @@ async function cotizar(store: number, body: Rec) {
   const [cid, hash] = atob(c.id.slice(5).replace(/-/g, "+").replace(/_/g, "/")).split(".");
   // Bolsa de prueba: en el checkout, el callback tn-descuentos le aplica también las reglas en borrador.
   await fetch(`${SB_URL}/rest/v1/tn_carritos_prueba`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ store_id: store, cart_id: Number(cid) }) }).catch(() => {});
+  await publicarDescuentos().catch(() => {});
   const p = await mcpLlamar(store, "get_shipping_methods", { cart_id: Number(cid), cart_hash: hash, zipcode: cp, country_code: "AR" });
   // unidades por categoría (para las reglas)
   const tok = await token(store);
@@ -175,6 +176,20 @@ async function cotizar(store: number, body: Rec) {
   return { carrito, opciones, avisos, bolsa: c.id };
 }
 
+// Publica la configuración del callback tn-descuentos (tiendas, reglas, bolsas de prueba) en el archivo
+// público tn-publico/tn-descuentos.json. El callback lo lee por la CDN (cerca de Tienda Nube) en vez de
+// ir a la base en us-west-2 en cada consulta. Lo disparan los triggers de las tres tablas.
+async function publicarDescuentos() {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }, body: "{}" });
+  if (!r.ok) throw new Error("datos " + r.status);
+  const datos = { ...(await r.json()), publicado: new Date().toISOString() };
+  const up = await fetch(`${SB_URL}/storage/v1/object/tn-publico/tn-descuentos.json`, { method: "POST",
+    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", "x-upsert": "true", "cache-control": "max-age=20" },
+    body: JSON.stringify(datos) });
+  if (!up.ok) throw new Error("subida " + up.status + ": " + (await up.text()).slice(0, 200));
+  return { publicado: datos.publicado, reglas: datos.reglas.length, prueba: datos.prueba.length };
+}
+
 // Link al checkout real de una bolsa de prueba, para ver el descuento ahí (no se paga nada).
 async function checkout(store: number, bolsa: string) {
   if (!/^cart_[A-Za-z0-9_-]+$/.test(bolsa || "")) throw new Error("Bolsa inválida");
@@ -188,6 +203,7 @@ _servirConGuardia(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const body = req.method === "POST" ? await req.json() : Object.fromEntries(new URL(req.url).searchParams);
+    if (body.accion === "publicar_descuentos") return new Response(JSON.stringify({ ok: true, ...(await publicarDescuentos()) }), { headers: cors });
     const store = Number(body.store || 385079);
     if (!TIENDAS[store]) throw new Error("Tienda no habilitada en este módulo: " + store);
     let out: Rec;

@@ -21,14 +21,18 @@ const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const H = { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" };
 type Rec = Record<string, any>;
 
-// Una sola consulta (función SQL tn_descuentos_datos). La URL registrada en Tienda Nube lleva
-// ?forceFunctionRegion=sa-east-1 (ver abajo): la base queda lejos, por eso la memoria. Si lo guardado tiene más de 15 s
-// se responde con eso igual y se refresca por detrás (hasta 5 min); solo la primera vez se espera.
+// La configuración (tiendas, reglas, bolsas de prueba) se lee del archivo público tn-publico/tn-descuentos.json
+// que publica tn-envios (accion publicar_descuentos) cada vez que cambia algo: lo sirve la CDN cerca de
+// sa-east-1, mucho más rápido que ir a la base en us-west-2. Si el archivo falla, se lee la base
+// (función SQL tn_descuentos_datos). Si lo guardado tiene más de 15 s se responde con eso igual y se refresca por
+// detrás (hasta 5 min); solo la primera vez se espera.
+const ARCHIVO = `${SB_URL}/storage/v1/object/public/tn-publico/tn-descuentos.json`;
 let cache: { leido: number; tiendas: Rec[]; reglas: Rec[]; prueba: Set<string> } | null = null;
 let refrescando: Promise<void> | null = null;
 function refrescar() {
-  refrescando ??= fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: H, body: "{}" })
-    .then((x) => x.json())
+  refrescando ??= fetch(ARCHIVO)
+    .then((x) => { if (!x.ok) throw new Error("archivo " + x.status); return x.json(); })
+    .catch(() => fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: H, body: "{}" }).then((x) => x.json()))
     .then((j: Rec) => { cache = { leido: Date.now(), tiendas: j.tiendas || [], reglas: j.reglas || [], prueba: new Set(j.prueba || []) }; })
     .finally(() => { refrescando = null; });
   return refrescando;
