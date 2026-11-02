@@ -223,7 +223,7 @@ _servirConGuardia(async (req: Request) => {
       for (const f of aCambiar) {
         const cuerpo: Rec = { price: String(f.price_nuevo) };
         if (f.promo_nuevo !== null) cuerpo.promotional_price = String(f.promo_nuevo);
-        else if (f.promo !== null) cuerpo.promotional_price = null; // sacar una promo que el Core ya no tiene
+        else if (f.promo !== null) cuerpo.promotional_price = ""; // sacar una promo que el Core ya no tiene (con null TN la deja puesta)
         const r = await tn(token, "PUT", `/products/${f.product_id}/variants/${f.variant_id}`, cuerpo);
         const ok = r.status >= 200 && r.status < 300;
         resultados.push({ sku: f.sku, ok, status: r.status });

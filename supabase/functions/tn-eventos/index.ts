@@ -126,7 +126,8 @@ async function revertir(ev: Rec) {
       conflictos.push({ sku: it.sku, detalle }); continue;
     }
     const antes = num(it.promo_antes);
-    const r = await tn(ev.store_id, tk, "PUT", `/products/${it.product_id}/variants/${it.variant_id}`, { promotional_price: antes === null ? null : String(antes) });
+    // Para borrar la promo Tienda Nube pide "" (texto vacío): con null responde 200 y la deja puesta.
+    const r = await tn(ev.store_id, tk, "PUT", `/products/${it.product_id}/variants/${it.variant_id}`, { promotional_price: antes === null ? "" : String(antes) });
     const ok = r.status >= 200 && r.status < 300;
     await patch(`tn_evento_items?id=eq.${it.id}`, ok ? { estado: "revertido", revertido_en: new Date().toISOString(), detalle: null }
       : { detalle: `No pude volver: ${r.status} ${JSON.stringify(r.data).slice(0, 250)}` });
