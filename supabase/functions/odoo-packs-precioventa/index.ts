@@ -238,6 +238,28 @@ _servirConGuardia(async (req: Request) => {
         errores: resultados.filter((r) => !r.ok), verificacion: { variantes: verif.filas.length, distintas: pendientes.length, pendientes } }), { headers: cors });
     }
 
+    // ---- Modo pedido (solo lectura): { pedido: id } → pedido de venta con todos sus renglones ----
+    if (body.pedido) {
+      const [o] = await call("sale.order", "read", [[Number(body.pedido)], ["name", "partner_id", "date_order", "state", "pricelist_id", "amount_untaxed", "amount_total", "note"]]);
+      const ls = await call("sale.order.line", "search_read", [[["order_id", "=", Number(body.pedido)]],
+        ["product_id", "name", "product_uom_qty", "price_unit", "discount", "price_subtotal", "price_total", "display_type"]], { order: "sequence, id" });
+      return new Response(JSON.stringify({ ok: true, pedido: o, lineas: ls }), { headers: cors });
+    }
+
+    // ---- Modo pedido_descuento: { pedido_descuento: { id, lineas: [ids], descuento }, dry_run } ----
+    // Pone el % de descuento en renglones de un presupuesto. Solo presupuestos en borrador (nunca pedidos confirmados).
+    if (body.pedido_descuento) {
+      const dry = body.dry_run !== false; const q = body.pedido_descuento;
+      const [o] = await call("sale.order", "read", [[Number(q.id)], ["name", "state", "amount_total"]]);
+      if (o.state !== "draft" && o.state !== "sent") throw new Error(`${o.name} no es un presupuesto (estado ${o.state})`);
+      const ids = (q.lineas || []).map(Number);
+      const ls = await call("sale.order.line", "search_read", [[["id", "in", ids], ["order_id", "=", Number(q.id)]], ["id"]]);
+      if (ls.length !== ids.length) throw new Error("algún renglón no es de ese presupuesto");
+      if (!dry) await call("sale.order.line", "write", [ids, { discount: Number(q.descuento) }]);
+      const [o2] = await call("sale.order", "read", [[Number(q.id)], ["name", "amount_untaxed", "amount_total"]]);
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: o.amount_total, despues: o2 }), { headers: cors });
+    }
+
     // ---- Modo ventas_producto (solo lectura): renglones de pedidos de venta de un código ----
     if (body.ventas_producto) {
       const cod = String(body.ventas_producto);
