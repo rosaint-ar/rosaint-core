@@ -876,8 +876,12 @@ function seguimientoDe(d, w, gasto, yaCompro, sug) {
   if (presuAbierto(d)) return null;
   const e = ESTADO[d.partner_id], core = e && e.contactado_at ? diasDe(e.contactado_at) : 99;
   const charla = w.resumen && w.categoria !== 'no_requiere' ? w.resumen : null;
-  // contestó y la última palabra es de él, hace 3 días o más: alguien tiene que responderle
-  if (w.ult_in && w.ult_out && w.ult_in > w.ult_out && w.categoria !== 'no_requiere' && diasDe(w.ult_in) >= DIAS_CHARLA_ABIERTA && core >= 1) return {
+  // la última palabra es del cliente. Si el clasificador (al día con ese mensaje) dice que pide algo, alguien tiene
+  // que responderle; si fue un «gracias», un sticker o «por ahora estoy bien», se respeta: vuelve a los 15 días.
+  const ultimaEsDel = w.ult_in && w.ult_out && w.ult_in > w.ult_out;
+  const pideAlgo = ultimaEsDel && ['consulta', 'pedido', 'pago', 'reclamo'].includes(w.categoria) && w.clasificado_ts && w.clasificado_ts >= w.ult_in;
+  if (ultimaEsDel && !pideAlgo) return null;
+  if (pideAlgo && diasDe(w.ult_in) >= DIAS_CHARLA_ABIERTA && core >= 1) return {
     tipo: 'contestar', score: 9300 - diasDe(w.ult_in),
     razon: `Le escribieron, contestó el <b>${horaCorta(w.ult_in)}</b> y <b>quedó sin respuesta</b>. Respondele antes de que se enfríe.`,
     principal: charla || w.ult_in_texto || null, tambien: w.accion || null, producto: yaCompro, sugerido: sug };
