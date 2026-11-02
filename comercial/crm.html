@@ -345,7 +345,7 @@
 
   <div class="cab">
     <div>
-      <span class="eyebrow">Atención comercial · Rosaint</span>
+      <span class="eyebrow">Ventas · Clientes</span>
     </div>
     <div class="cab-acc">
       <span class="actualizado" id="actualizado" title="Los datos se traen de Odoo solos cada 15 minutos (lunes a sábado, 8 a 21)"><i></i><span>Cargando…</span></span>
@@ -593,18 +593,22 @@ const MIS = {
   nuevo:       { label: 'Nuevo por WhatsApp', ico: 'consulta',     cupo: 2, tpl: null,           d: 'escribió por WhatsApp y no está en la base de clientes' },
   vinculo:     { label: '¿De parte de quién?', ico: 'protocolo',   cupo: 2, tpl: null,           d: 'escribe desde un número que no está en la base, pero parece ser de parte de un cliente' },
   presupuesto: { label: 'Cerrar presupuesto', ico: 'protocolo',    cupo: 5, tpl: 'presupuesto',  d: 'tiene un presupuesto abierto en Odoo: ayudalo a confirmarlo' },
+  contestar:   { label: 'Te escribió y nadie le respondió', ico: 'consulta', cupo: 5, tpl: null,      d: 'contestó un mensaje nuestro hace 3 días o más y quedó sin respuesta' },
+  seguir_charla: { label: 'Retomar la charla', ico: 'aplicacion',  cupo: 3, tpl: 'seguir_charla', d: 'charlaron por WhatsApp hace unos días y no compró: retomá' },
+  sin_respuesta: { label: 'No contestó',     ico: 'envio',       cupo: 3, tpl: 'sin_respuesta', d: 'le escribieron y no contestó: un segundo mensaje, corto y distinto' },
+  carrito:     { label: 'Carrito abandonado', ico: 'presentacion', cupo: 3, tpl: null,           d: 'armó un pedido en la tienda y no lo terminó (sale un recordatorio por WhatsApp)' },
   reponer:     { label: 'Le toca reponer',    ico: 'presentacion', cupo: 3, tpl: 'reponer',      d: 'por su ritmo de compra, ya le toca pedir' },
   segunda:     { label: 'Segunda compra',     ico: 'aplicacion',   cupo: 2, tpl: 'segunda',      d: 'compró una vez hace 3 semanas a 4 meses' },
   recuperar:   { label: 'Recuperar',          ico: 'textura',        cupo: 2, tpl: 'reactivacion', d: 'se atrasó mucho o compró una vez y no volvió' },
   rst:         { label: 'Volver de RST',      ico: 'formula',      cupo: 1, tpl: 'rst',          d: 'compraba en RST y todavía no volvió' },
   primera:     { label: 'Primera compra',     ico: 'formacion',     cupo: 1, tpl: 'nunca_compro', d: 'profesional registrado que nunca compró' },
 };
-const ORDEN_MIS = ['pedido_wsp','presupuesto','vinculo','nuevo','reponer','segunda','recuperar','rst','primera'];
+const ORDEN_MIS = ['pedido_wsp','contestar','presupuesto','carrito','vinculo','nuevo','seguir_charla','sin_respuesta','reponer','segunda','recuperar','rst','primera'];
 // WhatsApp (wsp_actividad, al día por el webhook): un mensaje enviado desde el celular cuenta como contacto,
 // y si el cliente escribió hace poco la charla está abierta y se atiende en el módulo WhatsApp.
 const DIAS_CHARLA_ABIERTA = 3, DIAS_PEDIDO_WSP = 10, DIAS_NUEVO_WSP = 14;
 
-let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONTACTOS = [], WSP = {}, POR_PID = new Map(), TELS = new Set(), VINC = {};
+let DATA = [], PRODS = {}, ESTADO = {}, CONV = [], CONTACTOS = [], WSP = {}, POR_PID = new Map(), TELS = new Set(), VINC = {}, WSEG = {};
 let tab = 'hoy', filtroMis = null, extraPlan = 0, limiteLista = 60;
 let filtro = { seg: null, q: '', orden: 'prioridad', fwa: 'todos', compras: 'todas', canal: 'todos', tipo: 'prof', estado: 'activos' };
 let pendingContact = null, MODAL_PID = null;
@@ -644,19 +648,21 @@ async function apiGetTodo(path) {
 
 async function cargarDinamico() {
   const desde = new Date(Date.now() - 400 * 86400000).toISOString();
-  const [m, e, c, v, w, rt] = await Promise.all([
+  const [m, e, c, v, w, rt, sg] = await Promise.all([
     apiGetTodo('cliente_metricas?select=*&partner_id=not.in.' + EXCLUIR + '&order=partner_id'),
     apiGetTodo('cliente_estado?select=*&order=partner_id'),
     apiGetTodo('crm_contactos?select=id,partner_id,usuario,motivo,created_at&created_at=gte.' + encodeURIComponent(desde) + '&order=created_at'),
     apiGet('crm_conversiones?select=*&order=fecha_pedido.desc&limit=1000'),
     apiGetTodo('wsp_actividad?select=*').catch(() => []),
     apiGetTodo('cliente_ritmo?select=*&order=partner_id').catch(() => []),
+    apiGetTodo('wsp_seguimiento?select=*&order=telefono').catch(() => []),
   ]);
   DATA = m || [];
   ESTADO = {}; (e || []).forEach(x => { ESTADO[x.partner_id] = x; });
   CONTACTOS = c || [];
   CONV = Array.isArray(v) ? v : [];
   WSP = {}; (w || []).forEach(x => { WSP[x.telefono] = x; });
+  WSEG = {}; (sg || []).forEach(x => { WSEG[x.telefono] = x; });
   // contactos que nunca compraron a su nombre y piden para otro cliente (en Odoo son contacto de la empresa, o su
   // número quedó vinculado): no son un cliente aparte, su WhatsApp cuenta para el cliente que compra
   const ids = new Set(DATA.map(d => d.partner_id));
@@ -702,6 +708,7 @@ async function load(primera) {
     pintarActualizado();
     renderAll();
     if (primera) { celebrarNuevos(); revisarInsignias(true); cargarFichas(); }
+    cargarCarritos();   // la tienda tarda unos segundos: las tareas de carritos aparecen cuando llegan
   } catch (err) {
     document.getElementById('plan').innerHTML = '<div class="vacio" style="grid-column:1/-1"><h3>No se pudieron cargar los datos</h3><div>' + esc(err.message) + '</div></div>';
   }
@@ -859,6 +866,33 @@ function misionDe(d) {
   if (MISION_CACHE.has(d.partner_id)) return MISION_CACHE.get(d.partner_id);
   const r = calcularMision(d); MISION_CACHE.set(d.partner_id, r); return r;
 }
+// Seguimiento de lo que se le escribió (vista wsp_seguimiento): en vez de esconder 15 días a quien ya se contactó,
+// se propone el paso siguiente si no compró. Medido 2-11-2026: de 204 escritos en 15 días, 32 compraron, 97
+// contestaron y no compraron, 75 no contestaron — y todos desaparecían del plan.
+const DIAS_SIN_RESP = 3, DIAS_SEGUIR = 4, TOQUES_MAX = 3;
+function seguimientoDe(d, w, gasto, yaCompro, sug) {
+  const s = w && WSEG[w.telefono]; if (!s) return null;
+  if (d.ultima_compra && d.ultima_compra >= dayKey(s.primer_out)) return null;          // compró después: listo
+  if (presuAbierto(d)) return null;
+  const e = ESTADO[d.partner_id], core = e && e.contactado_at ? diasDe(e.contactado_at) : 99;
+  const charla = w.resumen && w.categoria !== 'no_requiere' ? w.resumen : null;
+  // contestó y la última palabra es de él, hace 3 días o más: alguien tiene que responderle
+  if (w.ult_in && w.ult_out && w.ult_in > w.ult_out && w.categoria !== 'no_requiere' && diasDe(w.ult_in) >= DIAS_CHARLA_ABIERTA && core >= 1) return {
+    tipo: 'contestar', score: 9300 - diasDe(w.ult_in),
+    razon: `Le escribieron, contestó el <b>${horaCorta(w.ult_in)}</b> y <b>quedó sin respuesta</b>. Respondele antes de que se enfríe.`,
+    principal: charla || w.ult_in_texto || null, tambien: w.accion || null, producto: yaCompro, sugerido: sug };
+  const desde = Math.min(diasDe(s.ult_out), core);
+  if (!s.ult_in_despues) {          // no contestó: un segundo mensaje distinto (hasta 3 días con mensaje)
+    if (desde < DIAS_SIN_RESP || s.toques >= TOQUES_MAX) return null;
+    return { tipo: 'sin_respuesta', score: 7500 + gasto - desde,
+      razon: `Le escribieron ${s.toques > 1 ? s.toques + ' veces' : 'el ' + horaCorta(s.primer_out)} y <b>no contestó</b>. Probá con un mensaje corto y distinto del anterior.`,
+      principal: yaCompro, tambien: sug, producto: yaCompro, sugerido: sug };
+  }
+  if (desde < DIAS_SEGUIR) return null;   // contestó y la charla quedó sin compra: retomarla
+  return { tipo: 'seguir_charla', score: 7800 + gasto - desde,
+    razon: `Charlaron por WhatsApp (contestó el ${horaCorta(s.ult_in_despues)}) y <b>no compró</b>. Retomá: preguntale si pudo ver lo que hablaron.`,
+    principal: charla || yaCompro, charla: !!charla, tambien: sug, producto: yaCompro, sugerido: sug };
+}
 function calcularMision(d) {
   if (!d.telefono_wa || estaArchivado(d.partner_id)) return null;
   const hace = contactadoHace(d.partner_id);
@@ -883,7 +917,7 @@ function calcularMision(d) {
       principal: 'Confirmar el presupuesto ' + d.presupuesto_name, tambien: sug, producto: yaCompro, sugerido: sug };
     return null;   // presupuesto recién hecho o seguido hace poco: no molestar
   }
-  if (hace != null && hace < DIAS_CONTACTADO) return null;
+  if (hace != null && hace < DIAS_CONTACTADO) return seguimientoDe(d, w, gasto, yaCompro, sug);
   if (n > 0 && dias != null && dias < DIAS_RECIENTE) return null;   // acaba de comprar
 
   if (n >= 2 && ritmo > 0 && dias != null) {
@@ -927,7 +961,45 @@ function candidatos() {
   const out = [];
   for (const d of DATA) { const m = misionDe(d); if (m) out.push({ d, m }); }
   out.push(...nuevosWsp());
+  out.push(...carritosTareas());
   return out.sort((a, b) => b.m.score - a.m.score);
+}
+// Carritos abandonados de Tienda Nube (los lee wsp-webhook): los que todavía no compraron, nadie les escribió
+// después y tienen un celular válido. El detalle y la estadística de recuperados están en WhatsApp › Carritos.
+const FN_WSP = window.SUPABASE_URL + '/functions/v1/wsp-webhook';
+let CARRITOS = [], CARR_PLANTILLA = '', CARR_TEXTO = '';
+async function llamarWsp(body) {
+  const { data: sess } = await sb.auth.getSession();
+  const r = await fetch(FN_WSP, { method: 'POST', headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + (sess && sess.session ? sess.session.access_token : ''), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+async function cargarCarritos() {
+  try {
+    const r = await llamarWsp({ accion: 'carritos' });
+    if (!r.ok) return;
+    CARRITOS = (r.carritos || []).filter(c => !c.compro && !c.enviado && /^549\d{10}$/.test(c.telefono));
+    CARR_PLANTILLA = r.plantilla; CARR_TEXTO = r.texto || '';
+    if (tab === 'hoy') renderHoy();
+  } catch (_) { /* sin la tienda, el plan sigue igual */ }
+}
+function carritosTareas() {
+  return CARRITOS.map((c, i) => {
+    const dias = Math.floor(diasDe(c.creado));
+    return { d: { partner_id: -(5000 + i), carrito: c, telefono_wa: c.telefono, nombre: c.nombre || telCorto(c.telefono), es_profesional: false },
+      m: { tipo: 'carrito', score: 9200 - dias * 10 + Math.min(c.total / 1e4, 90),
+        razon: `Armó un pedido de <b>${fmtMoney(c.total)}</b> en la tienda ${dias < 1 ? 'hoy' : dias === 1 ? 'ayer' : 'hace ' + dias + ' días'} y no lo terminó.`,
+        principal: c.productos.map(p => (p.cantidad > 1 ? p.cantidad + ' × ' : '') + p.nombre).join(' · ') } };
+  });
+}
+async function enviarCarrito(i, btn) {
+  const c = CARRITOS[i]; if (!c) return;
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  const { data: u } = await sb.auth.getUser();
+  try {
+    const r = await llamarWsp({ accion: 'carrito_enviar', checkout_id: c.id, usuario: u && u.user ? u.user.email : null });
+    if (!r.ok) throw new Error(r.error);
+    CARRITOS.splice(i, 1); renderHoy();
+  } catch (e) { btn.disabled = false; btn.textContent = 'Enviar recordatorio'; alert('No se pudo enviar: ' + e.message); }
 }
 // Números que escribieron por WhatsApp y no están en la base de clientes (para cargarlos)
 function nuevosWsp() {
@@ -960,7 +1032,7 @@ function armarPlan(cuantos) {
   if (filtroMis) return todos.filter(x => x.m.tipo === filtroMis).slice(0, cuantos);
   const elegidos = [], usados = new Set();
   for (const t of ORDEN_MIS) {
-    const cupo = ['presupuesto', 'pedido_wsp'].includes(t) ? MIS[t].cupo : Math.ceil(MIS[t].cupo * cuantos / META_DIARIA);
+    const cupo = ['presupuesto', 'pedido_wsp', 'carrito', 'contestar'].includes(t) ? MIS[t].cupo : Math.ceil(MIS[t].cupo * cuantos / META_DIARIA);
     todos.filter(x => x.m.tipo === t).slice(0, cupo).forEach(x => { if (elegidos.length < cuantos) { elegidos.push(x); usados.add(x.d.partner_id); } });
   }
   for (const x of todos) { if (elegidos.length >= cuantos) break; if (!usados.has(x.d.partner_id)) { elegidos.push(x); usados.add(x.d.partner_id); } }
@@ -1035,7 +1107,10 @@ function renderHoy() {
       <div><span class="num" data-n="${s.racha}">${s.racha}</span>${s.racha === 1 ? 'día seguido' : 'días seguidos'}</div>
       <div><span class="num" data-n="${s.semana}">${s.semana}</span>esta semana</div>
       <div><span class="num" data-n="${s.ventasMes}">${s.ventasMes}</span>ventas del mes</div>
-    </div>`;
+    </div>
+    ${(() => { const hk = dayKey(new Date()); let esc = 0, con = 0;   // el celular es uno solo: esto es del equipo, no de cada persona
+      for (const d of DATA) { const w = wspDe(d); if (!w) continue; if (w.ult_out && dayKey(w.ult_out) === hk) esc++; if (w.ult_in && dayKey(w.ult_in) === hk) con++; }
+      return esc || con ? `<div style="margin-top:10px;font-size:13px;color:var(--r-mu)" title="Los mensajes del celular cuentan para todo el equipo: el número es uno solo">Por WhatsApp hoy, todo el equipo: <b>${esc}</b> ${esc === 1 ? 'cliente escrito' : 'clientes escritos'} · <b>${con}</b> ${con === 1 ? 'escribió' : 'escribieron'}</div>` : ''; })()}`;
   requestAnimationFrame(() => { const a = document.getElementById('anilloAvance'); if (a) a.style.strokeDashoffset = C * (1 - pct); });
 
   const todos = candidatos();
@@ -1071,6 +1146,21 @@ function lineaWsp(d) {
 }
 function tareaHtml(d, m, i) {
   const M = MIS[m.tipo];
+  if (d.carrito) { const c = d.carrito, k = CARRITOS.indexOf(c);
+    const msj = CARR_TEXTO.replace('{{1}}', c.primer_nombre).replace('{{2}}', c.productos_texto).replace('{{3}}', '[link al carrito]');
+    return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
+    <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
+    <h4 class="t-nombre">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
+    <p class="t-por">${m.razon}</p>
+    <div class="t-ofre"><span class="eyebrow">Lo que dejó</span>${esc(m.principal)}</div>
+    ${msj ? `<div class="t-wsp" title="${esc(msj)}"><span class="eyebrow">El mensaje que le llega</span>«${esc(msj.replace(/\s+/g, ' ').slice(0, 150))}…»</div>` : ''}
+    <div class="t-acc">
+      ${CARR_PLANTILLA === 'APPROVED' ? `<button class="rb si" onclick="enviarCarrito(${k}, this)">Enviar recordatorio</button>` : '<span class="rb suave">El mensaje espera la aprobación de Meta</span>'}
+      <a class="rb linea" href="https://api.whatsapp.com/send?phone=${d.telefono_wa}" target="_blank" rel="noopener">Escribirle yo</a>
+      <a class="rb suave" href="${esc(c.url)}" target="_blank" rel="noopener">Ver carrito</a>
+      <a class="rb suave" href="whatsapp.html#carritos" title="Retocar el mensaje o ver la estadística de recuperados">Editar</a>
+    </div>
+  </article>`; }
   if (d.vinculo) { const w = WSP[d.telefono_wa] || {}; return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
     <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span><span class="filete"></span></div>
     <h4 class="t-nombre">${esc(d.nombre)} <span style="font-size:13px;color:var(--r-mu)">${esc(telCorto(d.telefono_wa))}</span></h4>
@@ -1100,7 +1190,7 @@ function tareaHtml(d, m, i) {
   if (d.total_gastado) datos.push(`<div><span class="num">${fmtMoney(d.total_gastado)}</span>histórico</div>`);
   if (d.intervalo_tipico_dias) datos.push(`<div><span class="num">${Math.round(d.intervalo_tipico_dias)} d</span>su ritmo</div>`);
   if (can.length) datos.push(`<div><span class="num" style="font-size:13px">${can.join(' + ')}</span>canal</div>`);
-  const ofre = m.principal ? `<div class="t-ofre"><span class="eyebrow">${m.tipo === 'pedido_wsp' ? 'Qué pidió' : m.tipo === 'presupuesto' ? 'Objetivo' : m.tipo === 'segunda' && m.ya && m.principal !== m.ya ? 'Ofrecele' : m.tipo === 'primera' ? 'Para empezar' : 'Lo que suele comprar'}</span>${esc(m.principal)}${m.nota ? ` <span style="color:var(--r-mu)">· ${esc(m.nota)}</span>` : ''}${m.tambien && m.tambien !== m.principal ? `<span class="tambien">${m.tipo === 'pedido_wsp' ? 'Qué hacer' : m.tipo === 'segunda' && m.ya ? 'Ya probó' : 'También le puede interesar'}: ${esc(m.tambien)}</span>` : ''}</div>` : '';
+  const ofre = m.principal ? `<div class="t-ofre"><span class="eyebrow">${m.tipo === 'pedido_wsp' ? 'Qué pidió' : m.tipo === 'contestar' ? 'Qué te dijo' : m.tipo === 'seguir_charla' && m.charla ? 'De qué hablaron' : m.tipo === 'presupuesto' ? 'Objetivo' : m.tipo === 'segunda' && m.ya && m.principal !== m.ya ? 'Ofrecele' : m.tipo === 'primera' ? 'Para empezar' : 'Lo que suele comprar'}</span>${esc(m.principal)}${m.nota ? ` <span style="color:var(--r-mu)">· ${esc(m.nota)}</span>` : ''}${m.tambien && m.tambien !== m.principal ? `<span class="tambien">${['pedido_wsp', 'contestar'].includes(m.tipo) ? 'Qué hacer' : m.tipo === 'segunda' && m.ya ? 'Ya probó' : 'También le puede interesar'}: ${esc(m.tambien)}</span>` : ''}</div>` : '';
   return `<article class="tarea corte" data-pid="${d.partner_id}" style="animation-delay:${Math.min(i * 0.05, .5)}s">
     <div class="t-tipo">${ico(M.ico)}<span class="eyebrow">${M.label}</span>${d.es_profesional ? '' : '<span class="t-badge">Consumidor</span>'}<span class="filete"></span></div>
     <h4 class="t-nombre" onclick="abrirFicha(${d.partner_id})" title="Ver el cliente">${esc(d.nombre || 'Sin nombre')}</h4>
@@ -1109,7 +1199,7 @@ function tareaHtml(d, m, i) {
     ${datos.length ? `<div class="t-datos">${datos.join('')}</div>` : ''}
     ${lineaWsp(d)}
     <div class="t-acc">
-      ${m.tipo === 'pedido_wsp' ? `<a class="rb si" href="https://api.whatsapp.com/send?phone=${destinoWa(d).tel}" target="_blank" rel="noopener" onclick="pedirConfirmacion(${d.partner_id})">Abrir chat</a><a class="rb linea" href="${ODOO_URL}/odoo/sales/new" target="_blank" rel="noopener">Cargar en Odoo</a>` : `<button class="rb si" onclick="abrirMensaje(${d.partner_id})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>WhatsApp</button>`}
+      ${m.tipo === 'contestar' ? `<a class="rb si" href="https://api.whatsapp.com/send?phone=${destinoWa(d).tel}" target="_blank" rel="noopener">Abrir chat</a>` : m.tipo === 'pedido_wsp' ? `<a class="rb si" href="https://api.whatsapp.com/send?phone=${destinoWa(d).tel}" target="_blank" rel="noopener" onclick="pedirConfirmacion(${d.partner_id})">Abrir chat</a><a class="rb linea" href="${ODOO_URL}/odoo/sales/new" target="_blank" rel="noopener">Cargar en Odoo</a>` : `<button class="rb si" onclick="abrirMensaje(${d.partner_id})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>WhatsApp</button>`}
       <button class="rb linea" onclick="marcarContactado(${d.partner_id}, '${m.tipo}')" title="Ya le escribí">Listo</button>
       <button class="rb suave" onclick="archivar(${d.partner_id})" title="No volver a mostrarlo">Archivar</button>
     </div>
@@ -1368,9 +1458,11 @@ const PLANTILLAS_FALLBACK = {
   segunda: 'Hola {nombre}! {quien}. ¿Cómo te fue con {producto}? Si te sirve, te cuento de {sugerido}, que suele acompañarlo. Te dejo la lista: {link}',
   reactivacion: 'Hola {nombre}! Te escribimos de {empresa}. Hace un tiempo no hacés tu pedido, ¿te comparto nuestra lista profesional actualizada para que veas si querés reponer stock? {link}',
   rst: 'Hola {nombre}! {quien}. Hace un tiempo nos compraste {producto}. Seguimos con toda la línea profesional y la lista está actualizada: {link}. ¿Te ayudo con algo?',
+  sin_respuesta: 'Hola {nombre}! {quien}. Te habíamos escrito hace unos días, por si no te llegó: ¿querés que te preparemos {producto}? Te dejo la lista: {link}',
+  seguir_charla: 'Hola {nombre}! ¿Cómo estás? {quien}. ¿Pudiste ver lo que charlamos? Si querés, te armamos el pedido.',
   nunca_compro: 'Hola {nombre}! Te escribimos de {empresa}. Tenemos toda la línea profesional de cosmética con la mejor lista de precios. ¿Te comparto nuestra lista profesional actualizada? {link}',
 };
-const TPL_ROTULO = { presupuesto: 'Cerrar presupuesto', reponer: 'Le toca reponer', segunda: 'Segunda compra', reactivacion: 'Recuperar', rst: 'Volver de RST', nunca_compro: 'Primera compra' };
+const TPL_ROTULO = { presupuesto: 'Cerrar presupuesto', reponer: 'Le toca reponer', segunda: 'Segunda compra', reactivacion: 'Recuperar', rst: 'Volver de RST', nunca_compro: 'Primera compra', sin_respuesta: 'No contestó', seguir_charla: 'Retomar la charla' };
 let PLANTILLAS = { ...PLANTILLAS_FALLBACK };
 let MOMENTANEO = { texto: '', activo: false };
 async function cargarPlantillas() {
