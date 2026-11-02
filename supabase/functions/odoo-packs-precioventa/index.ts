@@ -260,6 +260,32 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: o.amount_total, despues: o2 }), { headers: cors });
     }
 
+    // ---- Modo pedido_recompensa: { pedido_recompensa: { id, reward_id? } } ----
+    // El descuento por volumen va SIEMPRE como recompensa de Odoo (programas por compra mínima), no a mano en el renglón.
+    // Sin reward_id: lista las recompensas que el presupuesto puede reclamar. Con reward_id: la aplica (botón «Recompensas»).
+    if (body.pedido_recompensa) {
+      const q = body.pedido_recompensa; const id = Number(q.id);
+      const [o] = await call("sale.order", "read", [[id], ["name", "state"]]);
+      if (o.state !== "draft" && o.state !== "sent") throw new Error(`${o.name} no es un presupuesto (estado ${o.state})`);
+      const ctx = { active_id: id, active_ids: [id], active_model: "sale.order" };
+      const r = await call("sale.order", "action_open_reward_wizard", [[id]]);
+      let opciones: any[] = [], aplicada = r === true;
+      if (r && typeof r === "object") {
+        const wid = await call("sale.loyalty.reward.wizard", "create", [{ order_id: id }], { context: { ...ctx, ...(r.context || {}) } });
+        const [w] = await call("sale.loyalty.reward.wizard", "read", [[wid], ["reward_ids"]]);
+        opciones = w.reward_ids?.length ? await call("loyalty.reward", "read", [w.reward_ids, ["description", "program_id", "discount"]]) : [];
+        if (q.reward_id) {
+          if (!w.reward_ids.includes(Number(q.reward_id))) throw new Error("esa recompensa no está disponible para este presupuesto");
+          await call("sale.loyalty.reward.wizard", "write", [[wid], { selected_reward_id: Number(q.reward_id) }]);
+          await call("sale.loyalty.reward.wizard", "action_apply", [[wid]], { context: ctx });
+          aplicada = true;
+        }
+      }
+      const [o2] = await call("sale.order", "read", [[id], ["name", "amount_total"]]);
+      const ls = await call("sale.order.line", "search_read", [[["order_id", "=", id]], ["product_id", "name", "product_uom_qty", "price_unit", "discount", "price_total", "is_reward_line"]], { order: "sequence, id" });
+      return new Response(JSON.stringify({ ok: true, aplicada, opciones, pedido: o2, lineas: ls }), { headers: cors });
+    }
+
     // ---- Modo ventas_producto (solo lectura): renglones de pedidos de venta de un código ----
     if (body.ventas_producto) {
       const cod = String(body.ventas_producto);
