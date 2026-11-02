@@ -981,7 +981,9 @@ async function cargarCarritos() {
   try {
     const r = await llamarWsp({ accion: 'carritos' });
     if (!r.ok) return;
-    CARRITOS = (r.carritos || []).filter(c => !c.compro && !c.enviado && /^549\d{10}$/.test(c.telefono));
+    // los de prueba (mail @example.com, nombre «prueba» o número 5555-5555) no son clientes
+    const dePrueba = c => /@example\.(com|org)$/i.test(c.email || '') || /\bprueba\b|\btest\b/i.test(c.nombre || '') || /5555555$/.test(c.telefono);
+    CARRITOS = (r.carritos || []).filter(c => !c.compro && !c.enviado && /^549\d{10}$/.test(c.telefono) && !dePrueba(c));
     CARR_PLANTILLA = r.plantilla; CARR_TEXTO = r.texto || '';
     if (tab === 'hoy') renderHoy();
   } catch (_) { /* sin la tienda, el plan sigue igual */ }
