@@ -74,6 +74,22 @@ _servirConGuardia(async (req: Request) => {
     let fecha: string | null | undefined = undefined;
     if ("fecha" in body) fecha = body.fecha ? String(body.fecha).slice(0, 10) : null;
     else if (tagId !== null && tagId in VIEJAS) { fecha = diaHabilAR(VIEJAS[tagId]); tagId = null; }
+    // Despachado (02/11/2026): marca o desmarca las ENTREGAS validadas del pedido como despachadas en
+    // Odoo (x_despachado). Si todavia no hay ninguna validada, no hay nada que marcar: queda solo en Core.
+    // Marcar = todas las validadas que falten. DESMARCAR = solo la ULTIMA validada: en un pedido que se
+    // entrega de a partes (ej. José Abatedaga, 5 entregas) las anteriores ya salieron y no se tocan.
+    if ("despachado" in body) {
+      const marcar = !!body.despachado;
+      const picks = await rpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, "stock.picking", "search_read", [[["sale_id", "=", odooId], ["state", "=", "done"], ["picking_type_code", "=", "outgoing"]]], { fields: ["id", "x_despachado", "date_done"], order: "date_done desc, id desc", context: ctx }]) as Rec[];
+      const ids = marcar
+        ? picks.filter((p) => !p.x_despachado).map((p) => p.id as number)
+        : picks.slice(0, 1).filter((p) => !!p.x_despachado).map((p) => p.id as number);
+      if (ids.length) {
+        const vals = marcar ? { x_despachado: true, x_despachado_fecha: new Date().toISOString().slice(0, 19).replace("T", " ") } : { x_despachado: false, x_despachado_fecha: false, x_despachado_por: false };
+        await rpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, "stock.picking", "write", [ids, vals], { context: ctx }]);
+      }
+      return new Response(JSON.stringify({ ok: true, odoo_id: odooId, despachado: marcar, entregas_validadas: picks.length, cambiadas: ids.length }), { headers: cors });
+    }
     if (fecha !== undefined) {
       if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error("Fecha invalida");
       await rpc("object", "execute_kw", [ODOO_DB, uid, ODOO_KEY, "sale.order", "write", [[odooId], { commitment_date: fecha ? fecha + " 15:00:00" : false }], { context: ctx }]);

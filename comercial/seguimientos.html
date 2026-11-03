@@ -640,7 +640,9 @@ function waClick(k, a){
   if (chip && !(ESTADO[k] && ESTADO[k].avisado)) setTimeout(() => { if (confirm('¿Le mandaste el aviso?')) tog(k, 'avisado', chip); }, 800);
 }
 async function tog(k, field, btn){
-  const cur = !!(ESTADO[k] && ESTADO[k][field]);
+  // "Despachado" puede venir de Odoo/TN/ML aunque Core no lo tenga marcado: el chip se ve prendido y un clic lo apaga
+  const oo = DATA.find(x => x.estado_key === k);
+  const cur = !!(ESTADO[k] && ESTADO[k][field]) || (field === 'despachado' && !!(oo && oo.despachado));
   const val = !cur;
   ESTADO[k] = Object.assign({}, ESTADO[k], { [field]: val });
   if (btn) btn.classList.toggle('on', val);
@@ -651,11 +653,33 @@ async function tog(k, field, btn){
       { onConflict: 'tn_id' }
     );
     if (error) throw error;
+    if (field === 'despachado') await despachoEnOdoo(k, val);
     if (field === 'despachado' || field === 'avisado') { updateCounts(); render(); }
   } catch (e) {
     ESTADO[k][field] = cur;
     if (btn) { btn.classList.toggle('on', cur); if (field === 'avisado') { const c = btn.closest('.seg-card'); if (c) c.classList.toggle('avisado', cur); } }
     alert('No se pudo guardar el estado: ' + (e.message || e));
+  }
+}
+
+// El chip "Despachado" también marca la entrega en Odoo (x_despachado: el paquete ya salió del depósito),
+// así el listado de ventas deja de decir "En depósito". Si la entrega todavía no se validó en Odoo, no hay
+// nada que marcar allá y queda solo acá. Un error en Odoo no deshace lo de Core: avisa y sigue.
+async function despachoEnOdoo(k, val){
+  const o = DATA.find(x => x.estado_key === k); if (!o || !o.odoo_id) return;
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    const r = await fetch(window.SUPABASE_URL + '/functions/v1/tn-set-etiqueta', {
+      method: 'POST',
+      headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ odoo_id: o.odoo_id, despachado: !!val })
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Error');
+    if (j.entregas_validadas) { o.odoo_despachado = !!val; if (o.categoria !== 'ml') o.despachado = !!val || (o.despachado && !o.odoo_validadas); }
+  } catch (e) {
+    alert('Quedó marcado en Core, pero no se pudo marcar el despacho en Odoo: ' + (e.message || e));
   }
 }
 

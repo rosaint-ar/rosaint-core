@@ -147,12 +147,19 @@ _servirConGuardia(async (req: Request) => {
     const stockMap: Record<number, number> = {};
     if (allProdIds.size) { try { const prods = await odooExec(uid, "product.product", "read", [[...allProdIds]], { fields: ["qty_available"] }) as Rec[]; for (const p of prods) stockMap[p.id as number] = Number(p.qty_available || 0); } catch (_e) { /* */ } }
     const fechaDespachoPorOrden: Record<number, string> = {};
+    // Despachado en Odoo (02/11/2026): cada entrega validada tiene x_despachado (el paquete ya salio del
+    // deposito). Validar solo descuenta el stock; por eso "entregado" ya NO cuenta como despachado.
+    const despOdoo: Record<number, { validadas: number; despachadas: number }> = {};
     try {
-      const picks = await odooExec(uid, "stock.picking", "search_read", [[["sale_id", "in", oids], ["state", "=", "done"], ["picking_type_code", "=", "outgoing"]]], { fields: ["sale_id", "date_done"] }) as Rec[];
+      const picks = await odooExec(uid, "stock.picking", "search_read", [[["sale_id", "in", oids], ["state", "=", "done"], ["picking_type_code", "=", "outgoing"]]], { fields: ["sale_id", "date_done", "x_despachado", "x_despachado_fecha"] }) as Rec[];
       for (const pk of picks) {
         const soid = Array.isArray(pk.sale_id) ? (pk.sale_id as unknown[])[0] as number : 0;
-        const dd = pk.date_done ? String(pk.date_done) : "";
-        if (!soid || !dd) continue;
+        if (!soid) continue;
+        const d = (despOdoo[soid] = despOdoo[soid] || { validadas: 0, despachadas: 0 });
+        d.validadas++; if (pk.x_despachado) d.despachadas++;
+        // fecha de despacho de respaldo: cuando se marco como despachado; si no, cuando se valido
+        const dd = pk.x_despachado_fecha ? String(pk.x_despachado_fecha) : (pk.date_done ? String(pk.date_done) : "");
+        if (!dd) continue;
         if (!fechaDespachoPorOrden[soid] || dd > fechaDespachoPorOrden[soid]) fechaDespachoPorOrden[soid] = dd;
       }
     } catch (_e) { /* */ }
@@ -220,15 +227,17 @@ _servirConGuardia(async (req: Request) => {
       const productos = tn ? (tn.productos as Rec[]) : oLines.map(prodFromLine);
       const prov = tn && tn.provincia ? tn.provincia : (p && Array.isArray(p.state_id) ? String((p.state_id as unknown[])[1]) : null);
       const ciudad = tn && tn.ciudad ? tn.ciudad : (p ? (p.city || null) : null);
-      const full = String(o.delivery_status || "") === "full";
-      // despachado: ML por su estado real; el resto por TN o, si no, por el delivery_status de Odoo.
+      const full = String(o.delivery_status || "") === "full";   // se usa para el % de stock
+      const dO = despOdoo[oid];
+      const odooDespachado = !!dO && dO.validadas > 0 && dO.despachadas === dO.validadas;
+      // despachado: ML por su estado real; el resto por TN o por el "Despachado" de la entrega en Odoo.
       let despachado: boolean; let mlEstado: string | null = null; let mlEntregado = false;
       if (categoria === "ml") {
         const me = mlRef[String(o.client_order_ref || "").trim()];
         if (me) { despachado = !!me.despachado; mlEstado = (me.estado_label as string) || null; mlEntregado = !!me.entregado; }
-        else despachado = full;
+        else despachado = odooDespachado;
       } else {
-        despachado = tn ? !!tn.despachado : full;
+        despachado = (tn ? !!tn.despachado : false) || odooDespachado;
       }
       const trackingCode = tn ? (tn.tracking_code || null) : null;
       const transportista = tn ? tn.transportista : (categoria === "rosario" ? "Envío Rosario" : categoria === "retiro" ? "Retiro" : categoria === "sinasignar" ? "Sin asignar" : categoria === "ml" ? "Mercado Libre" : "Correo");
@@ -255,7 +264,7 @@ _servirConGuardia(async (req: Request) => {
         telefono_wa: telWa, provincia: prov, ciudad, productos, total: Number(o.amount_total || 0), fecha: o.date_order,
         transportista, modalidad: tn ? tn.modalidad : null, numero: tn ? tn.numero : null,
         tracking_code: trackingCode, tracking_url: tn ? (tn.tracking_url || null) : null,
-        shipping_status: tn ? tn.shipping_status : null, despachado, ml_estado: mlEstado, ml_entregado: mlEntregado,
+        shipping_status: tn ? tn.shipping_status : null, despachado, odoo_despachado: odooDespachado, odoo_validadas: dO ? dO.validadas : 0, ml_estado: mlEstado, ml_entregado: mlEntregado,
         fecha_despacho: fechaDespachoRaw ? fechaDespachoDMY(fechaDespachoRaw) : null, fecha_despacho_iso: fechaDespachoRaw,
         necesita_seguimiento: categoria === "correo" && despachado && !!trackingCode,
         tiene_tn: !!tn, pedido_pdf_url: `${ODOO_URL}/report/pdf/sale.report_saleorder/${oid}`,
