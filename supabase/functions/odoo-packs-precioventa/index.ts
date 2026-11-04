@@ -615,6 +615,15 @@ _servirConGuardia(async (req: Request) => {
         }
         out.pasos.push("actividad nueva → WhatsApp (pedidos sin tienda web)");
       }
+      // La campaña suma pedidos con el cron 93 (sync participants); va cada hora, 10 min antes del 94 (execute activities),
+      // así un pedido manual queda etiquetado en menos de una hora. Son pocos miles de registros: no pesa.
+      const [c93] = await call("ir.cron", "read", [[93], ["cron_name", "interval_number", "interval_type", "nextcall"]], { context: ctx });
+      const [c94] = await call("ir.cron", "read", [[94], ["nextcall"]], { context: ctx });
+      if (c93.interval_number !== 1 || c93.interval_type !== "hours") {
+        const prox = new Date(new Date(c94.nextcall.replace(" ", "T") + "Z").getTime() - 10 * 60000).toISOString().slice(0, 19).replace("T", " ");
+        if (!dry) await call("ir.cron", "write", [[93], { interval_number: 1, interval_type: "hours", nextcall: prox }], { context: ctx });
+        out.pasos.push(`cron 93 «${c93.cron_name}»: cada ${c93.interval_number} ${c93.interval_type} → cada 1 hours, próxima ${prox} UTC`);
+      }
       // Lo viejo: sin origen, más los pedidos nombrados en body.a_whatsapp (manuales con Lista 5 que la campaña marcó TN).
       // Los "Tienda Nube" viejos sin número no se tocan: antes del conector las ventas de TN se cargaban a mano.
       const viejos = await call("sale.order", "search_read", [["&", ["company_id", "=", 2], "|", ["source_id", "=", false], ["name", "in", (body.a_whatsapp || []).map(String)]],
@@ -637,13 +646,19 @@ _servirConGuardia(async (req: Request) => {
       const accIds = aut.flatMap((a: any) => a.action_server_ids || []);
       const acc = accIds.length ? await call("ir.actions.server", "read", [accIds, ["id", "name", "state", "code", "update_field_id", "value", "evaluation_type", "update_path", "resource_ref"]], { context: ctx }) : [];
       const fuentes = await call("utm.source", "search_read", [[], ["id", "name"]], { context: ctx });
-      let campanas: any[] = [], actividades: any[] = [];
+      let campanas: any[] = [], actividades: any[] = [], carga: any[] = [];
       try {
         campanas = await call("marketing.campaign", "search_read", [[], ["id", "name", "state", "model_name", "domain", "unique_field_id", "last_sync_date", "create_date"]], { context: ctx });
         actividades = await call("marketing.activity", "search_read", [[], ["id", "name", "campaign_id", "activity_type", "trigger_type", "interval_number", "interval_type", "domain", "activity_domain", "server_action_id", "parent_id"]], { context: ctx });
         const sa = actividades.map((a: any) => a.server_action_id?.[0]).filter(Boolean);
         const sas = sa.length ? await call("ir.actions.server", "read", [sa, ["id", "name", "state", "update_path", "value", "resource_ref", "code"]], { context: ctx }) : [];
         actividades = actividades.map((a: any) => ({ ...a, accion: sas.find((s: any) => s.id === a.server_action_id?.[0]) }));
+        if (body.carga) for (const c of campanas) {
+          const dom = JSON.parse(String(c.domain).replace(/\(/g, "[").replace(/\)/g, "]").replace(/False/g, "false").replace(/True/g, "true").replace(/'/g, "\""));
+          carga.push({ campana: c.name, modelo: c.model_name, coinciden: await call(c.model_name, "search_count", [dom], { context: { ...ctx, allowed_company_ids: [1, 2] } }),
+            participantes: await call("marketing.participant", "search_count", [[["campaign_id", "=", c.id]]], { context: ctx }),
+            trazas_pendientes: await call("marketing.trace", "search_count", [[["participant_id.campaign_id", "=", c.id], ["state", "=", "scheduled"]]], { context: ctx }) });
+        }
       } catch (e) { campanas = [{ error: String(e) }]; }
       const pedidos = await call("sale.order", "search_read", [[["company_id", "=", 2]], ["name", "date_order", "pricelist_id", "source_id", "team_id", "user_id", "partner_id", "create_uid", "origin", "client_order_ref", "medium_id", "campaign_id", "x_studio_mtodo_de_pago_2", "carrier_id", "tag_ids", "payment_term_id", "website_id"]], { context: ctx, order: "id desc", limit: Number(body.limite || 60) });
       const campos = await call("ir.model.fields", "search_read", [[["model", "=", modelo], ["name", "in", ["source_id", "pricelist_id", "x_studio_origen", "tag_ids"]]],
@@ -663,7 +678,7 @@ _servirConGuardia(async (req: Request) => {
         historial = msgs.map((m: any) => ({ pedido: sos.find((s: any) => s.id === m.res_id)?.name, fecha: m.date, autor: m.author_id?.[1], tipo: m.message_type,
           texto: String(m.body || "").replace(/<[^>]+>/g, " ").slice(0, 200), cambios: tvs.filter((t: any) => (m.tracking_value_ids || []).includes(t.id)).map((t: any) => `${t.field_id?.[1]}: ${t.old_value_char || ""} → ${t.new_value_char || ""}`) }));
       }
-      return new Response(JSON.stringify({ ok: true, campanas, actividades, campos, defaults, vistas, filtros, crons, accionesVentana, historial, automatizaciones: aut.map((a: any) => ({ ...a, acciones: acc.filter((x: any) => (a.action_server_ids || []).includes(x.id)) })), fuentes, pedidos }, null, 2), { headers: cors });
+      return new Response(JSON.stringify({ ok: true, carga, campanas, actividades, campos, defaults, vistas, filtros, crons, accionesVentana, historial, automatizaciones: aut.map((a: any) => ({ ...a, acciones: acc.filter((x: any) => (a.action_server_ids || []).includes(x.id)) })), fuentes, pedidos }, null, 2), { headers: cors });
     }
 
     if (body.conta_relevar) {
