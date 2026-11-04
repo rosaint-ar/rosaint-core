@@ -581,14 +581,36 @@ _servirConGuardia(async (req: Request) => {
     // sin origen: con tienda web = Portal web; sin tienda web = WhatsApp (los cargados a mano). Y corrige lo viejo.
     if (body.origen_ventas) {
       const dry = body.dry_run !== false; const ctx = { lang: "es_ES" }; const out: any = { dry_run: dry, pasos: [] };
-      const SRC_TN = 16, SRC_PORTAL = 31, SRC_WSP = 32, CAMP = 4, ACT_PORTAL = 13;
+      const SRC_TN = 16, SRC_PORTAL = 31, SRC_WSP = 32, CAMP = 4, CAMP_ML = 5, CAMP_EMPRESA = 6, ACT_PORTAL = 13;
       const NOMBRES: Record<number, string> = { [SRC_PORTAL]: "🟣 Portal web", [SRC_WSP]: "🟢 WhatsApp" };
       for (const [id, name] of Object.entries(NOMBRES)) {
         const [s] = await call("utm.source", "read", [[Number(id)], ["name"]], { context: ctx });
         if (s.name !== name) { if (!dry) await call("utm.source", "write", [[Number(id)], { name }], { context: ctx }); out.pasos.push(`origen ${id}: «${s.name}» → «${name}»`); }
       }
-      const dominioCamp = `[("company_id", "=", 2), ("source_id", "=", False)]`;
+      // Piso de id: las campañas de pedidos solo miran pedidos nuevos (todos los de hoy ya están etiquetados y son participantes).
+      // Odoo no deja pedir "los últimos 30", pero sí "desde el pedido X"; así cada búsqueda revisa poquitos.
+      // El piso de cada campaña es el último pedido que ya tiene como participante: lo que entró después igual se revisa.
+      const ultimoDe = async (campId: number) => (await call("marketing.participant", "search_read", [[["campaign_id", "=", campId]], ["res_id"]], { context: ctx, order: "res_id desc", limit: 1 }))[0]?.res_id || 0;
       const [camp] = await call("marketing.campaign", "read", [[CAMP], ["name", "domain", "marketing_activity_ids"]], { context: ctx });
+      const piso = (dom: string) => (String(dom).match(/\("id", ">", (\d+)\)/) || [])[1];
+      const dominioCamp = `[("id", ">", ${piso(camp.domain) || await ultimoDe(CAMP)}), ("company_id", "=", 2), ("source_id", "=", False)]`;
+      const [campMl] = await call("marketing.campaign", "read", [[CAMP_ML], ["domain"]], { context: ctx });
+      if (!piso(campMl.domain)) {
+        const nuevo = `[("id", ">", ${await ultimoDe(CAMP_ML)}), ` + String(campMl.domain).trim().slice(1);
+        if (!dry) await call("marketing.campaign", "write", [[CAMP_ML], { domain: nuevo }], { context: ctx });
+        out.pasos.push(`campaña ${CAMP_ML}: dominio ${campMl.domain} → ${nuevo}`);
+      }
+      // Campaña 6 (contactos, dominio vacío = todos): mismo piso, pero por debajo del contacto más viejo que todavía no procesó.
+      const [campEmp] = await call("marketing.campaign", "read", [[CAMP_EMPRESA], ["domain"]], { context: ctx });
+      if (!piso(campEmp.domain)) {
+        const ya = new Set((await call("marketing.participant", "search_read", [[["campaign_id", "=", CAMP_EMPRESA]], ["res_id"]], { context: ctx })).map((p: any) => p.res_id));
+        const todos = await call("res.partner", "search", [[]], { context: { ...ctx, allowed_company_ids: [1, 2] } });
+        const pendientes = todos.filter((id: number) => !ya.has(id));
+        const n = Math.min(Math.max(0, ...ya), ...pendientes.map((id: number) => id - 1));
+        const nuevo = `[("id", ">", ${n})]`;
+        if (!dry) await call("marketing.campaign", "write", [[CAMP_EMPRESA], { domain: nuevo }], { context: ctx });
+        out.pasos.push(`campaña ${CAMP_EMPRESA}: dominio ${campEmp.domain} → ${nuevo} (pendientes: ${pendientes.join(", ") || "ninguno"})`);
+      }
       if (camp.domain !== dominioCamp) {
         if (!dry) await call("marketing.campaign", "write", [[CAMP], { name: "Tag - Origen de Ventas [WhatsApp / Portal web]", domain: dominioCamp }], { context: ctx });
         out.pasos.push(`campaña ${CAMP}: dominio ${camp.domain} → ${dominioCamp}`);
@@ -615,14 +637,17 @@ _servirConGuardia(async (req: Request) => {
         }
         out.pasos.push("actividad nueva → WhatsApp (pedidos sin tienda web)");
       }
-      // La campaña suma pedidos con el cron 93 (sync participants); va cada hora, 10 min antes del 94 (execute activities),
-      // así un pedido manual queda etiquetado en menos de una hora. Son pocos miles de registros: no pesa.
-      const [c93] = await call("ir.cron", "read", [[93], ["cron_name", "interval_number", "interval_type", "nextcall"]], { context: ctx });
-      const [c94] = await call("ir.cron", "read", [[94], ["nextcall"]], { context: ctx });
-      if (c93.interval_number !== 1 || c93.interval_type !== "hours") {
-        const prox = new Date(new Date(c94.nextcall.replace(" ", "T") + "Z").getTime() - 10 * 60000).toISOString().slice(0, 19).replace("T", " ");
-        if (!dry) await call("ir.cron", "write", [[93], { interval_number: 1, interval_type: "hours", nextcall: prox }], { context: ctx });
-        out.pasos.push(`cron 93 «${c93.cron_name}»: cada ${c93.interval_number} ${c93.interval_type} → cada 1 hours, próxima ${prox} UTC`);
+      // La campaña suma pedidos con el cron 93 (sync participants) y los etiqueta con el 94 (execute activities).
+      // Con el piso de id cada pasada revisa solo pedidos nuevos: los dos van cada 15 min, el 93 cinco minutos antes.
+      const MIN = 15;
+      const crons = await call("ir.cron", "read", [[93, 94], ["cron_name", "interval_number", "interval_type", "nextcall"]], { context: ctx });
+      const prox94 = new Date(Date.now() + 2 * 60000), prox93 = new Date(prox94.getTime() + (MIN - 5) * 60000);
+      const fmt = (d: Date) => d.toISOString().slice(0, 19).replace("T", " ");
+      for (const c of crons) {
+        if (c.interval_number === MIN && c.interval_type === "minutes") continue;
+        const nextcall = fmt(c.id === 94 ? prox94 : prox93);
+        if (!dry) await call("ir.cron", "write", [[c.id], { interval_number: MIN, interval_type: "minutes", nextcall }], { context: ctx });
+        out.pasos.push(`cron ${c.id} «${c.cron_name}»: cada ${c.interval_number} ${c.interval_type} → cada ${MIN} minutes, próxima ${nextcall} UTC`);
       }
       // Lo viejo: sin origen, más los pedidos nombrados en body.a_whatsapp (manuales con Lista 5 que la campaña marcó TN).
       // Los "Tienda Nube" viejos sin número no se tocan: antes del conector las ventas de TN se cargaban a mano.
