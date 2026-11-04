@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+globalThis.Deno={env:{get:k=>({ODOO_URL:'https://odoo.test',ODOO_DB:'test',ODOO_LOGIN:'test',ODOO_KEY:'test',SUPABASE_URL:'https://sb.test',SUPABASE_SERVICE_ROLE_KEY:'test-service'}[k])}};
+const {handler,validCuit,validate}=await import('../functions/portal-alta/index.ts');
+const datos={tipo:'academia',cuit:'30000000007',razon:'Academia de prueba',cartel:'',calle:'Prueba 123',localidad:'Rosario',provincia:'Santa Fe',telefono:'3415550000',email:'prueba@example.com'};
+const {encrypt,decrypt,passwordContext}=await import('../functions/portal-alta/secrets.ts');
+let alta,partners,users,events,calls,secretRows=[],receivedBodies=[],failUser=false,failInvite=false;
+const reset=()=>{alta={id:'11111111-1111-4111-8111-111111111111',cuit:datos.cuit,email:datos.email,datos:{...datos},estado:'revisar',version:0,resultado:{},archivos:[],analisis:{arca:{ok:true,existe:true,iva:'MONO',estado:'ACTIVO'}}};partners=[];users=[];events=[];calls=[];failUser=false;failInvite=false;secretRows=[];receivedBodies=[];};reset();
+globalThis.fetch=async(input,opts={})=>{const url=new URL(input);const b=opts.body?JSON.parse(opts.body):undefined;
+if(url.hostname==='sb.test'){
+ const name=url.pathname.split('/').at(-1);
+ if(name==='user')return Response.json({email:'intruso@example.com',email_confirmed_at:'2026-01-01'});
+ if(name==='portal_alta_recibir_v2'){receivedBodies.push(b);return Response.json(alta.id);}
+ if(name==='portal_altas_clave')return Response.json(secretRows);
+ if(name==='portal_altas_eventos'){events.push(b);return Response.json([b]);}
+ if(name==='portal_altas'){
+  if(opts.method==='PATCH'){const v=url.searchParams.get('version');if(v&&Number(v.slice(3))!==alta.version)return Response.json([]);Object.assign(alta,b);return Response.json([structuredClone(alta)]);}
+  return Response.json([structuredClone(alta)]);
+ }throw Error('Ruta DB inesperada '+url);
+}
+if(url.hostname!=='odoo.test')throw Error('No se permite red real en las pruebas');
+const p=b.params;if(p.service==='common')return Response.json({result:2});
+const [db,uid,key,model,method,args,kwargs]=p.args;calls.push({model,method,args});let result;
+if(model==='product.pricelist')result=[{id:32,name:'Profesionales',company_id:false}];
+else if(model==='res.country.state')result=[{id:20,name:'Santa Fe'}];
+else if(model==='mail.message')result=[];
+else if(model==='ir.attachment')result=method==='search_read'?[]:700;
+else if(model==='mail.mail')result=method==='search_read'?[]:500;
+else if(model==='res.partner'){
+ if(method==='search_read')result=args[0]?.[0]?.[0]==='ref'?partners.filter(x=>x.ref===args[0][0][2]):partners;
+ if(method==='create'){const v=args[0];partners.push({id:100,active:true,...v});result=100;}
+ if(method==='write'){Object.assign(partners.find(x=>x.id===args[0][0]),args[1]);result=true;}
+ if(method==='message_post')result=200;
+}else if(model==='res.users'){
+ if(method==='read')result=[{id:2,partner_id:[3,'Comercial']}];
+ if(method==='search_read'){result=args[0]?.[0]?.[0]==='share'?[{id:2,name:'Comercial'}]:users;}
+ if(method==='create'){if(failUser){failUser=false;return Response.json({error:{data:{message:'Fallo temporal ElegidaSegura123'}}});}const v=args[0];users.push({id:101,share:true,active:v.active,login:v.login,partner_id:[v.partner_id,'Prueba']});result=101;}
+ if(method==='write'){users.filter(x=>args[0].includes(x.id)).forEach(x=>Object.assign(x,args[1]));result=true;}
+ if(method==='action_reset_password'){if(failInvite){failInvite=false;throw Error('Respuesta perdida');}result=true;}
+}else throw Error('Modelo inesperado '+model);
+return Response.json({result});};
+let n=0;
+async function call(body,auth=true,origin){const h={'content-type':'application/json'};if(auth)h.authorization='Bearer test-service';if(origin)h.origin=origin;const r=await handler(new Request('https://sb.test/functions/v1/portal-alta',{method:'POST',headers:h,body:JSON.stringify(body)}));return {status:r.status,...await r.json()};}
+async function check(name,fn){await fn();console.log('OK',name);n++;}
+const choices=()=>({accion:'aprobar',id:alta.id,lista_id:32,comercial_id:2,identidad_verificada:true,fiscal_verificado:true,revision:'Identidad y constancia verificadas.'});
+await check('CUIT inválido y repetido rechazados',()=>{assert.equal(validCuit('30000000008'),false);assert.equal(validCuit('00000000000'),false);assert.equal(validCuit(datos.cuit),true);});
+await check('Todos los públicos admitidos',()=>{for(const tipo of ['profesional','revendedor','mayorista','academia','otro'])assert.equal(validate({...datos,tipo}).tipo,tipo);});
+await check('No admitir rubros de EyG',()=>assert.throws(()=>validate({...datos,tipo:'farmacia'})));
+await check('Anónimo no puede listar ni aprobar',async()=>{for(const accion of ['listar','aprobar','instalar','instalar_arca','diagnostico_configuracion','archivo','rechazar','diagnostico'])assert.equal((await call({accion,id:alta.id},false)).status,403);});
+await check('Sesión ajena tampoco puede aprobar',async()=>{const r=await handler(new Request('https://sb.test/functions/v1/portal-alta',{method:'POST',headers:{authorization:'Bearer intruso'},body:JSON.stringify(choices())}));assert.equal(r.status,403);});
+await check('Origen ajeno bloqueado',async()=>assert.equal((await call({accion:'enviar',datos:{...datos,condicion_iva:'MONO'},clave:'PruebaSegura123',acepto:true},false,'https://evil.test')).status,403));
+await check('Sin consentimiento no se guarda',async()=>assert.equal((await call({accion:'enviar',datos},false)).status,400));
+await check('Envío público no escribe en Odoo',async()=>{calls=[];const r=await call({accion:'enviar',datos:{...datos,condicion_iva:'MONO'},clave:'PruebaSegura123',acepto:true},false,'https://rosaint.odoo.com');assert.equal(r.recibida,true);assert.equal(calls.length,0);});
+await check('Lista no autorizada bloqueada',async()=>assert.equal((await call({...choices(),lista_id:53})).status,400));
+await check('Revisión humana obligatoria',async()=>assert.equal((await call({...choices(),identidad_verificada:false})).status,400));
+await check('ARCA requerido antes de nueva ficha, sin dejarla bloqueada',async()=>{alta.analisis={};assert.equal((await call(choices())).status,400);assert.equal(alta.estado,'revisar');alta.analisis={arca:{ok:true,existe:true,iva:'MONO',estado:'ACTIVO'}};});
+await check('Ensayo no escribe ni envía mensajes',async()=>{calls=[];const r=await call({...choices(),ensayo:true});assert.equal(r.ensayo,true);assert.equal(calls.some(x=>['create','write','message_post','action_reset_password'].includes(x.method)),false);assert.equal(alta.estado,'revisar');});
+await check('Aprobación crea una sola ficha y acceso portal, con empresa correcta',async()=>{const r=await call(choices());assert.equal(r.ok,true);assert.equal(alta.estado,'aprobada');assert.equal(partners.length,1);assert.equal(users.length,1);const create=calls.find(x=>x.model==='res.users'&&x.method==='create');assert.equal(create.args[0].company_id,2);assert.deepEqual(create.args[0].groups_id,[[6,0,[10]]]);assert.equal(alta.resultado.invitacion,'enviada');});
+await check('Reintentar aprobación resuelta no duplica ficha, usuario ni invitación',async()=>{const before=calls.length;assert.equal((await call(choices())).ya_resuelta,true);assert.equal(calls.length,before);});
+await check('Error parcial se retoma sin duplicar ficha',async()=>{reset();failUser=true;assert.equal((await call(choices())).status,409);assert.equal(alta.estado,'error_aprobacion');assert.equal(partners.length,1);assert.equal((await call(choices())).ok,true);assert.equal(partners.length,1);assert.equal(users.length,1);});
+await check('Invitación incierta no se reenvía automáticamente',async()=>{reset();failInvite=true;assert.equal((await call(choices())).status,409);assert.equal(alta.resultado.invitacion,'en_proceso');assert.equal((await call(choices())).ok,true);assert.equal(calls.filter(x=>x.method==='action_reset_password').length,1);});
+await check('Usuario interno impide aprobación',async()=>{reset();partners=[{id:100,active:true,company_id:false}];users=[{id:9,share:false,active:true,login:datos.email,partner_id:[100,'Prueba']}];assert.equal((await call(choices())).status,400);assert.equal(alta.estado,'revisar');});
+await check('Rechazo requiere motivo y no crea ficha',async()=>{reset();assert.equal((await call({accion:'rechazar',id:alta.id,motivo:'no'})).status,400);assert.equal((await call({accion:'rechazar',id:alta.id,motivo:'Identidad no verificable'})).ok,true);assert.equal(partners.length,0);assert.equal(users.length,0);assert.equal(alta.estado,'rechazada');});
+await check('Solicitud cerrada no se puede aprobar',async()=>assert.equal((await call(choices())).status,409));
+await check('Documento ajeno no expone URL firmada',async()=>assert.equal((await call({accion:'archivo',id:alta.id,path:'otra-solicitud/file.pdf'})).status,404));
+await check('Revisión documental permite un ensayo fiscal sin ARCA',async()=>{reset();alta.analisis={arca:{ok:false}};alta.archivos=[{path:alta.id+'/constancia.pdf',nombre:'Constancia revisada',tipo:'application/pdf'}];const r=await call({...choices(),responsabilidad_id:6,ensayo:true});assert.equal(r.ok,true);assert.equal(r.ensayo,true);assert.equal(partners.length,0);});
+await check('Correo anterior exige confirmación explícita para reemplazo',async()=>{reset();partners=[{id:100,active:true,company_id:false,vat:datos.cuit}];users=[{id:99,share:true,active:true,login:'anterior@example.com',partner_id:[100,'Prueba']}];assert.equal((await call({...choices(),ensayo:true})).status,400);assert.equal((await call({...choices(),ensayo:true,reemplazar:true})).ok,true);assert.equal(users[0].active,true);});
+await check('Dos aprobaciones simultáneas producen una ficha y un usuario',async()=>{reset();const r=await Promise.all([call(choices()),call(choices())]);assert.equal(r.filter(x=>x.ok).length,1);assert.equal(partners.length,1);assert.equal(users.length,1);});
+await check('DNI consumidor final válido; DNI no se acepta para monotributo',()=>{const d=validate({...datos,cuit:'',documento:'12345678',documento_tipo:'DNI',condicion_iva:'CF'});assert.equal(d.documento,'12345678');assert.throws(()=>validate({...d,condicion_iva:'MONO'}));assert.throws(()=>validate({...d,documento:'123'}));});
+await check('Cuatro condiciones básicas y CUIL para consumidor final',()=>{for(const condicion_iva of ['RI','MONO','CF','EXENTO'])assert.equal(validate({...datos,condicion_iva}).condicion_iva,condicion_iva);assert.equal(validate({...datos,documento_tipo:'CUIL',condicion_iva:'CF'}).documento_tipo,'CUIL');assert.throws(()=>validate({...datos,condicion_iva:'inventada'}));});
+await check('Sin contraseña válida no se registra',async()=>{reset();for(const clave of ['', '12345678','abcdefgh'])assert.equal((await call({accion:'enviar',datos:{...datos,condicion_iva:'MONO'},clave,acepto:true},false)).status,400);assert.equal(receivedBodies.length,0);});
+await check('La contraseña se envía sólo cifrada a DB y nunca a datos ni respuesta',async()=>{reset();const r=await call({accion:'enviar',datos:{...datos,condicion_iva:'MONO'},clave:'PruebaSegura123',acepto:true},false);assert.equal(r.ok,true);assert.equal(receivedBodies.length,1);assert.ok(receivedBodies[0].p_cifrada.startsWith('v1.'));assert.equal(JSON.stringify(receivedBodies).includes('PruebaSegura123'),false);assert.equal(JSON.stringify(r).includes('PruebaSegura123'),false);assert.equal(await decrypt(receivedBodies[0].p_cifrada,passwordContext(validate({...datos,condicion_iva:'MONO'}))),'PruebaSegura123');await assert.rejects(()=>decrypt(receivedBodies[0].p_cifrada,'otro-contexto'));});
+await check('Consumidor final DNI se analiza sin consultar ARCA ni exportar credenciales',async()=>{reset();const r=await call({accion:'probar',datos:{...datos,cuit:'',documento:'12345678',documento_tipo:'DNI',condicion_iva:'CF'}});assert.equal(r.ok,true);assert.equal(r.analisis.arca.no_aplica,true);const query=calls.find(c=>c.model==='res.partner').args[0];assert.ok(JSON.stringify(query).includes('l10n_latam_identification_type_id'));assert.equal(calls.some(c=>c.model==='ir.actions.server'),false);});
+await check('Alta DNI crea consumidor final con el tipo DNI de Odoo y sin constancia ARCA',async()=>{reset();alta.datos={...datos,cuit:'12345678',documento:'12345678',documento_tipo:'DNI',condicion_iva:'CF'};alta.cuit='12345678';alta.analisis={arca:{no_aplica:true}};assert.equal((await call({...choices(),responsabilidad_id:5})).ok,true);assert.equal(partners[0].vat,'12345678');assert.equal(partners[0].l10n_latam_identification_type_id,5);assert.equal(partners[0].l10n_ar_afip_responsibility_type_id,5);});
+await check('DNI no permite aprobar con condición fiscal contradictoria',async()=>{reset();alta.datos={...datos,documento_tipo:'DNI',documento:'12345678',condicion_iva:'CF'};assert.equal((await call({...choices(),responsabilidad_id:6})).status,400);assert.equal(partners.length,0);});
+await check('Contraseña elegida se aplica al usuario nuevo y no genera enlace de contraseña',async()=>{reset();secretRows=[{cifrada:await encrypt('ElegidaSegura123',passwordContext(alta.datos)),vence:new Date(Date.now()+86400000).toISOString()}];assert.equal((await call(choices())).ok,true);assert.equal(calls.find(c=>c.model==='res.users'&&c.method==='create').args[0].password,'ElegidaSegura123');assert.equal(calls.some(c=>c.method==='action_reset_password'),false);assert.equal(alta.resultado.clave_aplicada,true);assert.equal(JSON.stringify(alta).includes('ElegidaSegura123'),false);assert.equal(JSON.stringify(events).includes('ElegidaSegura123'),false);assert.equal(calls.filter(c=>c.model==='mail.mail'&&c.method==='create').some(c=>JSON.stringify(c).includes('ElegidaSegura123')),false);});
+await check('El ensayo nunca expone la contraseña elegida',async()=>{reset();secretRows=[{cifrada:await encrypt('ElegidaSegura123',passwordContext(alta.datos)),vence:new Date(Date.now()+86400000).toISOString()}];const r=await call({...choices(),ensayo:true});assert.equal(r.plan.clave_disponible,true);assert.equal(JSON.stringify(r).includes('ElegidaSegura123'),false);assert.equal(users.length,0);});
+await check('El acceso activo conserva su contraseña aunque llegue otra en la solicitud',async()=>{reset();partners=[{id:100,active:true,company_id:false}];users=[{id:101,share:true,active:true,login:datos.email,partner_id:[100,'Prueba']}];secretRows=[{cifrada:await encrypt('ElegidaSegura123',passwordContext(alta.datos)),vence:new Date(Date.now()+86400000).toISOString()}];assert.equal((await call(choices())).ok,true);assert.equal(calls.some(c=>c.model==='res.users'&&c.method==='write'&&c.args[1].password),false);});
+await check('Contraseña pendiente vencida vuelve al enlace de acceso seguro',async()=>{reset();secretRows=[{cifrada:'v1.vencida',vence:'2020-01-01T00:00:00Z'}];assert.equal((await call(choices())).ok,true);assert.equal(alta.resultado.invitacion,'enviada');});
+await check('Errores al crear usuario no exponen contraseña ni detalle remoto',async()=>{reset();secretRows=[{cifrada:await encrypt('ElegidaSegura123',passwordContext(alta.datos)),vence:new Date(Date.now()+86400000).toISOString()}];failUser=true;const r=await call(choices());assert.equal(r.status,409);assert.equal(JSON.stringify(r).includes('ElegidaSegura123'),false);assert.equal(JSON.stringify(events).includes('ElegidaSegura123'),false);});
+await check('ARCA inactivo o sin constancia requiere respaldo manual',async()=>{for(const f of [{estado:'INACTIVO'},{sin_constancia:true},{ok:false}]){reset();Object.assign(alta.analisis.arca,f);assert.equal((await call(choices())).status,400);assert.equal(partners.length,0);}});
+console.log(n+' pruebas completadas, sin red real.');

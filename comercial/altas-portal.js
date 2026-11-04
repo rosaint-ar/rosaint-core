@@ -112,7 +112,9 @@
       saved = a.aprobacion || {};
     list();
     const pairs = [
-      ["CUIT", a.cuit],
+      [a.datos.documento_tipo || "CUIT", a.cuit],
+      ["Condición declarada", ({RI:"Responsable inscripto",MONO:"Monotributista",CF:"Consumidor final",EXENTO:"Exento"})[a.datos.condicion_iva] || "Sin declarar (alta anterior)"],
+      ["Contraseña", a.resultado?.clave_aplicada ? "Aplicada al acceso" : a.datos.clave_elegida ? "Elegida al registrarse · protegida" : "Por enlace de acceso"],
       ["Actividad", opts.tipos[a.datos.tipo]],
       ["Nombre comercial", a.datos.cartel || "—"],
       ["Correo", a.email],
@@ -123,25 +125,26 @@
       ],
     ];
     $("#detalle").innerHTML =
-      `<article class="alta-panel"><p class="eyebrow">${e(states[a.estado])}</p><h2>${e(a.datos.razon)}</h2><dl>${pairs.map(([k, v]) => `<dt>${e(k)}</dt><dd>${e(v)}</dd>`).join("")}</dl><h3>Identidad fiscal y coincidencias</h3>${an.consultada ? `<p>Consulta: ${new Date(an.consultada).toLocaleString("es-AR")}</p><div class="altas-note ${an.alertas?.length ? "warn" : ""}">${e(ar.nombre_completo || ar.error || "Sin datos fiscales")}<br>${e(ar.estado || "")} · ${e(ar.iva || "Sin condición fiscal confirmada")}</div><ul>${(an.alertas || []).map((s) => `<li>${e(s)}</li>`).join("")}</ul><ul>${(an.odoo?.fichas || []).map((p) => `<li>Ficha ${p.id}: ${e(p.name)} · correo ${e(p.email || "sin correo")} · lista ${e(p.property_product_pricelist?.[1] || "—")}</li>`).join("")}${(an.odoo?.usuarios || []).map((u) => `<li>Acceso ${e(u.login)} · ${u.share ? "portal" : "interno"} · ${u.active ? "activo" : "archivado"}</li>`).join("")}</ul>` : "<p>Consultá ARCA y Odoo antes de decidir.</p>"}${["recibida", "revisar"].includes(a.estado) ? '<button class="btn" data-action="analizar">Consultar ARCA y Odoo</button>' : ""}
+      `<article class="alta-panel"><p class="eyebrow">${e(states[a.estado])}</p><h2>${e(a.datos.razon)}</h2><dl>${pairs.map(([k, v]) => `<dt>${e(k)}</dt><dd>${e(v)}</dd>`).join("")}</dl><h3>Identidad fiscal y coincidencias</h3>${an.consultada ? `<p>Consulta: ${new Date(an.consultada).toLocaleString("es-AR")}</p><div class="altas-note ${an.alertas?.length ? "warn" : ""}">${e(ar.nombre_completo || ar.error || "Sin datos fiscales")}<br>${e(ar.estado || "")} · ${e(ar.iva || "Sin condición fiscal confirmada")}</div><ul>${(an.alertas || []).map((s) => `<li>${e(s)}</li>`).join("")}</ul><ul>${(an.odoo?.fichas || []).map((p) => `<li>Ficha ${p.id}: ${e(p.name)} · correo ${e(p.email || "sin correo")} · lista ${e(p.property_product_pricelist?.[1] || "—")}</li>`).join("")}${(an.odoo?.usuarios || []).map((u) => `<li>Acceso ${e(u.login)} · ${u.share ? "portal" : "interno"} · ${u.active ? "activo" : "archivado"}</li>`).join("")}</ul>` : "<p>Consultá ARCA y Odoo antes de decidir.</p>"}${["recibida", "revisar"].includes(a.estado) ? '<button class="btn" data-action="analizar">Verificar identidad y datos</button>' : ""}
 <h3>Documentación</h3><ul>${a.archivos.map((f, i) => `<li><button class="btn" data-file="${i}">${e(f.nombre)} ↗</button></li>`).join("") || "<li>Sin documentos adjuntos.</li>"}</ul>${["recibida", "revisar"].includes(a.estado) ? '<label>Agregar constancia o documentación<input id="documento" type="file" accept="application/pdf,image/jpeg,image/png"></label><button class="btn" data-action="subir">Guardar documento</button><p>PDF, JPG o PNG · hasta 5 MB. Acceso privado.</p>' : ""}
 ${
   !closed
-    ? `<h3>Condiciones del acceso</h3><div class="alta-controls"><label>Lista de precios<select id="lista">${opts.listas.map((x) => `<option value="${x.id}" ${x.id === (saved.lista_id || 32) ? "selected" : ""}>${e(x.name)}</option>`).join("")}</select></label><label>Responsable comercial<select id="comercial">${opts.comerciales.map((x) => `<option value="${x.id}" ${x.id === saved.comercial_id ? "selected" : ""}>${e(x.name)}</option>`).join("")}</select></label><label>Condición IVA (constancia revisada)<select id="responsabilidad"><option value="0">Usar consulta ARCA</option>${[
+    ? `<h3>Condiciones del acceso</h3><div class="alta-controls"><label>Lista de precios<select id="lista">${opts.listas.map((x) => `<option value="${x.id}" ${x.id === (saved.lista_id || 32) ? "selected" : ""}>${e(x.name)}</option>`).join("")}</select></label><label>Responsable comercial<select id="comercial">${opts.comerciales.map((x) => `<option value="${x.id}" ${x.id === saved.comercial_id ? "selected" : ""}>${e(x.name)}</option>`).join("")}</select></label><label>Condición IVA verificada<select id="responsabilidad"><option value="0">Usar consulta ARCA</option>${[
         { id: 1, name: "Responsable inscripto" },
-        { id: 6, name: "Monotributo" },
+        { id: 6, name: "Monotributista" },
+        { id: 5, name: "Consumidor final" },
         { id: 4, name: "Exento" },
       ]
         .map(
           (x) =>
-            `<option value="${x.id}" ${x.id === saved.responsabilidad_id ? "selected" : ""}>${e(x.name)}</option>`,
+            `<option value="${x.id}" ${x.id === (saved.responsabilidad_id || (a.datos.condicion_iva === "CF" ? 5 : 0)) ? "selected" : ""}>${e(x.name)}</option>`,
         )
         .join(
           "",
         )}</select></label></div><label class="check"><input id="identidad" type="checkbox" ${saved.identidad_verificada ? "checked" : ""}>Verifiqué la identidad y que esta persona puede gestionar la cuenta.</label><label class="check"><input id="fiscal" type="checkbox" ${saved.fiscal_verificado ? "checked" : ""}>Revisé los datos fiscales y la documentación que corresponde.</label><label class="check"><input id="reemplazar" type="checkbox" ${saved.reemplazar ? "checked" : ""}>Si tiene otro correo de acceso, confirmo su reemplazo y revocación.</label><label>Registro de la revisión<textarea id="revision" rows="3" maxlength="1500" placeholder="Cómo verificaste la identidad y qué documentación revisaste">${e(saved.revision || "")}</textarea></label><div class="altas-actions"><button class="btn btn-primary" data-action="plan">Revisar aprobación</button>${["recibida", "revisar"].includes(a.estado) ? '<button class="btn btn-danger" data-action="rechazar">Rechazar solicitud</button>' : ""}</div><label style="margin-top:18px">Motivo del rechazo<textarea id="motivo" rows="2" maxlength="1500" placeholder="Completalo sólo si vas a rechazar"></textarea></label>`
     : ""
 }
-${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación incompleta. El reintento conserva los pasos ya realizados y las condiciones elegidas. No vuelvas a cargar otra solicitud.</div>' : ""}${a.estado === "aprobando" ? '<div class="altas-note warn">Hay una aprobación en curso. Actualizá la bandeja para consultar el resultado. Si no termina, requiere revisión técnica.</div>' : ""}${a.resultado?.partner_id ? `<div class="altas-note">Ficha Odoo: ${a.resultado.partner_id} · Usuario: ${a.resultado.user_id || "pendiente"}<br>Invitación: ${e(a.resultado.invitacion || "acceso existente")}</div>` : ""}${a.motivo ? `<p>Motivo: ${e(a.motivo)}</p>` : ""}<h3>Historial</h3><ul class="alta-history">${r.eventos.map((v) => `<li>${new Date(v.creada).toLocaleString("es-AR")} · ${e(v.accion.replaceAll("_", " "))} · ${e(v.actor)}${v.detalle?.mensaje ? " · " + e(v.detalle.mensaje) : ""}</li>`).join("")}</ul></article>`;
+${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación incompleta. El reintento conserva los pasos ya realizados y las condiciones elegidas. No vuelvas a cargar otra solicitud.</div>' : ""}${a.estado === "aprobando" ? '<div class="altas-note warn">Hay una aprobación en curso. Actualizá la bandeja para consultar el resultado. Si no termina, requiere revisión técnica.</div>' : ""}${a.resultado?.partner_id ? `<div class="altas-note">Ficha Odoo: ${a.resultado.partner_id} · Usuario: ${a.resultado.user_id || "pendiente"}<br>Acceso: ${e(a.resultado.clave_aplicada ? "con contraseña elegida" : (a.resultado.invitacion || "existente"))}</div>` : ""}${a.motivo ? `<p>Motivo: ${e(a.motivo)}</p>` : ""}<h3>Historial</h3><ul class="alta-history">${r.eventos.map((v) => `<li>${new Date(v.creada).toLocaleString("es-AR")} · ${e(v.accion.replaceAll("_", " "))} · ${e(v.actor)}${v.detalle?.mensaje ? " · " + e(v.detalle.mensaje) : ""}</li>`).join("")}</ul></article>`;
     $("#detalle").dataset.paths = JSON.stringify(a.archivos.map((f) => f.path));
   }
   function choices() {

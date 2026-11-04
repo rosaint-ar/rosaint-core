@@ -1,4 +1,5 @@
 import { kw, COMPANY } from "./odoo.ts";
+import { rosArcaTicket } from "./arca-signer.ts";
 const dig = (x: unknown) => String(x || "").replace(/\D/g, "");
 const esc = (x: unknown) =>
   String(x || "").replace(
@@ -24,49 +25,12 @@ const desXml = (s: string) =>
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&");
 
-async function ticketArca() {
-  const leer = async () =>
-    (
-      await kw(
-        "l10n_ar.afipws.connection",
-        "search_read",
-        [
-          [
-            ["company_id", "=", COMPANY],
-            ["l10n_ar_afip_ws", "=", "ws_sr_constancia_inscripcion"],
-            ["type", "=", "production"],
-          ],
-        ],
-        {
-          fields: ["token", "sign", "expiration_time"],
-          order: "id desc",
-          limit: 1,
-        },
-      )
-    )?.[0];
-  let t = await leer();
-  const vence = (x: { expiration_time?: string }) =>
-    x?.expiration_time
-      ? Date.parse(x.expiration_time.replace(" ", "T") + "Z")
-      : 0;
-  if (!t || vence(t) < Date.now() + 5 * 60e3) {
-    // Renovar: Odoo arma el ticket nuevo al consultar el padrón. Se le pregunta por
-    // la propia empresa; el método sólo devuelve datos, no escribe la ficha.
-    const comp = (
-      await kw("res.company", "read", [[COMPANY], ["partner_id"]])
-    )[0];
-    await kw("res.partner", "get_data_from_padron_afip", [
-      [comp.partner_id[0]],
-    ]);
-    t = await leer();
-  }
-  if (!t?.token || !t?.sign) throw new Error("Odoo no tiene ticket de ARCA");
-  return t;
-}
+const ticketArca = rosArcaTicket;
 export async function diagnosticoArca() {
   try {
     const t = await ticketArca();
-    return { disponible: true, vence: t.expiration_time };
+    const propia=await consultarArca(t.cuit);
+    return { disponible: propia.ok===true && propia.existe===true, vence: t.expiration_time, consulta_empresa:{ok:propia.ok,existe:propia.existe,iva:propia.iva,estado:propia.estado,error:propia.error} };
   } catch (e) {
     return { disponible: false, motivo: String(e.message).slice(0, 500) };
   }
@@ -79,11 +43,12 @@ export async function consultarArca(cuit: string): Promise<any> {
   );
   const sobre = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a5="http://a5.soap.ws.server.puc.sr/"><soapenv:Header/><soapenv:Body><a5:getPersona_v2><token>${esc(t.token)}</token><sign>${esc(t.sign)}</sign><cuitRepresentada>${empresa}</cuitRepresentada><idPersona>${cuit}</idPersona></a5:getPersona_v2></soapenv:Body></soapenv:Envelope>`;
   const r = await fetch(
-    "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5",
+    "https://aws.arca.gov.ar/sr-padron/webservices/personaServiceA5",
     {
       method: "POST",
       headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
       body: sobre,
+      signal: AbortSignal.timeout(25000),
     },
   );
   const x = await r.text();

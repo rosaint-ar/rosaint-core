@@ -1,7 +1,10 @@
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
 import { admin, kw, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
 import { consultarArca, diagnosticoArca } from "./arca.ts";
+import { configDiagnostic } from "./config-diagnostic.ts";
 import { install } from "./install.ts";
+import { encrypt, readPassword, validPassword, passwordContext } from "./secrets.ts";
+import { installArcaSigner } from './arca-signer.ts';
 
 const TYPES = {
   profesional: "Profesional",
@@ -15,6 +18,8 @@ const ORIGINS = [
   "https://pro.rosaint.online",
   "https://rosaint-ar.github.io",
 ];
+const FISCAL = {RI:1, MONO:6, CF:5, EXENTO:4};
+const DOCUMENTS = {CUIT:4, DNI:5, CUIL:6};
 const LISTS = [32, 60]; // IDs verificados en Odoo, no IDs de Core.
 const enc = (v: unknown) => encodeURIComponent(String(v));
 const digits = (v: unknown) => String(v || "").replace(/\D/g, "");
@@ -51,6 +56,9 @@ export function validate(raw: any) {
   for (const k of [
     "tipo",
     "cuit",
+    "documento_tipo",
+    "documento",
+    "condicion_iva",
     "razon",
     "cartel",
     "calle",
@@ -60,10 +68,17 @@ export function validate(raw: any) {
     "email",
   ])
     d[k] = String(raw?.[k] ?? "").trim();
-  d.cuit = digits(d.cuit);
+  d.documento_tipo = d.documento_tipo || 'CUIT';
+  d.documento = digits(d.documento || d.cuit);
+  d.cuit = d.documento; // Campo legado de almacenamiento; el tipo distingue DNI/CUIT/CUIL.
+  if(!Object.hasOwn(DOCUMENTS,d.documento_tipo))throw new Failure('Elegí el tipo de documento.');
+  if(d.condicion_iva && !Object.hasOwn(FISCAL,d.condicion_iva))throw new Failure('Elegí una condición IVA válida.');
+  if(d.documento_tipo!=='CUIT' && d.condicion_iva!=='CF')throw new Failure('DNI y CUIL se admiten para consumidor final. Para otra condición, ingresá CUIT.');
   d.email = d.email.toLowerCase();
   if (!Object.hasOwn(TYPES, d.tipo)) throw new Failure("Elegí tu actividad.");
-  if (!validCuit(d.cuit)) throw new Failure("Revisá el CUIT.");
+  if(d.documento_tipo==='DNI') {
+    if(!/^\d{7,8}$/.test(d.documento)||/^([0-9])\1+$/.test(d.documento))throw new Failure('Revisá el DNI: debe tener 7 u 8 dígitos.');
+  } else if(!validCuit(d.documento)) throw new Failure('Revisá el CUIT o CUIL.');
   for (const k of ["razon", "calle", "localidad", "provincia"])
     if (d[k].length < 2 || d[k].length > 180)
       throw new Failure("Completá los datos del domicilio y nombre.");
@@ -158,17 +173,16 @@ async function options() {
   };
 }
 async function look(d: any) {
+  const dni=d.documento_tipo==='DNI', doc=d.documento||d.cuit;
+  const variants=dni?[doc,doc.replace(/\B(?=(\d{3})+(?!\d))/g,'.')]:[doc,fmt(doc),`AR${doc}`];
   const partners = await kw(
     "res.partner",
     "search_read",
     [
       [
         ["parent_id", "=", false],
-        "|",
-        "|",
-        ["vat", "=", d.cuit],
-        ["vat", "=", fmt(d.cuit)],
-        ["vat", "=", `AR${d.cuit}`],
+        ["l10n_latam_identification_type_id", "in", dni?[5]:[4,6]],
+        ["vat", "in", variants],
       ],
     ],
     {
@@ -206,7 +220,9 @@ async function analyze(d: any) {
   const odoo = await look(d);
   let arca: any;
   try {
-    arca = await consultarArca(d.cuit);
+    arca = d.condicion_iva==='CF'
+      ? {ok:true,no_aplica:true,iva:'CF',error:'Consumidor final: verificar identidad y documento. No requiere constancia de inscripción.'}
+      : await consultarArca(d.documento||d.cuit);
   } catch {
     arca = {
       ok: false,
@@ -217,7 +233,7 @@ async function analyze(d: any) {
   const alertas: string[] = [];
   if (odoo.fichas.length > 1)
     alertas.push(
-      "Hay varias fichas con ese CUIT. Resolver duplicados antes de aprobar.",
+      "Hay varias fichas con ese documento. Resolver duplicados antes de aprobar.",
     );
   if (odoo.fichas.some((x: any) => !x.active))
     alertas.push("Hay una ficha archivada. Revisar en Odoo.");
@@ -230,12 +246,14 @@ async function analyze(d: any) {
       "Cliente existente: verificar identidad y titularidad del correo antes de dar acceso.",
     );
   if (
-    !arca.ok ||
+    !arca.no_aplica && (!arca.ok ||
     !arca.existe ||
     arca.sin_constancia ||
-    arca.estado !== "ACTIVO"
+    arca.estado !== "ACTIVO")
   )
     alertas.push("Identidad fiscal pendiente de revisión manual.");
+  if(!arca.no_aplica && arca.iva && d.condicion_iva && arca.iva!==d.condicion_iva)
+    alertas.push('La condición declarada no coincide con ARCA. Revisala antes de aprobar.');
   return {
     consultada: new Date().toISOString(),
     odoo,
@@ -300,10 +318,17 @@ async function plan(a: any, b: any) {
       "Resolvé las fichas duplicadas o archivadas en Odoo antes de aprobar.",
     );
   const partner = o.fichas[0];
+  const consumer=a.datos.condicion_iva==='CF';
+  if(consumer && opts.responsabilidad_id!==5)throw new Failure('Confirmá Consumidor final en la condición IVA.');
+  if(!consumer && opts.responsabilidad_id===5)throw new Failure('La solicitud no fue declarada como consumidor final. Revisá la identidad fiscal.');
+  if(!consumer && opts.responsabilidad_id && ![1,4,6].includes(opts.responsabilidad_id))throw new Failure('Condición IVA no permitida.');
+  const fiscal=a.analisis?.arca;
+  if(!consumer && opts.responsabilidad_id && fiscal?.iva && FISCAL[fiscal.iva]!==opts.responsabilidad_id && !a.archivos.length)
+    throw new Failure('La condición elegida difiere de ARCA. Adjuntá la constancia y registrá la revisión.');
   if (
-    !partner &&
+    !consumer && !partner &&
     !a.resultado?.partner_id &&
-    (!a.analisis?.arca?.existe ||
+    (!a.analisis?.arca?.ok || !a.analisis?.arca?.existe || a.analisis?.arca?.sin_constancia || a.analisis?.arca?.estado !== 'ACTIVO' ||
       !["RI", "MONO", "EXENTO"].includes(a.analisis?.arca?.iva)) &&
     (!a.archivos.length || ![1, 4, 6].includes(opts.responsabilidad_id))
   )
@@ -337,7 +362,9 @@ async function plan(a: any, b: any) {
   );
   if (!state)
     throw new Failure("La provincia no coincide con las opciones de Odoo.");
+  const passwordAvailable=!!(await readPassword(a));
   return {
+    clave_disponible: passwordAvailable,
     opciones: opts,
     partner,
     usuario: target,
@@ -354,7 +381,9 @@ async function plan(a: any, b: any) {
         : "Conservar accesos ajenos sin cambios",
       target?.active
         ? "Conservar acceso existente al mismo correo"
-        : "Habilitar acceso y enviar invitación para crear contraseña",
+        : passwordAvailable || a.resultado?.clave_aplicada
+          ? "Habilitar acceso con la contraseña elegida y avisar por correo"
+          : "Habilitar acceso y enviar enlace para crear contraseña (solicitud anterior o contraseña pendiente vencida)",
       "Guardar resolución y revisión en Core",
     ],
   };
@@ -400,7 +429,8 @@ async function approve(a: any, b: any, actor: string) {
     }
     if (!pid) {
       const fiscal = a.analisis?.arca;
-      const resp =
+      const resp = a.datos.condicion_iva==='CF' ? 5 :
+        [1,4,6].includes(p.opciones.responsabilidad_id) && a.archivos.length ? p.opciones.responsabilidad_id :
         fiscal?.iva === "RI"
           ? 1
           : fiscal?.iva === "MONO"
@@ -420,8 +450,8 @@ async function approve(a: any, b: any, actor: string) {
           name: a.datos.razon,
           x_studio_nombre_fantasia: a.datos.cartel || false,
           ref: `ROSAINT-ALTA-${a.id}`,
-          vat: fmt(a.cuit),
-          company_type: a.cuit.startsWith("3") ? "company" : "person",
+          vat: a.datos.documento_tipo==='DNI' ? a.cuit : fmt(a.cuit),
+          company_type: a.datos.documento_tipo!=='DNI' && a.cuit.startsWith("3") ? "company" : "person",
           company_id: false,
           country_id: 10,
           state_id: p.state_id,
@@ -429,7 +459,7 @@ async function approve(a: any, b: any, actor: string) {
           city: a.datos.localidad,
           phone: a.datos.telefono,
           email: a.email,
-          l10n_latam_identification_type_id: 4,
+          l10n_latam_identification_type_id: DOCUMENTS[a.datos.documento_tipo||'CUIT'],
           l10n_ar_afip_responsibility_type_id: resp,
           customer_rank: 1,
           property_product_pricelist: p.opciones.lista_id,
@@ -509,6 +539,7 @@ async function approve(a: any, b: any, actor: string) {
     }
     if (u && (!u.share || u.partner_id[0] !== pid))
       throw new Failure("El correo cambió de titular durante la aprobación.");
+    const chosenPassword=(!u?.active && !r.clave_aplicada) ? await readPassword(a) : null;
     if (!u) {
       const id = await kw(
         "res.users",
@@ -523,6 +554,7 @@ async function approve(a: any, b: any, actor: string) {
             company_id: COMPANY,
             company_ids: [[6, 0, [COMPANY]]],
             active: false,
+            ...(chosenPassword?{password:chosenPassword}:{}),
           },
         ],
         {
@@ -532,8 +564,13 @@ async function approve(a: any, b: any, actor: string) {
             mail_notrack: true,
           },
         },
-      );
+      ).catch(() => { throw new Failure('No se pudo crear el acceso. Reintentá desde la aprobación incompleta.'); });
       u = { id, active: false, share: true, partner_id: [pid] };
+      if(chosenPassword)r.clave_aplicada=true;
+    } else if(chosenPassword) {
+      try { await kw('res.users','write',[[u.id],{password:chosenPassword}],{context:{no_reset_password:true}}); }
+      catch {throw new Failure('No se pudo aplicar la contraseña elegida. Reintentá desde la aprobación incompleta.');}
+      r.clave_aplicada=true;
     }
     r.user_id = u.id;
     await save();
@@ -554,7 +591,14 @@ async function approve(a: any, b: any, actor: string) {
       await save();
     }
     // Marcar antes del envío: ante respuesta incierta no se duplica una invitación automáticamente.
-    if (!r.invitacion && (!p.usuario?.active || r.acceso_activado)) {
+    if(r.clave_aplicada && !r.aviso_acceso) {
+      const messageId=`<rosaint-alta-aprobada-${a.id}@rosaint.com.ar>`;
+      const existing=await kw('mail.mail','search_read',[[['message_id','=',messageId]]],{fields:['id'],limit:1});
+      if(!existing.length)await kw('mail.mail','create',[{subject:'Rosaint · Ya podés ingresar al portal profesional',email_to:a.email,email_from:'contacto@rosaint.com.ar',message_id:messageId,auto_delete:false,state:'outgoing',
+        body_html:`<div style="font-family:'Source Sans 3',sans-serif;color:#34495e;line-height:1.5"><h2 style="font-family:Sora,sans-serif;font-weight:400">Tu acceso está habilitado</h2><p>Hola ${esc(a.datos.razon)}. Ya podés ingresar con tu correo y la contraseña que elegiste al solicitar el alta.</p><p><a href="${esc(OD)}/web/login">Ingresar al portal profesional</a></p><p>Si no la recordás, usá «Restablecer contraseña» en la pantalla de ingreso.</p><p>Rosaint · Cosmética profesional</p></div>`}]);
+      r.aviso_acceso='en_cola'; r.invitacion='no_requiere'; await save();
+    }
+    if (!r.clave_aplicada && !r.invitacion && (!p.usuario?.active || r.acceso_activado)) {
       r.invitacion = "en_proceso";
       await save();
       await kw("res.users", "action_reset_password", [[u.id]], {
@@ -658,13 +702,17 @@ async function handle(req: Request, b: any) {
       tipos: TYPES,
       portal: OD,
       modo: "revision_humana",
-      contrasena: "invitacion_tras_aprobar",
+      contrasena: "elegida_en_alta_activada_tras_aprobar",
+      documentos: ['CUIT','DNI','CUIL'], condiciones_iva: Object.keys(FISCAL),
     };
   if (b.accion === "enviar") {
     if (b.web) return { recibida: true };
     if (b.acepto !== true)
       throw new Failure("Aceptá el uso de tus datos para gestionar el alta.");
     const d = validate(b.datos);
+    if(!d.condicion_iva)throw new Failure('Elegí tu condición frente al IVA.');
+    if(!validPassword(b.clave,d.email))throw new Failure('La contraseña debe tener entre 8 y 64 caracteres, con letras y números.');
+    const cifrada=await encrypt(b.clave,passwordContext(d));
     // HMAC del origen: no se conservan IPs en claro.
     const key = await crypto.subtle.importKey(
       "raw",
@@ -683,9 +731,10 @@ async function handle(req: Request, b: any) {
     const hash = Array.from(new Uint8Array(sig))
       .map((n) => n.toString(16).padStart(2, "0"))
       .join("");
-    const received = await db("rpc/portal_alta_recibir", "POST", {
+    const received = await db("rpc/portal_alta_recibir_v2", "POST", {
       p_datos: d,
       p_ip_hash: hash,
+      p_cifrada: cifrada,
     });
     if (!received)
       throw new Failure(
@@ -699,6 +748,8 @@ async function handle(req: Request, b: any) {
   if (b.accion === "instalar") return install();
   if (b.accion === "diagnostico") return diagnostic();
   if (b.accion === "diagnostico_arca") return diagnosticoArca();
+  if (b.accion === "instalar_arca") return installArcaSigner();
+  if (b.accion === "diagnostico_configuracion") return configDiagnostic();
   if (b.accion === "listar")
     return {
       solicitudes: await db("portal_altas?order=creada.desc&limit=200"),

@@ -24,6 +24,7 @@ export async function admin(req: Request) {
   return u.email;
 }
 let uid: number;
+export async function serviceUserId() { uid ||= await rpc('common','authenticate',[DB,LOGIN,KEY,{}]);if(!uid)throw Error('No se pudo autenticar la integración.');return uid; }
 async function rpc(service: string, method: string, args: unknown[]) {
   const r = await fetch(OD + "/jsonrpc", {
     method: "POST",
