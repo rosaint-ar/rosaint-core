@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="app-root" content="../" />
+    <title>Altas del portal · Rosaint CORE</title>
+    <link rel="icon" href="../shell/logo.svg" />
+    <link rel="stylesheet" href="../shell/shell.css?v=20261104" />
+    <link rel="stylesheet" href="../shared/marca/marca.css" />
+    <link rel="stylesheet" href="altas-portal.css" />
+  </head>
+  <body class="marca" data-page="altas-portal" data-title="Altas del portal">
+    <div id="app-shell"></div>
+    <main id="app-content">
+      <div class="page-content altas-wrap">
+        <header class="altas-head">
+          <div>
+            <p class="eyebrow">PORTAL PROFESIONAL</p>
+            <h1>Altas de clientes</h1>
+            <p>
+              Revisá la identidad y las condiciones antes de habilitar el
+              acceso.
+            </p>
+          </div>
+          <button id="recargar" class="btn btn-primary">
+            Actualizar bandeja
+          </button>
+        </header>
+        <div id="aviso" role="status" aria-live="polite"></div>
+        <div class="altas-stats" id="contadores"></div>
+        <div class="altas-toolbar">
+          <label
+            >Buscar<input
+              id="busqueda"
+              type="search"
+              placeholder="Nombre, correo o CUIT" /></label
+          ><label
+            >Estado<select id="estado">
+              <option value="pendientes">Pendientes</option>
+              <option value="todos">Todos</option>
+              <option value="aprobada">Aprobadas</option>
+              <option value="rechazada">Rechazadas</option>
+            </select></label
+          ><a
+            href="https://rosaint.odoo.com/alta"
+            target="_blank"
+            rel="noopener"
+            >Ver formulario de alta ↗</a
+          >
+        </div>
+        <div class="altas-layout">
+          <section aria-label="Solicitudes" id="bandeja"></section>
+          <section id="detalle" aria-label="Detalle de la solicitud">
+            <div class="altas-empty">Elegí una solicitud para revisarla.</div>
+          </section>
+        </div>
+      </div>
+    </main>
+    <dialog id="confirmacion">
+      <h2>Revisá lo que se va a aplicar</h2>
+      <ol id="plan"></ol>
+      <p>
+        Esta acción habilita el acceso real y puede enviar la invitación al
+        cliente.
+      </p>
+      <div class="altas-actions">
+        <button id="cancelar-plan" class="btn">Volver</button
+        ><button id="confirmar-plan" class="btn btn-primary">
+          Aprobar y habilitar acceso
+        </button>
+      </div>
+    </dialog>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/dist/umd/supabase.js"></script>
+    <script src="../shared/supabase.js?v=202610061904"></script>
+    <script src="../shell/shell.js?v=20261104altas"></script>
+    <script src="altas-portal.js?v=20261104"></script>
+  </body>
+</html>

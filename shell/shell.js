@@ -20,6 +20,7 @@ const MENU = [
   // "Seguimientos" quedó para los recordatorios de chats; la pantalla de envíos conserva su id y su archivo.
   { type: 'group', label: 'Ventas' },
   { type: 'item', id: 'crm',           label: 'Clientes',      href: 'comercial/crm.html',           status: 'ready' },
+  { type: 'item', id: 'altas-portal',  label: 'Altas del portal', href: 'comercial/altas-portal.html', status: 'ready' },
   { type: 'item', id: 'whatsapp',      label: 'WhatsApp',      href: 'comercial/whatsapp.html',      status: 'ready' },
   { type: 'item', id: 'cotizador',     label: 'Cotizador',     href: 'comercial/cotizador.html',     status: 'ready' },
   { type: 'item', id: 'seguimientos',  label: 'Envíos',        href: 'comercial/seguimientos.html',  status: 'ready' },

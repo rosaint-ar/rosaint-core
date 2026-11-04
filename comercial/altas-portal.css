@@ -1,0 +1,263 @@
+.altas-wrap {
+  max-width: 1450px;
+  margin: auto;
+  padding: 28px;
+}
+.altas-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.altas-head h1 {
+  margin: 4px 0 10px;
+}
+.altas-head p {
+  margin: 0;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+}
+.altas-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  margin: 20px 0;
+}
+.altas-toolbar label:first-child {
+  flex: 1;
+}
+.altas-wrap label {
+  display: grid;
+  gap: 7px;
+  font-weight: 600;
+}
+.altas-wrap input,
+.altas-wrap select,
+.altas-wrap textarea {
+  font: inherit;
+  padding: 12px;
+  border: 1px solid var(--border, #ccd3d7);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  width: 100%;
+  min-width: 0;
+}
+.altas-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 350px) minmax(0, 1fr);
+  gap: 20px;
+}
+.alta-card,
+.alta-panel,
+.altas-empty {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #dce0e3);
+  border-radius: 16px;
+  padding: 20px;
+}
+.alta-card {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 10px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.alta-card.selected {
+  border: 2px solid #34495e;
+  padding: 19px;
+}
+.alta-card strong {
+  display: block;
+  font-family: Sora, sans-serif;
+  margin-bottom: 8px;
+}
+.alta-card span {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  margin: 5px 0;
+}
+.alta-panel h2 {
+  margin: 0 0 16px;
+}
+.alta-panel h3 {
+  font-size: 17px;
+  margin: 26px 0 12px;
+}
+.alta-panel dl {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 9px;
+  margin: 0;
+}
+.alta-panel dt {
+  color: var(--muted);
+}
+.alta-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.alta-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.alta-panel .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 15px 0;
+  font-weight: 400;
+}
+.check input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.altas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.altas-wrap button,
+.altas-wrap .btn,
+dialog button {
+  min-height: 44px;
+}
+body.marca #app-content .altas-wrap .btn,dialog .btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border:1px solid #cbd4db;border-radius:12px;background:#edf1f4;color:#34495e;font:500 14px Sora,sans-serif;cursor:pointer}
+body.marca #app-content .altas-wrap .btn-primary,dialog .btn-primary{background:#34495e;color:#fff;border-color:#34495e}
+body.marca #app-content .altas-wrap .btn-danger{background:#f93549;color:#fff;border-color:#f93549}
+body.marca #app-content .altas-wrap button:disabled,dialog button:disabled{opacity:.6;cursor:wait}
+.altas-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.altas-stat {
+  background: #eaf46b;
+  color: #34495e;
+  border-radius: 12px;
+  padding: 12px 20px;
+}
+.altas-note,
+#aviso:not(:empty) {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #edf1f4;
+  margin: 14px 0;
+  color: #34495e;
+}
+.altas-note.warn {
+  background: #fff1da;
+}
+.altas-note.error {
+  background: #fde9ec;
+  color: #8d2635;
+}
+.alta-state {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.alta-panel ul {
+  padding-left: 22px;
+}
+.alta-panel li {
+  margin: 7px 0;
+  overflow-wrap: anywhere;
+}
+.alta-history {
+  font-size: 14px;
+  color: var(--muted);
+}
+dialog {
+  max-width: 620px;
+  width: calc(100% - 32px);
+  border: 0;
+  border-radius: 20px;
+  padding: 28px;
+  color: #34495e;
+  font-family: "Source Sans 3", sans-serif;
+}
+dialog::backdrop {
+  background: #1a2a39a6;
+}
+dialog h2 {
+  font:
+    500 23px Sora,
+    sans-serif;
+}
+dialog li {
+  margin-bottom: 12px;
+}
+.altas-toolbar > a {
+  padding: 12px 0;
+}
+.altas-wrap .btn-danger {
+  background: #f93549;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+.altas-empty {
+  padding: 44px;
+  text-align: center;
+  color: var(--muted);
+}
+@media (max-width: 950px) {
+  .altas-layout {
+    grid-template-columns: 1fr;
+  }
+  .altas-wrap {
+    padding: 18px;
+  }
+  .altas-head {
+    align-items: flex-start;
+  }
+  .altas-toolbar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  .altas-head {
+    flex-direction: column;
+  }
+  .alta-controls {
+    grid-template-columns: 1fr;
+  }
+  .alta-panel dl {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .alta-panel dd {
+    margin-bottom: 10px;
+  }
+  .altas-toolbar label {
+    width: 100%;
+  }
+}
+
+/* controles del módulo */
+body.marca #app-content .altas-wrap button {
+  border-radius: 12px;
+}
+body.marca #app-content .altas-wrap .alta-card {
+  border-radius: 16px;
+}
+body.marca #app-content .altas-wrap {
+  font-size: 17px;
+}
+body.marca #app-content .altas-wrap h1,
+body.marca #app-content .altas-wrap h2 {
+  font-family: Sora, sans-serif;
+  font-weight: 500;
+}
