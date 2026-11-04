@@ -139,6 +139,7 @@ export async function diagnostic() {
   result.portal_scope = await kw("ir.config_parameter", "get_param", [
     "auth_signup.invitation_scope",
   ]);
+  result.typography_views = await kw('ir.ui.view','search_read',[[['key','in',['web.login_layout','rosaint.portal_login_alta','website.rosaint_portal_alta','rosaint.portal_access_type']]]],{fields:['id','key','arch_db','write_date'],limit:10});
   return result;
 }
 export { SB, SERVICE, PUB, OD, COMPANY };

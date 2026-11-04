@@ -1,5 +1,5 @@
 import { kw, COMPANY } from "./odoo.ts";
-import { ALTA_XML } from "./template.ts";
+import { ALTA_XML, ACCESS_TYPE_XML } from "./template.ts";
 export async function install() {
   const websites = await kw("website", "search_read", [[]], {
     fields: ["id", "company_id"],
@@ -84,6 +84,11 @@ export async function install() {
       },
     ]);
   // La invitación con token sigue disponible; el registro libre queda cerrado.
+  const accessLayout=(await kw('ir.ui.view','search_read',[[['key','=','web.login_layout']]],{fields:['id'],limit:1}))[0];
+  if(!accessLayout)throw Error('No se encontró el layout de acceso para aplicar la tipografía.');
+  let accessType=(await kw('ir.ui.view','search_read',[[['key','=','rosaint.portal_access_type']]],{fields:['id'],limit:1}))[0]?.id;
+  if(accessType)await kw('ir.ui.view','write',[[accessType],{arch_db:ACCESS_TYPE_XML,active:true}]);
+  else accessType=await kw('ir.ui.view','create',[{name:'Rosaint · Tipografías del acceso',key:'rosaint.portal_access_type',type:'qweb',inherit_id:accessLayout.id,arch_db:ACCESS_TYPE_XML,priority:99,website_id:website}]);
   await kw("ir.config_parameter", "set_param", [
     "auth_signup.invitation_scope",
     "b2b",
@@ -92,6 +97,7 @@ export async function install() {
     page_id: page,
     view_id: view,
     login_view_id: loginExtra,
+    access_type_view_id: accessType,
     registro: "solo_invitacion",
     url: "https://rosaint.odoo.com/alta",
   };

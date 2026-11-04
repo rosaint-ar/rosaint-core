@@ -247,6 +247,16 @@ dialog li {
 }
 
 /* controles del módulo */
+/* Familias y pesos del manual, incluida la navegación heredada del shell. */
+body[data-page="altas-portal"]{--font-ui:'Source Sans 3',sans-serif;font-family:'Source Sans 3',sans-serif;font-weight:400;font-synthesis:none}
+body[data-page="altas-portal"] :is(.brand-name,.brand-pill,.nav-group-label,.nav-item,.nav-item.active,.topbar-title,.user-avatar){font-family:Sora,sans-serif;font-weight:500}
+body[data-page="altas-portal"] :is(.sidebar-user,.sidebar-user-block,.topbar-title .sub){font-family:'Source Sans 3',sans-serif;font-weight:400}
+body[data-page="altas-portal"] :is(.sidebar-user b,.sidebar-user-block b){font-weight:600}
+body.marca[data-page="altas-portal"] #app-content :is(h1,h2,h3,h4),body[data-page="altas-portal"] dialog h2{font-family:Sora,sans-serif;font-weight:400!important}
+body.marca[data-page="altas-portal"] #app-content .alta-card strong{font-family:Sora,sans-serif;font-weight:500}
+body[data-page="altas-portal"] :is(.altas-wrap,dialog){font-family:'Source Sans 3',sans-serif;font-weight:400}
+body[data-page="altas-portal"] :is(input,select,textarea){font-family:'Source Sans 3',sans-serif;font-weight:400}
+body[data-page="altas-portal"] :is(label,b,strong){font-weight:600}
 body.marca #app-content .altas-wrap button {
   border-radius: 12px;
 }
