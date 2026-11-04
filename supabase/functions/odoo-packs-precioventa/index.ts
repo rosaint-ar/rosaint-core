@@ -275,7 +275,8 @@ _servirConGuardia(async (req: Request) => {
       if (dry || faltan.length) return new Response(JSON.stringify({ ok: !faltan.length, dry_run: dry, orden: mo, faltan, componentes: antes }), { headers: cors });
       if (mo.state === "draft") await call("mrp.production", "action_confirm", [[mo.id]]);
       await call("mrp.production", "action_assign", [[mo.id]]);
-      for (const m of await leer()) if (Math.abs(m.quantity - m.product_uom_qty) > 1e-9) await call("stock.move", "write", [[m.id], { quantity: m.product_uom_qty, picked: true }]);
+      // todos los renglones van "picked": si uno solo lo está, Odoo cancela al cerrar los que no (así se perdió el agua de MO/02549)
+      for (const m of await leer()) await call("stock.move", "write", [[m.id], { quantity: m.product_uom_qty, picked: true }]);
       // lotes: { "20014": "20014MP261030" } → ese componente se consume de ese lote (no del que eligió Odoo)
       for (const [cod, lote] of Object.entries((body.lotes || {}) as Record<string, string>)) {
         const [l] = await call("stock.lot", "search_read", [[["name", "=", lote], ["product_id.default_code", "=", cod]], ["id"]]);
@@ -292,6 +293,46 @@ _servirConGuardia(async (req: Request) => {
       }
       const [fin] = await call("mrp.production", "read", [[mo.id], ["state", "qty_produced"]]);
       return new Response(JSON.stringify({ ok: fin.state === "done", orden: mo.name, estado: fin.state, producido: fin.qty_produced, componentes: await leer() }), { headers: cors });
+    }
+
+    // ---- Modo sumar_componente_mo: { sumar_componente_mo: { mo, codigo, cantidad }, dry_run } ----
+    // Agrega a una orden YA HECHA un componente que quedó sin consumir (p. ej. renglón cancelado en 0). Solo si no hay ya un renglón hecho de ese producto.
+    if (body.sumar_componente_mo) {
+      const dry = body.dry_run !== false; const q = body.sumar_componente_mo;
+      const [mo] = await call("mrp.production", "search_read", [[["name", "=", String(q.mo)]], ["id", "state", "is_locked", "move_raw_ids", "location_src_id", "production_location_id"]]);
+      if (!mo || mo.state !== "done") throw new Error("La orden no existe o no está hecha");
+      const [p] = await call("product.product", "search_read", [[["default_code", "=", String(q.codigo)]], ["id", "uom_id"]]);
+      if (!p) throw new Error("No existe el producto " + q.codigo);
+      const movs = await call("stock.move", "read", [mo.move_raw_ids, ["product_id", "quantity", "state"]]);
+      const yaHecho = movs.some((m: Rec) => m.product_id[0] === p.id && m.state === "done" && m.quantity > 0);
+      if (yaHecho && dry) throw new Error("Ese componente ya está consumido en la orden");
+      if (dry) return new Response(JSON.stringify({ ok: true, dry_run: true, orden: q.mo, renglones: movs }), { headers: cors });
+      if (mo.is_locked) await call("mrp.production", "action_toggle_is_locked", [[mo.id]]);
+      // si ya hay un renglón agregado sin procesar (intento anterior) se reusa en vez de duplicarlo
+      if (!yaHecho && !movs.some((m: Rec) => m.product_id[0] === p.id && !["done", "cancel"].includes(m.state)))
+        await call("mrp.production", "write", [[mo.id], { move_raw_ids: [[0, 0, { product_id: p.id, product_uom: p.uom_id[0], product_uom_qty: Number(q.cantidad),
+          quantity: Number(q.cantidad), picked: true, location_id: mo.location_src_id[0], location_dest_id: mo.production_location_id[0] }]] }]);
+      // el renglón nuevo queda en borrador: se confirma y se procesa con el mismo cierre de Odoo (solo toma los renglones no hechos)
+      const nuevos = (await call("stock.move", "search_read", [[["raw_material_production_id", "=", mo.id], ["product_id", "=", p.id], ["state", "not in", ["done", "cancel"]]], ["id"]])).map((m: Rec) => m.id);
+      if (nuevos.length) {
+        await call("stock.move", "write", [nuevos, { quantity: Number(q.cantidad), picked: true }]);
+        // Odoo no expone _action_done por RPC y button_mark_done no hace nada en una orden hecha:
+        // se usa una acción de servidor temporal que corre el cierre estándar de Odoo sobre esos renglones y después se borra.
+        const [mod] = await call("ir.model", "search_read", [[["model", "=", "stock.move"]], ["id"]]);
+        const acc = await call("ir.actions.server", "create", [{ name: "Core: procesar renglón agregado a orden hecha", model_id: mod.id, state: "code",
+          code: "records._action_confirm(merge=False)._action_done()" }]);
+        try { await call("ir.actions.server", "run", [[acc]], { context: { active_model: "stock.move", active_ids: nuevos, active_id: nuevos[0] } }); }
+        catch (e) { await call("ir.actions.server", "unlink", [[acc]]); return new Response(JSON.stringify({ ok: false, error: "No se pudo procesar el renglón: " + String((e as Error).message || e) }), { headers: cors }); }
+        await call("ir.actions.server", "unlink", [[acc]]);
+      }
+      // el renglón viejo cancelado en 0 ya no sirve: se borra para que la orden no muestre el componente dos veces
+      const hecho = await call("stock.move", "search_count", [[["raw_material_production_id", "=", mo.id], ["product_id", "=", p.id], ["state", "=", "done"]]]);
+      if (hecho) { const viejos = (await call("stock.move", "search_read", [[["raw_material_production_id", "=", mo.id], ["product_id", "=", p.id], ["state", "=", "cancel"], ["quantity", "=", 0]], ["id"]])).map((m: Rec) => m.id);
+        if (viejos.length) await call("stock.move", "unlink", [viejos]); }
+      const [mo2] = await call("mrp.production", "read", [[mo.id], ["move_raw_ids", "is_locked", "state"]]);
+      if (!mo2.is_locked) await call("mrp.production", "action_toggle_is_locked", [[mo.id]]);
+      const despues = await call("stock.move", "read", [mo2.move_raw_ids, ["product_id", "product_uom_qty", "quantity", "state"]]);
+      return new Response(JSON.stringify({ ok: despues.some((m: Rec) => m.product_id[0] === p.id && m.state === "done"), orden: q.mo, estado: mo2.state, renglones: despues }), { headers: cors });
     }
 
     // ---- Modo salidas_pendientes (solo lectura): { salidas_pendientes: ["10102", ...] } → movimientos de salida abiertos de esos productos ----
