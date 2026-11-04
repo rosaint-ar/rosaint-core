@@ -649,7 +649,9 @@ _servirConGuardia(async (req: Request) => {
       const campos = await call("ir.model.fields", "search_read", [[["model", "=", modelo], ["name", "in", ["source_id", "pricelist_id", "x_studio_origen", "tag_ids"]]],
         ["name", "ttype", "related", "compute", "depends", "store", "readonly"]], { context: ctx });
       const defaults = await call("ir.default", "search_read", [[["field_id.model", "=", modelo]], ["field_id", "json_value", "condition", "user_id", "company_id"]], { context: ctx });
-      const vistas = await call("ir.ui.view", "search_read", [[["model", "=", modelo], ["arch_db", "ilike", "source_id"]], ["id", "name", "inherit_id", "active"]], { context: ctx });
+      const vistas = await call("ir.ui.view", "search_read", [[["model", "=", modelo], "|", ["arch_db", "ilike", "source_id"], ["arch_db", "ilike", "x_studio_origen"]], ["id", "name", "inherit_id", "active", ...(body.arch ? ["arch_db"] : [])]], { context: ctx });
+      const filtros = await call("ir.filters", "search_read", [[["model_id", "=", modelo], "|", ["domain", "ilike", "source"], ["context", "ilike", "source"]], ["name", "domain", "context", "user_id"]], { context: ctx });
+      const crons = await call("ir.cron", "search_read", [[["cron_name", "ilike", "marketing"]], ["cron_name", "active", "interval_number", "interval_type", "nextcall", "lastcall"]], { context: ctx });
       const accionesVentana = await call("ir.actions.act_window", "search_read", [[["res_model", "=", modelo], ["context", "ilike", "source"]], ["id", "name", "context", "domain"]], { context: ctx });
       let historial: any[] = [];
       if (Array.isArray(body.historial) && body.historial.length) {
@@ -661,7 +663,7 @@ _servirConGuardia(async (req: Request) => {
         historial = msgs.map((m: any) => ({ pedido: sos.find((s: any) => s.id === m.res_id)?.name, fecha: m.date, autor: m.author_id?.[1], tipo: m.message_type,
           texto: String(m.body || "").replace(/<[^>]+>/g, " ").slice(0, 200), cambios: tvs.filter((t: any) => (m.tracking_value_ids || []).includes(t.id)).map((t: any) => `${t.field_id?.[1]}: ${t.old_value_char || ""} → ${t.new_value_char || ""}`) }));
       }
-      return new Response(JSON.stringify({ ok: true, campanas, actividades, campos, defaults, vistas, accionesVentana, historial, automatizaciones: aut.map((a: any) => ({ ...a, acciones: acc.filter((x: any) => (a.action_server_ids || []).includes(x.id)) })), fuentes, pedidos }, null, 2), { headers: cors });
+      return new Response(JSON.stringify({ ok: true, campanas, actividades, campos, defaults, vistas, filtros, crons, accionesVentana, historial, automatizaciones: aut.map((a: any) => ({ ...a, acciones: acc.filter((x: any) => (a.action_server_ids || []).includes(x.id)) })), fuentes, pedidos }, null, 2), { headers: cors });
     }
 
     if (body.conta_relevar) {

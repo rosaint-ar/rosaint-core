@@ -123,12 +123,14 @@ _servirConGuardia(async (req: Request) => {
       return (o.split(",")[0] || "").trim();
     };
     const soNames = [...new Set(vMoves.map(origenDe).filter(o => /^S\d+/.test(o)))];
-    const sos = soNames.length ? await ex("sale.order", "search_read", [[["name", "in", soNames]]], { fields: ["name", "team_id", "source_id"] }) : [];
+    const sos = soNames.length ? await ex("sale.order", "search_read", [[["name", "in", soNames]]], { fields: ["name", "team_id", "source_id", "website_id"] }) : [];
     const canalDePedido = (s: Rec) => {
       const src = m2oName(s.source_id).toLowerCase(), team = m2oName(s.team_id).toLowerCase();
       return src.includes("mercado") || team.includes("mercado") ? "Mercado Libre"
         : src.includes("tienda") ? "Tienda Nube" : src.includes("portal") || team.includes("portal") ? "Portal web"
-        : src.includes("whatsapp") ? "WhatsApp" : "Venta directa";
+        : src.includes("whatsapp") ? "WhatsApp"
+        // sin origen todavía (la campaña de Odoo lo pone cada 12 h): del portal si trae tienda web, si no WhatsApp
+        : !src ? (s.website_id ? "Portal web" : "WhatsApp") : "Venta directa";
     };
     const canalSO: Record<string, string> = {};
     for (const s of sos) canalSO[s.name as string] = canalDePedido(s);
@@ -228,7 +230,7 @@ _servirConGuardia(async (req: Request) => {
     // Mes = fecha del pedido en hora argentina. Facturado = lo ya facturado (publicado, neto de NC)
     // de ESOS pedidos, según Odoo (untaxed_amount_invoiced de cada renglón).
     const pedidos = await ex("sale.order", "search_read", [[["company_id", "=", C], ["state", "in", ["sale", "done"]], ["date_order", ">=", DESDE + " 03:00:00"]]],
-      { fields: ["name", "date_order", "amount_untaxed", "partner_id", "team_id", "source_id", "invoice_status"] });
+      { fields: ["name", "date_order", "amount_untaxed", "partner_id", "team_id", "source_id", "website_id", "invoice_status"] });
     const pedIds = pedidos.map(p => p.id as number);
     const factPed: Record<number, number> = {};
     if (pedIds.length) {
