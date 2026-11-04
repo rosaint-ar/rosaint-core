@@ -139,7 +139,7 @@
   const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const COL = { ventas: 'var(--accent)', compras: 'var(--structure)', margen: 'var(--ok)', pedidos: 'var(--cyan)' };
   const PALETA = ['var(--accent)', 'var(--cyan)', 'var(--warn)', 'var(--ok)', 'var(--structure)', 'var(--hot)', 'color-mix(in srgb, var(--cyan) 55%, var(--ok))', 'color-mix(in srgb, var(--warn) 55%, var(--accent))', 'var(--muted)'];
-  const COL_CANAL = { 'Venta directa': 'var(--accent)', 'Mercado Libre': 'var(--warn)', 'Tienda Nube': 'var(--cyan)', 'Portal web': 'var(--ok)' };
+  const COL_CANAL = { 'Venta directa': 'var(--accent)', 'Mercado Libre': 'var(--warn)', 'Tienda Nube': 'var(--cyan)', 'Portal web': 'var(--violet, #8b5cf6)', 'WhatsApp': 'var(--ok)' };
   const COL_GRUPO = { 'Producción': 'var(--structure)', 'Comerciales': 'var(--warn)', 'Administrativos': 'var(--cyan)', 'No operativos': 'var(--muted)', 'Bienes de uso': 'var(--ok)', 'Otros': 'var(--hot)' };
   const NO_OPER = ['No operativos', 'Bienes de uso'];
 
@@ -636,7 +636,7 @@
     });
     const filas = Object.values(porCombo).filter(r => r.u || r.n).sort((x, y) => y.u - x.u || y.n - x.n);
     const cols = canales.filter(cn => filas.some(r => r.can[cn]));
-    const corta = { 'Tienda Nube': 'TN', 'Mercado Libre': 'ML', 'Venta directa': 'Directa', 'Portal web': 'Portal' };
+    const corta = { 'Tienda Nube': 'TN', 'Mercado Libre': 'ML', 'Venta directa': 'Directa', 'Portal web': 'Portal', 'WhatsApp': 'WSP' };
     $('combo-tbl').innerHTML = `<thead><tr><th>Combo</th>${cols.map(cn => `<th class="num" title="${esc(cn)} · unidades">${esc(corta[cn] || cn)}</th>`).join('')}<th class="num">Unid.</th><th class="num">Ventas netas</th><th class="num">Precio prom.</th></tr></thead><tbody>` +
       (filas.length ? filas.map(r => `<tr><td><span class="code">${esc(r.codigo)}</span> ${esc(r.nombre)}</td>${cols.map(cn => `<td class="num">${r.can[cn] ? fmtN(r.can[cn]) : '<span class="muted">—</span>'}</td>`).join('')}<td class="num"><b>${fmtN(r.u)}</b></td><td class="num" title="${fmt$c(r.n)}">${fmt$(r.n)}</td><td class="num">${r.u ? fmt$(r.n / r.u) : '—'}</td></tr>`).join('')
         : `<tr><td colspan="${cols.length + 4}" class="muted">Sin combos vendidos en el período.</td></tr>`) +

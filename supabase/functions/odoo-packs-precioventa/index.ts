@@ -575,6 +575,95 @@ _servirConGuardia(async (req: Request) => {
 
     // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
     // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
+    // ---- Modo origen_ventas: { origen_ventas: true, dry_run } ----
+    // La campaña de marketing 4 ponía "Tienda Nube" a todo pedido con Lista 5 (también a los de WhatsApp).
+    // TN y ML ya ponen su origen al crear el pedido, así que la campaña pasa a etiquetar solo los que quedan
+    // sin origen: con tienda web = Portal web; sin tienda web = WhatsApp (los cargados a mano). Y corrige lo viejo.
+    if (body.origen_ventas) {
+      const dry = body.dry_run !== false; const ctx = { lang: "es_ES" }; const out: any = { dry_run: dry, pasos: [] };
+      const SRC_TN = 16, SRC_PORTAL = 31, SRC_WSP = 32, CAMP = 4, ACT_PORTAL = 13;
+      const NOMBRES: Record<number, string> = { [SRC_PORTAL]: "🟣 Portal web", [SRC_WSP]: "🟢 WhatsApp" };
+      for (const [id, name] of Object.entries(NOMBRES)) {
+        const [s] = await call("utm.source", "read", [[Number(id)], ["name"]], { context: ctx });
+        if (s.name !== name) { if (!dry) await call("utm.source", "write", [[Number(id)], { name }], { context: ctx }); out.pasos.push(`origen ${id}: «${s.name}» → «${name}»`); }
+      }
+      const dominioCamp = `[("company_id", "=", 2), ("source_id", "=", False)]`;
+      const [camp] = await call("marketing.campaign", "read", [[CAMP], ["name", "domain", "marketing_activity_ids"]], { context: ctx });
+      if (camp.domain !== dominioCamp) {
+        if (!dry) await call("marketing.campaign", "write", [[CAMP], { name: "Tag - Origen de Ventas [WhatsApp / Portal web]", domain: dominioCamp }], { context: ctx });
+        out.pasos.push(`campaña ${CAMP}: dominio ${camp.domain} → ${dominioCamp}`);
+      }
+      const acts = await call("marketing.activity", "read", [camp.marketing_activity_ids, ["name", "activity_domain", "server_action_id"]], { context: ctx });
+      const portal = acts.find((a: any) => a.id === ACT_PORTAL);
+      if (!portal) throw new Error("No está la actividad 13 en la campaña 4");
+      const accPortal = portal.server_action_id[0];
+      if (portal.activity_domain !== `[("website_id", "!=", False)]`) {
+        if (!dry) {
+          await call("ir.actions.server", "write", [[accPortal], { name: "Origen = Portal web", resource_ref: `utm.source,${SRC_PORTAL}` }], { context: ctx });
+          await call("marketing.activity", "write", [[ACT_PORTAL], { name: "Add Origen [Portal web]", activity_domain: `[("website_id", "!=", False)]` }], { context: ctx });
+        }
+        out.pasos.push("actividad 13 → Portal web (pedidos con tienda web)");
+      }
+      if (!acts.some((a: any) => /WhatsApp/.test(a.name))) {
+        if (!dry) {
+          const [previa] = await call("ir.actions.server", "search_read", [[["name", "=", "Origen = WhatsApp"]], ["id"]], { context: ctx });
+          const copia = previa ? previa.id : await call("ir.actions.server", "copy", [accPortal, { name: "Origen = WhatsApp" }], { context: ctx });
+          const accWsp = Array.isArray(copia) ? copia[0] : copia;
+          await call("ir.actions.server", "write", [[accWsp], { resource_ref: `utm.source,${SRC_WSP}` }], { context: ctx });
+          await call("marketing.activity", "create", [{ name: "Add Origen [WhatsApp]", campaign_id: CAMP, activity_type: "action", trigger_type: "begin",
+            interval_number: 0, interval_type: "hours", activity_domain: `[("website_id", "=", False)]`, server_action_id: accWsp }], { context: ctx });
+        }
+        out.pasos.push("actividad nueva → WhatsApp (pedidos sin tienda web)");
+      }
+      // Lo viejo: sin origen, más los pedidos nombrados en body.a_whatsapp (manuales con Lista 5 que la campaña marcó TN).
+      // Los "Tienda Nube" viejos sin número no se tocan: antes del conector las ventas de TN se cargaban a mano.
+      const viejos = await call("sale.order", "search_read", [["&", ["company_id", "=", 2], "|", ["source_id", "=", false], ["name", "in", (body.a_whatsapp || []).map(String)]],
+        ["name", "website_id", "source_id", "state"]], { context: ctx });
+      const aPortal = viejos.filter((o: any) => o.website_id), aWsp = viejos.filter((o: any) => !o.website_id);
+      if (!dry) {
+        if (aPortal.length) await call("sale.order", "write", [aPortal.map((o: any) => o.id), { source_id: SRC_PORTAL }], { context: ctx });
+        if (aWsp.length) await call("sale.order", "write", [aWsp.map((o: any) => o.id), { source_id: SRC_WSP }], { context: ctx });
+      }
+      out.corregidos = { portal: aPortal.length, whatsapp: aWsp.length, nombrados: viejos.filter((o: any) => o.source_id).map((o: any) => `${o.name} (${o.source_id[1]})`) };
+      return new Response(JSON.stringify({ ok: true, ...out }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo automatizaciones (solo lectura): reglas automáticas de un modelo con su código, y pedidos recientes con origen ----
+    if (body.automatizaciones) {
+      const modelo = String(body.automatizaciones === true ? "sale.order" : body.automatizaciones);
+      const ctx = { lang: "es_ES", active_test: false };
+      const aut = await call("base.automation", "search_read", [body.todas ? [] : [["model_name", "=", modelo]],
+        ["id", "name", "active", "trigger", "trigger_field_ids", "filter_domain", "filter_pre_domain", "action_server_ids"]], { context: ctx });
+      const accIds = aut.flatMap((a: any) => a.action_server_ids || []);
+      const acc = accIds.length ? await call("ir.actions.server", "read", [accIds, ["id", "name", "state", "code", "update_field_id", "value", "evaluation_type", "update_path", "resource_ref"]], { context: ctx }) : [];
+      const fuentes = await call("utm.source", "search_read", [[], ["id", "name"]], { context: ctx });
+      let campanas: any[] = [], actividades: any[] = [];
+      try {
+        campanas = await call("marketing.campaign", "search_read", [[], ["id", "name", "state", "model_name", "domain", "unique_field_id", "last_sync_date", "create_date"]], { context: ctx });
+        actividades = await call("marketing.activity", "search_read", [[], ["id", "name", "campaign_id", "activity_type", "trigger_type", "interval_number", "interval_type", "domain", "activity_domain", "server_action_id", "parent_id"]], { context: ctx });
+        const sa = actividades.map((a: any) => a.server_action_id?.[0]).filter(Boolean);
+        const sas = sa.length ? await call("ir.actions.server", "read", [sa, ["id", "name", "state", "update_path", "value", "resource_ref", "code"]], { context: ctx }) : [];
+        actividades = actividades.map((a: any) => ({ ...a, accion: sas.find((s: any) => s.id === a.server_action_id?.[0]) }));
+      } catch (e) { campanas = [{ error: String(e) }]; }
+      const pedidos = await call("sale.order", "search_read", [[["company_id", "=", 2]], ["name", "date_order", "pricelist_id", "source_id", "team_id", "user_id", "partner_id", "create_uid", "origin", "client_order_ref", "medium_id", "campaign_id", "x_studio_mtodo_de_pago_2", "carrier_id", "tag_ids", "payment_term_id", "website_id"]], { context: ctx, order: "id desc", limit: Number(body.limite || 60) });
+      const campos = await call("ir.model.fields", "search_read", [[["model", "=", modelo], ["name", "in", ["source_id", "pricelist_id", "x_studio_origen", "tag_ids"]]],
+        ["name", "ttype", "related", "compute", "depends", "store", "readonly"]], { context: ctx });
+      const defaults = await call("ir.default", "search_read", [[["field_id.model", "=", modelo]], ["field_id", "json_value", "condition", "user_id", "company_id"]], { context: ctx });
+      const vistas = await call("ir.ui.view", "search_read", [[["model", "=", modelo], ["arch_db", "ilike", "source_id"]], ["id", "name", "inherit_id", "active"]], { context: ctx });
+      const accionesVentana = await call("ir.actions.act_window", "search_read", [[["res_model", "=", modelo], ["context", "ilike", "source"]], ["id", "name", "context", "domain"]], { context: ctx });
+      let historial: any[] = [];
+      if (Array.isArray(body.historial) && body.historial.length) {
+        const sos = await call("sale.order", "search_read", [[["name", "in", body.historial.map(String)]], ["id", "name"]], { context: ctx });
+        const msgs = sos.length ? await call("mail.message", "search_read", [[["model", "=", modelo], ["res_id", "in", sos.map((s: any) => s.id)]],
+          ["res_id", "date", "author_id", "body", "tracking_value_ids", "message_type", "subtype_id"]], { context: ctx, order: "id asc" }) : [];
+        const tvIds = msgs.flatMap((m: any) => m.tracking_value_ids || []);
+        const tvs = tvIds.length ? await call("mail.tracking.value", "read", [tvIds, ["field_id", "old_value_char", "new_value_char", "old_value_integer", "new_value_integer"]], { context: ctx }) : [];
+        historial = msgs.map((m: any) => ({ pedido: sos.find((s: any) => s.id === m.res_id)?.name, fecha: m.date, autor: m.author_id?.[1], tipo: m.message_type,
+          texto: String(m.body || "").replace(/<[^>]+>/g, " ").slice(0, 200), cambios: tvs.filter((t: any) => (m.tracking_value_ids || []).includes(t.id)).map((t: any) => `${t.field_id?.[1]}: ${t.old_value_char || ""} → ${t.new_value_char || ""}`) }));
+      }
+      return new Response(JSON.stringify({ ok: true, campanas, actividades, campos, defaults, vistas, accionesVentana, historial, automatizaciones: aut.map((a: any) => ({ ...a, acciones: acc.filter((x: any) => (a.action_server_ids || []).includes(x.id)) })), fuentes, pedidos }, null, 2), { headers: cors });
+    }
+
     if (body.conta_relevar) {
       const q = body.conta_relevar; const ctx = { lang: "es_ES", active_test: false }; const out: any = {};
       const cf = ["id", "code", "name", "account_type", "deprecated", "reconcile"];

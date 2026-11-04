@@ -127,7 +127,8 @@ _servirConGuardia(async (req: Request) => {
     const canalDePedido = (s: Rec) => {
       const src = m2oName(s.source_id).toLowerCase(), team = m2oName(s.team_id).toLowerCase();
       return src.includes("mercado") || team.includes("mercado") ? "Mercado Libre"
-        : src.includes("tienda") ? "Tienda Nube" : team.includes("portal") ? "Portal web" : "Venta directa";
+        : src.includes("tienda") ? "Tienda Nube" : src.includes("portal") || team.includes("portal") ? "Portal web"
+        : src.includes("whatsapp") ? "WhatsApp" : "Venta directa";
     };
     const canalSO: Record<string, string> = {};
     for (const s of sos) canalSO[s.name as string] = canalDePedido(s);
