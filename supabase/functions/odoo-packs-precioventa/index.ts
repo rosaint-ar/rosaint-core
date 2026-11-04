@@ -246,6 +246,65 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, pedido: o, lineas: ls }), { headers: cors });
     }
 
+    // ---- Modo mo_detalle (solo lectura): { mo_detalle: ["WH/MO/02428", ...] } → órdenes de fabricación con quién/cuándo y sus renglones ----
+    if (Array.isArray(body.mo_detalle)) {
+      const mos = await call("mrp.production", "search_read", [[["name", "in", body.mo_detalle.map(String)]],
+        ["name", "state", "product_id", "product_qty", "qty_produced", "bom_id", "origin", "date_start", "date_finished", "create_date", "create_uid", "write_date", "write_uid", "user_id", "lot_producing_id", "move_raw_ids", "move_finished_ids"]]);
+      for (const m of mos) {
+        m.raw = await call("stock.move", "read", [m.move_raw_ids, ["product_id", "product_uom_qty", "quantity", "state", "date"]]);
+        m.fin = await call("stock.move", "read", [m.move_finished_ids, ["product_id", "product_uom_qty", "quantity", "state", "date"]]);
+        delete m.move_raw_ids; delete m.move_finished_ids;
+      }
+      return new Response(JSON.stringify({ ok: true, mos }), { headers: cors });
+    }
+
+    // ---- Modo terminar_mo: { terminar_mo: "WH/MO/02549", dry_run } ----
+    // Termina una orden de fabricación ya elaborada: reserva, completa cada componente a lo previsto por la LdM y la marca hecha.
+    // No toca órdenes hechas/canceladas. Si un componente no alcanza en stock, no hace nada (primero hay que ajustar el inventario).
+    if (body.terminar_mo) {
+      const dry = body.dry_run !== false;
+      const [mo] = await call("mrp.production", "search_read", [[["name", "=", String(body.terminar_mo)]], ["id", "state", "product_id", "product_qty", "move_raw_ids"]]);
+      if (!mo) throw new Error("No existe la orden " + body.terminar_mo);
+      if (["done", "cancel"].includes(mo.state)) throw new Error(`La orden está ${mo.state}`);
+      const leer = async () => await call("stock.move", "read", [mo.move_raw_ids, ["product_id", "product_uom_qty", "quantity", "state"]]);
+      const comps = await call("product.product", "read", [(await leer()).map((m: Rec) => m.product_id[0]), ["default_code", "qty_available", "type", "is_storable"]]);
+      const stock: Record<number, number> = {}; for (const c of comps) stock[c.id] = (c.is_storable || c.type === "product") ? c.qty_available : Infinity; // consumibles (agua) no llevan stock
+      const antes = await leer();
+      const faltan = antes.filter((m: Rec) => m.quantity + 1e-9 < m.product_uom_qty && stock[m.product_id[0]] + 1e-9 < m.product_uom_qty)
+        .map((m: Rec) => ({ producto: m.product_id[1], necesita: m.product_uom_qty, hay: stock[m.product_id[0]] }));
+      if (dry || faltan.length) return new Response(JSON.stringify({ ok: !faltan.length, dry_run: dry, orden: mo, faltan, componentes: antes }), { headers: cors });
+      if (mo.state === "draft") await call("mrp.production", "action_confirm", [[mo.id]]);
+      await call("mrp.production", "action_assign", [[mo.id]]);
+      for (const m of await leer()) if (Math.abs(m.quantity - m.product_uom_qty) > 1e-9) await call("stock.move", "write", [[m.id], { quantity: m.product_uom_qty, picked: true }]);
+      // lotes: { "20014": "20014MP261030" } → ese componente se consume de ese lote (no del que eligió Odoo)
+      for (const [cod, lote] of Object.entries((body.lotes || {}) as Record<string, string>)) {
+        const [l] = await call("stock.lot", "search_read", [[["name", "=", lote], ["product_id.default_code", "=", cod]], ["id"]]);
+        if (!l) throw new Error(`No existe el lote ${lote} de ${cod}`);
+        const mls = await call("stock.move.line", "search_read", [[["move_id", "in", mo.move_raw_ids], ["product_id.default_code", "=", cod]], ["id"]]);
+        for (const ml of mls) await call("stock.move.line", "write", [[ml.id], { lot_id: l.id }]);
+      }
+      await call("mrp.production", "write", [[mo.id], { qty_producing: mo.product_qty }]);
+      let r = await call("mrp.production", "button_mark_done", [[mo.id]]);
+      for (let i = 0; i < 3 && r && typeof r === "object" && r.res_model; i++) {
+        const w = await call(r.res_model, "create", [{}], { context: r.context || {} });
+        const metodo = r.res_model === "mrp.production.backorder" ? "action_close_mo" : r.res_model === "expiry.picking.confirmation" ? "confirm_produce" : "action_confirm";
+        r = await call(r.res_model, metodo, [[w]], { context: r.context || {} });
+      }
+      const [fin] = await call("mrp.production", "read", [[mo.id], ["state", "qty_produced"]]);
+      return new Response(JSON.stringify({ ok: fin.state === "done", orden: mo.name, estado: fin.state, producido: fin.qty_produced, componentes: await leer() }), { headers: cors });
+    }
+
+    // ---- Modo salidas_pendientes (solo lectura): { salidas_pendientes: ["10102", ...] } → movimientos de salida abiertos de esos productos ----
+    if (Array.isArray(body.salidas_pendientes)) {
+      const ms = await call("stock.move", "search_read", [[["product_id.default_code", "in", body.salidas_pendientes.map(String)],
+        ...(body.desde ? [["date", ">=", String(body.desde)], ["state", "!=", "cancel"]] : [["state", "not in", ["done", "cancel", "draft"]]]),
+        ["location_dest_id.usage", "in", ["customer", "production"]]],
+        ["product_id", "product_uom_qty", "quantity", "state", "date", "date_deadline", "origin", "reference", "picking_id", "partner_id", "raw_material_production_id", "location_dest_id"]], { order: "date" });
+      const pids = [...new Set(ms.filter((m: Rec) => m.picking_id).map((m: Rec) => (m.picking_id as [number, string])[0]))];
+      const pk = pids.length ? await call("stock.picking", "read", [pids, ["name", "partner_id", "origin", "state", "scheduled_date", "create_date", "sale_id"]]) : [];
+      return new Response(JSON.stringify({ ok: true, movimientos: ms, entregas: pk }), { headers: cors });
+    }
+
     // ---- Modo pedido_descuento: { pedido_descuento: { id, lineas: [ids], descuento }, dry_run } ----
     // Pone el % de descuento en renglones de un presupuesto. Solo presupuestos en borrador (nunca pedidos confirmados).
     if (body.pedido_descuento) {
