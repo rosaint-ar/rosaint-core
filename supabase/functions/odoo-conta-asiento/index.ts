@@ -1000,6 +1000,53 @@ async function honorarios(body: Rec): Promise<Rec> {
   return { ok: fin.state === "posted" && r2(fin.amount_residual as number) === r2(f.total - f.pagos.reduce((a, p) => a + p.importe, 0)), comprobante: fin, pagos_cargados: faltan.length };
 }
 
+// Lote "honorarios_previos" (5-nov-2026): deuda VIEJA con el estudio contable que se pagó desde Mercado Pago sin factura
+// a VELAZQUEZ (honorarios atrasados, mucho de RST). Mismo criterio que Autónomos/Monotributo anteriores (APORTES-TITULAR-PREVIOS):
+//   · Asiento al 28/02/2026 (antes de que VELAZQUEZ se lleve en Odoo): Debe 3.3.1.01.030 Ajuste de resultados de ejercicios
+//     anteriores / Haber 2.1.1.01.010 Proveedores con el partner del estudio. No es gasto de 2026: el gasto 2026 es la factura C.
+//   · Cada transferencia = pago a proveedor por Mercado Pago (diario 42, método 22 "Manual"), como los demás, conciliado
+//     contra esa deuda. Así la cuenta corriente del estudio muestra todo: deuda vieja + factura, pagos, y saldo.
+// Idempotente: el asiento por ref, los pagos por proveedor + fecha + importe.
+const HON_PREVIOS: Record<string, { partner: number; ref: string; fecha: string; glosa: string; pagos: [string, number][] }> = {
+  // Luciano Ruani: transferencias al usuario MP 86429074 entre marzo y septiembre 2026 (API de Mercado Pago, verificadas 5/11).
+  "ruani": { partner: 1929, ref: "HONORARIOS-RUANI-PREVIOS", fecha: "2026-02-28",
+    glosa: "Honorarios estudio contable Ruani anteriores, sin factura a VELAZQUEZ (incluye deuda de RST)",
+    pagos: [["2026-03-16", 160000], ["2026-03-25", 50000], ["2026-04-15", 110000], ["2026-05-19", 160000], ["2026-07-14", 220000], ["2026-08-31", 110000], ["2026-09-23", 360000]] },
+};
+async function honorarios_previos(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const d = HON_PREVIOS[String(body.nombre || "")];
+  if (!d) return { ok: false, error: "fuera de la tabla" };
+  const total = r2(d.pagos.reduce((a, p) => a + p[1], 0));
+  const CTA_PROV = 703, CTA_AJ = await cuenta("3.3.1.01.030");
+  if (!CTA_AJ) return { ok: false, error: "no encuentro 3.3.1.01.030" };
+  let deuda = await ex("account.move", "search_read", [[["ref", "=", d.ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["id", "name", "state"] }) as Rec[];
+  const pagosYa = await ex("account.payment", "search_read", [[["partner_id", "=", d.partner], ["payment_type", "=", "outbound"], ["state", "!=", "canceled"]]], { fields: ["id", "date", "amount", "memo"] }) as Rec[];
+  const faltan = d.pagos.filter(([f, i]) => !pagosYa.some(y => y.date === f && r2(y.amount as number) === i));
+  if (dry) return { ok: true, dry_run: true, total, asiento_ya: deuda, pagos_ya: pagosYa, pagos_a_cargar: faltan };
+  if (!deuda.length) {
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: 34, date: d.fecha, ref: d.ref, company_id: C, line_ids: [
+      [0, 0, { account_id: CTA_AJ, name: d.glosa, debit: total, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+      [0, 0, { account_id: CTA_PROV, partner_id: d.partner, name: d.glosa, debit: 0, credit: total, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+    ] }]) as number;
+    await ex("account.move", "action_post", [[mid]]);
+    deuda = await ex("account.move", "read", [[mid], ["id", "name", "state"]]) as Rec[];
+  }
+  const lDeuda = await ex("account.move.line", "search_read", [[["move_id", "=", deuda[0].id], ["account_id", "=", CTA_PROV]]], { fields: ["id", "reconciled"] }) as Rec[];
+  const nuevos: Rec[] = [];
+  for (const [f, i] of faltan) {
+    const pid = await ex("account.payment", "create", [{ payment_type: "outbound", partner_type: "supplier", partner_id: d.partner, amount: i, date: f,
+      journal_id: 42, payment_method_line_id: 22, memo: "Honorarios anteriores (" + deuda[0].name + ")" }]) as number;
+    await ex("account.payment", "action_post", [[pid]]);
+    nuevos.push((await ex("account.payment", "read", [[pid], ["name", "date", "amount", "state", "move_id"]]) as Rec[])[0]);
+  }
+  // conciliar todos los pagos sin factura del estudio contra la deuda vieja
+  const pagosTodos = await ex("account.payment", "search_read", [[["partner_id", "=", d.partner], ["payment_type", "=", "outbound"], ["state", "!=", "canceled"], ["memo", "ilike", "Honorarios anteriores"]]], { fields: ["move_id"] }) as Rec[];
+  const lPagos = await ex("account.move.line", "search_read", [[["move_id", "in", pagosTodos.map(p => m2o(p.move_id))], ["account_id", "=", CTA_PROV], ["reconciled", "=", false]]], { fields: ["id"] }) as Rec[];
+  if (!lDeuda[0].reconciled && lPagos.length) await ex("account.move.line", "reconcile", [[lDeuda[0].id, ...lPagos.map(l => l.id)]]);
+  const fin = (await ex("account.move.line", "read", [[lDeuda[0].id], ["reconciled", "amount_residual"]]) as Rec[])[0];
+  return { ok: !!fin.reconciled, asiento: deuda[0], pagos_nuevos: nuevos, deuda_vieja: fin };
+}
+
 Deno.serve(async (req: Request) => {
   const h = { "Content-Type": "application/json" };
   const clave = Deno.env.get("CONTROL_CRON_KEY") || "";
@@ -1027,6 +1074,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "personales") return new Response(JSON.stringify(await personales(body)), { headers: h });
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
+    if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
     if (body.lote === "honorarios") return new Response(JSON.stringify(await honorarios(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
     return new Response(JSON.stringify({ ok: false, error: "lote desconocido" }), { headers: h });
