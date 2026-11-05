@@ -924,6 +924,82 @@ async function compras_b(body: Rec): Promise<Rec> {
   return { ok: true, comprobantes: fin };
 }
 
+// Lote "honorarios" (5-nov-2026): facturas de honorarios de profesionales EXTERNOS (estudio contable, legales) y sus pagos.
+// Orden armado con Diego:
+//   · Cuenta 5.3.1.01.160 "Honorarios profesionales externos" (Gastos Administrativos). Es la ex 5.4.1.01.110
+//     "Honorarios profesionales" (id 937), que estaba mal ubicada dentro de Impuestos / Tasas municipales y sin uso:
+//     se recodifica y renombra (no hay asientos que mover). La 5.3.1.01.110 "Honorarios Administración" queda para
+//     el personal que cobra por honorarios (Lucía), y la 5.1.2.01.110 para producción (Daiana).
+//   · Concepto [GA18] "Honorarios estudio contable": servicio, solo compra, categoría GASTOS OPERATIVOS / Administración,
+//     IVA 21% compras por defecto (si el estudio factura A); en factura C el renglón va con IVA No Aplica (178).
+//   · La factura se carga como las demás FA-C: diario 33, tipo (11) FACTURAS C. Pagos por Mercado Pago (diario 42,
+//     método 22 "Manual"), memo = nombre de la factura. Idempotente: no duplica la factura ni un pago ya registrado
+//     (mismo proveedor + fecha + importe).
+const CTA_HON_EXT = { id: 937, code: "5.3.1.01.160", name: "Honorarios profesionales externos" };
+const PROD_HON = { code: "GA18", name: "Honorarios estudio contable" };
+type Honorario = { partner: number; resp_afip: number; numero: string; fecha: string; vto: string; total: number; detalle: string;
+  pagos: { fecha: string; importe: number; diario: number; metodo: number }[] };
+const HONORARIOS: Record<string, Honorario> = {
+  // Luciano Ruani (CUIT 20-24586409-5, partner 1929), contador hasta sep-2026. FA-C 00003-00000181 del 20/10/2026,
+  // vto 22/10, CAE 86439006986559: "Honorarios profesionales enero 2026 a agosto 2026" = $700.000 (la deuda de octubre).
+  // En la factura figura como IVA Sujeto Exento (4); en Odoo estaba como Monotributo (6).
+  // Pago 05/11/2026 $300.000 por Mercado Pago (usuario MP 86429074). Quedan $400.000.
+  "ruani_181": { partner: 1929, resp_afip: 4, numero: "00003-00000181", fecha: "2026-10-20", vto: "2026-10-22", total: 700000,
+    detalle: "Honorarios profesionales enero a agosto 2026",
+    pagos: [{ fecha: "2026-11-05", importe: 300000, diario: 42, metodo: 22 }] },
+};
+async function honorarios_ordenar(dry: boolean): Promise<Rec> {
+  const acc = (await ex("account.account", "read", [[CTA_HON_EXT.id], ["code", "name"]]) as Rec[])[0];
+  const usos = await ex("account.move.line", "search_count", [[["account_id", "=", CTA_HON_EXT.id]]]) as number;
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", PROD_HON.code]]], { fields: ["id", "name"], context: { active_test: false } }) as Rec[];
+  const plan = { cuenta: { antes: acc, despues: CTA_HON_EXT, usos }, producto: prod.length ? prod[0] : "crear " + PROD_HON.code };
+  if (dry) return plan;
+  if (acc.code !== CTA_HON_EXT.code || acc.name !== CTA_HON_EXT.name) {
+    if (acc.code !== "5.4.1.01.110" && acc.code !== CTA_HON_EXT.code) throw new Error("la cuenta 937 no es la esperada: " + acc.code);
+    await ex("account.account", "write", [[CTA_HON_EXT.id], { code: CTA_HON_EXT.code, name: CTA_HON_EXT.name }]);
+  }
+  if (!prod.length) {
+    await ex("product.product", "create", [{ name: PROD_HON.name, default_code: PROD_HON.code, type: "service", purchase_ok: true, sale_ok: false,
+      categ_id: 3, purchase_method: "purchase", property_account_expense_id: CTA_HON_EXT.id, supplier_taxes_id: [[6, 0, [TAX_IVA]]], taxes_id: [[6, 0, []]] }]);
+  }
+  return plan;
+}
+async function honorarios(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const f = HONORARIOS[String(body.nombre || "")];
+  if (!f) return { ok: false, error: "comprobante fuera de la tabla" };
+  const orden = await honorarios_ordenar(dry);
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", PROD_HON.code]]], { fields: ["id"] }) as Rec[];
+  const acc = CTA_HON_EXT.id;
+  const p = (await ex("res.partner", "read", [[f.partner], ["name", "l10n_ar_afip_responsibility_type_id"]]) as Rec[])[0];
+  if (!dry && m2o(p.l10n_ar_afip_responsibility_type_id) !== f.resp_afip) await ex("res.partner", "write", [[f.partner], { l10n_ar_afip_responsibility_type_id: f.resp_afip }]);
+  const nombreFc = "FA-C " + f.numero;
+  let mv = await ex("account.move", "search_read", [[["partner_id", "=", f.partner], ["name", "=", nombreFc], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["id", "name", "state", "amount_total", "amount_residual"] }) as Rec[];
+  const pagosYa = await ex("account.payment", "search_read", [[["partner_id", "=", f.partner], ["payment_type", "=", "outbound"], ["state", "!=", "canceled"]]], { fields: ["name", "date", "amount", "memo"] }) as Rec[];
+  const faltan = f.pagos.filter(p => !pagosYa.some(y => y.date === p.fecha && r2(y.amount as number) === p.importe));
+  if (dry) return { ok: true, dry_run: true, orden, proveedor: p, factura_ya: mv, pagos_ya: pagosYa, pagos_a_cargar: faltan };
+  if (prod.length !== 1) return { ok: false, error: "no encuentro el producto " + PROD_HON.code };
+  if (!mv.length) {
+    const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: f.partner, journal_id: 33, l10n_latam_document_type_id: 11,
+      l10n_latam_document_number: f.numero, invoice_date: f.fecha, date: f.fecha, invoice_date_due: f.vto, company_id: C,
+      invoice_line_ids: [[0, 0, { product_id: prod[0].id, name: "[" + PROD_HON.code + "] " + f.detalle, account_id: acc, quantity: 1, price_unit: f.total, tax_ids: [[6, 0, [178]]] }]] }]) as number;
+    const chk = (await ex("account.move", "read", [[id], ["amount_total", "amount_tax", "currency_id"]]) as Rec[])[0];
+    const lin = await ex("account.move.line", "search_read", [[["move_id", "=", id], ["display_type", "=", "product"]]], { fields: ["account_id"] }) as Rec[];
+    if (r2(chk.amount_total as number) !== f.total || r2(chk.amount_tax as number) !== 0 || m2o(chk.currency_id) !== 18 || lin.some(l => m2o(l.account_id) !== acc)) return { ok: false, error: "no cerró exacto; quedó en BORRADOR", id, chk, lin };
+    await ex("account.move", "action_post", [[id]]);
+    mv = await ex("account.move", "read", [[id], ["id", "name", "state", "amount_total", "amount_residual"]]) as Rec[];
+  }
+  const fid = mv[0].id as number;
+  if (mv[0].name !== nombreFc) return { ok: false, error: "el nombre de la factura no es el esperado", mv };
+  const ctx = { active_model: "account.move", active_ids: [fid] };
+  for (const p of faltan) {
+    const wid = await ex("account.payment.register", "create", [{ journal_id: p.diario, payment_method_line_id: p.metodo, payment_date: p.fecha, amount: p.importe,
+      payment_difference_handling: "open", communication: nombreFc }], { context: ctx }) as number;
+    await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+  }
+  const fin = (await ex("account.move", "read", [[fid], ["name", "state", "invoice_date", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
+  return { ok: fin.state === "posted" && r2(fin.amount_residual as number) === r2(f.total - f.pagos.reduce((a, p) => a + p.importe, 0)), comprobante: fin, pagos_cargados: faltan.length };
+}
+
 Deno.serve(async (req: Request) => {
   const h = { "Content-Type": "application/json" };
   const clave = Deno.env.get("CONTROL_CRON_KEY") || "";
@@ -951,6 +1027,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "personales") return new Response(JSON.stringify(await personales(body)), { headers: h });
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
+    if (body.lote === "honorarios") return new Response(JSON.stringify(await honorarios(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
     return new Response(JSON.stringify({ ok: false, error: "lote desconocido" }), { headers: h });
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message || e) }), { headers: h }); }
