@@ -149,9 +149,14 @@
     $('#n-reponer').textContent = alertas.length;
     $('#n-todas').textContent = enUso.length;
 
+    // Cuántas materias primas tienen una compra en curso: es la forma de ver de
+    // un vistazo si la lectura ya incluye el pedido que se acaba de cargar en Odoo.
+    const conPedido = FILAS.filter(f => f.tienePedido).length;
     const desde = DATOS?.historia_desde;
     $('#sync-estado').innerHTML = GENERADO
-      ? 'Última lectura: <b>' + esc(fechaHora(GENERADO)) + '</b><br>Historia desde ' + esc(fecha(desde)) + '.'
+      ? 'Última lectura: <b>' + esc(fechaHora(GENERADO)) + '</b>'
+        + (conPedido ? '<br>' + conPedido + ' ' + plural(conPedido, 'insumo pedido', 'insumos pedidos') + ' sin ingresar.' : '')
+        + '<br>Historia desde ' + esc(fecha(desde)) + '.'
       : 'Todavía no se leyó Odoo.';
   }
 
@@ -742,8 +747,11 @@
       await cargarDemanda();
       recalcular();
       pintarTodo();
-      // Se ve la última foto al instante y, si tiene más de una hora, se lee Odoo de nuevo en segundo plano
-      if (window.syncAlAbrir) syncAlAbrir({ clave: 'reposicion', maxMin: 60, ultimo: async () => GENERADO, correr: () => actualizar(true) });
+      // Se ve la última foto al instante y SIEMPRE se vuelve a leer Odoo en segundo plano.
+      // Antes solo se releía si la foto tenía más de una hora, y así una orden de compra
+      // recién cargada no aparecía: el insumo seguía figurando como si hubiera que comprarlo.
+      // La lectura tarda ~3 s, corre detrás y la pantalla se usa mientras tanto.
+      if (window.syncAlAbrir) syncAlAbrir({ clave: 'reposicion', maxMin: 0, ultimo: async () => GENERADO, correr: () => actualizar(true) });
     } catch (e) {
       console.error(e);
       toast('No se pudo cargar: ' + e.message, 'err');
