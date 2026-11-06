@@ -271,3 +271,7 @@ body.marca #app-content .altas-wrap h2 {
   font-family: Sora, sans-serif;
   font-weight: 500;
 }
+
+.alta-customer-review{border:1px solid #dce2d9;border-radius:12px;padding:18px;margin:18px 0;background:#f7f8f2}.alta-change-list{display:grid;gap:10px}.alta-change{display:flex;align-items:flex-start;gap:10px;padding:10px;background:#fff;border-radius:8px}.alta-change input{width:auto;margin-top:5px}.alta-change>span{display:grid;gap:3px}.alta-change small,.alta-preserve{font-size:14px;color:#647580}.alta-preserve{margin:15px 0}
+
+.alta-panel label.alta-change{flex-direction:row;align-items:flex-start;font-size:15px;font-weight:400}.alta-panel .alta-change input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin:4px 0 0}

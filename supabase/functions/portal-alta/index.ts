@@ -5,8 +5,14 @@ import { configDiagnostic } from "./config-diagnostic.ts";
 import { install } from "./install.ts";
 import { encrypt, readPassword, validPassword, passwordContext } from "./secrets.ts";
 import { installArcaSigner } from './arca-signer.ts';
+import {contactChanges,planContactUpdate,selectedContactFields} from './customer-update.ts';
 
 const TYPES = {
+  cosmetologia: "Cosmetología / Cosmiatría",
+  estetica: "Estética",
+  masajes: "Masajes / Kinesiología",
+  salud: "Profesional de salud",
+  estudiante: "Estudiante",
   profesional: "Profesional",
   revendedor: "Revendedor",
   mayorista: "Mayorista",
@@ -40,6 +46,8 @@ class Failure extends Error {
     super(message);
   }
 }
+function contactPlan(...args:Parameters<typeof planContactUpdate>){try{return planContactUpdate(...args);}catch(e){throw new Failure(e.message,409);}}
+function chosenFields(v:any){try{return selectedContactFields(v);}catch(e){throw new Failure(e.message);}}
 export function validCuit(s: string) {
   if (!/^\d{11}$/.test(s) || /^([0-9])\1+$/.test(s)) return false;
   const n =
@@ -181,6 +189,9 @@ async function look(d: any) {
     [
       [
         ["parent_id", "=", false],
+        "|",
+        ["email", "=ilike", d.email],
+        "&",
         ["l10n_latam_identification_type_id", "in", dni?[5]:[4,6]],
         ["vat", "in", variants],
       ],
@@ -196,11 +207,14 @@ async function look(d: any) {
         "user_id",
         "property_product_pricelist",
         "company_id",
+        "street", "city", "state_id", "write_date", "x_studio_nombre_fantasia",
+        "l10n_latam_identification_type_id", "l10n_ar_afip_responsibility_type_id",
       ],
       context: { active_test: false },
       limit: 30,
     },
   );
+  partners.forEach((p:any)=>p.documento_coincide=digits(p.vat)===doc&&p.l10n_latam_identification_type_id?.[0]===(DOCUMENTS[d.documento_tipo||'CUIT']));
   const ids = partners.map((p: any) => p.id);
   const userDomain = ids.length
     ? [
@@ -293,6 +307,7 @@ async function plan(a: any, b: any) {
     reemplazar: b.reemplazar === true,
     revision: String(b.revision || "").trim(),
     responsabilidad_id: Number(b.responsabilidad_id || 0),
+    ...(b.datos_actualizar!==undefined||b.actualizar_condiciones!==undefined?{datos_actualizar:chosenFields(b.datos_actualizar),revision_cliente:String(b.revision_cliente||''),actualizar_condiciones:b.actualizar_condiciones===true,documento_revisado:b.documento_revisado===true}:{}),
   };
   if (
     !opts.identidad_verificada ||
@@ -318,6 +333,7 @@ async function plan(a: any, b: any) {
       "Resolvé las fichas duplicadas o archivadas en Odoo antes de aprobar.",
     );
   const partner = o.fichas[0];
+  if(partner&&!partner.documento_coincide&&b.documento_revisado!==true)throw new Failure('El documento declarado no coincide con la ficha existente. Verificá que se trate de la misma persona antes de vincular el acceso.');
   const consumer=a.datos.condicion_iva==='CF';
   if(consumer && opts.responsabilidad_id!==5)throw new Failure('Confirmá Consumidor final en la condición IVA.');
   if(!consumer && opts.responsabilidad_id===5)throw new Failure('La solicitud no fue declarada como consumidor final. Revisá la identidad fiscal.');
@@ -363,7 +379,10 @@ async function plan(a: any, b: any) {
   if (!state)
     throw new Failure("La provincia no coincide con las opciones de Odoo.");
   const passwordAvailable=!!(await readPassword(a));
+  const changes=partner?contactChanges(partner,a.datos,state.id):[];
+  const contactUpdate=partner?contactPlan(partner,a.datos,state.id,b.datos_actualizar,String(b.revision_cliente||''),a.resultado?.cambios_cliente):null;
   return {
+    cambios_cliente:contactUpdate,
     clave_disponible: passwordAvailable,
     opciones: opts,
     partner,
@@ -374,8 +393,8 @@ async function plan(a: any, b: any) {
       partner
         ? `Vincular ficha ${partner.id}: ${partner.name}`
         : "Crear ficha de cliente en Odoo",
-      `Asignar ${op.listas.find((x: any) => x.id === opts.lista_id).name}`,
-      `Responsable: ${op.comerciales.find((x: any) => x.id === opts.comercial_id).name}`,
+      ...(partner&&!b.actualizar_condiciones?['Conservar la lista de precios y el responsable comercial actuales']:[`Asignar ${op.listas.find((x: any) => x.id === opts.lista_id).name}`,`Responsable: ${op.comerciales.find((x: any) => x.id === opts.comercial_id).name}`]),
+      ...(partner?[...(changes.filter((x:any)=>Object.hasOwn(contactUpdate?.values||{},x.field)).map((x:any)=>`${x.label}: ${x.current_label||'sin dato'} → ${x.proposed_label}`)), 'Conservar los demás datos, documento y condición fiscal del cliente']:[]),
       others.length
         ? "Revocar accesos anteriores confirmados"
         : "Conservar accesos ajenos sin cambios",
@@ -469,13 +488,20 @@ async function approve(a: any, b: any, actor: string) {
     }
     r.partner_id = pid;
     await save();
-    await kw("res.partner", "write", [
+    if(!p.partner || b.actualizar_condiciones===true)await kw("res.partner", "write", [
       [pid],
       {
         property_product_pricelist: p.opciones.lista_id,
         user_id: p.opciones.comercial_id,
       },
     ]);
+    if(p.partner&&p.cambios_cliente&&Object.keys(p.cambios_cliente.values).length){
+      if(!r.cambios_cliente){r.cambios_cliente=p.cambios_cliente;await save();}
+      const [current]=await kw('res.partner','read',[[pid]],{fields:['name','x_studio_nombre_fantasia','email','phone','street','city','state_id','write_date']});
+      const update=contactPlan(current,a.datos,p.state_id,b.datos_actualizar,String(b.revision_cliente||''),r.cambios_cliente);
+      if(!update.already_applied)await kw('res.partner','write',[[pid],update.values]);
+      r.datos_actualizados=true;await save();
+    }
     // Copia de los documentos revisados al legajo del cliente, con referencia idempotente.
     for (const file of a.archivos) {
       const marker = `ROSAINT-ALTA:${a.id}:${file.path}`;
@@ -546,9 +572,8 @@ async function approve(a: any, b: any, actor: string) {
         "create",
         [
           {
-            name: a.datos.razon,
+            ...(!p.partner?{name:a.datos.razon,email:a.email}:{}),
             login: a.email,
-            email: a.email,
             partner_id: pid,
             groups_id: [[6, 0, [10]]],
             company_id: COMPANY,
@@ -767,6 +792,16 @@ async function handle(req: Request, b: any) {
       ),
     };
   if (b.accion === "reanalizar") return { solicitud: await review(a, actor) };
+  if(b.accion==='revisar_odoo'){
+    if(!['recibida','revisar'].includes(a.estado))throw new Failure('La solicitud no admite una nueva revisión.',409);
+    const odoo=await look(a.datos);
+    const alertas=['Revisión de Odoo: verificar identidad y datos declarados antes de aprobar.'];
+    if(odoo.fichas.length)alertas.push('Cliente existente: los datos y las condiciones actuales se conservan salvo selección explícita.');
+    if(odoo.fichas.length>1)alertas.push('Hay varias coincidencias. Resolverlas en Odoo antes de aprobar.');
+    const changed=await db(`portal_altas?id=eq.${enc(a.id)}&version=eq.${a.version}&estado=in.(recibida,revisar)`,'PATCH',{analisis:{...a.analisis,odoo,alertas,consultada:new Date().toISOString()},estado:'revisar',actualizada:new Date().toISOString(),version:a.version+1});
+    if(!changed.length)throw new Failure('La solicitud cambió. Actualizá la bandeja.',409);
+    await event(a.id,actor,'odoo_revisado');return {solicitud:changed[0]};
+  }
   if (b.accion === "aprobar") return approve(a, b, actor);
   if (b.accion === "rechazar") {
     if (!["recibida", "revisar"].includes(a.estado))
