@@ -34,7 +34,7 @@ else if(model==='res.partner'){
 }else if(model==='res.users'){
  if(method==='read')result=[{id:2,partner_id:[3,'Comercial']}];
  if(method==='search_read'){result=args[0]?.[0]?.[0]==='share'?[{id:2,name:'Comercial'}]:users;}
- if(method==='create'){if(failUser){failUser=false;return Response.json({error:{data:{message:'Fallo temporal ElegidaSegura123'}}});}const v=args[0];users.push({id:101,share:true,active:v.active,login:v.login,partner_id:[v.partner_id,'Prueba']});result=101;}
+ if(method==='create'){if(failUser){failUser=false;return Response.json({error:{data:{message:'Fallo temporal ElegidaSegura123'}}});}const v=args[0];const linked=partners.find(p=>p.id===v.partner_id);if(linked)linked.active=v.active;users.push({id:101,share:true,active:v.active,login:v.login,partner_id:[v.partner_id,'Prueba']});result=101;}
  if(method==='write'){users.filter(x=>args[0].includes(x.id)).forEach(x=>Object.assign(x,args[1]));result=true;}
  if(method==='action_reset_password'){if(failInvite){failInvite=false;throw Error('Respuesta perdida');}result=true;}
 }else throw Error('Modelo inesperado '+model);
@@ -96,3 +96,5 @@ await check('Reintento después de actualizar y fallar creación de acceso no re
 console.log('TOTAL '+n+' pruebas completadas, sin red real.');
 await check('Reintento tolera el orden de claves de JSONB y conserva los valores',async()=>{reset();failUser=true;assert.equal((await call(choices())).status,409);alta.aprobacion=Object.fromEntries(Object.entries(alta.aprobacion).reverse());assert.equal((await call(choices())).ok,true);assert.equal(partners.length,1);assert.equal(users.length,1);});
 await check('El reintento bloquea valores diferentes aunque cambie el orden de claves',async()=>{reset();failUser=true;assert.equal((await call(choices())).status,409);alta.aprobacion=Object.fromEntries(Object.entries(alta.aprobacion).reverse());const r=await call({...choices(),revision:'Otra revisión distinta'});assert.equal(r.status,409);assert.match(r.error,/mismas condiciones/);assert.equal(users.length,0);});console.log('TOTAL FINAL '+n+' pruebas, sin red real.');
+
+await check('Crear acceso de cliente existente mantiene activa su ficha',async()=>{reset();partners=[existing()];assert.equal((await call(selectedOptions())).ok,true);assert.equal(partners[0].active,true);assert.equal(calls.find(c=>c.model==='res.users'&&c.method==='create').args[0].active,true);});console.log('TOTAL FINAL '+n+' pruebas, sin red real.');

@@ -579,7 +579,8 @@ async function approve(a: any, b: any, actor: string) {
             groups_id: [[6, 0, [10]]],
             company_id: COMPANY,
             company_ids: [[6, 0, [COMPANY]]],
-            active: false,
+            // Odoo propagates this flag to the linked partner during create.
+            active: true,
             ...(chosenPassword?{password:chosenPassword}:{}),
           },
         ],
@@ -591,7 +592,8 @@ async function approve(a: any, b: any, actor: string) {
           },
         },
       ).catch((e) => { throw new Failure(accessCreationError(e)); });
-      u = { id, active: false, share: true, partner_id: [pid] };
+      u = { id, active: true, share: true, partner_id: [pid] };
+      r.acceso_activado=true;
       if(chosenPassword)r.clave_aplicada=true;
     } else if(chosenPassword) {
       try { await kw('res.users','write',[[u.id],{password:chosenPassword}],{context:{no_reset_password:true}}); }

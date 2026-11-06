@@ -2,6 +2,10 @@
 export function accessCreationError(error:unknown){
  const m=String((error as any)?.message||'').toLowerCase();
  const base='No se pudo crear el acceso. Reintentá desde la aprobación incompleta.';
+ const kind=String((error as any)?.odooErrorType||'');
+ if(/(?:^|\.)(AccessDenied|AccessError)$/.test(kind))return base+' Odoo denegó esta operación de acceso (control de seguridad).';
+ if(error instanceof SyntaxError||/unexpected token|abort|timeout|fetch failed|odoo no respondió/.test(m))return base+' La respuesta de Odoo no permitió completar la operación.';
+ if(/(?:^|\.)(AssertionError|TypeError|ValueError)$/.test(kind))return base+' Odoo rechazó la estructura de la creación ('+kind.split('.').pop()+').';
  if(/password|contrase[nñ]a/.test(m)&&/short|length|longitud|caracter|character|least|m[ií]nimo|policy|pol[ií]tica/.test(m))return base+' Odoo rechazó la contraseña por su política de seguridad.';
  if(/mandatory|required field|campo obligatorio|obligatori[oa]|not-null/.test(m))return base+' Odoo exige un dato obligatorio en el usuario.';
  if(/invalid field|campo no v[aá]lido|campo inv[aá]lido/.test(m))return base+' Un campo del alta no es compatible con esta versión de Odoo.';

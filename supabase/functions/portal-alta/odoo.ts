@@ -38,8 +38,13 @@ async function rpc(service: string, method: string, args: unknown[]) {
     signal: AbortSignal.timeout(30000),
   });
   const j = await r.json();
-  if (!r.ok || j.error)
-    throw new Error(String(j.error?.data?.message || "Odoo no respondió"));
+  if (!r.ok || j.error) {
+    const error=new Error(String(j.error?.data?.message || "Odoo no respondió"));
+    const kind=String(j.error?.data?.name||'');
+    // Exception class only; never attach RPC arguments, credentials or traceback.
+    if(/^[A-Za-z_][A-Za-z0-9_.]{0,120}$/.test(kind))Object.assign(error,{odooErrorType:kind});
+    throw error;
+  }
   return j.result;
 }
 export async function kw(
