@@ -924,6 +924,127 @@ async function pago_fecha(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, pagos: out };
 }
 
+// Lote "nc_orden" (6-nov-2026): ordena notas de crédito de proveedores SIN tocar importes ni IVA de lo presentado
+// hasta septiembre. Pasos (body.paso): "ml_sep" · "ml_marzo" · "google_cuentas" · "google_2025" · "iva_nc" · "todo".
+const lineaPagar = async (moveId: number) => (await ex("account.move.line", "search_read", [[["move_id", "=", moveId], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id", "amount_residual", "reconciled", "matched_debit_ids", "matched_credit_ids", "account_id", "partner_id"] }) as Rec[])[0];
+const moveId = async (name: string) => ((await ex("account.move", "search_read", [[["name", "=", name], ["company_id", "=", C]]], { fields: ["id"] }) as Rec[])[0] || {}).id as number;
+async function nc_orden(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const paso = String(body.paso || ""); const log: Rec[] = [];
+  const todo = paso === "todo";
+  // 1) NC-A 00057-00408160 (Doc. Ref 0057A00913274): el pago de esa factura se registró sin descontarla
+  if (todo || paso === "ml_sep") {
+    const fac = await moveId("FA-A 00057-00913274"), nc = await moveId("NC-A 00057-00408160");
+    const pago = (await ex("account.payment", "search_read", [[["name", "=", "PBNK2/2026/01261"]]], { fields: ["id", "amount", "move_id"] }) as Rec[])[0];
+    const lnc = await lineaPagar(nc);
+    if (lnc.reconciled) log.push({ ml_sep: "ya estaba" });
+    else if (dry) log.push({ ml_sep: { pago: pago.amount, nuevo: 2814422.91 } });
+    else {
+      const lfac = await lineaPagar(fac);
+      const parc = await ex("account.partial.reconcile", "read", [lfac.matched_debit_ids, ["debit_move_id"]]) as Rec[];
+      const otras = parc.map(p => m2o(p.debit_move_id) as number);
+      await ex("account.move.line", "remove_move_reconcile", [[lfac.id]]);
+      if (r2(pago.amount as number) !== 2814422.91) {
+        await ex("account.payment", "action_draft", [[pago.id]]);
+        await ex("account.payment", "write", [[pago.id], { amount: 2814422.91 }]);
+        await ex("account.payment", "action_post", [[pago.id]]);
+      }
+      const lpago = (await ex("account.move.line", "search_read", [[["payment_id", "=", pago.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
+      const ids = [...new Set([lfac.id as number, lpago.id as number, lnc.id as number, ...otras.filter(o => o !== lpago.id)])];
+      await ex("account.move.line", "reconcile", [ids]);
+      const f = await lineaPagar(fac); log.push({ ml_sep: { factura_saldo: f.amount_residual, pago: 2814422.91 } });
+    }
+  }
+  // 2) las 3 NC de marzo de ML / MELI LOG aplican a facturas de FEBRERO (antes de VELAZQUEZ): se cierran contra ejercicios anteriores
+  if (todo || paso === "ml_marzo") {
+    const ref = "NC-ML-FEBRERO-PREVIAS";
+    const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (ya.length) log.push({ ml_marzo: "ya existía " + ya[0].name });
+    else {
+      const ncs = ["NC-A 00058-00285188", "NC-A 00011-02191476", "NC-A 00001-01183975"];
+      const ls: Rec[] = []; for (const n of ncs) { const l = await lineaPagar(await moveId(n)); if (!l.reconciled) ls.push({ ...l, nc: n }); }
+      const tot = r2(ls.reduce((a, l) => a + (l.amount_residual as number), 0));
+      if (dry) log.push({ ml_marzo: { ncs: ls.map(l => ({ nc: l.nc, abierto: l.amount_residual })), total: tot } });
+      else if (ls.length) {
+        const aj = (await ex("account.account", "search_read", [[["code", "=", "3.3.1.01.030"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[])[0];
+        const L = (a: unknown, p: unknown, nm: string, d: number, h: number) => [0, 0, { account_id: a, partner_id: p || false, name: nm, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+        const lineas = ls.map(l => L(m2o(l.account_id), m2o(l.partner_id), `${l.nc}: bonificación que aplica a una factura de febrero (Doc. Ref anterior a VELAZQUEZ)`, 0, l.amount_residual as number));
+        lineas.push(L(aj.id, false, "Bonificaciones de ML/MELI LOG sobre facturas de febrero 2026, previas a VELAZQUEZ", tot, 0));
+        const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: 34, date: "2026-03-31", ref, company_id: C, line_ids: lineas }]) as number;
+        await ex("account.move", "action_post", [[mid]]);
+        for (const l of ls) {
+          const nl = (await ex("account.move.line", "search_read", [[["move_id", "=", mid], ["partner_id", "=", m2o(l.partner_id)], ["account_id", "=", m2o(l.account_id)], ["name", "ilike", String(l.nc)]]], { fields: ["id"] }) as Rec[])[0];
+          await ex("account.move.line", "reconcile", [[l.id, nl.id]]);
+        }
+        log.push({ ml_marzo: (await ex("account.move", "read", [[mid], ["name", "amount_total"]]) as Rec[])[0] });
+      }
+    }
+  }
+  // 3) dos NC de Google cargadas en "Gastos administrativos varios": pasan a Publicidad (solo la cuenta del neto; IVA igual)
+  if (todo || paso === "google_cuentas") {
+    const pub = (await ex("account.account", "search_read", [[["code", "=", "5.2.1.01.060"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[])[0];
+    for (const n of ["NC-A 00011-00938029", "NC-A 00011-00952710"]) {
+      const id = await moveId(n);
+      const bl = await ex("account.move.line", "search_read", [[["move_id", "=", id], ["display_type", "=", "product"], ["account_id.code", "=", "5.3.1.01.990"]]], { fields: ["id", "balance"] }) as Rec[];
+      if (!bl.length) { log.push({ [n]: "ya en Publicidad" }); continue; }
+      if (dry) { log.push({ [n]: { pasa_a_publicidad: bl.map(b => b.balance) } }); continue; }
+      const lp = await lineaPagar(id);
+      const parc = (lp.matched_credit_ids as number[]).length ? await ex("account.partial.reconcile", "read", [lp.matched_credit_ids, ["credit_move_id"]]) as Rec[] : [];
+      const contra = parc.map(p => m2o(p.credit_move_id) as number);
+      try { await ex("account.move.line", "write", [bl.map(b => b.id), { account_id: pub.id }]); log.push({ [n]: "cuenta corregida (directo)" }); }
+      catch (_) {
+        if (contra.length) await ex("account.move.line", "remove_move_reconcile", [[lp.id]]);
+        await ex("account.move", "button_draft", [[id]]);
+        await ex("account.move.line", "write", [bl.map(b => b.id), { account_id: pub.id }]);
+        await ex("account.move", "action_post", [[id]]);
+        if (contra.length) { const nl = await lineaPagar(id); await ex("account.move.line", "reconcile", [[nl.id, ...contra]]); }
+        log.push({ [n]: "cuenta corregida (borrador y vuelta a publicar)" });
+      }
+    }
+  }
+  // 4) saldo de Google Ads de 2025 (FA 0011-01115583 feb-25 3.721,05 − NC 0011-00807004 14,91 − NC 0011-00816856 79,70)
+  if (todo || paso === "google_2025") {
+    const ref = "GOOGLE-ADS-2025-PREVIO";
+    const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+    if (ya.length) log.push({ google_2025: "ya existía " + ya[0].name });
+    else if (dry) log.push({ google_2025: 3626.44 });
+    else {
+      const aj = (await ex("account.account", "search_read", [[["code", "=", "3.3.1.01.030"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[])[0];
+      const g = "Google Ads (Rosaint Ads): saldo 2025 impago, anterior a VELAZQUEZ — FA-A 0011-01115583 (28/02/2025) $3.721,05 − NC-A 0011-00807004 $14,91 − NC-A 0011-00816856 $79,70";
+      const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: 34, date: "2026-02-28", ref, company_id: C, line_ids: [
+        [0, 0, { account_id: aj.id, name: g, debit: 3626.44, credit: 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }],
+        [0, 0, { account_id: 703, partner_id: 2268, name: g, debit: 0, credit: 3626.44, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }]] }]) as number;
+      await ex("account.move", "action_post", [[mid]]);
+      log.push({ google_2025: (await ex("account.move", "read", [[mid], ["name", "date"]]) as Rec[])[0] });
+    }
+  }
+  // 5) IVA de las NC de compra: el impuesto 188 (IVA 21% – Compras) mandaba el IVA de las NC a "IVA débito fiscal".
+  //    Se corrige la configuración (hacia adelante) y solo las NC de OCTUBRE en adelante (no presentadas).
+  if (todo || paso === "iva_nc") {
+    const cred = (await ex("account.account", "search_read", [[["code", "=", "1.1.4.04.010"], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[])[0];
+    const rep = (await ex("account.tax.repartition.line", "read", [[762], ["account_id", "document_type", "repartition_type"]]) as Rec[])[0];
+    if (rep.document_type !== "refund" || rep.repartition_type !== "tax") return { ok: false, error: "la línea 762 no es la esperada", rep };
+    if (m2o(rep.account_id) !== cred.id) { if (!dry) await ex("account.tax.repartition.line", "write", [[762], { account_id: cred.id }]); log.push({ config: "NC de compra → IVA crédito fiscal" }); }
+    const tl = await ex("account.move.line", "search_read", [[["company_id", "=", C], ["parent_state", "=", "posted"], ["move_id.move_type", "=", "in_refund"], ["account_id.code", "=", "2.1.3.03.010"], ["date", ">=", "2026-10-01"]]], { fields: ["id", "move_id", "balance"] }) as Rec[];
+    for (const t of tl) {
+      const id = m2o(t.move_id) as number;
+      if (dry) { log.push({ nc_octubre: (t.move_id as unknown[])[1], iva: t.balance }); continue; }
+      const lp = await lineaPagar(id);
+      const parc = [...(lp.matched_credit_ids as number[]).length ? await ex("account.partial.reconcile", "read", [lp.matched_credit_ids, ["credit_move_id"]]) as Rec[] : []];
+      const contra = parc.map(p => m2o(p.credit_move_id) as number);
+      try { await ex("account.move.line", "write", [[t.id], { account_id: cred.id }]); }
+      catch (_) {
+        if (contra.length) await ex("account.move.line", "remove_move_reconcile", [[lp.id]]);
+        await ex("account.move", "button_draft", [[id]]);
+        await ex("account.move.line", "write", [[t.id], { account_id: cred.id }]);
+        await ex("account.move", "action_post", [[id]]);
+        if (contra.length) { const nl = await lineaPagar(id); await ex("account.move.line", "reconcile", [[nl.id, ...contra]]); }
+      }
+      const f = await lineaPagar(id); log.push({ nc_octubre: (t.move_id as unknown[])[1], iva_a_credito: t.balance, saldo_nc: f.amount_residual });
+    }
+  }
+  return { ok: true, dry_run: dry, log };
+}
+
 // Lote "alquiler_mes" (6-nov-2026): las facturas de alquiler sin comprobante (CSC) del mes, cargadas en borrador antes
 // de pagarse, se validan con vencimiento el día 10 (Odoo les pone la fecha de carga si no tienen condición de pago).
 const ALQ_MES: Record<string, { refs: string[]; vence: string }> = {
@@ -1356,6 +1477,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "nc_orden") return new Response(JSON.stringify(await nc_orden(body)), { headers: h });
     if (body.lote === "alquiler_mes") return new Response(JSON.stringify(await alquiler_mes(body)), { headers: h });
     if (body.lote === "lisandro_cierre") return new Response(JSON.stringify(await lisandro_cierre(body)), { headers: h });
     if (body.lote === "conciliar_neto") return new Response(JSON.stringify(await conciliar_neto(body)), { headers: h });
