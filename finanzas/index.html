@@ -142,7 +142,13 @@
       const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'apikey': window.SUPABASE_KEY }, body: JSON.stringify({ modo: 'finanzas_tablero' }) });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'Error al leer Odoo');
-      D = j; prepararDatos(); render();
+      D = j;
+      // Las deudas de impuestos (IVA, IIBB, Monotributo, Autónomos, planes) también son cuentas "a pagar" en Odoo, pero no
+      // son proveedores y su fecha en Odoo es la de carga, no el vencimiento: van aparte, al panel de impuestos.
+      const esImpuesto = x => /^(IVA|IIBB|Monotributo|Aut[oó]nomos|Plan |Ganancias|Impuesto|Retenci|Percepci)/i.test(String(x.cuenta || ''));
+      D.impuestos_a_pagar = (D.a_pagar || []).filter(esImpuesto);
+      D.a_pagar = (D.a_pagar || []).filter(x => !esImpuesto(x));
+      prepararDatos(); render();
     } catch (e) {
       $('status').className = 'status err'; $('status').textContent = 'No se pudieron leer los datos: ' + e.message; $('root').innerHTML = '';
     }
@@ -225,8 +231,9 @@
     // gráfico entradas/salidas + saldo
     barrasConLinea($('ch-es'), D.meses, [{ name: 'Entró', color: 'var(--ok)', values: X.ent }, { name: 'Salió', color: 'var(--structure)', values: X.sal }], { name: 'Saldo a fin de mes', color: 'var(--accent)', values: X.dineroMes }, i => { st.tab = 'flujo'; st.mesFlujo = i; history.replaceState(null, '', '#flujo'); render(); });
     // próximos vencimientos
-    const prox = D.a_pagar.slice(0, 8);
-    $('prox-pagar').innerHTML = prox.length ? tablaPagar(prox, true) : '<div class="vacio">No hay facturas de proveedores pendientes.</div>';
+    const prox = D.a_pagar.slice(0, 15);
+    $('prox-pagar').innerHTML = prox.length ? tablaPagar(prox, true) + (D.a_pagar.length > prox.length ? `<div class="nota">Y ${D.a_pagar.length - prox.length} más: ver todos.</div>` : '') : '<div class="vacio">No hay pagos pendientes.</div>';
+    const imp = D.impuestos_a_pagar || [];
     // impuestos
     $('imp').innerHTML = `<table class="tbl"><tbody>
       <tr><td>IVA débito fiscal (ventas)<span class="sub">acumulado desde marzo</span></td><td class="num">${fmt$(X.ivaDeb)}</td></tr>
@@ -235,7 +242,10 @@
       <tr class="total"><td>Saldo de IVA según Odoo</td><td class="num">${fmt$(ivaSaldo)}</td></tr>
       <tr><td>Percepciones de IIBB sufridas<span class="sub">a favor, para descontar de Ingresos Brutos</span></td><td class="num">${fmt$(X.percIibb)}</td></tr>
     </tbody></table>
-    <div class="nota">Odoo no tiene registrados los pagos de las declaraciones juradas de IVA ni de Ingresos Brutos: estos saldos son lo acumulado, no lo que se debe hoy. Lo mensual exacto está en Contabilidad → Cierre mensual.</div>`;
+    ${imp.length ? `<h3 style="margin:14px 0 6px;font-size:13px">Deudas de impuestos cargadas en Odoo</h3>
+    <table class="tbl"><tbody>${imp.map(x => `<tr><td>${esc(x.cuenta)}<span class="sub">${esc(x.origen || x.comprobante)} · cargado el ${fecha(x.fecha)}</span></td><td class="num">${fmt$(x.saldo)}</td></tr>`).join('')}
+      <tr class="total"><td>Total</td><td class="num">${fmt$(sum(imp.map(x => x.saldo)))}</td></tr></tbody></table>` : ''}
+    <div class="nota">Las fechas de vencimiento reales de estos impuestos están en la agenda de Vencimientos (Inicio). Los planes de pago de ARCA van por su cuenta y no figuran acá.</div>`;
     document.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); st.tab = a.dataset.go; history.replaceState(null, '', '#' + st.tab); render(); }));
     sparks({ dinero: X.dineroMes });
   }
@@ -355,7 +365,11 @@
     const cats = ['Pagos a proveedores', 'Alquiler', 'Sueldos y honorarios', 'Cadeterías'];
     apiladas($('ch-pag'), D.meses, cats.map(k => ({ name: k, color: COL_CAT[k], values: D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === k && f.cuenta !== INTERNOS).map(f => f.salidas[i]))) })));
     const sv = D.sin_vincular || [];
-    $('sueldos').innerHTML = sv.length ? `<table class="tbl"><thead><tr><th>Persona</th><th>Cuenta</th><th class="num">Devengado = pagado</th><th class="num">Saldo</th></tr></thead><tbody>${sv.map(x => `<tr><td>${esc(x.contacto)}</td><td class="muted" style="font-size:12px">${esc(x.cuenta)}</td><td class="num">${fmt$(x.importe)}</td><td class="num pos">$ 0</td></tr>`).join('')}</tbody></table>
+    const pend = D.a_pagar.filter(x => /Sueldos|Cadeter/i.test(String(x.cuenta || '')));
+    if (pend.length) { $('sueldos').innerHTML = `<table class="tbl"><thead><tr><th>Persona</th><th>Mes</th><th class="num">Falta pagar</th></tr></thead><tbody>${pend.map(x => `<tr><td>${esc(x.contacto)}</td><td class="muted" style="font-size:12px">${esc(x.origen || x.comprobante)}</td><td class="num neg">${fmt$(x.saldo)}</td></tr>`).join('')}
+      <tr class="total"><td>Total</td><td></td><td class="num">${fmt$(sum(pend.map(x => x.saldo)))}</td></tr></tbody></table>
+      <div class="nota">Cada pago queda vinculado al mes de sueldo que dice su referencia; lo que falta es el resto de ese mes.</div>`; }
+    else $('sueldos').innerHTML = sv.length ? `<table class="tbl"><thead><tr><th>Persona</th><th>Cuenta</th><th class="num">Devengado = pagado</th><th class="num">Saldo</th></tr></thead><tbody>${sv.map(x => `<tr><td>${esc(x.contacto)}</td><td class="muted" style="font-size:12px">${esc(x.cuenta)}</td><td class="num">${fmt$(x.importe)}</td><td class="num pos">$ 0</td></tr>`).join('')}</tbody></table>
       <div class="nota">Todo lo devengado está pagado. En Odoo los pagos parciales quedaron sin vincular a cada mes: por eso Odoo los muestra "abiertos" aunque el saldo de cada persona es cero.</div>` : '<div class="vacio">Sin sueldos pendientes.</div>';
   }
 
