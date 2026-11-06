@@ -924,6 +924,45 @@ async function pago_fecha(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, pagos: out };
 }
 
+// Lote "lisandro_ajuste" (6-nov-2026): con el extracto del Santander, el pago del 10/08 a Lisandro fue de $250.000
+// (no $200.000) y cubre entera la FA-C 00002-00000047. Se anula la compensación de $30.000 "a confirmar"
+// (PINT/2026/00030), el pago del Santander pasa a $250.000 contra la FA-C 47, y la parrilla del 20/07 ($50.000,
+// descontada por Lisandro) se aplica a septiembre; lo que sobre queda como saldo a favor de Diego.
+async function lisandro_ajuste(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const log: Rec[] = [];
+  const pago = async (n: string) => (await ex("account.payment", "search_read", [[["name", "=", n], ["company_id", "=", C], ["partner_id", "=", 4260]]], { fields: ["id", "amount", "state", "move_id"] }) as Rec[])[0];
+  const lineaDeuda = async (moveId: number) => (await ex("account.move.line", "search_read", [[["move_id", "=", moveId], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id", "amount_residual", "reconciled"] }) as Rec[])[0];
+  const comp = await pago("PINT/2026/00030"), parr = await pago("PINT/2026/00029"), stder = await pago("PBNK1/2026/00007");
+  const fac47 = (await ex("account.move", "search_read", [[["name", "=", "FA-C 00002-00000047"], ["partner_id", "=", 4260]]], { fields: ["id"] }) as Rec[])[0];
+  const sep = (await ex("account.move", "search_read", [[["name", "=", "CSC/2026/09/0002"], ["partner_id", "=", 4260]]], { fields: ["id"] }) as Rec[])[0];
+  if (!parr || !stder || !fac47 || !sep) return { ok: false, error: "no encuentro los pagos o facturas esperados" };
+  if (dry) return { ok: true, dry_run: true, anular: comp ? { id: comp.id, importe: comp.amount, estado: comp.state } : "ya anulado", santander: { importe: stder.amount, nuevo: 250000 }, parrilla: parr.amount };
+  // 1) anular la compensación de $30.000
+  if (comp && comp.state !== "canceled") {
+    const l = await lineaDeuda(m2o(comp.move_id) as number); if (l.reconciled || (l.amount_residual as number) === 0) await ex("account.move.line", "remove_move_reconcile", [[l.id]]);
+    await ex("account.payment", "action_draft", [[comp.id]]); await ex("account.payment", "action_cancel", [[comp.id]]);
+    log.push({ anulado: "PINT/2026/00030" });
+  }
+  // 2) desvincular parrilla y Santander de la FA-C 47
+  const lp = await lineaDeuda(m2o(parr.move_id) as number), ls = await lineaDeuda(m2o(stder.move_id) as number);
+  await ex("account.move.line", "remove_move_reconcile", [[lp.id, ls.id]]);
+  // 3) Santander a $250.000 contra la FA-C 47
+  if (r2(stder.amount as number) !== 250000) {
+    await ex("account.payment", "action_draft", [[stder.id]]);
+    await ex("account.payment", "write", [[stder.id], { amount: 250000, memo: "FA-C 00002-00000047 - Santander «pago de honorarios» a Lisandro del 10/08 (según extracto)" }]);
+    await ex("account.payment", "action_post", [[stder.id]]);
+  }
+  const ls2 = (await ex("account.move.line", "search_read", [[["payment_id", "=", stder.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
+  const l47 = await lineaDeuda(fac47.id as number);
+  await ex("account.move.line", "reconcile", [[ls2.id, l47.id]]);
+  // 4) parrilla contra septiembre
+  const lsep = await lineaDeuda(sep.id as number);
+  await ex("account.payment", "write", [[parr.id], { memo: "Parte de Lisandro de la parrilla del Día del Amigo (20/07), pagada por Diego y descontada del alquiler" }]);
+  await ex("account.move.line", "reconcile", [[lp.id, lsep.id]]);
+  const fin = await ex("account.move.line", "read", [[l47.id, lsep.id, lp.id], ["move_id", "amount_residual", "reconciled"]]) as Rec[];
+  return { ok: true, log, lineas: fin };
+}
+
 // Lote "conciliar_sueldos" (5-nov-2026): vincula cada pago de sueldo/cadetería con el devengamiento del MES que
 // dice su referencia ("Pago parcial Daiana Mayo" → "Sueldos Mayo 2026"), persona por persona. Si los pagos del mes
 // suman lo devengado, el mes queda conciliado completo; si suman menos (el mes en curso), queda parcial con el saldo
@@ -1238,6 +1277,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "lisandro_ajuste") return new Response(JSON.stringify(await lisandro_ajuste(body)), { headers: h });
     if (body.lote === "pago_fecha") return new Response(JSON.stringify(await pago_fecha(body)), { headers: h });
     if (body.lote === "conciliar_sueldos") return new Response(JSON.stringify(await conciliar_sueldos(body)), { headers: h });
     if (body.lote === "sueldo_ajuste") return new Response(JSON.stringify(await sueldo_ajuste(body)), { headers: h });
