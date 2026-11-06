@@ -924,6 +924,25 @@ async function pago_fecha(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, pagos: out };
 }
 
+// Lote "alquiler_mes" (6-nov-2026): las facturas de alquiler sin comprobante (CSC) del mes, cargadas en borrador antes
+// de pagarse, se validan con vencimiento el día 10 (Odoo les pone la fecha de carga si no tienen condición de pago).
+const ALQ_MES: Record<string, { refs: string[]; vence: string }> = {
+  "2026-11": { refs: ["Alquiler depto Mendoza 2776 - Noviembre 2026", "Alquiler galpón Gutenberg 1733 - Noviembre 2026"], vence: "2026-11-10" },
+};
+async function alquiler_mes(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const a = ALQ_MES[String(body.mes || "")];
+  if (!a) return { ok: false, error: "mes fuera de la tabla ALQ_MES" };
+  const ms = await ex("account.move", "search_read", [[["ref", "in", a.refs], ["company_id", "=", C], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["id", "name", "ref", "state", "invoice_date_due", "amount_total", "journal_id"] }) as Rec[];
+  const out: Rec[] = [];
+  for (const m of ms) {
+    if (m2o(m.journal_id) !== 56) { out.push({ ref: m.ref, error: "no es del diario Compras sin comprobante" }); continue; }
+    if (dry) { out.push({ ref: m.ref, estado: m.state, vence: m.invoice_date_due, a: a.vence, importe: m.amount_total }); continue; }
+    if (m.state === "draft") { await ex("account.move", "write", [[m.id], { invoice_date_due: a.vence }]); await ex("account.move", "action_post", [[m.id]]); }
+    out.push((await ex("account.move", "read", [[m.id], ["name", "ref", "state", "invoice_date_due", "amount_total"]]) as Rec[])[0]);
+  }
+  return { ok: true, dry_run: dry, facturas: out };
+}
+
 // Lote "lisandro_cierre" (6-nov-2026): Diego pide que los $20.000 de diferencia "no existan" y que el alquiler dé 0,
 // sin cargar ningún gasto aparte. Se anula la factura de comida CSC/2026/09/0003 (cargada por error) y el descuento
 // de la parrilla (Pagos internos, no es plata real) queda en $30.000, que es lo que cierra la cuenta con los pagos reales.
@@ -1337,6 +1356,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "alquiler_mes") return new Response(JSON.stringify(await alquiler_mes(body)), { headers: h });
     if (body.lote === "lisandro_cierre") return new Response(JSON.stringify(await lisandro_cierre(body)), { headers: h });
     if (body.lote === "conciliar_neto") return new Response(JSON.stringify(await conciliar_neto(body)), { headers: h });
     if (body.lote === "lisandro_ajuste") return new Response(JSON.stringify(await lisandro_ajuste(body)), { headers: h });
