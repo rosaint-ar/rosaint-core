@@ -1,3 +1,4 @@
+import {simpleApprovalSummary} from './approval-simple.ts';
 import {accessCreationError} from './access-error.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
 import { admin, kw, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
@@ -329,6 +330,7 @@ async function plan(a: any, b: any) {
   )
     throw new Failure("Lista o comercial no permitido.");
   const o = await look(a.datos);
+  if(b.via_simple===true){const summary=simpleApprovalSummary({...a,analisis:{...a.analisis,odoo:o}});if(!summary.available||b.actualizar_condiciones===true)throw new Failure('La solicitud requiere revisión: '+(summary.reason||'cambiaron las condiciones.'),409);}
   if (o.fichas.length > 1 || o.fichas.some((p: any) => !p.active))
     throw new Failure(
       "Resolvé las fichas duplicadas o archivadas en Odoo antes de aprobar.",
@@ -790,6 +792,7 @@ async function handle(req: Request, b: any) {
   if (b.accion === "detalle")
     return {
       solicitud: a,
+      resumen: simpleApprovalSummary(a),
       eventos: await db(
         "portal_altas_eventos?alta_id=eq." + enc(a.id) + "&order=creada.asc",
       ),
