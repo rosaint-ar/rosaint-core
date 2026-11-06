@@ -1,5 +1,6 @@
 import {simpleApprovalSummary} from './approval-simple.ts';
 import {accessCreationError} from './access-error.ts';
+import {accessLink} from './access-link.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
 import { admin, kw, lookupLogin, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
 import { consultarArca, diagnosticoArca } from "./arca.ts";
@@ -795,6 +796,11 @@ async function handle(req: Request, b: any) {
   if (b.accion === "probar")
     return { ensayo: true, analisis: await analyze(validate(b.datos)) };
   const a = await row(b.id);
+  if(b.accion==='generar_enlace'){
+    const link=await accessLink(a,b.ensayo===true);
+    if(!b.ensayo)await event(a.id,actor,'enlace_acceso_generado',{user_id:link.usuario_id,horas:link.horas});
+    return link;
+  }
   if (b.accion === "detalle")
     return {
       solicitud: a,

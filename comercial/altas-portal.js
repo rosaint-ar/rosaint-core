@@ -60,6 +60,9 @@ ${!s.resume?'<details class="alta-extra"><summary>No aprobar esta solicitud</sum
     const a=r.solicitud;
     $('#detalle').innerHTML=`<article class="alta-panel alta-simple"><p class="eyebrow">Aprobada</p><h2>${e(a.datos.razon)}</h2><p class="alta-simple-contact">${e(a.email)}</p><div class="alta-match"><span aria-hidden="true">✓</span><div><strong>Acceso habilitado</strong><p>La aprobación quedó registrada en la ficha del cliente.</p></div></div><p class="alta-preserve">${a.resultado?.datos_actualizados?'Se aplicaron los datos seleccionados.':'Se conservaron los datos de la ficha.'}${a.resultado?.clave_aplicada?' El cliente puede usar la contraseña que eligió al registrarse.':''}${a.resultado?.aviso_acceso==='en_cola'?' El aviso de acceso quedó preparado para envío.':''}</p><details class="alta-extra"><summary>Ver resolución e historial</summary><p>Ficha Odoo: ${a.resultado?.partner_id||'—'} · Usuario: ${a.resultado?.user_id||'—'}</p><ul class="alta-history">${r.eventos.map(v=>`<li>${new Date(v.creada).toLocaleString('es-AR')} · ${e(v.accion.replaceAll('_',' '))} · ${e(v.actor)}</li>`).join('')}</ul></details></article>`;
   }
+  function accessLinkPanel(){
+    return `<section class="alta-access-link"><h3>Crear una nueva contraseña</h3><p>Generá un enlace personal para compartir con este cliente por WhatsApp. No tiene que solicitar ni esperar un correo.</p><button class="btn" data-action="generar-enlace">Generar enlace de acceso</button><div id="enlace-acceso" aria-live="polite"></div></section>`;
+  }
   async function api(accion, data = {}) {
     const {
       data: { session },
@@ -149,7 +152,7 @@ ${!s.resume?'<details class="alta-extra"><summary>No aprobar esta solicitud</sum
       closed = ["aprobada", "rechazada", "aprobando"].includes(a.estado),
       saved = a.aprobacion || {};
     list();
-    if(!manual&&a.estado==='aprobada'){resolvedView(r);return;}
+    if(!manual&&a.estado==='aprobada'){resolvedView(r);$('#detalle .alta-extra').insertAdjacentHTML('beforebegin',accessLinkPanel());return;}
     if(!manual&&!refreshError&&r.resumen?.available){simpleView(r);notice('Solicitud lista para decidir.');return;}
     const pairs = [
       [a.datos.documento_tipo || "CUIT", a.cuit],
@@ -229,6 +232,18 @@ ${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación in
     const b = ev.target.closest("button");
     if (!b) return;
     task(async () => {
+      if(b.dataset.action==='generar-enlace'){
+        notice('Generando el enlace personal en Odoo…');
+        const r=await api('generar_enlace',{id:selected});
+        $('#enlace-acceso').innerHTML=`<label for="enlace-acceso-url">Enlace para ${e(current.solicitud.email)}</label><div class="alta-link-copy"><input id="enlace-acceso-url" type="text" readonly autocomplete="off" spellcheck="false" value="${e(r.url)}"><button class="btn btn-primary" data-action="copiar-enlace">Copiar enlace</button></div><p class="alta-link-note">Válido durante ${e(r.horas)} horas. Se invalida al usarlo o al iniciar sesión. Compartilo sólo con este cliente.</p>`;
+        notice('Enlace listo para copiar. No se envió ningún correo.');return;
+      }
+      if(b.dataset.action==='copiar-enlace'){
+        const field=$('#enlace-acceso-url');
+        try{await navigator.clipboard.writeText(field.value);notice('Enlace copiado. Ya podés pegarlo en el chat del cliente.');}
+        catch{field.focus();field.select();notice('El enlace quedó seleccionado. Copialo para enviarlo al cliente.');}
+        return;
+      }
       if(b.dataset.action==='manual'){await detail(selected,true,true);return;}
       if(b.dataset.action==='resumen'){await detail(selected,false,true);return;}
       if(b.dataset.action==='simple'){

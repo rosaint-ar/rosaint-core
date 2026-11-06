@@ -47,7 +47,7 @@ const choices=()=>({accion:'aprobar',id:alta.id,lista_id:32,comercial_id:2,ident
 await check('CUIT inválido y repetido rechazados',()=>{assert.equal(validCuit('30000000008'),false);assert.equal(validCuit('00000000000'),false);assert.equal(validCuit(datos.cuit),true);});
 await check('Todos los públicos admitidos',()=>{for(const tipo of ['profesional','revendedor','mayorista','academia','otro'])assert.equal(validate({...datos,tipo}).tipo,tipo);});
 await check('No admitir rubros de EyG',()=>assert.throws(()=>validate({...datos,tipo:'farmacia'})));
-await check('Anónimo no puede listar ni aprobar',async()=>{for(const accion of ['listar','aprobar','instalar','instalar_arca','diagnostico_configuracion','archivo','rechazar','diagnostico'])assert.equal((await call({accion,id:alta.id},false)).status,403);});
+await check('Anónimo no puede listar ni aprobar',async()=>{for(const accion of ['generar_enlace','listar','aprobar','instalar','instalar_arca','diagnostico_configuracion','archivo','rechazar','diagnostico'])assert.equal((await call({accion,id:alta.id},false)).status,403);});
 await check('Sesión ajena tampoco puede aprobar',async()=>{const r=await handler(new Request('https://sb.test/functions/v1/portal-alta',{method:'POST',headers:{authorization:'Bearer intruso'},body:JSON.stringify(choices())}));assert.equal(r.status,403);});
 await check('Origen ajeno bloqueado',async()=>assert.equal((await call({accion:'enviar',datos:{...datos,condicion_iva:'MONO'},clave:'PruebaSegura123',acepto:true},false,'https://evil.test')).status,403));
 await check('Sin consentimiento no se guarda',async()=>assert.equal((await call({accion:'enviar',datos},false)).status,400));
