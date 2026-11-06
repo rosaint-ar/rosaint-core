@@ -894,6 +894,36 @@ async function aportes_titular(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, log };
 }
 
+// Lote "pago_fecha" (6-nov-2026): corrige la fecha de pagos de proveedor ya conciliados, a la fecha real de la
+// transferencia (desvincula, pasa a borrador, cambia fecha y memo, publica y vuelve a vincular con las mismas facturas).
+const PAGOS_FECHA: Record<string, { fecha: string; memo: string }> = {
+  "PBNK2/2026/00877": { fecha: "2026-06-19", memo: "FA-C 00002-00000034 · alquiler depto · transf. MP a Lisandro Redondo del 19/06" },
+  "PBNK2/2026/00876": { fecha: "2026-06-29", memo: "FA-C 00002-00000035 · alquiler depto · transf. MP a Lisandro Redondo del 29/06" },
+  "PBNK2/2026/00878": { fecha: "2026-07-10", memo: "FA-C 00002-00000042 · alquiler depto · transf. MP a Lisandro Redondo del 10/07" },
+};
+async function pago_fecha(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const out: Rec[] = [];
+  for (const [nombre, n] of Object.entries(PAGOS_FECHA)) {
+    const p = (await ex("account.payment", "search_read", [[["name", "=", nombre], ["company_id", "=", C]]], { fields: ["id", "date", "amount", "state", "move_id"] }) as Rec[])[0];
+    if (!p) { out.push({ pago: nombre, error: "no existe" }); continue; }
+    if (p.date === n.fecha) { out.push({ pago: nombre, ya_estaba: n.fecha }); continue; }
+    const lp = (await ex("account.move.line", "search_read", [[["move_id", "=", m2o(p.move_id)], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id", "matched_credit_ids"] }) as Rec[])[0];
+    const parc = (lp.matched_credit_ids as number[]).length ? await ex("account.partial.reconcile", "read", [lp.matched_credit_ids, ["credit_move_id"]]) as Rec[] : [];
+    const contra = parc.map(x => m2o(x.credit_move_id) as number);
+    const fila: Rec = { pago: nombre, importe: p.amount, de: p.date, a: n.fecha, vinculado_con: contra.length };
+    if (dry) { out.push(fila); continue; }
+    if (contra.length) await ex("account.move.line", "remove_move_reconcile", [[lp.id]]);
+    await ex("account.payment", "action_draft", [[p.id]]);
+    await ex("account.payment", "write", [[p.id], { date: n.fecha, memo: n.memo }]);
+    await ex("account.payment", "action_post", [[p.id]]);
+    const nl = (await ex("account.move.line", "search_read", [[["payment_id", "=", p.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
+    if (contra.length) await ex("account.move.line", "reconcile", [[nl.id, ...contra]]);
+    const f = (await ex("account.payment", "read", [[p.id], ["date", "state", "is_reconciled"]]) as Rec[])[0];
+    out.push({ ...fila, estado: f.state, fecha: f.date, conciliado: f.is_reconciled });
+  }
+  return { ok: true, dry_run: dry, pagos: out };
+}
+
 // Lote "conciliar_sueldos" (5-nov-2026): vincula cada pago de sueldo/cadetería con el devengamiento del MES que
 // dice su referencia ("Pago parcial Daiana Mayo" → "Sueldos Mayo 2026"), persona por persona. Si los pagos del mes
 // suman lo devengado, el mes queda conciliado completo; si suman menos (el mes en curso), queda parcial con el saldo
@@ -1208,6 +1238,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "pago_fecha") return new Response(JSON.stringify(await pago_fecha(body)), { headers: h });
     if (body.lote === "conciliar_sueldos") return new Response(JSON.stringify(await conciliar_sueldos(body)), { headers: h });
     if (body.lote === "sueldo_ajuste") return new Response(JSON.stringify(await sueldo_ajuste(body)), { headers: h });
     if (body.lote === "aut_mes") return new Response(JSON.stringify(await aut_mes(body)), { headers: h });
