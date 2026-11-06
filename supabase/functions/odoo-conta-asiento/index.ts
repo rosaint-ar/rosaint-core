@@ -894,6 +894,32 @@ async function aportes_titular(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, log };
 }
 
+// Lote "sueldo_ajuste" (5-nov-2026): corrige el importe de una persona dentro del devengamiento mensual de sueldos
+// (un solo asiento "Sueldos <Mes> <Año>" con los tres), sin crear otro asiento: pasa a borrador, cambia el renglón
+// de gasto y el de Sueldos a pagar de esa persona y vuelve a publicar. Solo si ningún renglón está conciliado.
+const SUELDO_AJUSTES: Record<string, { asiento: string; partner: number; de: number; a: number; detalle: string }> = {
+  "daiana_2026_10": { asiento: "Vario/2026/10/0010", partner: 2277, de: 570000, a: 646000, detalle: "Sueldos Octubre 2026 · 95 h × $6.800 (aumento desde octubre)" },
+};
+async function sueldo_ajuste(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const a = SUELDO_AJUSTES[String(body.nombre || "")];
+  if (!a) return { ok: false, error: "ajuste fuera de la tabla SUELDO_AJUSTES" };
+  const mv = await ex("account.move", "search_read", [[["name", "=", a.asiento], ["company_id", "=", C]]], { fields: ["id", "state", "ref"] }) as Rec[];
+  if (mv.length !== 1) return { ok: false, error: "no encuentro el asiento" };
+  const ls = await ex("account.move.line", "search_read", [[["move_id", "=", mv[0].id], ["partner_id", "=", a.partner]]], { fields: ["id", "account_id", "debit", "credit", "reconciled"] }) as Rec[];
+  const gasto = ls.find(l => (l.debit as number) > 0), pasivo = ls.find(l => (l.credit as number) > 0 && m2o(l.account_id) === 717);
+  if (ls.length !== 2 || !gasto || !pasivo) return { ok: false, error: "los renglones de la persona no están como se esperaba", ls };
+  if (r2(gasto.debit as number) === a.a && r2(pasivo.credit as number) === a.a) return { ok: true, ya_estaba: true };
+  if (r2(gasto.debit as number) !== a.de || r2(pasivo.credit as number) !== a.de) return { ok: false, error: "el importe actual no es el esperado", ls };
+  if (ls.some(l => l.reconciled)) return { ok: false, error: "hay renglones conciliados" };
+  if (dry) return { ok: true, dry_run: true, asiento: a.asiento, de: a.de, a: a.a, diferencia: r2(a.a - a.de) };
+  if (mv[0].state === "posted") await ex("account.move", "button_draft", [[mv[0].id]]);
+  await ex("account.move", "write", [[mv[0].id], { line_ids: [[1, gasto.id, { debit: a.a, name: a.detalle }], [1, pasivo.id, { credit: a.a, name: a.detalle }]] }]);
+  await ex("account.move", "action_post", [[mv[0].id]]);
+  const fin = await ex("account.move", "read", [[mv[0].id], ["name", "state", "amount_total"]]) as Rec[];
+  const nl = await ex("account.move.line", "read", [[gasto.id, pasivo.id], ["debit", "credit", "name"]]) as Rec[];
+  return { ok: fin[0].state === "posted", asiento: fin[0], renglones: nl };
+}
+
 // Lote "aut_mes" (5-nov-2026): aporte mensual de autónomos del titular que va POR FUERA de los planes
 // (de octubre 2026 en adelante, vence el día 5 del mes siguiente). Por cada mes: devengamiento al último día
 // del mes (Debe 5.3.1.01.150 / Haber 2.1.3.05.010) y, si ya se pagó, el pago desde el diario indicado
@@ -1128,6 +1154,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "sueldo_ajuste") return new Response(JSON.stringify(await sueldo_ajuste(body)), { headers: h });
     if (body.lote === "aut_mes") return new Response(JSON.stringify(await aut_mes(body)), { headers: h });
     if (body.lote === "honorarios") return new Response(JSON.stringify(await honorarios(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
