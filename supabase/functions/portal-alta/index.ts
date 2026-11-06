@@ -1,3 +1,4 @@
+import {accessCreationError} from './access-error.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
 import { admin, kw, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
 import { consultarArca, diagnosticoArca } from "./arca.ts";
@@ -5,7 +6,7 @@ import { configDiagnostic } from "./config-diagnostic.ts";
 import { install } from "./install.ts";
 import { encrypt, readPassword, validPassword, passwordContext } from "./secrets.ts";
 import { installArcaSigner } from './arca-signer.ts';
-import {contactChanges,planContactUpdate,selectedContactFields} from './customer-update.ts';
+import {contactChanges,planContactUpdate,selectedContactFields,sameApproval} from './customer-update.ts';
 
 const TYPES = {
   cosmetologia: "Cosmetología / Cosmiatría",
@@ -316,7 +317,7 @@ async function plan(a: any, b: any) {
     opts.revision.length > 1500
   )
     throw new Failure("Registrá la revisión de identidad y situación fiscal.");
-  if (a.aprobacion && JSON.stringify(a.aprobacion) !== JSON.stringify(opts))
+  if (a.aprobacion && !sameApproval(a.aprobacion, opts))
     throw new Failure(
       "Hay una aprobación parcial. Reintentá con las mismas condiciones.",
       409,
@@ -589,7 +590,7 @@ async function approve(a: any, b: any, actor: string) {
             mail_notrack: true,
           },
         },
-      ).catch(() => { throw new Failure('No se pudo crear el acceso. Reintentá desde la aprobación incompleta.'); });
+      ).catch((e) => { throw new Failure(accessCreationError(e)); });
       u = { id, active: false, share: true, partner_id: [pid] };
       if(chosenPassword)r.clave_aplicada=true;
     } else if(chosenPassword) {
