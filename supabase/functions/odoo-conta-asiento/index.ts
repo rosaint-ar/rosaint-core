@@ -894,6 +894,60 @@ async function aportes_titular(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, log };
 }
 
+// Lote "conciliar_sueldos" (5-nov-2026): vincula cada pago de sueldo/cadetería con el devengamiento del MES que
+// dice su referencia ("Pago parcial Daiana Mayo" → "Sueldos Mayo 2026"), persona por persona. Si los pagos del mes
+// suman lo devengado, el mes queda conciliado completo; si suman menos (el mes en curso), queda parcial con el saldo
+// pendiente en el devengamiento. Nunca vincula pagos que suman MÁS que el mes ni pagos sin mes: los informa.
+// Además cierra enteras las cuentas que netean 0 (deuda vieja de cadeterías y Autónomos a pagar que pasó a los planes).
+// Se puede correr todos los meses después de cargar los pagos.
+const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesDe = (t: unknown) => { const s = String(t || "").toLowerCase(); const i = MESES_ES.findIndex(m => s.includes(m)); return i < 0 ? 0 : i + 1; };
+async function conciliar_sueldos(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const out: Rec[] = []; const avisos: Rec[] = [];
+  const abiertos = async (cta: number) => await ex("account.move.line", "search_read", [[["account_id", "=", cta], ["company_id", "=", C], ["parent_state", "=", "posted"], ["reconciled", "=", false], ["amount_residual", "!=", 0]]],
+    { fields: ["id", "partner_id", "ref", "date", "debit", "credit", "amount_residual", "move_id"], order: "date, id" }) as Rec[];
+  const nombre = (l: Rec) => Array.isArray(l.partner_id) ? (l.partner_id as unknown[])[1] : "(sin contacto)";
+  // 1) por mes: Sueldos a pagar (717) y Cadeterías a pagar (944)
+  for (const cta of [717, 944]) {
+    const ls = await abiertos(cta); const porP: Record<string, Rec[]> = {};
+    for (const l of ls) (porP[String(m2o(l.partner_id) || 0)] ||= []).push(l);
+    for (const lp of Object.values(porP)) {
+      const devs = lp.filter(l => (l.amount_residual as number) < 0), pagos = lp.filter(l => (l.amount_residual as number) > 0);
+      const ultimo = devs.length ? devs[devs.length - 1].id : 0;
+      const grupos = new Map<number, Rec[]>();
+      for (const p of pagos) {
+        const m = mesDe(p.ref); const y = String(p.date).slice(0, 4);
+        // el devengamiento del mismo mes, del año del pago o del anterior (diciembre se paga en enero)
+        const d = devs.filter(x => mesDe(x.ref) === m && (String(x.date).slice(0, 4) === y || Number(String(x.date).slice(0, 4)) === Number(y) - 1)).pop();
+        if (!m || !d) { avisos.push({ cuenta: cta, persona: nombre(p), pago_sin_mes: p.ref, fecha: p.date, importe: p.amount_residual }); continue; }
+        (grupos.get(d.id as number) || grupos.set(d.id as number, []).get(d.id as number)!).push(p);
+      }
+      for (const d of devs) {
+        const ps = grupos.get(d.id as number) || []; if (!ps.length) continue;
+        const debe = r2(-(d.amount_residual as number)), pagado = r2(ps.reduce((a, p) => a + (p.amount_residual as number), 0));
+        const fila: Rec = { cuenta: cta, persona: nombre(d), mes: d.ref, devengado: debe, pagado, pagos: ps.length, queda: r2(debe - pagado) };
+        if (pagado > debe) { avisos.push({ ...fila, error: "los pagos del mes suman más que lo devengado: no se vincula" }); continue; }
+        if (pagado < debe && d.id !== ultimo) { avisos.push({ ...fila, error: "mes viejo con pagos de menos: no se vincula, revisar" }); continue; }
+        if (!dry) await ex("account.move.line", "reconcile", [[d.id, ...ps.map(p => p.id)]]);
+        out.push({ ...fila, estado: pagado === debe ? "completo" : "parcial" });
+      }
+    }
+  }
+  // 2) cuentas que se cierran enteras (netean 0 por contacto): deuda vieja de cadeterías (945) y Autónomos a pagar (951)
+  for (const cta of [945, 951]) {
+    const ls = await abiertos(cta); const porP: Record<string, Rec[]> = {};
+    for (const l of ls) (porP[String(m2o(l.partner_id) || 0)] ||= []).push(l);
+    for (const lp of Object.values(porP)) {
+      const neto = r2(lp.reduce((a, l) => a + (l.amount_residual as number), 0));
+      const fila: Rec = { cuenta: cta, persona: nombre(lp[0]), renglones: lp.length, neto };
+      if (neto !== 0 || lp.length < 2) { avisos.push({ ...fila, error: "no netea 0: no se vincula" }); continue; }
+      if (!dry) await ex("account.move.line", "reconcile", [lp.map(l => l.id)]);
+      out.push({ ...fila, estado: "completo" });
+    }
+  }
+  return { ok: true, dry_run: dry, vinculados: out, avisos };
+}
+
 // Lote "sueldo_ajuste" (5-nov-2026): corrige el importe de una persona dentro del devengamiento mensual de sueldos
 // (un solo asiento "Sueldos <Mes> <Año>" con los tres), sin crear otro asiento: pasa a borrador, cambia el renglón
 // de gasto y el de Sueldos a pagar de esa persona y vuelve a publicar. Solo si ningún renglón está conciliado.
@@ -1154,6 +1208,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "conciliar_sueldos") return new Response(JSON.stringify(await conciliar_sueldos(body)), { headers: h });
     if (body.lote === "sueldo_ajuste") return new Response(JSON.stringify(await sueldo_ajuste(body)), { headers: h });
     if (body.lote === "aut_mes") return new Response(JSON.stringify(await aut_mes(body)), { headers: h });
     if (body.lote === "honorarios") return new Response(JSON.stringify(await honorarios(body)), { headers: h });
