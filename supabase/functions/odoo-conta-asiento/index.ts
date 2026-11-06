@@ -894,6 +894,59 @@ async function aportes_titular(body: Rec): Promise<Rec> {
   return { ok: true, dry_run: dry, log };
 }
 
+// Lote "aut_mes" (5-nov-2026): aporte mensual de autónomos del titular que va POR FUERA de los planes
+// (de octubre 2026 en adelante, vence el día 5 del mes siguiente). Por cada mes: devengamiento al último día
+// del mes (Debe 5.3.1.01.150 / Haber 2.1.3.05.010) y, si ya se pagó, el pago desde el diario indicado
+// (Debe 2.1.3.05.010 / Haber cuenta del diario), conciliados entre sí. Sumar cada mes nuevo a la tabla.
+const AUT_MESES: Record<string, { importe: number; devengo: string; pago?: { fecha: string; diario: number; importe: number; detalle: string } }> = {
+  "2026-10": { importe: 156541.75, devengo: "2026-10-31", pago: { fecha: "2026-11-05", diario: 42, importe: 156541.75, detalle: "Mercado Pago op. 186951616991" } },
+};
+async function aut_mes(body: Rec): Promise<Rec> {
+  const dry = !!body.dry_run; const mes = String(body.mes || ""); const a = AUT_MESES[mes];
+  if (!a) return { ok: false, error: "mes fuera de la tabla AUT_MESES" };
+  const [y, m] = mes.split("-"); const etq = `${m}/${y}`;
+  const acc = await ex("account.account", "search_read", [[["code", "in", ["5.3.1.01.150", "2.1.3.05.010"]], ["company_ids", "in", [C]]]], { fields: ["id", "code"] }) as Rec[];
+  const id: Rec = {}; for (const x of acc) id[x.code as string] = x.id;
+  if (!id["5.3.1.01.150"] || !id["2.1.3.05.010"]) return { ok: false, error: "faltan cuentas de aportes" };
+  const L = (ac: unknown, nm: string, d: number, h: number) => [0, 0, { account_id: ac, name: nm, debit: d, credit: h, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }];
+  const log: Rec[] = []; const lineas: number[] = [];
+  const ref1 = `AUTONOMOS-${mes}`;
+  let ya = await ex("account.move", "search_read", [[["ref", "=", ref1], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["id", "name"] }) as Rec[];
+  if (ya.length) log.push({ ya_existia: ya[0].name });
+  else if (dry) log.push({ devengo: ref1, fecha: a.devengo, importe: a.importe });
+  else {
+    const diario = await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "in", ["MISC", "VARIO", "Vario"]]]], { fields: ["id"] }) as Rec[];
+    const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: diario[0].id, date: a.devengo, ref: ref1, company_id: C, line_ids: [
+      L(id["5.3.1.01.150"], `Aporte de autónomos del titular ${etq}`, a.importe, 0),
+      L(id["2.1.3.05.010"], `Aporte de autónomos ${etq} (vence el 5 del mes siguiente)`, 0, a.importe)] }]) as number;
+    await ex("account.move", "action_post", [[mid]]);
+    ya = await ex("account.move", "read", [[mid], ["id", "name", "date", "state"]]) as Rec[]; log.push({ devengo: ya[0] });
+  }
+  if (ya.length) lineas.push(...(await ex("account.move.line", "search_read", [[["move_id", "=", ya[0].id], ["account_id", "=", id["2.1.3.05.010"]]]], { fields: ["id"] }) as Rec[]).map(l => l.id as number));
+  if (a.pago) {
+    if (r2(a.pago.importe) !== r2(a.importe)) return { ok: false, error: "el pago no coincide con el aporte (sumar intereses a mano)" };
+    const ref2 = `${ref1}-PAGO`;
+    let yp = await ex("account.move", "search_read", [[["ref", "=", ref2], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["id", "name"] }) as Rec[];
+    if (yp.length) log.push({ ya_existia: yp[0].name });
+    else if (dry) log.push({ pago: ref2, fecha: a.pago.fecha, diario: a.pago.diario, importe: a.pago.importe });
+    else {
+      const j = (await ex("account.journal", "read", [[a.pago.diario], ["default_account_id"]]) as Rec[])[0];
+      const g = `Pago VEP autónomos ${mes} · ${a.pago.detalle}`;
+      const mid = await ex("account.move", "create", [{ move_type: "entry", journal_id: a.pago.diario, date: a.pago.fecha, ref: ref2, company_id: C, line_ids: [
+        L(id["2.1.3.05.010"], g, a.pago.importe, 0), L(m2o(j.default_account_id), g, 0, a.pago.importe)] }]) as number;
+      await ex("account.move", "action_post", [[mid]]);
+      yp = await ex("account.move", "read", [[mid], ["id", "name", "date", "state"]]) as Rec[]; log.push({ pago: yp[0] });
+    }
+    if (yp.length) lineas.push(...(await ex("account.move.line", "search_read", [[["move_id", "=", yp[0].id], ["account_id", "=", id["2.1.3.05.010"]]]], { fields: ["id"] }) as Rec[]).map(l => l.id as number));
+  }
+  if (!dry && lineas.length === 2) {
+    const st = await ex("account.move.line", "read", [lineas, ["reconciled"]]) as Rec[];
+    if (!st.every(s => s.reconciled)) await ex("account.move.line", "reconcile", [lineas]);
+    log.push({ conciliado: (await ex("account.move.line", "read", [lineas, ["reconciled"]]) as Rec[]).every(s => s.reconciled) });
+  }
+  return { ok: true, dry_run: dry, mes, log };
+}
+
 async function compras_b(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const b = COMPRAS_B[String(body.nombre || "")];
   if (!b) return { ok: false, error: "par fuera de la tabla" };
@@ -1075,6 +1128,7 @@ Deno.serve(async (req: Request) => {
     if (body.lote === "compras_b") return new Response(JSON.stringify(await compras_b(body)), { headers: h });
     if (body.lote === "compras") return new Response(JSON.stringify(await compras(body)), { headers: h });
     if (body.lote === "honorarios_previos") return new Response(JSON.stringify(await honorarios_previos(body)), { headers: h });
+    if (body.lote === "aut_mes") return new Response(JSON.stringify(await aut_mes(body)), { headers: h });
     if (body.lote === "honorarios") return new Response(JSON.stringify(await honorarios(body)), { headers: h });
     if (body.lote === "combustible_internos") return new Response(JSON.stringify(await combustible_internos(body)), { headers: h });
     return new Response(JSON.stringify({ ok: false, error: "lote desconocido" }), { headers: h });
