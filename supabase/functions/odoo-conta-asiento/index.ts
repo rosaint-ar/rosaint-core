@@ -112,15 +112,27 @@ const TICKETS: Record<string, T> = {
   "TF-A 00019-00042776": { neto: 34621.83, iva: 7270.58, interno: 8107.65, perc: 0, total: 50000.06 },
 };
 // Tickets nuevos a cargar con el método nuevo (datos del ticket impreso)
-type N = { partner: number; diario: number; tipo_doc: number; numero: string; fecha: string; contable?: string; neto: number; iva: number; interno: number; perc: number; total: number };
+type N = { partner: number; alta?: { name: string; vat: string; street?: string; city?: string }; diario: number; tipo_doc: number; numero: string; fecha: string; contable?: string; neto: number; iva: number; interno: number; perc: number; total: number };
 const NUEVOS: Record<string, N> = {
   // Monfran 22/09/2026 (no estaba cargado): se imputa en OCTUBRE (septiembre ya presentado). MP 22/09 $50.000 «appypfcomb».
   "TF-A 00019-00043279": { partner: 1491, diario: 33, tipo_doc: 56, numero: "00019-00043279", fecha: "2026-09-22", contable: "2026-10-01", neto: 34605.83, iva: 7267.22, interno: 8126.96, perc: 0, total: 50000.01 },
   // Saby Hermanos 18/10/2026: es FACTURA A electrónica (cód. 001, CAE 86428318132439), no tique. MP 18/10 $117.003,92.
   "FA-A 00021-00172444": { partner: 2319, diario: 33, tipo_doc: 1, numero: "00021-00172444", fecha: "2026-10-18", neto: 82300.52, iva: 17283.11, interno: 17420.29, perc: 0, total: 117003.92 },
+  // Servifranck (YPF, Franck, Santa Fe) 18/10/2026 20:23: neto 51.713,89 · IVA 10.859,92 · "10 Impuesto interno" 11.713,57 + "07 IDC" 717,52
+  // (otros tributos 12.431,09, todo a internos como el resto) · total 75.004,90. MP 18/10 $75.004,89 «Appypf 00930» + $0,01 en efectivo.
+  "TF-A 00007-00089551": { partner: 0, alta: { name: "Servifranck S.R.L.", vat: "30-58941076-5", street: "San Martín 1311", city: "Franck" }, diario: 33, tipo_doc: 56, numero: "00007-00089551", fecha: "2026-10-18", neto: 51713.89, iva: 10859.92, interno: 12431.09, perc: 0, total: 75004.9 },
   // Pan American, foto del 13-oct-2026: neto 35.543,11 · IVA 7.464,05 · "10 Impuesto interno" 6.992,82 · "09 IVA RI" 1.066,29 · total 51.066,27
   "TF-A 05422-00002555": { partner: 892, diario: 33, tipo_doc: 56, numero: "05422-00002555", fecha: "2026-10-01", neto: 35543.11, iva: 7464.05, interno: 6992.82, perc: 1066.29, total: 51066.27 },
 };
+// Proveedor del ticket: si viene con alta y no existe (por CUIT), se crea como RI.
+async function partnerDe(n: N, dry: boolean): Promise<number> {
+  if (n.partner) return n.partner;
+  if (!n.alta) return 0;
+  const ya = await ex("res.partner", "search_read", [[["vat", "in", [n.alta.vat, n.alta.vat.replace(/[^0-9]/g, "")]]]], { fields: ["id"], context: { active_test: false } }) as Rec[];
+  if (ya.length) return ya[0].id as number;
+  if (dry) return 0;
+  return await ex("res.partner", "create", [{ name: n.alta.name, vat: n.alta.vat, is_company: true, l10n_latam_identification_type_id: 4, l10n_ar_afip_responsibility_type_id: 1, country_id: 10, supplier_rank: 1, street: n.alta.street || false, city: n.alta.city || false }]) as number;
+}
 const TAX_IVA = 188, TAX_INT = 149, TAX_PERC = 195, PROD_GRAV = 256, CTA_MOVILIDAD = 766;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const m2o = (v: unknown) => Array.isArray(v) ? (v as unknown[])[0] as number : null;
@@ -155,12 +167,13 @@ async function combustible_internos(body: Rec): Promise<Rec> {
   if (body.paso === "cargar") {
     const n = NUEVOS[String(body.nombre || "")];
     if (!n) return { ok: false, error: "ticket fuera de la tabla de nuevos" };
-    const dup = await ex("account.move", "search_read", [[["partner_id", "=", n.partner], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["name", "state"] }) as Rec[];
+    const pid = await partnerDe(n, dry);
+    const dup = pid ? await ex("account.move", "search_read", [[["partner_id", "=", pid], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["name", "state"] }) as Rec[] : [];
     if (dup.length) return { ok: false, error: "ya está cargado", dup };
     if (r2(n.neto * 0.21) !== n.iva || r2(n.neto + n.iva + n.interno + n.perc) !== n.total) return { ok: false, error: "los importes del ticket no cierran", n };
     if (dry) return { ok: true, dry_run: true, a_cargar: n };
     const taxes = [TAX_IVA, TAX_INT, ...(n.perc ? [TAX_PERC] : [])];
-    const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: n.partner, journal_id: n.diario, l10n_latam_document_type_id: n.tipo_doc,
+    const id = await ex("account.move", "create", [{ move_type: "in_invoice", partner_id: pid, journal_id: n.diario, l10n_latam_document_type_id: n.tipo_doc,
       l10n_latam_document_number: n.numero, invoice_date: n.fecha, date: n.contable || n.fecha, company_id: C,
       invoice_line_ids: [[0, 0, { product_id: PROD_GRAV, name: "[GA06] Combustible – Neto gravado", quantity: 1, price_unit: n.neto, tax_ids: [[6, 0, taxes]] }]] }]) as number;
     const leerN = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
@@ -186,7 +199,7 @@ async function combustible_internos(body: Rec): Promise<Rec> {
   if (body.paso === "pagar") {
     const n = NUEVOS[String(body.nombre || "")];
     if (!n) return { ok: false, error: "ticket fuera de la tabla de nuevos" };
-    const mv = await ex("account.move", "search_read", [[["partner_id", "=", n.partner], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "=", "posted"]]], { fields: ["id", "name", "amount_total", "amount_residual", "payment_state"] }) as Rec[];
+    const mv = await ex("account.move", "search_read", [[["partner_id", "=", await partnerDe(n, true)], ["name", "ilike", n.numero], ["move_type", "=", "in_invoice"], ["state", "=", "posted"]]], { fields: ["id", "name", "amount_total", "amount_residual", "payment_state"] }) as Rec[];
     if (mv.length !== 1) return { ok: false, error: "no encuentro el ticket validado", mv };
     if (mv[0].payment_state !== "not_paid" || mv[0].amount_residual !== n.total) return { ok: false, error: "el ticket ya tiene pagos o no está por el total", ticket: mv[0] };
     if (dry) return { ok: true, dry_run: true, ticket: mv[0], pago: { diario: "Mercado Pago", fecha: n.fecha, importe: n.total } };
@@ -205,6 +218,8 @@ async function combustible_internos(body: Rec): Promise<Rec> {
       "47021": { neto: 79753.75, iva: 16748.29, interno: 14942.95, perc: 2392.61, total: 113837.6 },
       // Saby Hermanos 18/10: Factura A electrónica (cód. 001), total cobrado 117.003,92 (el papel suma 117.003,93: 1 centavo de redondeo en no gravados)
       "47025": { neto: 82300.52, iva: 17283.11, interno: 17420.29, perc: 0, total: 117003.92, tipo_doc: 1 },
+      // Pan American 03/11 (cargado a mano el 6-nov): la percepción "09 IVA RI" 2.399,03 quedó sumada a los internos (19.651,90)
+      "47055": { neto: 79967.78, iva: 16793.23, interno: 17252.87, perc: 2399.03, total: 116412.91 },
     };
     const id = Number(body.id); const e = AJ[String(id)];
     if (!e) return { ok: false, error: "ticket fuera de la tabla de ajustes" };
