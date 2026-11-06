@@ -43,6 +43,9 @@ async function rpc(service: string, method: string, args: unknown[]) {
     const kind=String(j.error?.data?.name||'');
     // Exception class only; never attach RPC arguments, credentials or traceback.
     if(/^[A-Za-z_][A-Za-z0-9_.]{0,120}$/.test(kind))Object.assign(error,{odooErrorType:kind});
+    // Retain only the recognized constraint category, never traceback data.
+    const frames=Array.from(String(j.error?.data?.debug||'').matchAll(/^\s*File "[^"\r\n]+", line \d+, in ([A-Za-z_][A-Za-z0-9_]*)\s*$/gm),m=>m[1]);
+    if(frames.includes('_check_login'))Object.assign(error,{odooLoginConflict:true});
     throw error;
   }
   return j.result;
@@ -71,6 +74,17 @@ export async function kw(
       },
     },
   ]);
+}
+// Login uniqueness is database-wide. Search only this login, using the service
+// user's existing companies, including archived access within that scope.
+export async function lookupLogin(login:string) {
+ const id=await serviceUserId();
+ const [service]=await kw('res.users','read',[[id]],{fields:['company_ids']});
+ const companies=Array.isArray(service?.company_ids)&&service.company_ids.length?service.company_ids:[COMPANY];
+ return rpc('object','execute_kw',[DB,id,KEY,'res.users','search_read',[[['login','=ilike',login]]],{
+  fields:['id','name','login','partner_id','active','share','company_id','company_ids'],limit:10,
+  context:{active_test:false,allowed_company_ids:companies,company_id:COMPANY},
+ }]);
 }
 export async function diagnostic() {
   const result: Record<string, unknown> = { odoo_url: OD, company_id: COMPANY };

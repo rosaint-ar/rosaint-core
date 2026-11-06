@@ -1,7 +1,7 @@
 import {simpleApprovalSummary} from './approval-simple.ts';
 import {accessCreationError} from './access-error.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
-import { admin, kw, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
+import { admin, kw, lookupLogin, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
 import { consultarArca, diagnosticoArca } from "./arca.ts";
 import { configDiagnostic } from "./config-diagnostic.ts";
 import { install } from "./install.ts";
@@ -230,7 +230,9 @@ async function look(d: any) {
     context: { active_test: false },
     limit: 50,
   });
-  return { fichas: partners, usuarios: users };
+  const globalLogin=await lookupLogin(d.email);
+  const uniqueUsers=new Map([...users,...globalLogin].map((u:any)=>[u.id,u]));
+  return { fichas: partners, usuarios: Array.from(uniqueUsers.values()) };
 }
 async function analyze(d: any) {
   const odoo = await look(d);
@@ -401,10 +403,12 @@ async function plan(a: any, b: any) {
       others.length
         ? "Revocar accesos anteriores confirmados"
         : "Conservar accesos ajenos sin cambios",
-      target?.active
-        ? "Conservar acceso existente al mismo correo"
-        : passwordAvailable || a.resultado?.clave_aplicada
-          ? "Habilitar acceso con la contraseña elegida y avisar por correo"
+      passwordAvailable || a.resultado?.clave_aplicada
+        ? (target?.active
+          ? "Actualizar el acceso existente con la contraseña elegida en esta solicitud y avisar por correo"
+          : "Habilitar acceso con la contraseña elegida y avisar por correo")
+        : target?.active
+          ? "Conservar acceso existente: no hay una contraseña pendiente vigente"
           : "Habilitar acceso y enviar enlace para crear contraseña (solicitud anterior o contraseña pendiente vencida)",
       "Guardar resolución y revisión en Core",
     ],
@@ -568,7 +572,9 @@ async function approve(a: any, b: any, actor: string) {
     }
     if (u && (!u.share || u.partner_id[0] !== pid))
       throw new Failure("El correo cambió de titular durante la aprobación.");
-    const chosenPassword=(!u?.active && !r.clave_aplicada) ? await readPassword(a) : null;
+    // The approved application's chosen password also replaces an existing
+    // portal user's password, after the identity/ownership checks above.
+    const chosenPassword=!r.clave_aplicada ? await readPassword(a) : null;
     if (!u) {
       const id = await kw(
         "res.users",
