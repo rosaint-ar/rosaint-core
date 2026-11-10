@@ -1,11 +1,14 @@
+import {simpleApprovalSummary} from './approval-simple.ts';
+import {accessCreationError} from './access-error.ts';
+import {accessLink} from './access-link.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
-import { admin, kw, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
+import { admin, kw, lookupLogin, diagnostic, SB, SERVICE, OD, COMPANY } from "./odoo.ts";
 import { consultarArca, diagnosticoArca } from "./arca.ts";
 import { configDiagnostic } from "./config-diagnostic.ts";
 import { install } from "./install.ts";
 import { encrypt, readPassword, validPassword, passwordContext } from "./secrets.ts";
 import { installArcaSigner } from './arca-signer.ts';
-import {contactChanges,planContactUpdate,selectedContactFields} from './customer-update.ts';
+import {contactChanges,planContactUpdate,selectedContactFields,sameApproval} from './customer-update.ts';
 
 const TYPES = {
   cosmetologia: "Cosmetología / Cosmiatría",
@@ -228,7 +231,9 @@ async function look(d: any) {
     context: { active_test: false },
     limit: 50,
   });
-  return { fichas: partners, usuarios: users };
+  const globalLogin=await lookupLogin(d.email);
+  const uniqueUsers=new Map([...users,...globalLogin].map((u:any)=>[u.id,u]));
+  return { fichas: partners, usuarios: Array.from(uniqueUsers.values()) };
 }
 async function analyze(d: any) {
   const odoo = await look(d);
@@ -316,7 +321,7 @@ async function plan(a: any, b: any) {
     opts.revision.length > 1500
   )
     throw new Failure("Registrá la revisión de identidad y situación fiscal.");
-  if (a.aprobacion && JSON.stringify(a.aprobacion) !== JSON.stringify(opts))
+  if (a.aprobacion && !sameApproval(a.aprobacion, opts))
     throw new Failure(
       "Hay una aprobación parcial. Reintentá con las mismas condiciones.",
       409,
@@ -328,6 +333,7 @@ async function plan(a: any, b: any) {
   )
     throw new Failure("Lista o comercial no permitido.");
   const o = await look(a.datos);
+  if(b.via_simple===true){const summary=simpleApprovalSummary({...a,analisis:{...a.analisis,odoo:o}});if(!summary.available||b.actualizar_condiciones===true)throw new Failure('La solicitud requiere revisión: '+(summary.reason||'cambiaron las condiciones.'),409);}
   if (o.fichas.length > 1 || o.fichas.some((p: any) => !p.active))
     throw new Failure(
       "Resolvé las fichas duplicadas o archivadas en Odoo antes de aprobar.",
@@ -398,10 +404,12 @@ async function plan(a: any, b: any) {
       others.length
         ? "Revocar accesos anteriores confirmados"
         : "Conservar accesos ajenos sin cambios",
-      target?.active
-        ? "Conservar acceso existente al mismo correo"
-        : passwordAvailable || a.resultado?.clave_aplicada
-          ? "Habilitar acceso con la contraseña elegida y avisar por correo"
+      passwordAvailable || a.resultado?.clave_aplicada
+        ? (target?.active
+          ? "Actualizar el acceso existente con la contraseña elegida en esta solicitud y avisar por correo"
+          : "Habilitar acceso con la contraseña elegida y avisar por correo")
+        : target?.active
+          ? "Conservar acceso existente: no hay una contraseña pendiente vigente"
           : "Habilitar acceso y enviar enlace para crear contraseña (solicitud anterior o contraseña pendiente vencida)",
       "Guardar resolución y revisión en Core",
     ],
@@ -565,7 +573,9 @@ async function approve(a: any, b: any, actor: string) {
     }
     if (u && (!u.share || u.partner_id[0] !== pid))
       throw new Failure("El correo cambió de titular durante la aprobación.");
-    const chosenPassword=(!u?.active && !r.clave_aplicada) ? await readPassword(a) : null;
+    // The approved application's chosen password also replaces an existing
+    // portal user's password, after the identity/ownership checks above.
+    const chosenPassword=!r.clave_aplicada ? await readPassword(a) : null;
     if (!u) {
       const id = await kw(
         "res.users",
@@ -578,7 +588,8 @@ async function approve(a: any, b: any, actor: string) {
             groups_id: [[6, 0, [10]]],
             company_id: COMPANY,
             company_ids: [[6, 0, [COMPANY]]],
-            active: false,
+            // Odoo propagates this flag to the linked partner during create.
+            active: true,
             ...(chosenPassword?{password:chosenPassword}:{}),
           },
         ],
@@ -589,8 +600,9 @@ async function approve(a: any, b: any, actor: string) {
             mail_notrack: true,
           },
         },
-      ).catch(() => { throw new Failure('No se pudo crear el acceso. Reintentá desde la aprobación incompleta.'); });
-      u = { id, active: false, share: true, partner_id: [pid] };
+      ).catch((e) => { throw new Failure(accessCreationError(e)); });
+      u = { id, active: true, share: true, partner_id: [pid] };
+      r.acceso_activado=true;
       if(chosenPassword)r.clave_aplicada=true;
     } else if(chosenPassword) {
       try { await kw('res.users','write',[[u.id],{password:chosenPassword}],{context:{no_reset_password:true}}); }
@@ -784,9 +796,15 @@ async function handle(req: Request, b: any) {
   if (b.accion === "probar")
     return { ensayo: true, analisis: await analyze(validate(b.datos)) };
   const a = await row(b.id);
+  if(b.accion==='generar_enlace'){
+    const link=await accessLink(a,b.ensayo===true);
+    if(!b.ensayo)await event(a.id,actor,'enlace_acceso_generado',{user_id:link.usuario_id,horas:link.horas});
+    return link;
+  }
   if (b.accion === "detalle")
     return {
       solicitud: a,
+      resumen: simpleApprovalSummary(a),
       eventos: await db(
         "portal_altas_eventos?alta_id=eq." + enc(a.id) + "&order=creada.asc",
       ),

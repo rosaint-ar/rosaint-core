@@ -17,7 +17,8 @@
     opts = {},
     selected = null,
     pending = null,
-    busy = false;
+    busy = false,
+    current = null;
   const states = {
     recibida: "Recibida",
     revisar: "En revisión",
@@ -37,6 +38,30 @@
     const fields=[['name','Nombre',a.datos.razon],['x_studio_nombre_fantasia','Nombre comercial',a.datos.cartel],['email','Correo de contacto',a.email],['phone','Teléfono',a.datos.telefono],['street','Calle y número',a.datos.calle],['city','Localidad',a.datos.localidad],['state_id','Provincia',a.datos.provincia]];
     const changes=fields.map(([key,label,value])=>({key,label,value,current:key==='state_id'?p.state_id?.[1]||'':p[key]||''})).filter(x=>x.value&&String(x.value).trim()!==String(x.current).trim());
     return `<section class="alta-customer-review" data-customer-version="${e(p.write_date||'')}"><h3>Datos del cliente existente</h3><p>Vincularemos esta solicitud a <strong>${e(p.name)}</strong>, sin crear otro cliente. Marcá únicamente los datos que verificaste y querés actualizar. El resto se conserva.</p>${p.write_date?changes.length?`<div class="alta-change-list">${changes.map(x=>`<label class="alta-change"><input type="checkbox" data-contact-field="${x.key}" ${selected.includes(x.key)?'checked':''} ${closed?'disabled':''}><span><b>${e(x.label)}</b><small>Actual: ${e(x.current||'Sin dato')}</small><span>Solicitado: ${e(x.value)}</span></span></label>`).join('')}</div>`:'<p>No hay diferencias en los datos de contacto.</p>':'<p>Usá «Revisar contacto en Odoo» para cargar la comparación actual.</p>'}<p class="alta-preserve">Documento y condición fiscal se conservan. Lista actual: ${e(p.property_product_pricelist?.[1]||'Sin asignar')}. Responsable: ${e(p.user_id?.[1]||'Sin asignar')}.</p>${!closed?`<label class="check"><input id="actualizar-condiciones" type="checkbox" ${saved.actualizar_condiciones?'checked':''}>También quiero modificar la lista y el responsable con las opciones elegidas abajo.</label>${p.documento_coincide===false?`<label class="check"><input id="documento-revisado" type="checkbox" ${saved.documento_revisado?'checked':''}>El documento declarado difiere; verifiqué que esta solicitud corresponde a este cliente. Conservar su documento actual.</label>`:''}`:''}</section>`;
+  }
+  function simpleView(r){
+    const a=r.solicitud,p=a.analisis.odoo.fichas[0],s=r.resumen,changes=s.changes||[];
+    const fiscal={RI:'Responsable inscripto',MONO:'Monotributista',CF:'Consumidor final',EXENTO:'Exento'}[a.datos.condicion_iva];
+    const button=s.resume?'Reintentar habilitación':s.existing_access?'Aprobar actualización':'Aprobar acceso';
+    const lastError=[...(r.eventos||[])].reverse().find(v=>v.accion==='error_aprobacion')?.detalle?.mensaje;
+    $('#detalle').innerHTML=`<article class="alta-panel alta-simple"><p class="eyebrow">${e(states[a.estado])}</p><h2>${e(p.name)}</h2><p class="alta-simple-contact">${e(a.email)}<br><span>${e(opts.tipos[a.datos.tipo]||a.datos.tipo)} · ${e(fiscal)}</span></p><div class="alta-match"><span aria-hidden="true">✓</span><div><strong>Cliente existente identificado</strong><p>${e(s.reason)}</p></div></div>
+${s.resume?`<div class="altas-note error"><strong>El acceso quedó pendiente</strong><p>${e(lastError||'Odoo no pudo terminar la activación.')}</p><p>El reintento retoma lo ya aprobado. No hace falta repetir la revisión.</p></div>`:changes.length?`<section class="alta-simple-changes"><h3>${changes.length===1?'Un dato nuevo':changes.length+' datos nuevos'}</h3><div class="alta-diff-table">${changes.map(c=>`<div class="alta-diff-row"><strong>${e(c.label)}</strong><span><small>Actual</small>${e(c.current)}</span><span><small>Solicitado</small>${e(c.proposed)}</span></div>`).join('')}</div><label class="check alta-include"><input id="incluir-cambios" type="checkbox">Actualizar estos datos al aprobar</label><details class="alta-pick"><summary>Elegir datos por separado</summary>${changes.map(c=>`<label class="check"><input type="checkbox" data-simple-field="${c.field}">${e(c.label)}</label>`).join('')}</details></section>`:'<p class="alta-no-changes">No hay datos nuevos para actualizar.</p>'}
+<p class="alta-preserve">Se conservan el historial, la condición fiscal y las condiciones comerciales. La contraseña vigente elegida en esta solicitud se aplica al aprobar, también si el cliente ya tenía acceso.</p><div class="alta-simple-submit"><button class="btn btn-primary" data-action="simple" data-label="${e(button)}">${e(button)}</button><small>Esta acción autoriza el acceso y aplica sólo los cambios seleccionados.</small></div>
+<details class="alta-extra"><summary>Ver datos, documentos e historial</summary><dl><dt>${e(a.datos.documento_tipo||'CUIT')}</dt><dd>${e(a.cuit)}</dd><dt>Teléfono</dt><dd>${e(a.datos.telefono)}</dd><dt>Domicilio solicitado</dt><dd>${e([a.datos.calle,a.datos.localidad,a.datos.provincia].join(', '))}</dd><dt>Ficha Odoo</dt><dd>${p.id}</dd><dt>Lista actual</dt><dd>${e(p.property_product_pricelist?.[1]||'Sin asignar')}</dd><dt>Responsable</dt><dd>${e(p.user_id?.[1]||'Sin asignar')}</dd></dl>${s.resume&&changes.length?`<h3>Datos nuevos aún por revisar</h3><p>El reintento conserva las selecciones de la aprobación inicial.</p><ul>${changes.map(c=>`<li>${e(c.label)}: ${e(c.current)} → ${e(c.proposed)}</li>`).join('')}</ul>`:''}<h3>Documentos</h3><ul>${a.archivos.map((f,i)=>`<li><button class="btn" data-file="${i}">${e(f.nombre)} ↗</button></li>`).join('')||'<li>Sin documentos adjuntos.</li>'}</ul><h3>Historial</h3><ul class="alta-history">${r.eventos.map(v=>`<li>${new Date(v.creada).toLocaleString('es-AR')} · ${e(v.accion.replaceAll('_',' '))} · ${e(v.actor)}</li>`).join('')}</ul><button class="btn" data-action="manual">Revisar un caso especial</button></details>
+${!s.resume?'<details class="alta-extra"><summary>No aprobar esta solicitud</summary><label>Motivo<textarea id="motivo" rows="2" maxlength="1500"></textarea></label><button class="btn btn-danger" data-action="rechazar">Rechazar solicitud</button></details>':''}</article>`;
+    $('#detalle').dataset.paths=JSON.stringify(a.archivos.map(f=>f.path));
+  }
+  function simpleChoices(){
+    const a=current.solicitud,p=a.analisis.odoo.fichas[0];
+    if(current.resumen.resume)return {id:selected,...a.aprobacion,via_simple:true};
+    return {id:selected,via_simple:true,lista_id:opts.listas.some(x=>x.id===p.property_product_pricelist?.[0])?p.property_product_pricelist[0]:32,comercial_id:opts.comerciales.some(x=>x.id===p.user_id?.[0])?p.user_id[0]:opts.comerciales[0]?.id,responsabilidad_id:current.resumen.fiscal_id,identidad_verificada:true,fiscal_verificado:true,reemplazar:false,actualizar_condiciones:false,documento_revisado:false,revision_cliente:p.write_date,datos_actualizar:Array.from(document.querySelectorAll('[data-simple-field]:checked')).map(x=>x.dataset.simpleField),revision:'Aprobación humana desde el resumen de cliente existente. Correo, documento y condición fiscal coinciden con Odoo. Conservar condiciones y aplicar sólo los datos seleccionados.'};
+  }
+  function resolvedView(r){
+    const a=r.solicitud;
+    $('#detalle').innerHTML=`<article class="alta-panel alta-simple"><p class="eyebrow">Aprobada</p><h2>${e(a.datos.razon)}</h2><p class="alta-simple-contact">${e(a.email)}</p><div class="alta-match"><span aria-hidden="true">✓</span><div><strong>Acceso habilitado</strong><p>La aprobación quedó registrada en la ficha del cliente.</p></div></div><p class="alta-preserve">${a.resultado?.datos_actualizados?'Se aplicaron los datos seleccionados.':'Se conservaron los datos de la ficha.'}${a.resultado?.clave_aplicada?' El cliente puede usar la contraseña que eligió al registrarse.':''}${a.resultado?.aviso_acceso==='en_cola'?' El aviso de acceso quedó preparado para envío.':''}</p><details class="alta-extra"><summary>Ver resolución e historial</summary><p>Ficha Odoo: ${a.resultado?.partner_id||'—'} · Usuario: ${a.resultado?.user_id||'—'}</p><ul class="alta-history">${r.eventos.map(v=>`<li>${new Date(v.creada).toLocaleString('es-AR')} · ${e(v.accion.replaceAll('_',' '))} · ${e(v.actor)}</li>`).join('')}</ul></details></article>`;
+  }
+  function accessLinkPanel(){
+    return `<section class="alta-access-link"><h3>Crear una nueva contraseña</h3><p>Generá un enlace personal para compartir con este cliente por WhatsApp. No tiene que solicitar ni esperar un correo.</p><button class="btn" data-action="generar-enlace">Generar enlace de acceso</button><div id="enlace-acceso" aria-live="polite"></div></section>`;
   }
   async function api(accion, data = {}) {
     const {
@@ -106,18 +131,29 @@
     opts = r.opciones;
     list();
     notice("Bandeja actualizada. Aprobación autorizada para " + r.actor + ".");
+    const waiting=items.filter(a=>!['aprobada','rechazada'].includes(a.estado));
+    if(!selected&&waiting.length===1)selected=waiting[0].id;
     if (selected && items.some((a) => a.id === selected))
       await detail(selected);
   }
-  async function detail(id) {
+  async function detail(id,manual=false,skipRefresh=false) {
+    const item=items.find(a=>a.id===id);let refreshError='';
+    if(!manual&&!skipRefresh&&['recibida','revisar'].includes(item?.estado)){
+      notice('Comprobando la ficha en Odoo…');
+      try{await api('revisar_odoo',{id});}catch(err){refreshError=err.message;}
+    }
     const r = await api("detalle", { id });
+    current=r;
     selected = id;
+    items=items.map(item=>item.id===id?r.solicitud:item);
     const a = r.solicitud,
       an = a.analisis || {},
       ar = an.arca || {},
       closed = ["aprobada", "rechazada", "aprobando"].includes(a.estado),
       saved = a.aprobacion || {};
     list();
+    if(!manual&&a.estado==='aprobada'){resolvedView(r);$('#detalle .alta-extra').insertAdjacentHTML('beforebegin',accessLinkPanel());return;}
+    if(!manual&&!refreshError&&r.resumen?.available){simpleView(r);notice('Solicitud lista para decidir.');return;}
     const pairs = [
       [a.datos.documento_tipo || "CUIT", a.cuit],
       ["Condición declarada", ({RI:"Responsable inscripto",MONO:"Monotributista",CF:"Consumidor final",EXENTO:"Exento"})[a.datos.condicion_iva] || "Sin declarar (alta anterior)"],
@@ -154,10 +190,13 @@ ${
 ${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación incompleta. El reintento conserva los pasos ya realizados y las condiciones elegidas. No vuelvas a cargar otra solicitud.</div>' : ""}${a.estado === "aprobando" ? '<div class="altas-note warn">Hay una aprobación en curso. Actualizá la bandeja para consultar el resultado. Si no termina, requiere revisión técnica.</div>' : ""}${a.resultado?.partner_id ? `<div class="altas-note">Ficha Odoo: ${a.resultado.partner_id} · Usuario: ${a.resultado.user_id || "pendiente"}<br>Acceso: ${e(a.resultado.clave_aplicada ? "con contraseña elegida" : (a.resultado.invitacion || "existente"))}</div>` : ""}${a.motivo ? `<p>Motivo: ${e(a.motivo)}</p>` : ""}<h3>Historial</h3><ul class="alta-history">${r.eventos.map((v) => `<li>${new Date(v.creada).toLocaleString("es-AR")} · ${e(v.accion.replaceAll("_", " "))} · ${e(v.actor)}${v.detalle?.mensaje ? " · " + e(v.detalle.mensaje) : ""}</li>`).join("")}</ul></article>`;
     $("#detalle").dataset.paths = JSON.stringify(a.archivos.map((f) => f.path));
     const panel=$('#detalle .alta-panel');
+    if(manual&&r.resumen?.available){const back=document.createElement('button');back.type='button';back.className='btn';back.dataset.action='resumen';back.textContent='Volver al resumen';panel.prepend(back);}
     if(!closed){const button=document.createElement('button');button.type='button';button.className='btn';button.dataset.action='odoo';button.textContent='Revisar contacto en Odoo';panel.querySelector('h3').before(button);}
     const controls=panel.querySelector('.alta-controls');if(controls)controls.insertAdjacentHTML('beforebegin',customerReview(a,closed));else panel.insertAdjacentHTML('beforeend',customerReview(a,closed));
     const p=an.odoo?.fichas?.length===1?an.odoo.fichas[0]:null;
     if(p&&!closed&&!a.aprobacion){if(opts.listas.some(x=>x.id===p.property_product_pricelist?.[0]))$('#lista').value=String(p.property_product_pricelist[0]);if(opts.comerciales.some(x=>x.id===p.user_id?.[0]))$('#comercial').value=String(p.user_id[0]);}
+    if(refreshError)notice(refreshError,true);
+    else if(r.resumen?.reason&&!closed)notice('Revisión particular: '+r.resumen.reason);
   }
   function choices() {
     return {
@@ -178,6 +217,13 @@ ${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación in
   $("#recargar").onclick = () => task(load);
   $("#busqueda").oninput = list;
   $("#estado").onchange = list;
+  $('#detalle').onchange=(ev)=>{
+    if(!current?.resumen?.available)return;
+    if(ev.target.id==='incluir-cambios')document.querySelectorAll('[data-simple-field]').forEach(x=>x.checked=ev.target.checked);
+    const fields=Array.from(document.querySelectorAll('[data-simple-field]')),count=fields.filter(x=>x.checked).length,all=$('#incluir-cambios');
+    if(all){all.checked=count===fields.length;all.indeterminate=count>0&&count<fields.length;}
+    const button=$('[data-action="simple"]');if(button&&!current.resumen.resume)button.textContent=count?'Aprobar y actualizar '+count+(count===1?' dato':' datos'):button.dataset.label;
+  };
   $("#bandeja").onclick = (ev) => {
     const b = ev.target.closest("[data-alta]");
     if (b) task(() => detail(b.dataset.alta));
@@ -186,6 +232,26 @@ ${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación in
     const b = ev.target.closest("button");
     if (!b) return;
     task(async () => {
+      if(b.dataset.action==='generar-enlace'){
+        notice('Generando el enlace personal en Odoo…');
+        const r=await api('generar_enlace',{id:selected});
+        $('#enlace-acceso').innerHTML=`<label for="enlace-acceso-url">Enlace para ${e(current.solicitud.email)}</label><div class="alta-link-copy"><input id="enlace-acceso-url" type="text" readonly autocomplete="off" spellcheck="false" value="${e(r.url)}"><button class="btn btn-primary" data-action="copiar-enlace">Copiar enlace</button></div><p class="alta-link-note">Válido durante ${e(r.horas)} horas. Se invalida al usarlo o al iniciar sesión. Compartilo sólo con este cliente.</p>`;
+        notice('Enlace listo para copiar. No se envió ningún correo.');return;
+      }
+      if(b.dataset.action==='copiar-enlace'){
+        const field=$('#enlace-acceso-url');
+        try{await navigator.clipboard.writeText(field.value);notice('Enlace copiado. Ya podés pegarlo en el chat del cliente.');}
+        catch{field.focus();field.select();notice('El enlace quedó seleccionado. Copialo para enviarlo al cliente.');}
+        return;
+      }
+      if(b.dataset.action==='manual'){await detail(selected,true,true);return;}
+      if(b.dataset.action==='resumen'){await detail(selected,false,true);return;}
+      if(b.dataset.action==='simple'){
+        const choices=simpleChoices();notice(current.resumen.resume?'Retomando la habilitación…':'Aprobando el acceso…');
+        try{await api('aprobar',choices);await load();notice('Solicitud aprobada. El acceso y los cambios seleccionados quedaron registrados.');}
+        catch(err){await detail(selected,false,true);throw err;}
+        return;
+      }
       if (b.dataset.file !== undefined) {
         const paths = JSON.parse($("#detalle").dataset.paths);
         const r = await api("archivo", {
