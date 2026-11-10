@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facturas de Mercado Libre · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field input[type=month] { font: inherit; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); min-width: 160px; }
+    .drop { border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: 9px 14px; background: var(--surface); cursor: pointer; font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .drop:hover { border-color: var(--accent); color: var(--accent); }
+    .drop.ok { border-style: solid; border-color: var(--ok); color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+    input[type=file] { display: none; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    .status-bar { font-size: 13px; color: var(--muted); margin: 12px 2px 14px; min-height: 18px; display: flex; align-items: center; gap: 6px; }
+    .status-bar.err { color: var(--hot); } .status-bar.ok { color: var(--ok); }
+    .status-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .status-bar .dot.load { background: var(--warn); } .status-bar .dot.on { background: var(--ok); } .status-bar .dot.off { background: var(--muted); }
+
+    .tabs { display: flex; gap: 6px; margin: 4px 0 14px; border-bottom: 1px solid var(--border); }
+    .tab { border: none; background: none; padding: 9px 14px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab .n { font-size: 11px; background: var(--surface-2); border-radius: 10px; padding: 1px 7px; margin-left: 6px; color: var(--text); }
+
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+    @media (max-width: 900px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+    .summary .card { padding: 13px 15px; }
+    .summary .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .summary .s { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .summary .l { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+    .summary .ok .n { color: var(--ok); } .summary .falta .n { color: var(--hot); } .summary .warn .n { color: var(--warn); }
+
+    .prov { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+    .prov.listo { border-left: 3px solid var(--ok); } .prov.pend { border-left: 3px solid var(--hot); } .prov.aviso { border-left: 3px solid var(--warn); }
+    .prov-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 16px; flex-wrap: wrap; }
+    .prov-cab .nom { font-size: 14.5px; font-weight: 700; }
+    .prov-cab .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .prov-cab select { font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+    .items { padding: 0 16px 10px; font-size: 12.5px; color: var(--text-2, var(--text)); display: flex; flex-direction: column; gap: 3px; }
+    .items a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+    .items .canc { color: var(--muted); text-decoration: line-through; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); padding: 7px 12px; font-weight: 600; }
+    td { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12.5px; vertical-align: middle; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.mono { font-family: var(--font-mono); font-size: 11.5px; }
+    tr.nc td { background: color-mix(in srgb, var(--hot) 5%, transparent); }
+    .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+    .pill.falta { color: var(--hot); background: color-mix(in srgb, var(--hot) 12%, transparent); }
+    .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+    .pill.gris { color: var(--muted); background: var(--surface-2); }
+    .concil { padding: 9px 16px; font-size: 12.5px; background: var(--surface-2); border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .concil.mal { color: var(--hot); }
+    .btn.sm { padding: 4px 10px; font-size: 12px; }
+    .bloque { margin: 20px 0 10px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .empty { color: var(--muted); font-style: italic; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+    .nota { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 4px 2px 12px; }
+    .chk { accent-color: var(--ok); width: 15px; height: 15px; vertical-align: middle; }
+    @media (max-width: 640px) { .prov { overflow-x: auto; } }
+  </style>
+</head>
+<body class="marca puente" data-page="comprasml" data-title="Facturas de Mercado Libre" data-subtitle="Compras y cargos de ML · ARCA ⇄ Odoo al centavo">
+
+<div id="app-shell"></div>
+<main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Contabilidad · Facturas de Mercado Libre</span>
+      <h1 class="titular">Qué se compró, qué <em>falta</em> cargar.</h1>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:12px;">
+    <div class="controls">
+      <div class="field">
+        <span class="label">Período</span>
+        <input type="month" id="periodo">
+      </div>
+      <div class="field">
+        <span class="label">Excel de ARCA (Mis Comprobantes Recibidos)</span>
+        <label class="drop" id="dropLabel" for="fileArca">Seleccionar archivo .xlsx…</label>
+        <input type="file" id="fileArca" accept=".xlsx,.xls">
+      </div>
+    </div>
+    <div class="hint">Mercado Libre no deja bajar la factura de una compra, pero todas se facturan a tu CUIT y quedan en ARCA. Acá se cruzan las tres cosas: <b>qué se compró en ML</b> ⇄ <b>el comprobante de ARCA</b> ⇄ <b>lo cargado en Odoo</b>. Cada vendedor que se identifica queda aprendido para los meses siguientes.</div>
+  </div>
+
+  <div class="status-bar" id="status"><span class="dot off"></span>Cargando…</div>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="compras">Compras <span class="n" id="n-compras">—</span></button>
+    <button class="tab" data-tab="cargos">Cargos de ML <span class="n" id="n-cargos">—</span></button>
+  </div>
+  <div id="vista-compras"></div>
+  <div id="vista-cargos" style="display:none;"></div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Facturas de Mercado Libre — Compras (Rosaint comprador) y Cargos (comisiones, envíos, MP)
+// Datos: función compras-ml (compras de ML, Odoo, vendedores aprendidos, decisiones) + Excel de ARCA.
+// Carga: compras-ml modo "cargar" (proveedor por CUIT, verificación al centavo, pago por Mercado Pago).
+// ═══════════════════════════════════════════════════════════════════════════
+const $ = (id) => document.getElementById(id);
+const FN = window.SUPABASE_URL + '/functions/v1/compras-ml';
+const HEADERS = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY };
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const money = (n) => '$' + (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+const dias = (a, b) => (new Date(a) - new Date(b)) / 864e5;
+const fFecha = (s) => s ? s.slice(8, 10) + '/' + s.slice(5, 7) : '';
+// CUIT de los que FACTURAN CARGOS (no son compras): Mercado Libre S.R.L. (también emite lo de Mercado Pago) y MELI LOG
+const CUIT_CARGOS = new Set(['30703088534', '30715686054']);
+const CATS = { comercial: 'Comercial (GC10) · cajas, cinta, film', libreria: 'Librería (GA04) · papel, tintas', personal: 'Personal (GN01) · varios no operativos', equipos: 'Equipos (GA05)', envases: 'Envases (con pedido de compra)' };
+const CUENTA_A_CAT = [[/^5\.2\.1\.01\.990/, 'comercial'], [/^5\.3\.1\.01\.120/, 'libreria'], [/^5\.9\.1\.01\.010/, 'personal'], [/^1\.2\.1\.02\.015/, 'equipos'], [/^1\.1\.6\.01\.015/, 'envases']];
+const REGLAS = [
+  ['envases', /\b(bid[oó]n|bidones|pote|potes|envase|envases|frasco|frascos|tapa a rosca|pead)\b/i],
+  ['comercial', /\b(caja|cajas|cart[oó]n|cinta|embalaje|embalar|film|stretch|bolsa|bolsas|burbuja|pluribol|sobre|sobres|precinto)\b/i],
+  ['libreria', /\b(papel|tinta|tintas|t[oó]ner|cartucho|resma|marcador|lapicera|cutter|pizarra|etiqueta|etiquetas|autoadhesivo)\b/i],
+  ['equipos', /\b(notebook|computadora|impresora|monitor)\b/i],
+];
+const LETRA = { '1': 'FA-A', '3': 'NC-A', '6': 'FA-B', '8': 'NC-B', '11': 'FA-C', '13': 'NC-C', '2': 'ND-A', '7': 'ND-B', '12': 'ND-C' };
+
+let DATOS = null, ARCA = null, VISTA = null, TAB = 'compras';
+function setStatus(dot, msg, cls = '') { $('status').innerHTML = `<span class="dot ${dot}"></span>`; $('status').appendChild(document.createTextNode(msg)); $('status').className = 'status-bar ' + cls; }
+async function fn(body) {
+  const r = await fetch(FN, { method: 'POST', headers: HEADERS, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({ ok: false, error: 'respuesta inválida (' + r.status + ')' }));
+  if (!d.ok) throw new Error(d.error || 'Error');
+  return d;
+}
+
+// ── período ───────────────────────────────────────────────────────────────
+(function () { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); $('periodo').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
+$('periodo').addEventListener('change', () => { ARCA = null; $('dropLabel').textContent = 'Seleccionar archivo .xlsx…'; $('dropLabel').classList.remove('ok'); cargarDatos(); });
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+  TAB = b.dataset.tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+  $('vista-compras').style.display = TAB === 'compras' ? '' : 'none';
+  $('vista-cargos').style.display = TAB === 'cargos' ? '' : 'none';
+}));
+
+async function cargarDatos() {
+  const mes = $('periodo').value;
+  setStatus('load', 'Trayendo compras de Mercado Libre y facturas de Odoo…');
+  try {
+    DATOS = await fn({ modo: 'datos', mes });
+    setStatus('on', `${DATOS.compras.length} órdenes de ML en la ventana · ${DATOS.odoo.length} facturas de proveedor en Odoo · ${DATOS.vendedores.length} vendedores ya identificados.` + (ARCA ? '' : ' Subí el Excel de ARCA del mes para cruzar.'));
+    analizar();
+  } catch (e) { setStatus('off', 'Error: ' + e.message, 'err'); }
+}
+
+// ── Excel de ARCA (mismo lector que el Conciliador) ────────────────────────
+const normHeader = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const HEADERS_ARCA = {
+  fecha: ['fecha', 'fecha de emision', 'fecha emision'], tipo: ['tipo', 'tipo de comprobante'], pv: ['punto de venta', 'pto vta'],
+  num: ['numero desde', 'nro desde', 'numero'], cuit: ['nro doc emisor', 'numero doc emisor', 'cuit emisor'], denom: ['denominacion emisor', 'razon social emisor'],
+  neto: ['neto gravado total', 'neto gravado'], nogravado: ['neto no gravado'], exento: ['op exentas', 'importe exento'],
+  otros: ['otros tributos'], iva: ['total iva', 'iva'], total: ['imp total', 'importe total'], moneda: ['moneda'], tc: ['tipo cambio', 'tipo de cambio'],
+};
+const COD_NC = new Set(['3', '8', '13', '53', '203', '208', '213']);
+function fechaISO(v) {
+  if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10);
+  const m = String(v).match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : String(v).slice(0, 10);
+}
+$('fileArca').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true });
+      let hi = -1, hn = [], hits = 0; const conocidas = new Set(Object.values(HEADERS_ARCA).flat());
+      for (let i = 0; i < Math.min(10, raw.length); i++) { const nn = (raw[i] || []).map(normHeader); const h = nn.filter(x => conocidas.has(x)).length; if (h > hits) { hi = i; hn = nn; hits = h; } }
+      if (hi < 0 || hits < 4) throw new Error('No reconozco los encabezados: exportalo desde "Mis Comprobantes → Recibidos".');
+      const c = {}; for (const [k, vs] of Object.entries(HEADERS_ARCA)) c[k] = vs.map(v => hn.indexOf(v)).find(i => i >= 0) ?? -1;
+      for (const k of ['fecha', 'tipo', 'pv', 'num', 'cuit', 'total']) if (c[k] < 0) throw new Error('Falta la columna ' + k);
+      const filas = [];
+      for (let i = hi + 1; i < raw.length; i++) {
+        const r = raw[i]; if (!r || r[c.fecha] == null) continue;
+        const tipo = String(r[c.tipo] || '').trim(); const cod = (tipo.match(/^(\d{1,3})\b/) || [])[1] || '';
+        const nc = COD_NC.has(cod) || /cr[eé]dito/i.test(tipo);
+        const mon = c.moneda >= 0 ? String(r[c.moneda] || '').trim() : 'PES'; const ext = mon && !/^(pes|ars|\$)$/i.test(mon);
+        const tc = ext ? (+r[c.tc] || 1) : 1; const n = (k) => c[k] >= 0 ? (+r[c[k]] || 0) * tc : 0;
+        filas.push({ fecha: fechaISO(r[c.fecha]), tipo, cod, nc, pv: parseInt(r[c.pv]) || 0, num: parseInt(r[c.num]) || 0,
+          cuit: String(r[c.cuit] || '').replace(/\D/g, ''), denom: String(r[c.denom] || '').trim(),
+          neto: n('neto'), nograv: n('nogravado') + n('exento'), otros: n('otros'), iva: n('iva'), total: n('total'), moneda: ext ? mon : '' });
+      }
+      const mes = $('periodo').value; const fueraMes = filas.filter(x => !x.fecha.startsWith(mes)).length;
+      ARCA = filas;
+      $('dropLabel').textContent = `✓ ${f.name} (${filas.length})`; $('dropLabel').classList.add('ok');
+      if (fueraMes === filas.length) setStatus('off', `Ojo: ninguno de los ${filas.length} comprobantes es de ${mes}. ¿Es el Excel del mes correcto?`, 'err');
+      analizar();
+    } catch (err) { setStatus('off', 'Error leyendo el Excel: ' + err.message, 'err'); }
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+// ── análisis ──────────────────────────────────────────────────────────────
+const nro = (a) => `${String(a.pv).padStart(5, '0')}-${String(a.num).padStart(8, '0')}`;
+const nombreDoc = (a) => `${LETRA[a.cod] || ('Cód.' + a.cod)} ${nro(a)}`;
+const claveDoc = (a) => `${a.cuit}|${nombreDoc(a)}`;
+function categoriaSugerida(cuit, titulos, docs) {
+  for (const d of docs) { const x = (DATOS.decisiones || []).find(z => z.clave === claveDoc(d)); if (x && x.categoria) return { cat: x.categoria, porque: 'elegida antes' }; }
+  const h = DATOS.historial[cuit];
+  if (h) for (const [re, cat] of CUENTA_A_CAT) if (re.test(h.cuenta)) return { cat, porque: `así se cargó antes (${h.veces} de ${h.total})` };
+  const t = titulos.join(' ');
+  for (const [cat, re] of REGLAS) if (re.test(t)) return { cat, porque: 'por lo que se compró' };
+  return { cat: 'personal', porque: 'no es insumo del negocio' };
+}
+function enOdoo(a) { return DATOS.odoo.find(o => o.cuit === a.cuit && o.name === nombreDoc(a)); }
+
+function analizar() {
+  if (!DATOS) return;
+  const mes = $('periodo').value;
+  const ord = DATOS.compras;
+  // vendedores aprendidos
+  const sellersDeCuit = new Map(), cuitDeSeller = new Map();
+  for (const v of DATOS.vendedores) { if (!sellersDeCuit.has(v.cuit)) sellersDeCuit.set(v.cuit, new Set()); sellersDeCuit.get(v.cuit).add(Number(v.seller_id)); cuitDeSeller.set(Number(v.seller_id), v.cuit); }
+  const grupos = new Map(); // cuit -> grupo
+  const sinFactura = [];
+  if (ARCA) {
+    const delMes = ARCA.filter(a => a.fecha.startsWith(mes) && !CUIT_CARGOS.has(a.cuit));
+    // importes posibles de cada vendedor: cada orden (ítems y pagado) y la suma por pack
+    const valores = (os) => { const v = []; const porPack = {}; for (const o of os) { v.push(o.total, o.pagado); (porPack[o.pack] ||= []).push(o); } for (const ps of Object.values(porPack)) if (ps.length > 1) { v.push(ps.reduce((s, o) => s + o.total, 0)); v.push(ps.reduce((s, o) => s + o.pagado, 0)); } return v.filter(Boolean).map(r2); };
+    const porSeller = new Map(); for (const o of ord) { if (!porSeller.has(o.seller_id)) porSeller.set(o.seller_id, []); porSeller.get(o.seller_id).push(o); }
+    for (const a of delMes) {
+      let sellers = sellersDeCuit.get(a.cuit), via = 'aprendido';
+      if (!sellers) {
+        // heurística: un solo vendedor con una orden (o pack) por el mismo importe entre 3 días antes y 45 después
+        const cand = new Set();
+        for (const [sid, os] of porSeller) { const cerca = os.filter(o => { const d = dias(a.fecha, o.fecha); return d >= -3 && d <= 45; }); if (cerca.length && valores(cerca).some(v => Math.abs(v - Math.abs(a.total)) <= 1)) cand.add(sid); }
+        if (cand.size !== 1) continue; // no es una compra de ML (o es ambiguo): lo ve el Conciliador
+        sellers = cand; via = 'importe y fecha';
+      }
+      if (!grupos.has(a.cuit)) grupos.set(a.cuit, { cuit: a.cuit, denom: a.denom, sellers: new Set(), via, docs: [] });
+      const g = grupos.get(a.cuit); sellers.forEach(s => g.sellers.add(Number(s))); g.docs.push(a); if (via === 'importe y fecha') g.via = via;
+    }
+    for (const g of grupos.values()) {
+      // órdenes de ese proveedor entre 15 días antes del primer comprobante y 3 días después del último
+      const fs = g.docs.map(d => d.fecha).sort(); const f0 = fs[0], f1 = fs[fs.length - 1];
+      g.ords = ord.filter(o => g.sellers.has(Number(o.seller_id)) && dias(f0, o.fecha) <= 15 && dias(o.fecha, f1) <= 3);
+      g.nicks = [...new Set(g.ords.map(o => o.seller))];
+      g.titulos = g.ords.flatMap(o => o.items.map(i => i.titulo));
+      g.docs.sort((x, y) => x.fecha.localeCompare(y.fecha) || x.num - y.num);
+      g.facturado = r2(g.docs.reduce((s, d) => s + (d.nc ? -1 : 1) * Math.abs(d.total), 0));
+      g.pagado = r2(g.ords.filter(o => o.status === 'paid').reduce((s, o) => s + o.pagado, 0));
+      // NC de compras canceladas: cada NC anula la FA del mismo importe (la de número más bajo)
+      const anuladas = new Set();
+      for (const nc of g.docs.filter(d => d.nc)) { const fa = g.docs.find(d => !d.nc && !anuladas.has(d) && Math.abs(Math.abs(d.total) - Math.abs(nc.total)) <= 0.01); if (fa) anuladas.add(fa); }
+      for (const d of g.docs) {
+        d.anulada = anuladas.has(d);
+        d.odoo = enOdoo(d);
+        d.cierra = d.odoo ? d.odoo.state === 'posted' && Math.abs(d.odoo.total - Math.abs(d.total)) <= 0.01 : null;
+        // ¿va por Compras? (envases / MP con trazabilidad): OC del proveedor por el mismo importe → se factura desde la OC
+        d.oc = !d.odoo && !d.nc ? (DATOS.compras_odoo || []).find(o => o.cuit === d.cuit && Math.abs(o.total - Math.abs(d.total)) <= 1 && dias(d.fecha, o.fecha) >= -15 && dias(d.fecha, o.fecha) <= 60) : null;
+        const pagos = g.ords.filter(o => o.status === 'paid').map(o => o.fecha_pago).sort();
+        d.fechaPago = d.nc || d.anulada ? null : (pagos.filter(p => p <= d.fecha).pop() || pagos[0] || d.fecha);
+      }
+      // lo pagado en ML se reparte entre las facturas vigentes (las ya cargadas lo consumen primero);
+      // si falta plata (devolución sin NC, ej. Compra Protegida) la factura se paga en parte y el resto queda abierto
+      let resto = g.pagado;
+      for (const d of g.docs.filter(x => !x.nc && !x.anulada && x.odoo)) resto = r2(resto - Math.abs(d.total));
+      for (const d of g.docs.filter(x => !x.nc && !x.anulada && !x.odoo)) {
+        const t = Math.abs(d.total); let imp = Math.min(t, Math.max(0, resto));
+        if (Math.abs(t - imp) <= 1) imp = t; // diferencias de centavos (redondeo de ML) se pagan completas
+        d.pagoImporte = r2(imp); resto = r2(resto - imp);
+        if (!(d.pagoImporte > 0)) d.fechaPago = null;
+      }
+      g.sug = categoriaSugerida(g.cuit, g.titulos, g.docs);
+      g.cat = g.sug.cat;
+    }
+    // compras pagadas del mes sin comprobante en ARCA
+    const vistos = new Set([...grupos.values()].flatMap(g => g.ords.map(o => o.id)));
+    const porSellerMes = new Map();
+    for (const o of ord.filter(o => o.status === 'paid' && o.fecha.startsWith(mes) && !vistos.has(o.id))) { if (!porSellerMes.has(o.seller_id)) porSellerMes.set(o.seller_id, []); porSellerMes.get(o.seller_id).push(o); }
+    for (const os of porSellerMes.values()) sinFactura.push({ seller: os[0].seller, cuit: cuitDeSeller.get(Number(os[0].seller_id)), ords: os, total: r2(os.reduce((s, o) => s + o.pagado, 0)), cat: categoriaSugerida('', os.flatMap(o => o.items.map(i => i.titulo)), []).cat });
+  }
+  VISTA = { mes, grupos: [...grupos.values()], sinFactura };
+  render();
+  renderCargos();
+}
+
+// ── render compras ────────────────────────────────────────────────────────
+function linkItem(i) { const id = String(i.item_id || ''); const m = id.match(/^([A-Z]{3})(\d+)$/); return m ? `https://articulo.mercadolibre.com.ar/${m[1]}-${m[2]}` : null; }
+function render() {
+  const v = $('vista-compras');
+  if (!ARCA) { v.innerHTML = `<div class="empty">Subí el Excel de <b>Mis Comprobantes Recibidos</b> de ARCA del mes (el mismo del Conciliador) para cruzar las compras con sus facturas.</div>`; $('n-compras').textContent = '—'; return; }
+  const G = VISTA.grupos;
+  const docs = G.flatMap(g => g.docs);
+  const ok = docs.filter(d => d.odoo && d.cierra), dif = docs.filter(d => (d.odoo && !d.cierra) || d.oc), falta = docs.filter(d => !d.odoo && !d.oc);
+  const sum = (xs) => r2(xs.reduce((s, d) => s + (d.nc ? -1 : 1) * Math.abs(d.total), 0));
+  $('n-compras').textContent = falta.length ? falta.length + ' por cargar' : '✓';
+  let h = `<div class="summary">
+    <div class="card"><div class="n">${docs.length}</div><div class="s">${money(sum(docs))}</div><div class="l">Comprobantes de compras ML en ARCA</div></div>
+    <div class="card ok"><div class="n">${ok.length}</div><div class="s">${money(sum(ok))}</div><div class="l">En Odoo y cierran</div></div>
+    <div class="card falta"><div class="n">${falta.length}</div><div class="s">${money(sum(falta))}</div><div class="l">Faltan cargar</div></div>
+    <div class="card warn"><div class="n">${dif.length}</div><div class="s">${money(sum(dif))}</div><div class="l">A revisar (otro importe, borrador o en Compras)</div></div>
+    <div class="card warn"><div class="n">${VISTA.sinFactura.length}</div><div class="s">${money(VISTA.sinFactura.reduce((s, x) => s + x.total, 0))}</div><div class="l">Compras sin factura en ARCA</div></div>
+  </div>`;
+  if (falta.length) h += `<div style="margin:-4px 0 14px;"><button class="btn primary" id="btnTodo">Cargar los ${falta.length} pendientes en Odoo</button> <span class="nota">Cada uno se verifica al centavo contra ARCA antes de validar; si algo no cierra, queda en borrador y te avisa.</span></div>`;
+
+  const orden = (g) => (g.docs.some(d => !d.odoo && !d.oc) ? 0 : g.docs.some(d => !d.cierra) ? 1 : 2);
+  for (const g of [...G].sort((a, b) => orden(a) - orden(b) || a.docs[0].fecha.localeCompare(b.docs[0].fecha))) {
+    const est = orden(g) === 0 ? 'pend' : orden(g) === 1 ? 'aviso' : 'listo';
+    const difPago = r2(g.facturado - g.pagado);
+    h += `<div class="prov ${est}" data-cuit="${esc(g.cuit)}">
+      <div class="prov-cab">
+        <div><div class="nom">${esc(g.denom)}</div>
+          <div class="sub">CUIT ${esc(g.cuit)} · en ML: <b>${esc(g.nicks.join(', ') || '—')}</b>${g.via !== 'aprendido' ? ' · <span class="pill warn">identificado por importe y fecha</span>' : ''}</div></div>
+        <div style="text-align:right;">
+          <select data-cat="${esc(g.cuit)}">${Object.entries(CATS).map(([k, l]) => `<option value="${k}" ${k === g.cat ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          <div class="sub">${esc(g.sug.porque)}</div>
+        </div>
+      </div>
+      <div class="items">${g.ords.map(o => `<div class="${o.status === 'paid' ? '' : 'canc'}">${fFecha(o.fecha)} · ${o.items.map(i => { const u = linkItem(i); return `${i.cant}× ${u ? `<a href="${u}" target="_blank" rel="noopener">${esc(i.titulo)}</a>` : esc(i.titulo)}`; }).join(' + ')} · ${money(o.status === 'paid' ? o.pagado : o.total)}${o.status === 'paid' ? '' : ' (cancelada, devuelto)'}</div>`).join('') || '<div class="canc">sin órdenes en la ventana</div>'}</div>
+      <table><thead><tr><th>Fecha</th><th>Comprobante</th><th class="num">IVA</th><th class="num">Otros</th><th class="num">Total ARCA</th><th>Odoo</th><th>Pago</th><th></th></tr></thead><tbody>`;
+    for (const d of g.docs) {
+      const k = claveDoc(d);
+      const odoo = d.odoo ? (d.odoo.state === 'draft' ? `<span class="pill warn">BORRADOR ${esc(d.odoo.name)} · validalo en Odoo</span>` : d.cierra ? `<span class="pill ok">✓ ${esc(d.odoo.name)}</span>` : `<span class="pill warn">${esc(d.odoo.name)} · Odoo ${money(d.odoo.total)}</span>`)
+        : d.oc ? (d.oc.facturacion === 'invoiced' ? `<span class="pill warn">en Compras ${esc(d.oc.name)} · ya facturada como ${esc(d.oc.facturas.join(', '))}: revisá el número</span>` : `<span class="pill warn">en Compras ${esc(d.oc.name)} · facturala desde la OC</span>`)
+        : `<span class="pill falta">falta</span>`;
+      const pago = d.nc ? '<span class="pill gris">concilia con su FA</span>' : d.anulada ? '<span class="pill gris">anulada por NC</span>'
+        : d.odoo ? (d.odoo.pagos || []).join(', ') || esc(d.odoo.pago || '')
+        : d.fechaPago ? `MP ${fFecha(d.fechaPago)}${d.pagoImporte < Math.abs(d.total) - 0.005 ? ` · ${money(d.pagoImporte)} <span class="pill warn">queda ${money(Math.abs(d.total) - d.pagoImporte)} abierto</span>` : ''}` : '<span class="pill warn">sin pago en ML</span>';
+      h += `<tr class="${d.nc ? 'nc' : ''}"><td>${fFecha(d.fecha)}</td><td class="mono">${esc(nombreDoc(d))}</td>
+        <td class="num">${money(d.iva)}</td><td class="num">${d.otros ? money(d.otros) : '—'}</td><td class="num">${money((d.nc ? -1 : 1) * Math.abs(d.total))}</td>
+        <td>${odoo}</td><td>${pago}</td><td>${d.odoo || d.oc ? '' : `<button class="btn sm" data-cargar="${esc(k)}">Cargar</button>`}</td></tr>`;
+    }
+    h += `</tbody></table>
+      <div class="concil ${Math.abs(difPago) > 1 ? 'mal' : ''}"><span>Facturado neto (FA − NC) <b>${money(g.facturado)}</b> · pagado en ML <b>${money(g.pagado)}</b></span>
+      <span>${Math.abs(difPago) > 1 ? (difPago > 0 ? `⚠ facturaron ${money(difPago)} de más (falta una NC o se devolvió por Compra Protegida)` : `⚠ falta factura por ${money(-difPago)} (puede llegar el mes que viene)`) : '✓ cierra'}</span></div>
+    </div>`;
+  }
+  h += `<div class="bloque">Compras pagadas sin factura en ARCA <span class="pill warn">${VISTA.sinFactura.length}</span></div>`;
+  if (!VISTA.sinFactura.length) h += `<div class="empty">Ninguna: todas las compras del mes tienen su comprobante.</div>`;
+  else {
+    h += `<div class="nota">Pueden facturarse el mes siguiente. Si es una compra del negocio y no llega, pedile la factura al vendedor (A, al CUIT 20-31092413-0).</div><div class="prov"><table><thead><tr><th>Fecha</th><th>Vendedor</th><th>Qué se compró</th><th>Tipo</th><th class="num">Pagado</th></tr></thead><tbody>`;
+    for (const s of VISTA.sinFactura) h += `<tr><td>${s.ords.map(o => fFecha(o.fecha)).join(', ')}</td><td>${esc(s.seller)}</td><td>${s.ords.flatMap(o => o.items.map(i => `${i.cant}× ${esc(i.titulo)}`)).join(' + ')}</td><td>${s.cat === 'personal' ? '<span class="pill gris">personal</span>' : `<span class="pill warn">${esc(s.cat)} · pedir factura</span>`}</td><td class="num">${money(s.total)}</td></tr>`;
+    h += `</tbody></table></div>`;
+  }
+  v.innerHTML = h;
+  v.querySelectorAll('[data-cat]').forEach(s => s.addEventListener('change', () => { const g = VISTA.grupos.find(x => x.cuit === s.dataset.cat); g.cat = s.value; for (const d of g.docs) fn({ modo: 'decidir', clave: claveDoc(d), categoria: s.value }).catch(() => {}); }));
+  v.querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', () => cargarUno(b.dataset.cargar)));
+  const bt = $('btnTodo'); if (bt) bt.addEventListener('click', cargarTodo);
+}
+
+function buscarDoc(clave) { for (const g of VISTA.grupos) for (const d of g.docs) if (claveDoc(d) === clave) return { g, d }; return null; }
+function payload(g, d, dry) {
+  const titulos = [...new Set(g.titulos)].slice(0, 4).join(' + ');
+  return { modo: 'cargar', dry_run: dry, categoria: g.cat, detalle: `[ML ${g.nicks.join('/')}] ${titulos}`.slice(0, 240),
+    comp: { cuit: d.cuit, denom: d.denom, cod: d.cod, pv: d.pv, num: d.num, fecha: d.fecha, neto: Math.abs(d.neto), nograv: Math.abs(d.nograv), iva: Math.abs(d.iva), otros: Math.abs(d.otros), total: Math.abs(d.total) },
+    pago: d.fechaPago && d.pagoImporte > 0 ? { fecha: d.fechaPago, importe: d.pagoImporte } : null };
+}
+async function aprender(g) { for (const sid of g.sellers) { const o = g.ords.find(x => Number(x.seller_id) === sid); await fn({ modo: 'aprender', cuit: g.cuit, seller_id: sid, nickname: o ? o.seller : null, razon_social: g.denom }).catch(() => {}); } }
+async function cargarUno(clave, sinConfirmar) {
+  const x = buscarDoc(clave); if (!x) return false;
+  const { g, d } = x;
+  try {
+    const plan = await fn(payload(g, d, true));
+    if (plan.ya_cargada) { setStatus('on', `${nombreDoc(d)} ya estaba en Odoo (${plan.move.name}).`, 'ok'); await cargarDatos(); return true; }
+    const p = plan.plan;
+    if (!sinConfirmar && !confirm(`Cargar en Odoo:\n\n${p.comprobante} · ${p.proveedor}\nCuenta: ${p.cuenta}\nTotal ${money(p.total)} (IVA ${money(p.iva)}${p.percepciones.length ? ' + percepciones copiadas' : ''})\nPago: ${p.pago}${p.aviso ? '\n\n⚠ ' + p.aviso : ''}\n\n¿Confirmás?`)) return false;
+    setStatus('load', `Cargando ${nombreDoc(d)}…`);
+    const r = await fn(payload(g, d, false));
+    await aprender(g);
+    setStatus('on', `✓ ${r.comprobante.name} cargada y verificada al centavo (${money(r.comprobante.amount_total)}).`, 'ok');
+    return true;
+  } catch (e) { setStatus('off', `${nombreDoc(d)}: ${e.message}`, 'err'); return false; }
+}
+async function cargarTodo() {
+  const pend = VISTA.grupos.flatMap(g => g.docs.filter(d => !d.odoo && !d.oc).map(d => ({ g, d })));
+  // las FA primero y después las NC (así cada NC encuentra su factura para conciliarse)
+  pend.sort((a, b) => (a.d.nc - b.d.nc) || a.d.fecha.localeCompare(b.d.fecha));
+  // 1) ensayo de todos (no escribe nada): lo que da error o tiene aviso de posible duplicado queda AFUERA del lote
+  const listos = [], afuera = [];
+  for (let i = 0; i < pend.length; i++) {
+    const { g, d } = pend[i];
+    setStatus('load', `Revisando ${i + 1} de ${pend.length}: ${nombreDoc(d)}…`);
+    try {
+      const r = await fn(payload(g, d, true));
+      if (r.ya_cargada) continue;
+      // el aviso de "mismo importe" es esperable en una FA anulada por NC (es la gemela de la compra rehecha)
+      if (r.plan.aviso && !d.anulada && !d.nc) afuera.push(`${nombreDoc(d)} ${d.denom}: ${r.plan.aviso}`);
+      else listos.push({ g, d, plan: r.plan });
+    } catch (e) { afuera.push(`${nombreDoc(d)} ${d.denom}: ${e.message}`); }
+  }
+  const lista = listos.map(({ g, d, plan }) => `• ${plan.comprobante} ${d.denom.slice(0, 28)} ${money(plan.total)} → ${CATS[g.cat].split(' ·')[0]}`).join('\n');
+  const txtAfuera = afuera.length ? `\n\nQuedan AFUERA (cargalos de a uno, mirándolos):\n${afuera.map(x => '• ' + x).join('\n')}` : '';
+  if (!listos.length) { setStatus('off', 'No hay nada para cargar en lote.' + (afuera.length ? ' Revisá: ' + afuera.join(' | ') : ''), 'err'); return; }
+  if (!confirm(`Se cargan ${listos.length} comprobantes en Odoo, verificados al centavo contra ARCA:\n\n${lista}${txtAfuera}\n\n¿Confirmás?`)) { setStatus('off', 'Carga cancelada.'); return; }
+  // 2) carga real
+  let ok = 0; const fallas = [];
+  for (const { d } of listos) { setStatus('load', `Cargando ${ok + fallas.length + 1} de ${listos.length}: ${nombreDoc(d)}…`); (await cargarUno(claveDoc(d), true)) ? ok++ : fallas.push(nombreDoc(d) + ': ' + $('status').textContent); }
+  await cargarDatos();
+  const msg = `${ok} cargados${fallas.length ? ` · ${fallas.length} con problema: ${fallas.join(' | ')}` : ' ✓'}${afuera.length ? ` · ${afuera.length} quedaron para revisar a mano` : ''}`;
+  setStatus(fallas.length ? 'off' : 'on', msg, fallas.length ? 'err' : 'ok');
+}
+
+// ── render cargos (comisiones, envíos, Mercado Pago) ──────────────────────
+function renderCargos() {
+  const v = $('vista-cargos');
+  if (!ARCA) { v.innerHTML = `<div class="empty">Subí el Excel de ARCA del mes.</div>`; $('n-cargos').textContent = '—'; return; }
+  const mes = VISTA.mes;
+  const docs = ARCA.filter(a => a.fecha.startsWith(mes) && CUIT_CARGOS.has(a.cuit)).sort((x, y) => x.fecha.localeCompare(y.fecha) || x.cod.localeCompare(y.cod));
+  const falta = docs.filter(d => !enOdoo(d));
+  $('n-cargos').textContent = falta.length ? falta.length + ' por cargar' : (docs.length ? '✓' : '—');
+  let h = `<div class="nota">Facturas de <b>Mercado Libre S.R.L.</b> (comisiones, publicidad, Mercado Pago, suscripción) y <b>MELI LOG</b> (envíos). Se emiten el 29 por el ciclo del 30 al 29.</div>
+    <div class="prov"><table><thead><tr><th>Fecha</th><th>Emisor</th><th>Comprobante</th><th class="num">Neto</th><th class="num">IVA</th><th class="num">Percepciones</th><th class="num">Total ARCA</th><th>Odoo</th></tr></thead><tbody>`;
+  for (const d of docs) {
+    const o = enOdoo(d) || DATOS.odoo.find(x => x.cuit === d.cuit && x.name.endsWith(nro(d)));
+    const tipoMal = o && o.name !== nombreDoc(d);
+    const cierra = o && Math.abs(o.total - Math.abs(d.total)) <= 0.01;
+    const est = !o ? '<span class="pill falta">falta</span>' : tipoMal ? `<span class="pill warn">${esc(o.name)} · en ARCA es ${esc(nombreDoc(d))}</span>` : cierra ? `<span class="pill ok">✓ ${esc(o.name)}</span>` : `<span class="pill warn">${esc(o.name)} · Odoo ${money(o.total)}</span>`;
+    const sg = d.nc ? -1 : 1;
+    h += `<tr class="${d.nc ? 'nc' : ''}"><td>${fFecha(d.fecha)}</td><td>${esc(d.cuit === '30715686054' ? 'MELI LOG' : 'Mercado Libre')}</td><td class="mono">${esc(nombreDoc(d))}</td>
+      <td class="num">${money(sg * Math.abs(d.neto))}</td><td class="num">${money(sg * Math.abs(d.iva))}</td><td class="num">${d.otros ? money(sg * Math.abs(d.otros)) : '—'}</td><td class="num">${money(sg * Math.abs(d.total))}</td><td>${est}</td></tr>`;
+  }
+  if (!docs.length) h += `<tr><td colspan="8" class="empty">No hay comprobantes de Mercado Libre ni MELI LOG en el Excel de este mes.</td></tr>`;
+  h += `</tbody></table></div>
+    <div class="nota">La carga automática de estos comprobantes (baja el PDF de Mercado Libre, arma los renglones por concepto y las percepciones por provincia, y verifica contra ARCA) se suma en el próximo paso. Mientras tanto se cargan como siempre, con <a href="percepciones.html">Percepciones (cargar)</a>.</div>`;
+  v.innerHTML = h;
+}
+
+cargarDatos();
+</script>
+</body>
+</html>
