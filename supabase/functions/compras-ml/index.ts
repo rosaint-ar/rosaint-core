@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+// Padrón de ARCA (A5, con el certificado de Rosaint): se reusa la consulta del portal de altas, sin tocarla.
+import { consultarArca } from "../portal-alta/arca.ts";
 // ═══ compras-ml v1 (10-nov-2026) — Compras de Rosaint EN Mercado Libre ⇄ ARCA ⇄ Odoo ═══
 // La factura de una compra en ML no se puede bajar por API como comprador: la fuente es ARCA (Mis Comprobantes
 // Recibidos, que sube la pantalla). Esta función da todo lo demás y carga en Odoo.
@@ -65,6 +67,68 @@ async function leerTodo(model: string, domain: unknown[], fields: string[], orde
 const m2o = (v: any) => Array.isArray(v) ? v[0] : null;
 const digitos = (s: any) => String(s || "").replace(/\D/g, "");
 const cuitFmt = (d: string) => d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : d;
+
+// ── Contactos con el formato de Diego (10-nov-2026) ─────────────────────────
+// · Empresas: tipo oración (cada palabra con mayúscula, conectores en minúscula, acentos) y la sociedad abreviada
+//   con puntos: "La Casa del Envase Plástico S.A.", "Papelera Todoplastic S.R.L.".
+// · Personas: "Nombre Segundo-nombre Apellido" y, si sirve para identificarla, la marca entre paréntesis:
+//   "José Levy (Pura Química)". El padrón separa apellido y nombre: no se adivina el orden.
+// · Siempre el domicilio FISCAL del padrón: calle, localidad, código postal y provincia.
+const MINUS = new Set(["de", "del", "la", "las", "los", "el", "y", "e", "en", "con", "para", "por", "a"]);
+const ACENTOS: Record<string, string> = {
+  maria: "María", jose: "José", rodriguez: "Rodríguez", gonzalez: "González", martinez: "Martínez", lopez: "López", gomez: "Gómez",
+  fernandez: "Fernández", perez: "Pérez", sanchez: "Sánchez", ramirez: "Ramírez", diaz: "Díaz", alvarez: "Álvarez", gimenez: "Giménez",
+  jimenez: "Jiménez", benitez: "Benítez", hernandez: "Hernández", dominguez: "Domínguez", nuñez: "Núñez", nunez: "Núñez", suarez: "Suárez",
+  vazquez: "Vázquez", velazquez: "Velázquez", gutierrez: "Gutiérrez", juarez: "Juárez", mendez: "Méndez", ruiz: "Ruiz", garcia: "García",
+  belen: "Belén", ines: "Inés", ramon: "Ramón", martin: "Martín", julian: "Julián", sebastian: "Sebastián", lucia: "Lucía", sofia: "Sofía",
+  angel: "Ángel", andres: "Andrés", ruben: "Rubén", german: "Germán", hector: "Héctor", oscar: "Óscar", victor: "Víctor", raul: "Raúl",
+  joaquin: "Joaquín", agustin: "Agustín", nicolas: "Nicolás", tomas: "Tomás", matias: "Matías", ivan: "Iván", cesar: "César", adrian: "Adrián",
+  quimica: "Química", quimicos: "Químicos", drogueria: "Droguería", electronica: "Electrónica", plastico: "Plástico", plasticos: "Plásticos",
+  informatico: "Informático", informatica: "Informática", organizacion: "Organización", distribucion: "Distribución", logistica: "Logística",
+  tecnologia: "Tecnología", comercializacion: "Comercialización", produccion: "Producción", argentina: "Argentina", union: "Unión",
+  farmacia: "Farmacia", farmaceutica: "Farmacéutica", cosmetica: "Cosmética", industria: "Industria", fabrica: "Fábrica", grafica: "Gráfica",
+  aguila: "Águila", electrica: "Eléctrica", optica: "Óptica", economica: "Económica", tecnica: "Técnica", medica: "Médica",
+  // marcas con mayúsculas propias
+  eyg: "EyG",
+};
+const SOCIEDAD: [RegExp, string][] = [
+  [/\bSOCIEDAD ANONIMA COMERCIAL E INDUSTRIAL\b/g, "S.A.C.I."], [/\bSOCIEDAD ANONIMA\b/g, "S.A."],
+  [/\bSOCIEDAD DE RESPONSABILIDAD LIMITADA\b/g, "S.R.L."], [/\bSOCIEDAD POR ACCIONES SIMPLIFICADA\b/g, "S.A.S."],
+  [/\bS\.?\s?R\.?\s?L\.?(?=\s|$)/g, "S.R.L."], [/\bS\.?\s?A\.?\s?S\.?(?=\s|$)/g, "S.A.S."], [/\bS\.?\s?A\.?\s?C\.?\s?I\.?(?=\s|$)/g, "S.A.C.I."],
+  [/\bS\.?\s?A\.?(?=\s|$)/g, "S.A."], [/\bS\.?\s?C\.?(?=\s|$)/g, "S.C."],
+];
+function palabra(w: string, i: number): string {
+  if (/^[A-Z]\.([A-Z]\.)+$/.test(w)) return w;                       // S.A., S.R.L.
+  const l = w.toLowerCase();
+  if (i > 0 && MINUS.has(l)) return l;
+  if (/^[^aeiouáéíóú]{2,4}$/i.test(w) && /[A-Z]/.test(w)) return w.toUpperCase(); // siglas sin vocales (YPF)
+  if (ACENTOS[l]) return ACENTOS[l];
+  return l.split("-").map((p) => p ? p[0].toUpperCase() + p.slice(1) : p).join("-");
+}
+export function tipoOracion(s: string): string {
+  let t = String(s || "").toUpperCase().replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+  for (const [re, rep] of SOCIEDAD) t = t.replace(re, rep);
+  return t.split(" ").map((w, i) => palabra(w, i)).join(" ");
+}
+function nombreProlijo(p: Rec, marca?: string): string {
+  const marcaTxt = marca ? ` (${String(marca).trim()})` : "";
+  if (p.apellido && !p.razon) return `${tipoOracion(p.nombre)} ${tipoOracion(p.apellido)}`.trim() + marcaTxt;
+  return tipoOracion(p.razon || p.nombre_completo || "");
+}
+let ESTADOS: Rec[] | null = null;
+const sinAcento = (s: string) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z ]/g, " ").replace(/\s+/g, " ").trim();
+async function provinciaId(nombre: string): Promise<number | null> {
+  if (!ESTADOS) ESTADOS = await ex("res.country.state", "search_read", [[["country_id", "=", COUNTRY_AR]]], { fields: ["id", "name"] }) as Rec[];
+  const n = sinAcento(nombre);
+  if (/CAPITAL FEDERAL|CIUDAD AUTONOMA/.test(n)) return (ESTADOS.find((e) => /CIUDAD AUTONOMA/.test(sinAcento(e.name))) || {}).id ?? null;
+  return (ESTADOS.find((e) => sinAcento(e.name) === n) || ESTADOS.find((e) => sinAcento(e.name).startsWith(n)) || {}).id ?? null;
+}
+async function datosPadron(cuit: string): Promise<Rec> {
+  const p = await consultarArca(cuit);
+  if (!p?.ok || !p.existe) return { ok: false, error: p?.error || "ARCA no devolvió datos de " + cuit };
+  return { ok: true, p, state_id: p.provincia ? await provinciaId(p.provincia) : null,
+    street: p.domicilio ? tipoOracion(p.domicilio) : null, city: p.localidad ? tipoOracion(p.localidad) : null, zip: p.cp || null };
+}
 
 // ── Mercado Libre ───────────────────────────────────────────────────────────
 async function mlToken(sb: any): Promise<string> {
@@ -281,9 +345,15 @@ async function cargar(sb: any, body: Rec) {
     aviso: parecidas.length ? `Ojo: ya hay ${parecidas.map((p) => `${p.name} del ${p.invoice_date}`).join(", ")} del mismo proveedor por el mismo importe (puede ser una compra repetida; verificá que sea otro comprobante).` : null };
   if (dry) return { ok: true, dry_run: true, plan };
 
-  // proveedor nuevo: como los de siempre (empresa, CUIT, responsabilidad según la letra), con el nombre de ARCA
-  if (!partner) partner = await ex("res.partner", "create", [{ name: String(c.denom || cuitFmt(cuit)).trim(), vat: cuitFmt(cuit), is_company: true, country_id: COUNTRY_AR,
-    l10n_latam_identification_type_id: ID_CUIT, l10n_ar_afip_responsibility_type_id: doc.letra === "C" ? 6 : 1, supplier_rank: 1 }]) as number;
+  // proveedor nuevo: como los de siempre (empresa, CUIT, responsabilidad según la letra), con el formato de Diego
+  // y el domicilio FISCAL del padrón de ARCA. Sin padrón no se da de alta a medias.
+  if (!partner) {
+    const d = await datosPadron(cuit);
+    if (!d.ok) return { ok: false, error: `No pude consultar el padrón de ARCA para dar de alta a ${c.denom} (${d.error}). Reintentá en un rato: el proveedor se crea con su domicilio fiscal.` };
+    partner = await ex("res.partner", "create", [{ name: nombreProlijo(d.p, body.marca), vat: cuitFmt(cuit), is_company: true, country_id: COUNTRY_AR,
+      street: d.street || false, city: d.city || false, zip: d.zip || false, state_id: d.state_id || false,
+      l10n_latam_identification_type_id: ID_CUIT, l10n_ar_afip_responsibility_type_id: d.p.iva === "MONO" ? 6 : d.p.iva === "EXENTO" ? 4 : doc.letra === "C" ? 6 : 1, supplier_rank: 1 }]) as number;
+  }
   const id: number = retomar ?? await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: partner, journal_id: J_COMPRAS,
     l10n_latam_document_type_id: doc.id, l10n_latam_document_number: numero, invoice_date: c.fecha, date: c.fecha, company_id: C,
     ...(faAnulada ? { reversed_entry_id: faAnulada.id } : {}),
@@ -380,6 +450,32 @@ _servirConGuardia(async (req: Request) => {
     let out: Rec;
     if (modo === "datos") out = await datos(sb, body);
     else if (modo === "cargar") out = await cargar(sb, body);
+    else if (modo === "padron") {
+      // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
+      const marcas: Rec = body.marcas || {};
+      const filas: Rec[] = [];
+      for (const raw of (body.cuits || []) as string[]) {
+        const cuit = digitos(raw);
+        const actual = (await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name", "vat", "street", "city", "zip", "state_id", "is_company", "l10n_ar_afip_responsibility_type_id"], context: { active_test: false } }) as Rec[]);
+        const d = await datosPadron(cuit);
+        filas.push({ cuit, partners: actual.map((a) => ({ id: a.id, name: a.name, vat: a.vat, street: a.street, city: a.city, zip: a.zip, provincia: a.state_id?.[1] || null, resp: a.l10n_ar_afip_responsibility_type_id?.[1] || null })),
+          padron: d.ok ? { tipo: d.p.tipo, apellido: d.p.apellido, nombre: d.p.nombre, razon: d.p.razon, iva: d.p.iva, domicilio: d.p.domicilio, localidad: d.p.localidad, cp: d.p.cp, provincia: d.p.provincia } : { error: d.error },
+          propuesta: d.ok ? { name: nombreProlijo(d.p, marcas[cuit]), street: d.street, city: d.city, zip: d.zip, state_id: d.state_id } : null });
+      }
+      out = { ok: true, filas };
+    } else if (modo === "prolijar") {
+      // aplica los cambios aprobados: solo nombre y domicilio del contacto (no toca facturas ni nada más)
+      const hechos: Rec[] = [];
+      for (const ch of (body.cambios || []) as Rec[]) {
+        const vals: Rec = {};
+        for (const k of ["name", "street", "city", "zip", "state_id", "vat"]) if (ch[k] !== undefined && ch[k] !== null && ch[k] !== "") vals[k] = ch[k];
+        if (!ch.partner_id || !Object.keys(vals).length) continue;
+        vals.country_id = COUNTRY_AR;
+        await ex("res.partner", "write", [[ch.partner_id], vals]);
+        hechos.push((await ex("res.partner", "read", [[ch.partner_id], ["id", "name", "vat", "street", "city", "zip", "state_id"]]) as Rec[])[0]);
+      }
+      out = { ok: true, hechos };
+    }
     else if (modo === "aprender") {
       const cuit = digitos(body.cuit);
       if (cuit.length !== 11 || !body.seller_id) throw new Error("Falta CUIT o vendedor");
