@@ -35,13 +35,16 @@ const CATS: Record<string, { code: string; account: number; label: string }> = {
   medios_pago: { code: "GC03", account: 0, label: "Comisiones medios de pago (5.2.1.01.150)" },
   // guantes, camisolines, barbijos, cofias (EyG): sin producto, un renglón por artículo como en la factura
   higiene:     { code: "", account: 758, label: "Higiene y Seguridad (5.1.2.01.100)" },
+  // comisiones del banco (cuenta existente Gastos Bancarios), sin producto: el texto va en linea_nombre
+  bancarios:   { code: "", account: 821, label: "Gastos Bancarios (5.5.1.01.050)" },
 };
 // diarios de pago: Mercado Pago (también tarjeta, como puente) o Efectivo
-const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" }, internos: { journal: 55, pml: 28, nombre: "Pagos internos" } };
+const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" }, internos: { journal: 55, pml: 28, nombre: "Pagos internos" }, santander: { journal: 54, pml: 26, nombre: "Banco Santander" } };
 const DOC: Record<string, { id: number; nc: boolean; letra: string; pref: string }> = {
   "1": { id: 1, nc: false, letra: "A", pref: "FA-A" }, "3": { id: 3, nc: true, letra: "A", pref: "NC-A" },
   "6": { id: 6, nc: false, letra: "B", pref: "FA-B" }, "8": { id: 8, nc: true, letra: "B", pref: "NC-B" },
   "11": { id: 11, nc: false, letra: "C", pref: "FA-C" }, "13": { id: 13, nc: true, letra: "C", pref: "NC-C" },
+  "64": { id: 45, nc: false, letra: "B", pref: "LI-B" }, // liquidación B (ej. comisión del banco)
 };
 type Rec = Record<string, any>;
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -141,7 +144,8 @@ async function provinciaId(nombre: string): Promise<number | null> {
 function domicilioProlijo(dir: string): string {
   let t = tipoOracion(String(dir || "").replace(/\s+(PISO|DPTO|DEPTO|OF|OFICINA|LOCAL):\s*/gi, " $1 "));
   const av = t.match(/^(.*?)\s+(Av\.?|Avda\.?|Avenida)\s+(\d.*)$/i);
-  if (av) t = `Av. ${av[1]} ${av[3]}`;
+  // el padrón pone el apellido primero en las avenidas con nombre de persona: "GARAY JUAN DE AV. 151" → "Av. Juan de Garay 151"
+  if (av) { const per = av[1].match(/^(\S+)\s+(.+\s(?:de|del|de la))$/i); t = `Av. ${per ? per[2] + " " + per[1] : av[1]} ${av[3]}`; }
   return t.replace(/\bDpto\s+(\w+)/i, (_, d) => `Dpto. ${d.toUpperCase()}`).replace(/\bDepto\s+(\w+)/i, (_, d) => `Dpto. ${d.toUpperCase()}`).replace(/\s+/g, " ").trim();
 }
 const RESP_PADRON: Record<string, number> = { RI: 1, MONO: 6, EXENTO: 4 };
@@ -294,10 +298,16 @@ async function cargar(sb: any, body: Rec) {
   if (doc.letra === "A" && Math.abs(r2(neto + nograv + iva + otros) - total) > 0.01) return { ok: false, error: `Los importes de ARCA no cierran: neto ${neto} + no grav. ${nograv} + IVA ${iva} + otros ${otros} ≠ total ${total}` };
   if (doc.letra !== "A" && otros) return { ok: false, error: `Factura ${doc.letra} con "otros tributos" por $${otros}: cargala a mano.` };
   // como siempre: el pago va por el TOTAL de la factura, por Mercado Pago, con la MISMA fecha de la factura
-  const importePago = total;
+  // salvo que se indique lo que realmente salió de la cuenta (ej. el banco debitó $0,02 más que el comprobante):
+  // esa diferencia, de centavos, va a la cuenta indicada y la factura queda saldada igual
+  const importePago = body.pago?.importe != null ? r2(+body.pago.importe) : total;
+  const difPago = r2(importePago - total);
+  if (difPago && (Math.abs(difPago) > 1 || !body.pago?.diferencia_cuenta)) return { ok: false, error: `El pago (${importePago}) difiere del total (${total}): solo se admiten centavos y con la cuenta para la diferencia` };
+  const cuentaDifPago = difPago ? await cuentaId(String(body.pago.diferencia_cuenta)) : null;
+  if (difPago && !cuentaDifPago) return { ok: false, error: "No existe la cuenta " + body.pago.diferencia_cuenta };
   const fechaPago = body.pago?.fecha || c.fecha;
   const diarioPago = PAGO_DIARIO[String(body.pago?.diario || "mp")];
-  if (body.pago && !diarioPago) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos)" };
+  if (body.pago && !diarioPago) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos | santander)" };
 
   // proveedor
   const ya = await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name"], context: { active_test: false }, limit: 1 }) as Rec[];
@@ -366,7 +376,7 @@ async function cargar(sb: any, body: Rec) {
     if (suma !== neto) return { ok: false, error: `Los renglones suman ${suma} y el neto de ARCA es ${neto}` };
     if (detalle.some((l) => !String(l.nombre || "").trim())) return { ok: false, error: "Falta la descripción de algún renglón" };
   }
-  if (!cat.code && !detalle) return { ok: false, error: "Esta categoría se carga con los renglones de la factura (lineas_detalle)" };
+  if (!cat.code && !detalle && !body.linea_nombre) return { ok: false, error: "Esta categoría se carga con los renglones de la factura (lineas_detalle)" };
   // Igual que como se cargaron siempre (verificado 10-nov sobre 15 facturas de compras de ML): UN renglón, cantidad 1,
   // la descripción que pone Odoo para el producto ([GN01] Gastos varios no operativos, [INS_EXP] Insumos de oficina…),
   // A al neto con su IVA; B y C por el total con "IVA No Aplica". Sin referencia ni nota.
@@ -376,7 +386,7 @@ async function cargar(sb: any, body: Rec) {
     : doc.letra === "A"
     ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: neto, ...nombreLinea, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
        ...(nograv ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
-    : [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: total, ...nombreLinea, tax_ids: [[6, 0, [TAX.noAplica]]] }];
+    : [{ ...(prod[0].id ? { product_id: prod[0].id } : {}), account_id: cuentaCat, quantity: 1, price_unit: total, ...nombreLinea, tax_ids: [[6, 0, [TAX.noAplica]]] }];
   // NC de una compra cancelada: se crea como REVERSIÓN de la factura que anula (misma forma que el lote compras_b)
   let faAnulada: Rec | null = null;
   let ncPendiente = "";
@@ -388,7 +398,7 @@ async function cargar(sb: any, body: Rec) {
     else return { ok: false, error: `No encuentro la factura abierta de ${total} que anula esta NC: cargá primero esa factura (sin pago).` };
   }
   const plan: Rec = { comprobante: nombre, proveedor: partner ? ya[0].name : `ALTA: ${c.denom} (${cuitFmt(cuit)})`, cuenta: cat.label, total, iva, percepciones: perc,
-    pago: !doc.nc && body.pago ? `${diarioPago.nombre} ${fechaPago} $${importePago}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : (c.anulada ? "sin pago (anulada por NC)" : "sin pago: queda a pagar"),
+    pago: !doc.nc && body.pago ? `${diarioPago.nombre} ${fechaPago} $${importePago}${difPago ? ` (diferencia $${difPago} a ${body.pago.diferencia_cuenta})` : ""}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : (c.anulada ? "sin pago (anulada por NC)" : "sin pago: queda a pagar"),
     aviso: parecidas.length ? `Ojo: ya hay ${parecidas.map((p) => `${p.name} del ${p.invoice_date}`).join(", ")} del mismo proveedor por el mismo importe (puede ser una compra repetida; verificá que sea otro comprobante).` : null };
   // proveedor nuevo: el ensayo ya trae del padrón el nombre con el formato de Diego y el domicilio fiscal
   let alta: Rec | null = null;
@@ -452,9 +462,10 @@ async function cargar(sb: any, body: Rec) {
   const nm = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name;
   let pago: Rec | null = null;
   if (!doc.nc && body.pago) {
-    const wid = await ex("account.payment.register", "create", [{ journal_id: diarioPago.journal, payment_method_line_id: diarioPago.pml, payment_date: fechaPago, amount: importePago, communication: nm }], { context: ctx }) as number;
+    const wid = await ex("account.payment.register", "create", [{ journal_id: diarioPago.journal, payment_method_line_id: diarioPago.pml, payment_date: fechaPago, amount: importePago, communication: nm,
+      ...(difPago ? { payment_difference_handling: "reconcile", writeoff_account_id: cuentaDifPago, writeoff_label: String(body.pago.diferencia_nombre || "Diferencia de redondeo") } : {}) }], { context: ctx }) as number;
     await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
-    pago = { diario: diarioPago.nombre, fecha: fechaPago, importe: importePago };
+    pago = { diario: diarioPago.nombre, fecha: fechaPago, importe: importePago, ...(difPago ? { diferencia: difPago } : {}) };
   }
   if (doc.nc && faAnulada) {
     // la NC (reversión) se concilia con la factura que anula: las dos quedan saldadas, sin movimiento de plata
