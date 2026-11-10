@@ -20,7 +20,7 @@ import { Buffer } from "node:buffer";
 const ML_API = "https://api.mercadolibre.com";
 const BUYER = 157540060;
 const ODOO_URL = Deno.env.get("ODOO_URL")!, ODOO_DB = Deno.env.get("ODOO_DB")!, ODOO_LOGIN = Deno.env.get("ODOO_LOGIN")!, ODOO_KEY = Deno.env.get("ODOO_KEY")!;
-const C = 2, J_COMPRAS = 33, J_MP = 42, PML_MP_OUT = 22, COUNTRY_AR = 10, ID_CUIT = 4;
+const C = 2, J_COMPRAS = 33, J_MP = 42, PML_MP_OUT = 22, PML_MP_IN = 21, COUNTRY_AR = 10, ID_CUIT = 4;
 const TAX = { iva21: 188, iva105: 186, iva27: 190, noAplica: 178, noGravado: 180 };
 const TAX_IVA = new Set([188, 186, 190]);
 // Criterio de Diego (10-nov-2026) = como se vienen cargando:
@@ -448,8 +448,9 @@ async function cargar(sb: any, body: Rec) {
 //  · FA-B (suscripción): por el total con "IVA No Aplica";
 //  · pago por Mercado Pago el MISMO día de la factura por el total (criterio de Diego: hay cargos que se debitan en
 //    cada venta y el resto va con tarjeta; se simplifica pagando el día de la factura);
-//  · NC: reversión de la factura de su "Doc. Ref", conciliada con ella, y el pago por Mercado Pago de esa factura se
-//    reduce en el importe de la NC (así quedó todo el año, y el lote nc_orden del 6-nov-2026 lo ordenó así).
+//  · NC: se salda por Mercado Pago (reintegro de ML) el MISMO día de la NC, por su total. La factura de su
+//    "Doc. Ref" queda anotada en la referencia, pero NO se toca (Diego 10-nov: nada de lo ya presentado a la
+//    contadora puede cambiar; las NC suelen referir a facturas de meses anteriores).
 const CONCEPTOS: { re: RegExp; no?: RegExp; code: string | null; cuenta?: string; label: string; bonif?: boolean }[] = [
   { re: /BONIF.*(HERRAMIENTAS ADS|PUBLICIDAD|PRODUCT ADS)/, code: "GC06", label: "Bonificación publicidad (Ads)", bonif: true },
   { re: /(HERRAMIENTAS ADS|PUBLICIDAD|PRODUCT ADS)/, code: "GC06", label: "Publicidad (Ads)" },
@@ -763,39 +764,6 @@ async function lineasOdoo(spec: Rec): Promise<Rec[]> {
   return out;
 }
 
-// Una NC con Doc. Ref: se concilia con esa factura y el pago por Mercado Pago de la factura baja en el importe de la NC
-async function aplicarNC(ncId: number, ncTotal: number, faId: number, dry: boolean): Promise<Rec> {
-  const fa = (await ex("account.move", "read", [[faId], ["name", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
-  if (fa.amount_residual >= ncTotal - 0.005) {
-    if (dry) return { ok: true, plan: `se concilia con ${fa.name} (tiene saldo ${fa.amount_residual})` };
-    const lnc = await lineaPagar(ncId);
-    await ex("account.move", "js_assign_outstanding_line", [[faId], lnc.id]);
-    return { ok: true, concilia_con: fa.name };
-  }
-  const pagos = await ex("account.payment", "search_read", [[["reconciled_bill_ids", "in", [faId]], ["journal_id", "=", J_MP], ["state", "!=", "canceled"]]], { fields: ["id", "name", "amount", "date", "move_id"] }) as Rec[];
-  if (pagos.length !== 1) return { ok: false, error: `${fa.name} tiene ${pagos.length} pagos por Mercado Pago (se esperaba 1): aplicá la NC a mano` };
-  const pago = pagos[0];
-  const nuevo = r2(pago.amount - ncTotal);
-  if (nuevo <= 0) return { ok: false, error: `La NC (${ncTotal}) es mayor que el pago de ${fa.name} (${pago.amount}): aplicala a mano` };
-  if (dry) return { ok: true, plan: `se concilia con ${fa.name} y su pago ${pago.name} del ${pago.date} pasa de ${pago.amount} a ${nuevo}` };
-  const lfac = await lineaPagar(faId);
-  const parc = (lfac.matched_debit_ids as number[]).length ? await ex("account.partial.reconcile", "read", [lfac.matched_debit_ids, ["debit_move_id"]]) as Rec[] : [];
-  const contra = parc.map((p) => m2o(p.debit_move_id) as number);
-  const deContra = contra.length ? await ex("account.move.line", "read", [contra, ["move_id"]]) as Rec[] : [];
-  const otras = deContra.filter((l) => m2o(l.move_id) !== m2o(pago.move_id)).map((l) => l.id as number);
-  await ex("account.move.line", "remove_move_reconcile", [[lfac.id]]);
-  await ex("account.payment", "action_draft", [[pago.id]]);
-  await ex("account.payment", "write", [[pago.id], { amount: nuevo }]);
-  await ex("account.payment", "action_post", [[pago.id]]);
-  const lpago = (await ex("account.move.line", "search_read", [[["payment_id", "=", pago.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
-  const lnc = await lineaPagar(ncId);
-  await ex("account.move.line", "reconcile", [[...new Set([lfac.id as number, lpago.id as number, lnc.id as number, ...otras])]]);
-  const f2 = (await ex("account.move", "read", [[faId], ["amount_residual"]]) as Rec[])[0];
-  const n2 = (await ex("account.move", "read", [[ncId], ["amount_residual"]]) as Rec[])[0];
-  if (f2.amount_residual !== 0 || n2.amount_residual !== 0) return { ok: false, error: `La NC quedó cargada pero ${fa.name} quedó con saldo ${f2.amount_residual} y la NC con ${n2.amount_residual}: revisalo en Odoo` };
-  return { ok: true, concilia_con: fa.name, pago: { nombre: pago.name, antes: pago.amount, ahora: nuevo } };
-}
-
 // cargos {mes, arca:[comprobantes de ARCA de ML y MELI LOG]} → estado de cada uno (no escribe)
 async function cargos(sb: any, body: Rec) {
   const mes = String(body.mes || "");
@@ -850,8 +818,8 @@ async function cargosCargar(sb: any, body: Rec) {
     const borr = await ex("account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "draft"], ["company_id", "=", C], ["partner_id", "=", spec.partner.id]]], { fields: ["id", "amount_total"] }) as Rec[];
     if (borr.length) return { ok: false, error: `Hay ${borr.length} borrador(es) de ${spec.partner.name} en Odoo (id ${borr.map((b) => b.id).join(", ")}): resolvelos antes para no duplicar` };
   }
-  if (doc.nc && !actual) plan.nc = (await aplicarNC(0, spec.total, fa!.id, true)).plan;
-  else if (!doc.nc && !actual) plan.pago = `Mercado Pago ${spec.fecha} $${spec.total}`;
+  if (doc.nc && !actual) plan.pago = `reintegro por Mercado Pago ${spec.fecha} ${spec.total} (refiere a ${fa!.name}, que NO se toca)`;
+  else if (!doc.nc && !actual) plan.pago = `Mercado Pago ${spec.fecha} ${spec.total}`;
   if (dry) return { ok: true, dry_run: true, plan };
 
   const lineas = await lineasOdoo(spec);
@@ -871,11 +839,12 @@ async function cargosCargar(sb: any, body: Rec) {
       await ex("account.move", "button_draft", [[id]]);
     }
     const viejas = await ex("account.move.line", "search_read", [[["move_id", "=", id], ["display_type", "=", "product"]]], { fields: ["id"] }) as Rec[];
-    await ex("account.move", "write", [[id], { l10n_latam_document_type_id: doc.id, invoice_line_ids: [...viejas.map((l) => [2, l.id]), ...lineas.map((l) => [0, 0, l])] }]);
+    // el nombre de un comprobante ya validado una vez NO se recalcula al cambiar el tipo: se escribe ("FA-A …" → "FA-B …")
+    await ex("account.move", "write", [[id], { l10n_latam_document_type_id: doc.id, ...(actual.name !== spec.nombre ? { name: spec.nombre } : {}), invoice_line_ids:[...viejas.map((l) => [2, l.id]), ...lineas.map((l) => [0, 0, l])] }]);
   } else {
     id = await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: spec.partner.id, journal_id: J_COMPRAS,
       l10n_latam_document_type_id: doc.id, l10n_latam_document_number: spec.numero, invoice_date: spec.fecha, date: spec.fecha, company_id: C,
-      ...(doc.nc ? { reversed_entry_id: fa!.id, ref: `${spec.concepto} · Doc. Ref: ${spec.doc_ref.texto}` } : {}),
+      ...(doc.nc ? { ref: `${spec.concepto} · Doc. Ref: ${spec.doc_ref.texto}` } : {}),
       invoice_line_ids: lineas.map((l) => [0, 0, l]) }]) as number;
   }
   const v = await ajustarYVerificar(id, sg, spec.perc_odoo, spec.iva, spec.total);
@@ -887,15 +856,12 @@ async function cargosCargar(sb: any, body: Rec) {
     const lp = await lineaPagar(id);
     await ex("account.move.line", "reconcile", [[lp.id, ...contra]]);
     pago = { reconciliada_de_nuevo: contra.length };
-  } else if (!doc.nc) {
-    const ctx = { active_model: "account.move", active_ids: [id] };
-    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: PML_MP_OUT, payment_date: spec.fecha, amount: spec.total, communication: nm }], { context: ctx }) as number;
-    await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
-    pago = { diario: "Mercado Pago", fecha: spec.fecha, importe: spec.total };
   } else {
-    const r = await aplicarNC(id, spec.total, fa!.id, false);
-    if (!r.ok) return { ...r, id };
-    pago = r;
+    // factura: pago por MP; NC: reintegro por MP (entra plata) — los dos el día del comprobante y por el total
+    const ctx = { active_model: "account.move", active_ids: [id] };
+    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: doc.nc ? PML_MP_IN : PML_MP_OUT, payment_date: spec.fecha, amount: spec.total, communication: nm }], { context: ctx }) as number;
+    await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+    pago = { diario: "Mercado Pago", fecha: spec.fecha, importe: spec.total, tipo: doc.nc ? "reintegro" : "pago" };
   }
   const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
   if (fin.amount_residual !== 0) return { ok: false, error: `${fin.name} quedó publicada pero con saldo ${fin.amount_residual}: revisala en Odoo`, id };
