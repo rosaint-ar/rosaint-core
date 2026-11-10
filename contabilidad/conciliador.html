@@ -486,40 +486,30 @@ $('btnConciliar').addEventListener('click', async () => {
     if (casiMatch.some(c => c.odoo === o)) return;
     sobran.push(o);
   });
-  const difs = [];
-  const descuadres = []; // mismo comprobante, total ok pero el IVA difiere (error real)
-  const redondeosUSD = []; // moneda extranjera que coincide en dólares: la diferencia en pesos es redondeo
-  const clasifOtros = [];  // mismo total e IVA, "otros tributos" clasificados distinto (no es error)
+  // AL CENTAVO y EN PESOS (lo que va al libro de IVA), también en facturas en dólares (10-nov-2026). Antes se
+  // toleraban $0,50 y las facturas en USD se comparaban en dólares, y así quedaban diferencias reales sin ver
+  // (ej. IVA en pesos de Etilfarma y Quetzal, el centavo de un tique). Ahora se muestran con "Corregir en Odoo".
+  const c2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const difs = [];        // total o IVA distintos de ARCA: para corregir
+  const clasifOtros = []; // mismo total e IVA, "otros tributos" clasificados distinto (no es error)
   arcaRows.forEach(a => {
     const o = odooIdx.get(claveArca(a));
     if (!o) return;
-    // Moneda extranjera: ARCA da los importes en dólares y los pasa a pesos multiplicando por el tipo de
-    // cambio; Odoo (y la factura impresa) calculan el IVA en pesos como 21% del neto en pesos. Esa
-    // diferencia de redondeo (unos pesos) no es un error: se compara en la moneda del comprobante.
-    const ext = o.moneda_extranjera && o.total_moneda != null && a.tc > 1;
-    const totalDifiere = ext ? Math.abs(a.total / a.tc - o.total_moneda) > 0.005 : Math.abs(a.total - o.total) > 0.5;
-    if (totalDifiere) difs.push({ arca:a, odoo:o });
-    else {
-      if (ext) redondeosUSD.push({ arca:a, odoo:o, total: a.total - o.total, iva: a.iva - (o.iva||0) });
-      const difNeto = a.neto - o.neto;
-      const difIva  = ext ? (Math.abs(a.iva / a.tc - (o.iva_moneda||0)) > 0.005 ? a.iva - (o.iva||0) : 0) : a.iva - (o.iva||0);
-      // Solo es error real si difiere el IVA. El neto puede diferir por clasificación
-      // (facturas B/C sin discriminar, combustible con impuestos internos separados,
-      // percepciones) sin que sea un error — el crédito fiscal se juega en el IVA.
-      if (Math.abs(difIva) > 0.5) descuadres.push({ arca:a, odoo:o, difNeto, difIva });
-      // "Otros tributos": con el total y el IVA iguales, una diferencia acá es de clasificación, no de plata.
-      // Casos conocidos: el impuesto interno del combustible (Odoo lo tiene en su renglón; ARCA no lo informa en
-      // los tiques de Monfran / Pan American / Regina) y facturas B (Odoo las carga por el total; ARCA separa
-      // los tributos, ej. el seguro de La Mercantil Andina).
-      const difOtros = a.otros - (o.percepciones || 0);
-      if (Math.abs(difOtros) > 0.5) clasifOtros.push({ arca:a, odoo:o, dif: difOtros });
-    }
+    const ext = o.moneda_extranjera && a.tc > 1;
+    const dTot = c2(a.total - o.total), dIva = c2(a.iva - (o.iva || 0));
+    const dNeto = c2(a.neto - o.neto), dOtros = c2(a.otros - (o.percepciones || 0));
+    if (dTot || dIva) difs.push({ arca:a, odoo:o, ext, dTot, dIva, dNeto, dOtros });
+    // "Otros tributos": con el total y el IVA iguales, una diferencia acá es de clasificación, no de plata
+    // (decidido 14-sep-2026: ARCA no es coherente entre proveedores). Casos: el impuesto interno del combustible
+    // (Odoo lo tiene en su renglón; ARCA no lo informa en los tiques de Monfran / Pan American / Servifranck) y
+    // facturas B (Odoo las carga por el total; ARCA separa los tributos, ej. el seguro de La Mercantil Andina).
+    else if (dOtros) clasifOtros.push({ arca:a, odoo:o, dif: dOtros });
   });
   const coinciden = arcaRows.length - faltan.length - casiMatch.length;
 
   estado = {
     periodo, odoo, arca: arcaRows,
-    faltan, sobran, casiMatch, difs, descuadres, coinciden, redondeosUSD, clasifOtros,
+    faltan, sobran, casiMatch, difs, coinciden, clasifOtros,
     validadas: new Set(),
   };
   render();
@@ -612,43 +602,28 @@ function render() {
   }
 
   if (r.difs.length) {
-    h += `<div class="group"><h2>Diferencias de monto <span class="badge v">${r.difs.length}</span></h2>
-      <table><thead><tr>
-        <th>Proveedor</th><th>Comprobante</th><th class="num">Total ARCA</th><th class="num">Total Odoo</th><th class="num">Dif.</th>
-      </tr></thead><tbody>`;
-    r.difs.forEach(d => {
-      const usd = d.arca.moneda && d.arca.moneda!=='$' && d.arca.moneda.toUpperCase()!=='PES';
-      h += `<tr class="warn">
-        <td>${d.arca.denom}${usd?`<span class="usd-tag">${d.arca.moneda} @ ${d.arca.tc}</span>`:''}</td>
-        <td class="mono">${d.odoo.comprobante}</td>
-        <td class="num">${money(d.arca.total)}</td>
-        <td class="num">${money(d.odoo.total)}</td>
-        <td class="num perc">${money(d.arca.total-d.odoo.total)}</td>
-      </tr>`;
-    });
-    h += `</tbody></table></div>`;
-  }
-
-  if (r.descuadres && r.descuadres.length) {
-    h += `<div class="group"><h2>Diferencias de IVA <span class="badge v">${r.descuadres.length}</span></h2>
-      <div class="val-info">El total coincide pero el <b>IVA</b> difiere de ARCA — esto sí es un error a revisar (crédito fiscal mal computado). Corregilo en Odoo, o validalo (✓) si es conocido y aceptado. La columna de <b>neto</b> es informativa: puede diferir sin ser error (ARCA no discrimina neto en facturas B/C y separa los impuestos internos del combustible).</div>
+    h += `<div class="group"><h2>Distinto a ARCA <span class="badge v">${r.difs.length}</span></h2>
+      <div class="val-info">El comprobante está cargado pero el <b>total</b> o el <b>IVA</b> en pesos no son iguales a ARCA (el libro de IVA tiene que coincidir con Mis Comprobantes). <b>Corregir en Odoo</b> lo deja igual a ARCA cuando es un redondeo (hasta $50 y 0,1% del comprobante): ajusta IVA, percepciones o internos y el total, vuelve a conciliar el pago y verifica; primero te muestra qué va a cambiar. No toca el neto, el importe en dólares ni meses ya presentados. Si no es un redondeo, revisalo a mano; podés aceptarlo (✓) si la diferencia es conocida.</div>
       <table><thead><tr>
         <th style="width:40px;">OK</th><th>Proveedor</th><th>Comprobante</th>
-        <th class="num">Neto ARCA</th><th class="num">Neto Odoo</th><th class="num">Dif. Neto</th>
-        <th class="num">IVA ARCA</th><th class="num">IVA Odoo</th><th class="num">Dif. IVA</th>
+        <th class="num">Total ARCA</th><th class="num">Total Odoo</th>
+        <th class="num">IVA ARCA</th><th class="num">IVA Odoo</th>
+        <th class="num">Otros ARCA</th><th class="num">Otros Odoo</th><th></th>
       </tr></thead><tbody>`;
-    r.descuadres.forEach((d,i) => {
+    r.difs.forEach((d,i) => {
       const usd = d.arca.moneda && d.arca.moneda!=='$' && d.arca.moneda.toUpperCase()!=='PES';
+      const marca = (x) => x ? 'perc' : '';
       h += `<tr class="warn">
-        <td><input type="checkbox" class="chk" data-desc="${i}" ${r.validadas.has('d'+i)?'checked':''}></td>
-        <td>${d.arca.denom}${usd?`<span class="usd-tag">${d.arca.moneda} @ ${d.arca.tc}</span>`:''}</td>
-        <td class="mono">${d.odoo.comprobante}</td>
-        <td class="num">${money(d.arca.neto)}</td>
-        <td class="num">${money(d.odoo.neto)}</td>
-        <td class="num ${Math.abs(d.difNeto)>0.5?'perc':''}">${Math.abs(d.difNeto)>0.5?money(d.difNeto):'—'}</td>
-        <td class="num">${money(d.arca.iva)}</td>
-        <td class="num">${money(d.odoo.iva||0)}</td>
-        <td class="num ${Math.abs(d.difIva)>0.5?'perc':''}">${Math.abs(d.difIva)>0.5?money(d.difIva):'—'}</td>
+        <td><input type="checkbox" class="chk" data-dif="${i}" ${r.validadas.has('d'+i)?'checked':''}></td>
+        <td>${esc(d.arca.denom)}${usd?`<span class="usd-tag">${esc(d.arca.moneda)} @ ${d.arca.tc}</span>`:''}${d.odoo.es_nc?'<span class="nc-tag">NC</span>':''}</td>
+        <td class="mono">${esc(d.odoo.comprobante)}</td>
+        <td class="num ${marca(d.dTot)}">${money(d.arca.total)}</td>
+        <td class="num ${marca(d.dTot)}">${money(d.odoo.total)}</td>
+        <td class="num ${marca(d.dIva)}">${money(d.arca.iva)}</td>
+        <td class="num ${marca(d.dIva)}">${money(d.odoo.iva||0)}</td>
+        <td class="num ${marca(d.dOtros)}">${money(d.arca.otros)}</td>
+        <td class="num ${marca(d.dOtros)}">${money(d.odoo.percepciones||0)}</td>
+        <td><button class="btn sm" data-corregir="${i}" title="Deja el comprobante igual a ARCA en Odoo">Corregir en Odoo</button></td>
       </tr>`;
     });
     h += `</tbody></table></div>`;
@@ -662,13 +637,43 @@ function render() {
       if (e.target.checked) estado.validadas.add(k); else estado.validadas.delete(k);
       renderCuadre();
     }));
-  document.querySelectorAll('[data-desc]').forEach(cb =>
+  document.querySelectorAll('[data-dif]').forEach(cb =>
     cb.addEventListener('change', e => {
-      const k = 'd' + e.target.dataset.desc;
+      const k = 'd' + e.target.dataset.dif;
       if (e.target.checked) estado.validadas.add(k); else estado.validadas.delete(k);
       renderCuadre();
     }));
+  document.querySelectorAll('[data-corregir]').forEach(b => b.addEventListener('click', () => corregirEnOdoo(estado.difs[+b.dataset.corregir], b)));
   renderCuadre();
+}
+
+// "Corregir en Odoo": función compras-ml, modo corregir_arca. Primero ensayo (no escribe), confirmación, y después la
+// corrección real; al terminar se vuelve a conciliar para ver el resultado.
+const FN_CORREGIR = window.SUPABASE_URL + '/functions/v1/compras-ml';
+async function corregirEnOdoo(d, boton) {
+  const llamar = async (dry) => {
+    const r = await fetch(FN_CORREGIR, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.SUPABASE_KEY, 'apikey': window.SUPABASE_KEY },
+      body: JSON.stringify({ modo: 'corregir_arca', dry_run: dry, periodo: estado.periodo, move_id: d.odoo.id,
+        arca: { neto: Math.abs(d.arca.neto), iva: Math.abs(d.arca.iva), otros: Math.abs(d.arca.otros), total: Math.abs(d.arca.total) } }) });
+    const j = await r.json().catch(() => ({ ok: false, error: 'respuesta inválida (' + r.status + ')' }));
+    if (!j.ok) throw new Error(j.error || 'Error');
+    return j;
+  };
+  boton.disabled = true;
+  try {
+    setStatus('load', `Revisando ${d.odoo.comprobante}…`);
+    const e = await llamar(true);
+    if (e.ya_igual) { setStatus('on', `${d.odoo.comprobante} ya está igual a ARCA. Volvé a conciliar.`); return; }
+    const p = e.plan;
+    const cambios = p.cambios.map(c => `• ${c.apunte}: ${money(c.antes)} → ${money(c.despues)}`).join('\n');
+    const conc = (p.conciliado_con || []).length ? `\n\nEstá conciliado con: ${p.conciliado_con.join(', ')}. Se desconcilia y se vuelve a conciliar igual.` : '';
+    if (!confirm(`Corregir ${p.comprobante} (${p.proveedor}${p.moneda !== 'ARS' ? ', ' + p.moneda : ''}) para que quede igual a ARCA:\n\n${cambios}${conc}\n\n¿Confirmás?`)) { setStatus('off', 'Corrección cancelada.'); return; }
+    setStatus('load', `Corrigiendo ${p.comprobante} en Odoo…`);
+    const r = await llamar(false);
+    setStatus('on', `✓ ${r.comprobante.name} corregido: total ${money(Math.abs(r.comprobante.amount_total_signed))}${r.ajuste_pago ? ` · pago ${r.ajuste_pago.pago} ${money(r.ajuste_pago.antes)} → ${money(r.ajuste_pago.ahora)}` : ''}${r.aviso ? ' · ' + r.aviso : ''}. Reconciliando…`);
+    $('btnConciliar').click();
+  } catch (err) { setStatus('off', `${d.odoo.comprobante}: ${err.message}`, true); }
+  finally { boton.disabled = false; }
 }
 
 function renderCuadre() {
@@ -689,21 +694,18 @@ function renderCuadre() {
     total: a.total + x.total,
   }), { neto:0, iva:0, otros:0, total:0 });
 
-  // Descontar de la diferencia los descuadres que el usuario validó (errores aceptados)
-  let ajusteNeto = 0, ajusteIva = 0;
-  (r.descuadres || []).forEach((d,i) => {
-    if (r.validadas.has('d'+i)) { ajusteNeto += d.difNeto; ajusteIva += d.difIva; }
+  // Descontar solo las diferencias que el usuario aceptó a mano (✓). Nada se descuenta solo: lo que difiere se corrige.
+  let ajusteNeto = 0, ajusteIva = 0, ajusteOtros = 0, ajusteTotal = 0;
+  (r.difs || []).forEach((d,i) => {
+    if (r.validadas.has('d'+i)) { ajusteNeto += d.dNeto; ajusteIva += d.dIva; ajusteOtros += d.dOtros; ajusteTotal += d.dTot; }
   });
-
-  // Redondeo de facturas en moneda extranjera que coinciden en dólares (no es error): se descuenta.
-  const red = (r.redondeosUSD || []).reduce((a, x) => ({ total: a.total + x.total, iva: a.iva + x.iva }), { total: 0, iva: 0 });
   const dif = {
     neto:  (sumArca.neto  - sumOdoo.neto)  - ajusteNeto,
-    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva - red.iva,
-    otros: sumArca.otros  - sumOdoo.otros - (r.clasifOtros || []).reduce((a, x) => a + x.dif, 0),
-    total: sumArca.total  - sumOdoo.total - red.total,
+    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva,
+    otros: sumArca.otros  - sumOdoo.otros - ajusteOtros - (r.clasifOtros || []).reduce((a, x) => a + x.dif, 0),
+    total: sumArca.total  - sumOdoo.total - ajusteTotal,
   };
-  const tol = 1.0;
+  const tol = 0.005; // al centavo
   // El cuadre valida IVA y Total (lo que define el crédito fiscal y el control con AFIP).
   // El neto es informativo: difiere por clasificación (B/C, combustible) sin ser error.
   const ok = Math.abs(dif.iva) < tol && Math.abs(dif.total) < tol;
@@ -747,9 +749,7 @@ function renderCuadre() {
   if ((r.clasifOtros || []).length) {
     h += `<div class="val-info" style="padding:8px 18px 0;">"Otros tributos" clasificados distinto, con el mismo total e IVA (no es un error, ya descontado del cuadre): ${r.clasifOtros.map(x => `${esc(x.odoo.proveedor || x.arca.denom)} ${esc(x.odoo.comprobante)} — ARCA ${money(x.arca.otros)} / Odoo ${money(x.odoo.percepciones || 0)}`).join(' · ')}. Pasa con el impuesto interno del combustible (ARCA no lo informa en algunos tiques) y con facturas B, que Odoo carga por el total.</div>`;
   }
-  if ((r.redondeosUSD || []).length) {
-    h += `<div class="val-info" style="padding:8px 18px 0;">Facturas en dólares que coinciden en dólares con ARCA: ${r.redondeosUSD.map(x => esc(x.arca.denom) + ' ' + String(x.arca.pv).padStart(5,'0') + '-' + String(x.arca.num).padStart(8,'0')).join(' · ')}. ARCA pasa a pesos multiplicando el total por el tipo de cambio; Odoo usa el IVA en pesos impreso en la factura (21% del neto en pesos). La diferencia en pesos (${money(red.total)}) es redondeo, no un error, y ya está descontada del cuadre.</div>`;
-  }
+  const difSinResolver = (r.difs || []).filter((d,i) => !r.validadas.has('d'+i)).length;
 
   if (faltanCount > 0) {
     h += `<div class="veredicto mal">⚠ Faltan cargar ${faltanCount} comprobante(s) en Odoo. El cuadre no cerrará hasta resolverlas.</div>`;
@@ -757,8 +757,10 @@ function renderCuadre() {
     h += `<div class="veredicto mal">⚠ Hay ${sinTC} comprobante(s) en moneda extranjera sin tipo de cambio en el archivo de ARCA: no se pueden comparar.</div>`;
   } else if (sobranSinRevisar > 0) {
     h += `<div class="veredicto mal">⚠ Hay ${sobranSinRevisar} comprobante(s) en Odoo que no están en ARCA y no marcaste como revisados. Revisalos antes de dar el libro por listo.</div>`;
+  } else if (difSinResolver > 0) {
+    h += `<div class="veredicto mal">⚠ Hay ${difSinResolver} comprobante(s) distintos a ARCA. Corregilos en Odoo (botón en cada fila) o aceptalos (✓) si la diferencia es conocida.</div>`;
   } else if (ok) {
-    h += `<div class="veredicto ok">✓ Odoo y ARCA cuadran. El libro de IVA está listo para entregar al contador.</div>`;
+    h += `<div class="veredicto ok">✓ Odoo y ARCA cuadran al centavo. El libro de IVA está listo para entregar al contador.</div>`;
   } else {
     h += `<div class="veredicto mal">⚠ Hay diferencias entre Odoo y ARCA. Revisá las filas en rojo antes de generar el libro.</div>`;
   }

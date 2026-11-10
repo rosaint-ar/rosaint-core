@@ -33,9 +33,11 @@ const CATS: Record<string, { code: string; account: number; label: string }> = {
   peaje:       { code: "GA08", account: 0, label: "Peaje → Movilidad y viáticos (5.2.1.01.050)" },
   honorarios:  { code: "GA18", account: 0, label: "Honorarios estudio contable (5.3.1.01.160)" },
   medios_pago: { code: "GC03", account: 0, label: "Comisiones medios de pago (5.2.1.01.150)" },
+  // guantes, camisolines, barbijos, cofias (EyG): sin producto, un renglón por artículo como en la factura
+  higiene:     { code: "", account: 758, label: "Higiene y Seguridad (5.1.2.01.100)" },
 };
 // diarios de pago: Mercado Pago (también tarjeta, como puente) o Efectivo
-const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" } };
+const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" }, internos: { journal: 55, pml: 28, nombre: "Pagos internos" } };
 const DOC: Record<string, { id: number; nc: boolean; letra: string; pref: string }> = {
   "1": { id: 1, nc: false, letra: "A", pref: "FA-A" }, "3": { id: 3, nc: true, letra: "A", pref: "NC-A" },
   "6": { id: 6, nc: false, letra: "B", pref: "FA-B" }, "8": { id: 8, nc: true, letra: "B", pref: "NC-B" },
@@ -295,7 +297,7 @@ async function cargar(sb: any, body: Rec) {
   const importePago = total;
   const fechaPago = body.pago?.fecha || c.fecha;
   const diarioPago = PAGO_DIARIO[String(body.pago?.diario || "mp")];
-  if (body.pago && !diarioPago) return { ok: false, error: "Diario de pago desconocido (mp | efectivo)" };
+  if (body.pago && !diarioPago) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos)" };
 
   // proveedor
   const ya = await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name"], context: { active_test: false }, limit: 1 }) as Rec[];
@@ -350,14 +352,28 @@ async function cargar(sb: any, body: Rec) {
     }
     if (!perc.length) return { ok: false, error: `Trae percepciones por $${otros} que ARCA no detalla por jurisdicción: cargala con "Percepciones (cargar)", que lee el PDF.` };
   }
-  const prod = await ex("product.product", "search_read", [[["default_code", "=", cat.code]]], { fields: ["id", "property_account_expense_id"], context: { active_test: false } }) as Rec[];
+  // categoría sin producto (higiene): renglones con la descripción de la factura, directo a la cuenta
+  const prod = cat.code ? await ex("product.product", "search_read", [[["default_code", "=", cat.code]]], { fields: ["id", "property_account_expense_id"], context: { active_test: false } }) as Rec[] : [{ id: false }];
   if (prod.length !== 1) return { ok: false, error: "No encuentro el producto " + cat.code };
   const cuentaCat = cat.account || m2o(prod[0].property_account_expense_id);
   const nombreLinea = body.linea_nombre ? { name: String(body.linea_nombre) } : {};
+  // Renglones detallados (cantidad × precio, con la descripción de la factura), como la de EyG del 29/09: la suma tiene
+  // que dar el neto de ARCA al centavo.
+  const detalle = Array.isArray(body.lineas_detalle) ? body.lineas_detalle as Rec[] : null;
+  if (detalle) {
+    if (doc.letra !== "A" || nograv || !taxIva) return { ok: false, error: "Renglones detallados: solo factura A con una alícuota de IVA" };
+    const suma = r2(detalle.reduce((s, l) => s + r2((+l.cantidad || 0) * (+l.precio || 0)), 0));
+    if (suma !== neto) return { ok: false, error: `Los renglones suman ${suma} y el neto de ARCA es ${neto}` };
+    if (detalle.some((l) => !String(l.nombre || "").trim())) return { ok: false, error: "Falta la descripción de algún renglón" };
+  }
+  if (!cat.code && !detalle) return { ok: false, error: "Esta categoría se carga con los renglones de la factura (lineas_detalle)" };
   // Igual que como se cargaron siempre (verificado 10-nov sobre 15 facturas de compras de ML): UN renglón, cantidad 1,
   // la descripción que pone Odoo para el producto ([GN01] Gastos varios no operativos, [INS_EXP] Insumos de oficina…),
   // A al neto con su IVA; B y C por el total con "IVA No Aplica". Sin referencia ni nota.
-  const lineas: Rec[] = doc.letra === "A"
+  const lineas: Rec[] = detalle
+    ? detalle.map((l, i) => ({ ...(prod[0].id ? { product_id: prod[0].id } : {}), name: String(l.nombre).trim(), account_id: cuentaCat, quantity: +l.cantidad, price_unit: +l.precio,
+        tax_ids: [[6, 0, [taxIva, ...(i === 0 ? perc.map((p) => p.tax) : [])]]] }))
+    : doc.letra === "A"
     ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: neto, ...nombreLinea, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
        ...(nograv ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
     : [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: total, ...nombreLinea, tax_ids: [[6, 0, [TAX.noAplica]]] }];
@@ -882,6 +898,128 @@ async function cargosCargar(sb: any, body: Rec) {
   return { ok: true, comprobante: fin, chk: v.chk, pago, accion: plan.accion };
 }
 
+// ═══ corregir_arca {move_id, periodo, arca:{neto, iva, otros, total}, dry_run} — botón "Corregir en Odoo" del Conciliador IVA ═══
+// Deja un comprobante de compra IGUAL a ARCA (Mis Comprobantes = libro de IVA) en PESOS, cuando la diferencia es de
+// redondeo: IVA en pesos (facturas en USD: el proveedor puede calcularlo en dólares × TC o 21% del neto en pesos),
+// percepciones / impuestos internos y total. Nunca toca: el neto, la cotización, los importes en moneda extranjera,
+// comprobantes fuera del período que se cierra (ni meses ya presentados), ni diferencias grandes (> $50 o > 0,1%).
+// Pasos: desconcilia (recordando con qué), borrador, escribe los apuntes, verifica, publica y vuelve a conciliar.
+// Si queda un saldo de centavos con un único pago del mismo mes (ej. tique pagado por su total real), ajusta ese pago.
+// Si algo no verifica, vuelve el comprobante a como estaba.
+const ARS_ID = 18;
+// Nota (10-nov): al desconciliar, Odoo anula la diferencia de cambio vieja (con su fecha) y al volver a conciliar la
+// rehace con la fecha de HOY; un asiento de diferencia de cambio NO se puede pasar a borrador para re-fecharlo.
+async function corregirArca(body: Rec) {
+  const dry = !!body.dry_run;
+  const periodo = String(body.periodo || "");
+  if (!/^\d{4}-\d{2}$/.test(periodo)) return { ok: false, error: "Falta el período" };
+  const hoy = new Date(Date.now() - 3 * 3600e3);
+  const minimo = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+  if (periodo < minimo) return { ok: false, error: `Solo se corrige el mes que se está cerrando (${minimo} en adelante): ${periodo} ya fue presentado` };
+  const a = body.arca || {};
+  const A = { neto: r2(Math.abs(+a.neto || 0)), iva: r2(Math.abs(+a.iva || 0)), otros: r2(Math.abs(+a.otros || 0)), total: r2(Math.abs(+a.total || 0)) };
+  const m = (await ex("account.move", "read", [[+body.move_id], ["name", "state", "date", "move_type", "currency_id", "company_id", "amount_total", "partner_id"]]) as Rec[])[0];
+  if (!m || m2o(m.company_id) !== C || !["in_invoice", "in_refund"].includes(m.move_type)) return { ok: false, error: "No es un comprobante de compra de VELAZQUEZ" };
+  if (m.state !== "posted") return { ok: false, error: `${m.name} no está validado` };
+  if (String(m.date).slice(0, 7) !== periodo) return { ok: false, error: `${m.name} tiene fecha contable ${m.date}, fuera de ${periodo}` };
+  const ext = m2o(m.currency_id) !== ARS_ID;
+  const sg = m.move_type === "in_refund" ? -1 : 1;
+  const ls = await ex("account.move.line", "search_read", [[["move_id", "=", m.id]]], { fields: ["id", "display_type", "tax_line_id", "balance", "amount_currency", "account_id"] }) as Rec[];
+  const ivaL = ls.filter((l) => l.tax_line_id && TAX_IVA.has(m2o(l.tax_line_id)));
+  const otrL = ls.filter((l) => l.tax_line_id && !TAX_IVA.has(m2o(l.tax_line_id)));
+  const prodL = ls.filter((l) => l.display_type === "product");
+  const payL = ls.filter((l) => l.display_type === "payment_term");
+  const abs = (xs: Rec[]) => r2(Math.abs(xs.reduce((s, l) => s + l.balance, 0)));
+  const O = { neto: abs(prodL), iva: abs(ivaL), otros: abs(otrL), total: abs(payL) };
+  const d = { neto: r2(A.neto - O.neto), iva: r2(A.iva - O.iva), otros: r2(A.otros - O.otros), total: r2(A.total - O.total) };
+  if (!d.iva && !d.total) return { ok: true, ya_igual: true, odoo: O, arca: A };
+  const tope = Math.min(50, Math.max(1, A.total * 0.001));
+  for (const k of ["iva", "total"] as const) if (Math.abs(d[k]) > tope) return { ok: false, error: `${m.name}: la diferencia de ${k} ($${d[k]}) no es un redondeo (tope $${r2(tope)}): revisala a mano` };
+  if (payL.length !== 1) return { ok: false, error: `${m.name} tiene ${payL.length} vencimientos: corregilo a mano` };
+  // qué apunte absorbe cada diferencia
+  const cambios: { l: Rec; nuevo: number; que: string }[] = [];
+  if (d.iva) {
+    if (ivaL.length !== 1) return { ok: false, error: `${m.name} tiene ${ivaL.length} líneas de IVA: corregilo a mano` };
+    cambios.push({ l: ivaL[0], nuevo: r2(Math.abs(ivaL[0].balance) + d.iva), que: "IVA" });
+  }
+  let resto = r2(d.total - d.iva);
+  if (resto) {
+    if (otrL.length && Math.abs(d.otros - resto) < 0.005) {
+      const l = [...otrL].sort((x, y) => Math.abs(y.balance) - Math.abs(x.balance))[0];
+      cambios.push({ l, nuevo: r2(Math.abs(l.balance) + resto), que: `${l.tax_line_id[1]}` });
+    } else if (prodL.length === 1 && Math.abs(d.neto - resto) < 0.005) {
+      cambios.push({ l: prodL[0], nuevo: r2(Math.abs(prodL[0].balance) + resto), que: "neto" });
+    } else return { ok: false, error: `${m.name}: el total difiere en $${d.total} y no se explica por el IVA ni por las percepciones/internos (neto ${d.neto}, otros ${d.otros}): revisalo a mano` };
+    resto = 0;
+  }
+  cambios.push({ l: payL[0], nuevo: A.total, que: "total (proveedor)" });
+  // con qué está conciliado (pagos, NC, facturas que revierte). Los asientos automáticos de diferencia de cambio
+  // NO se reconcilian a mano: Odoo los anula al desconciliar y los rehace al volver a conciliar.
+  const lp = await lineaPagar(m.id);
+  const parcIds = [...(lp.matched_debit_ids || []), ...(lp.matched_credit_ids || [])] as number[];
+  const parc = parcIds.length ? await ex("account.partial.reconcile", "read", [parcIds, ["debit_move_id", "credit_move_id"]]) as Rec[] : [];
+  const contraIds = [...new Set(parc.map((p) => [m2o(p.debit_move_id), m2o(p.credit_move_id)]).flat().filter((x) => x !== lp.id))] as number[];
+  const contraL = contraIds.length ? await ex("account.move.line", "read", [contraIds, ["move_id", "journal_id", "payment_id", "date"]]) as Rec[] : [];
+  const cambioJ = (await ex("res.company", "read", [[C], ["currency_exchange_journal_id"]]) as Rec[])[0]?.currency_exchange_journal_id;
+  const contra = contraL.filter((l) => m2o(l.journal_id) !== m2o(cambioJ)).map((l) => l.id as number);
+  const plan = { comprobante: m.name, proveedor: m.partner_id[1], moneda: ext ? m.currency_id[1] : "ARS", odoo: O, arca: A,
+    cambios: cambios.map((c) => ({ apunte: c.que, antes: r2(Math.abs(c.l.balance)), despues: c.nuevo })),
+    conciliado_con: contraL.map((l) => `${l.move_id[1]} (${l.date})${m2o(l.journal_id) === m2o(cambioJ) ? " — dif. de cambio, Odoo la rehace" : ""}`) };
+  if (dry) return { ok: true, dry_run: true, plan };
+
+  // signo de cada apunte: impuestos y gasto al debe en factura (haber en NC); proveedor al revés
+  const firmado = (c: { l: Rec; nuevo: number }) => (c.l.display_type === "payment_term" ? -sg : sg) * c.nuevo;
+  const escribir = async (vals: { id: number; balance: number; ac: number }[]) => {
+    await ex("account.move", "write", [[m.id], { line_ids: vals.map((v) => [1, v.id, ext ? { balance: v.balance } : { balance: v.balance, amount_currency: v.balance }]) }], { context: { check_move_validity: false } });
+  };
+  const original = cambios.map((c) => ({ id: c.l.id, balance: c.l.balance, ac: c.l.amount_currency }));
+  if (contra.length) await ex("account.move.line", "remove_move_reconcile", [[lp.id]]);
+  await ex("account.move", "button_draft", [[m.id]]);
+  await escribir(cambios.map((c) => ({ id: c.l.id, balance: firmado(c), ac: c.l.amount_currency })));
+  const ls2 = await ex("account.move.line", "search_read", [[["move_id", "=", m.id]]], { fields: ["id", "display_type", "tax_line_id", "balance", "amount_currency", "debit", "credit"] }) as Rec[];
+  const N = { neto: abs(ls2.filter((l) => l.display_type === "product")), iva: abs(ls2.filter((l) => l.tax_line_id && TAX_IVA.has(m2o(l.tax_line_id)))),
+    otros: abs(ls2.filter((l) => l.tax_line_id && !TAX_IVA.has(m2o(l.tax_line_id)))), total: abs(ls2.filter((l) => l.display_type === "payment_term")) };
+  const debe = r2(ls2.reduce((s, l) => s + l.debit, 0)), haber = r2(ls2.reduce((s, l) => s + l.credit, 0));
+  const acIgual = !ext || original.every((o) => { const n = ls2.find((l) => l.id === o.id); return n && Math.abs(n.amount_currency - o.ac) < 0.005; });
+  const okVer = N.iva === A.iva && N.total === A.total && debe === haber && acIgual && ls2.length === ls.length;
+  if (!okVer) {
+    // vuelve a como estaba
+    await escribir(original);
+    await ex("account.move", "action_post", [[m.id]]);
+    if (contra.length) { const lp2 = await lineaPagar(m.id); await ex("account.move.line", "reconcile", [[lp2.id, ...contra]]); }
+    return { ok: false, error: `${m.name}: Odoo no dejó los importes como ARCA (IVA ${N.iva} / total ${N.total} / debe ${debe} haber ${haber}${acIgual ? "" : " / cambió el importe en dólares"}). Quedó como estaba.`, plan };
+  }
+  await ex("account.move", "action_post", [[m.id]]);
+  let ajustePago: Rec | null = null;
+  if (contra.length) {
+    // una NC que es reversión de su factura: Odoo ya la vuelve a conciliar sola al validarla
+    const lp2 = await lineaPagar(m.id);
+    const vivas = (await ex("account.move.line", "search_read", [[["id", "in", contra], ["reconciled", "=", false]]], { fields: ["id"] }) as Rec[]).map((x) => x.id as number);
+    if (!lp2.reconciled && vivas.length) await ex("account.move.line", "reconcile", [[lp2.id, ...vivas]]);
+    const r = (await ex("account.move", "read", [[m.id], ["amount_residual"]]) as Rec[])[0].amount_residual;
+    if (r && Math.abs(r) <= 1 && !ext) {
+      // tique pagado por su total real: el único pago del mes se lleva los centavos
+      const pagos = await ex("account.payment", "search_read", [[["move_id.line_ids", "in", contra]]], { fields: ["id", "name", "amount", "date", "move_id"] }) as Rec[];
+      if (pagos.length === 1 && String(pagos[0].date).slice(0, 7) === periodo) {
+        const p = pagos[0];
+        const lp3 = await lineaPagar(m.id);
+        await ex("account.move.line", "remove_move_reconcile", [[lp3.id]]);
+        await ex("account.payment", "action_draft", [[p.id]]);
+        await ex("account.payment", "write", [[p.id], { amount: r2(p.amount + Math.abs(r)) }]);
+        await ex("account.payment", "action_post", [[p.id]]);
+        const lpp = (await ex("account.move.line", "search_read", [[["payment_id", "=", p.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
+        // el resto de lo conciliado que sigue existiendo y no es de ese pago (al pasar el pago a borrador sus apuntes se rehacen)
+        const otras = (await ex("account.move.line", "search_read", [[["id", "in", contra], ["payment_id", "!=", p.id]]], { fields: ["id"] }) as Rec[]).map((x) => x.id as number);
+        const lp4 = await lineaPagar(m.id);
+        await ex("account.move.line", "reconcile", [[lp4.id, lpp.id, ...otras]]);
+        ajustePago = { pago: p.name, antes: p.amount, ahora: r2(p.amount + Math.abs(r)) };
+      }
+    }
+  }
+  const fin = (await ex("account.move", "read", [[m.id], ["name", "amount_total", "amount_total_signed", "amount_residual", "payment_state"]]) as Rec[])[0];
+  return { ok: true, plan, comprobante: fin, ajuste_pago: ajustePago, ...(fin.amount_residual ? { aviso: `Quedó con saldo ${fin.amount_residual}: revisá el pago` } : {}) };
+}
+
 // pagar {comprobante, fecha, diario: mp|efectivo, importe, dry_run} — registra el pago de una factura de proveedor ya
 // validada que quedó a pagar (ej. honorarios pagados por transferencia, que no salen en la API de Mercado Pago)
 async function pagar(body: Rec) {
@@ -889,7 +1027,7 @@ async function pagar(body: Rec) {
   if (!m) return { ok: false, error: "No encuentro " + body.comprobante };
   if (m.state !== "posted") return { ok: false, error: `${m.name} no está validada` };
   const d = PAGO_DIARIO[String(body.diario || "mp")];
-  if (!d) return { ok: false, error: "Diario de pago desconocido (mp | efectivo)" };
+  if (!d) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos)" };
   const importe = r2(+body.importe || 0);
   if (!importe || importe > m.amount_residual + 0.001) return { ok: false, error: `Importe ${importe} inválido: ${m.name} tiene saldo ${m.amount_residual}` };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || ""))) return { ok: false, error: "Falta la fecha del pago" };
@@ -970,6 +1108,7 @@ _servirConGuardia(async (req: Request) => {
     else if (modo === "cargos_cargar") out = await cargosCargar(sb, body);
     else if (modo === "reclasificar") out = await reclasificar(body);
     else if (modo === "pagar") out = await pagar(body);
+    else if (modo === "corregir_arca") out = await corregirArca(body);
     else if (modo === "padron") {
       // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
       const marcas: Rec = body.marcas || {};
