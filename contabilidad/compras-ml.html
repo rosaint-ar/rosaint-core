@@ -460,30 +460,97 @@ async function cargarTodo() {
   setStatus(fallas.length ? 'off' : 'on', msg, fallas.length ? 'err' : 'ok');
 }
 
-// ── render cargos (comisiones, envíos, Mercado Pago) ──────────────────────
+// ── CARGOS de ML (comisiones, publicidad, envíos, Mercado Pago, suscripción) ──────────────────────────
+// La función baja el PDF de cada comprobante de la facturación de ML, lo interpreta (conceptos netos de
+// bonificaciones, percepciones por provincia, IVA) y lo controla contra ARCA al centavo. Carga como siempre:
+// un renglón por concepto, pago por Mercado Pago el día de la factura; la NC se concilia con su Doc. Ref.
+const PROD_CARGO = { GC01: 'Comisiones', GC06: 'Publicidad', GC03: 'Medios de pago (MP)', GC04: 'Envíos', GC11: 'Bonif. Flex', GC08: 'Suscripción' };
+const PERC_NOMBRE = { 124: 'CABA', 125: 'ARBA', 126: 'Catamarca', 127: 'Córdoba', 128: 'Corrientes', 138: 'Tucumán 86/00', 143: 'Neuquén', 144: 'La Pampa', 152: 'Ganancias', 195: 'IVA 2408', 198: 'CABA com. elec.', 199: 'IVA 5319', 202: 'Tucumán 174' };
+let CARGOS = { clave: null, datos: null, cargando: false, error: null };
+function arcaCargos() {
+  const mes = $('periodo').value;
+  return ARCA.filter(a => a.fecha.startsWith(mes) && CUIT_CARGOS.has(a.cuit))
+    .sort((x, y) => (x.nc - y.nc) || x.fecha.localeCompare(y.fecha) || x.cod.localeCompare(y.cod))
+    .map(a => ({ cuit: a.cuit, cod: a.cod, pv: a.pv, num: a.num, fecha: a.fecha, neto: Math.abs(a.neto), iva: Math.abs(a.iva), otros: Math.abs(a.otros), total: Math.abs(a.total) }));
+}
+async function revisarCargos() {
+  const arca = arcaCargos();
+  CARGOS = { clave: $('periodo').value + '|' + arca.length + '|' + r2(arca.reduce((s, a) => s + a.total, 0)), datos: null, cargando: true, error: null };
+  renderCargos();
+  try { CARGOS.datos = await fn({ modo: 'cargos', mes: $('periodo').value, arca }); }
+  catch (e) { CARGOS.error = e.message; }
+  CARGOS.cargando = false;
+  renderCargos();
+}
 function renderCargos() {
   const v = $('vista-cargos');
   if (!ARCA) { v.innerHTML = `<div class="empty">Subí el Excel de ARCA del mes.</div>`; $('n-cargos').textContent = '—'; return; }
-  const mes = VISTA.mes;
-  const docs = ARCA.filter(a => a.fecha.startsWith(mes) && CUIT_CARGOS.has(a.cuit)).sort((x, y) => x.fecha.localeCompare(y.fecha) || x.cod.localeCompare(y.cod));
-  const falta = docs.filter(d => !enOdoo(d));
-  $('n-cargos').textContent = falta.length ? falta.length + ' por cargar' : (docs.length ? '✓' : '—');
-  let h = `<div class="nota">Facturas de <b>Mercado Libre S.R.L.</b> (comisiones, publicidad, Mercado Pago, suscripción) y <b>MELI LOG</b> (envíos). Se emiten el 29 por el ciclo del 30 al 29.</div>
-    <div class="prov"><table><thead><tr><th>Fecha</th><th>Emisor</th><th>Comprobante</th><th class="num">Neto</th><th class="num">IVA</th><th class="num">Percepciones</th><th class="num">Total ARCA</th><th>Odoo</th></tr></thead><tbody>`;
-  for (const d of docs) {
-    const o = enOdoo(d) || DATOS.odoo.find(x => x.cuit === d.cuit && x.name.endsWith(nro(d)));
-    const tipoMal = o && o.name !== nombreDoc(d);
-    const cierra = o && Math.abs(o.total - Math.abs(d.total)) <= 0.01;
-    const est = !o ? '<span class="pill falta">falta</span>' : tipoMal ? `<span class="pill warn">${esc(o.name)} · en ARCA es ${esc(nombreDoc(d))}</span>` : cierra ? `<span class="pill ok">✓ ${esc(o.name)}</span>` : `<span class="pill warn">${esc(o.name)} · Odoo ${money(o.total)}</span>`;
-    const sg = d.nc ? -1 : 1;
-    h += `<tr class="${d.nc ? 'nc' : ''}"><td>${fFecha(d.fecha)}</td><td>${esc(d.cuit === '30715686054' ? 'MELI LOG' : 'Mercado Libre')}</td><td class="mono">${esc(nombreDoc(d))}</td>
-      <td class="num">${money(sg * Math.abs(d.neto))}</td><td class="num">${money(sg * Math.abs(d.iva))}</td><td class="num">${d.otros ? money(sg * Math.abs(d.otros)) : '—'}</td><td class="num">${money(sg * Math.abs(d.total))}</td><td>${est}</td></tr>`;
+  const arca = arcaCargos();
+  const clave = $('periodo').value + '|' + arca.length + '|' + r2(arca.reduce((s, a) => s + a.total, 0));
+  if (CARGOS.clave !== clave && !CARGOS.cargando) { if (arca.length) revisarCargos(); else { v.innerHTML = `<div class="empty">No hay comprobantes de Mercado Libre ni MELI LOG en el Excel de este mes.</div>`; $('n-cargos').textContent = '—'; } return; }
+  let h = `<div class="nota">Facturas y NC de <b>Mercado Libre S.R.L.</b> (comisiones, publicidad, Mercado Pago, suscripción) y <b>MELI LOG</b> (envíos). Cada comprobante se lee del PDF de la facturación de ML y se controla contra ARCA al centavo. Se cargan como siempre: un renglón por concepto (neto de bonificaciones), percepciones por provincia, pago por Mercado Pago el día de la factura; la NC se concilia con la factura de su «Doc. Ref».</div>`;
+  if (CARGOS.cargando) { v.innerHTML = h + `<div class="empty">Leyendo los comprobantes de Mercado Libre… (ML permite pocas consultas por minuto: puede tardar hasta un minuto la primera vez)</div>`; $('n-cargos').textContent = '…'; return; }
+  if (CARGOS.error) { v.innerHTML = h + `<div class="empty">Error: ${esc(CARGOS.error)} <button class="btn sm" id="btnRevCargos">Revisar de nuevo</button></div>`; $('btnRevCargos').onclick = revisarCargos; return; }
+  const filas = CARGOS.datos.filas;
+  const pend = filas.filter(f => f.estado === 'falta' || f.estado === 'difiere');
+  const revisar = filas.filter(f => f.estado === 'revisar');
+  $('n-cargos').textContent = pend.length + revisar.length ? (pend.length + revisar.length) + ' por resolver' : (filas.length ? '✓' : '—');
+  if (CARGOS.datos.aviso) h += `<div class="nota">⚠ ${esc(CARGOS.datos.aviso)}</div>`;
+  h += `<div style="margin:-4px 0 14px;">${pend.length ? `<button class="btn primary" id="btnCargosTodo">Cargar / corregir los ${pend.length} en Odoo</button> ` : ''}<button class="btn sm" id="btnRevCargos">Revisar de nuevo</button></div>`;
+  h += `<div class="prov"><table><thead><tr><th>Fecha</th><th>Comprobante</th><th>Renglones (neto)</th><th class="num">IVA</th><th class="num">Percepciones</th><th class="num">Total</th><th>Odoo</th><th></th></tr></thead><tbody>`;
+  for (const f of filas) {
+    const sg = /^NC/.test(f.nombre) ? -1 : 1;
+    const ren = (f.lineas || []).map(l => `<span title="${esc((l.detalle || []).join(' · '))}">${esc(PROD_CARGO[l.code] || l.code || l.cuenta)} ${money(sg * l.importe)}</span>`).join('<br>') || '—';
+    const percTot = r2((f.perc || []).reduce((s, p) => s + p.importe, 0));
+    const percTit = (f.perc || []).map(p => `${PERC_NOMBRE[p.tax] || p.tax}: ${money(p.importe)}`).join('\n');
+    const emisor = f.comp.cuit === '30715686054' ? 'MELI LOG' : 'Mercado Libre';
+    let est;
+    if (f.estado === 'ok') est = `<span class="pill ok">✓ ${esc(f.odoo.name)}</span>`;
+    else if (f.estado === 'falta') est = `<span class="pill falta">falta</span>${f.doc_ref ? `<div class="nota" style="margin:2px 0 0">aplica a ${esc(f.doc_ref)}</div>` : ''}`;
+    else if (f.estado === 'difiere') est = `<span class="pill warn">${esc(f.odoo.name)} · corregir</span><div class="nota" style="margin:2px 0 0">${esc(f.odoo.diferencias.join(' · '))}</div>`;
+    else est = `<span class="pill warn">revisar</span><div class="nota" style="margin:2px 0 0">${esc(f.problemas.join(' · '))}</div>`;
+    const btn = f.estado === 'falta' || f.estado === 'difiere' ? `<button class="btn sm" data-cargo="${esc(f.nombre)}">${f.estado === 'falta' ? 'Cargar' : 'Corregir'}</button>` : '';
+    h += `<tr class="${sg < 0 ? 'nc' : ''}"><td>${fFecha(f.comp.fecha)}</td><td class="mono">${esc(f.nombre)}<div class="nota" style="margin:0">${emisor}${f.fuente ? ' · ' + esc(f.fuente) : ''}</div></td><td>${ren}</td>
+      <td class="num">${money(sg * (f.iva || 0))}</td><td class="num" title="${esc(percTit)}">${percTot ? money(sg * percTot) : '—'}</td><td class="num">${money(sg * f.total)}</td><td>${est}</td><td>${btn}</td></tr>`;
   }
-  if (!docs.length) h += `<tr><td colspan="8" class="empty">No hay comprobantes de Mercado Libre ni MELI LOG en el Excel de este mes.</td></tr>`;
-  h += `</tbody></table></div>
-    <div class="nota">La carga automática de estos comprobantes (baja el PDF de Mercado Libre, arma los renglones por concepto y las percepciones por provincia, y verifica contra ARCA) se suma en el próximo paso. Mientras tanto se cargan como siempre, con <a href="percepciones.html">Percepciones (cargar)</a>.</div>`;
+  h += `</tbody></table></div>`;
+  if ((CARGOS.datos.sin_arca || []).length) h += `<div class="nota">⚠ En la facturación de ML del mes y NO en el Excel de ARCA: ${CARGOS.datos.sin_arca.map(s => esc(s.ref) + ' ' + money(s.monto)).join(', ')}. ¿Excel incompleto?</div>`;
   v.innerHTML = h;
+  $('btnRevCargos').onclick = revisarCargos;
+  const bt = $('btnCargosTodo'); if (bt) bt.onclick = cargarCargosTodo;
+  v.querySelectorAll('[data-cargo]').forEach(b => b.onclick = () => cargarCargos([b.dataset.cargo]));
 }
+const compDeCargo = (nombre) => { const f = CARGOS.datos.filas.find(x => x.nombre === nombre); return f ? arcaCargos().find(a => a.pv === f.comp.pv && a.num === f.comp.num && a.cod === f.comp.cod) : null; };
+function resumenPlan(p) {
+  const ren = p.renglones.map(r => (PROD_CARGO[r.producto] || r.producto) + ' ' + money(r.importe)).join(' + ');
+  const perc = p.percepciones.length ? ' + ' + p.percepciones.length + ' percepciones' : '';
+  const pago = p.pago ? '\n   pago: ' + p.pago : '';
+  const nc = p.nc ? '\n   ' + p.nc : '';
+  const cambio = p.accion !== 'crear' ? '\n   (' + p.accion.replace(/^CORREGIR [^:]+: /, '') + ')' : '';
+  return '• ' + p.comprobante + ' ' + money(p.total) + ' → ' + (p.accion === 'crear' ? 'crear' : 'corregir') + ': ' + ren + perc + pago + nc + cambio;
+}
+async function cargarCargos(nombres) {
+  // 1) ensayo de todos (no escribe): facturas primero, NC después (cada NC necesita su factura)
+  const orden = nombres.map(n => ({ n, comp: compDeCargo(n) })).filter(x => x.comp).sort((a, b) => (/^NC/.test(a.n) - /^NC/.test(b.n)));
+  const listos = [], afuera = [];
+  for (let i = 0; i < orden.length; i++) {
+    setStatus('load', 'Revisando ' + (i + 1) + ' de ' + orden.length + ': ' + orden[i].n + '…');
+    try { const r = await fn({ modo: 'cargos_cargar', comp: orden[i].comp, dry_run: true }); if (!r.ya_cargada) listos.push({ ...orden[i], plan: r.plan }); }
+    catch (e) { afuera.push(orden[i].n + ': ' + e.message); }
+  }
+  if (!listos.length) { setStatus(afuera.length ? 'off' : 'on', afuera.length ? 'No se puede cargar: ' + afuera.join(' | ') : 'Ya estaba todo en Odoo.', afuera.length ? 'err' : 'ok'); await revisarCargos(); return; }
+  const txtAfuera = afuera.length ? '\n\nQuedan AFUERA:\n' + afuera.map(x => '• ' + x).join('\n') : '';
+  if (!confirm('Se ' + (listos.length === 1 ? 'carga' : 'cargan') + ' en Odoo, verificado al centavo contra el PDF y ARCA:\n\n' + listos.map(x => resumenPlan(x.plan)).join('\n') + txtAfuera + '\n\n¿Confirmás?')) { setStatus('off', 'Carga cancelada.'); return; }
+  // 2) carga real
+  let ok = 0; const fallas = [];
+  for (const x of listos) {
+    setStatus('load', 'Cargando ' + (ok + fallas.length + 1) + ' de ' + listos.length + ': ' + x.n + '…');
+    try { await fn({ modo: 'cargos_cargar', comp: x.comp }); ok++; } catch (e) { fallas.push(x.n + ': ' + e.message); }
+  }
+  setStatus(fallas.length ? 'off' : 'on', ok + ' cargados y verificados' + (fallas.length ? ' · ' + fallas.length + ' con problema: ' + fallas.join(' | ') : ' ✓'), fallas.length ? 'err' : 'ok');
+  await revisarCargos();
+}
+function cargarCargosTodo() { cargarCargos(CARGOS.datos.filas.filter(f => f.estado === 'falta' || f.estado === 'difiere').map(f => f.nombre)); }
 
 cargarDatos();
 </script>

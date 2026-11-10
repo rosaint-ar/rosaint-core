@@ -2,6 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 // Padrón de ARCA (A5, con el certificado de Rosaint): se reusa la consulta del portal de altas, sin tocarla.
 import { consultarArca } from "../portal-alta/arca.ts";
+// PDF de los cargos de ML (streams Flate)
+import { inflateSync, inflateRawSync } from "node:zlib";
+import { Buffer } from "node:buffer";
 // ═══ compras-ml v1 (10-nov-2026) — Compras de Rosaint EN Mercado Libre ⇄ ARCA ⇄ Odoo ═══
 // La factura de una compra en ML no se puede bajar por API como comprador: la fuente es ARCA (Mis Comprobantes
 // Recibidos, que sube la pantalla). Esta función da todo lo demás y carga en Odoo.
@@ -437,6 +440,469 @@ async function cargar(sb: any, body: Rec) {
   return { ok: true, comprobante: fin, chk, pago, ajuste_iva: ajusteIva || undefined, retomado: retomar ? true : undefined };
 }
 
+// ═══ CARGOS de Mercado Libre (comisiones, publicidad, envíos, Mercado Pago, suscripción) ═══════════════
+// Fuente: la lista de ARCA del mes (la sube la pantalla) + el PDF de cada comprobante, que SÍ se baja por la API de
+// facturación de ML (/billing/integration). Se arma igual que como se cargaron de marzo a octubre de 2026:
+//  · un renglón por concepto (Comisiones GC01, Publicidad GC06, Medios de pago GC03, Envíos GC04, Flex GC11,
+//    Suscripción GC08), NETO de sus bonificaciones; IVA 21% en todos; las percepciones por jurisdicción en el 1.º;
+//  · FA-B (suscripción): por el total con "IVA No Aplica";
+//  · pago por Mercado Pago el MISMO día de la factura por el total (criterio de Diego: hay cargos que se debitan en
+//    cada venta y el resto va con tarjeta; se simplifica pagando el día de la factura);
+//  · NC: reversión de la factura de su "Doc. Ref", conciliada con ella, y el pago por Mercado Pago de esa factura se
+//    reduce en el importe de la NC (así quedó todo el año, y el lote nc_orden del 6-nov-2026 lo ordenó así).
+const CONCEPTOS: { re: RegExp; no?: RegExp; code: string | null; cuenta?: string; label: string; bonif?: boolean }[] = [
+  { re: /BONIF.*(HERRAMIENTAS ADS|PUBLICIDAD|PRODUCT ADS)/, code: "GC06", label: "Bonificación publicidad (Ads)", bonif: true },
+  { re: /(HERRAMIENTAS ADS|PUBLICIDAD|PRODUCT ADS)/, code: "GC06", label: "Publicidad (Ads)" },
+  { re: /BONIF.*MERCADO PAGO/, code: "GC03", label: "Bonificación plataforma Mercado Pago", bonif: true },
+  { re: /(ADELANTO DE DINERO|INTERES)/, code: null, cuenta: "5.5.1.01.010", label: "Cargo por adelanto de dinero / intereses" },
+  { re: /MERCADO PAGO/, code: "GC03", label: "Plataforma Mercado Pago" },
+  { re: /BONIF.*FLEX/, code: "GC11", label: "Bonificación Flex", bonif: true },
+  { re: /BONIF.*ENVIO/, code: "GC04", label: "Bonificación envíos", bonif: true },
+  { re: /BONIF.*PLATAFORMA/, code: "GC01", label: "Bonificación plataforma ML", bonif: true },
+  { re: /SUSCRIPCION/, code: "GC08", label: "Suscripción" },
+  { re: /ENVIO/, code: "GC04", label: "Envíos" },
+  { re: /(REPUTACION|PLATAFORMA.*MERCADO LIBRE)/, code: "GC01", label: "Comisiones (plataforma ML)" },
+];
+const ORDEN_CODE = ["GC01", "GC06", "GC03", "GC04", "GC11", "GC08", null];
+// percepciones del PDF → impuesto de Odoo (el orden importa: CABA comercio electrónico antes que CABA general)
+const PERCEP: [RegExp, number][] = [
+  [/5319/, 199], [/2408/, 195], [/GANANCIAS/, 152], [/COMERCIO ELECTRONICO/, 198], [/TUCUMAN.*174/, 202], [/TUCUMAN/, 138],
+  [/(CABA|CIUDAD AUTONOMA)/, 124], [/(ARBA|BUENOS AIRES)/, 125], [/NEUQUEN/, 143], [/CORRIENTES/, 128], [/CATAMARCA/, 126],
+  [/LA PAMPA/, 144], [/CORDOBA/, 127], [/ENTRE RIOS/, 129], [/JUJUY/, 130], [/MENDOZA/, 131], [/LA RIOJA/, 132], [/SALTA/, 133],
+  [/SAN JUAN/, 134], [/SAN LUIS/, 135], [/SANTA FE/, 136], [/SANTIAGO/, 137], [/CHACO/, 139], [/CHUBUT/, 140], [/FORMOSA/, 141],
+  [/MISIONES/, 142], [/RIO NEGRO/, 145], [/SANTA CRUZ/, 146], [/TIERRA DEL FUEGO/, 147],
+];
+const IVA_TASA: Record<string, number> = { "21": TAX.iva21, "10,5": TAX.iva105, "10,50": TAX.iva105, "27": TAX.iva27 };
+const mayus = (s: string) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+const aNum = (s: string) => +String(s).replace(/\./g, "").replace(",", ".");
+
+// PDF → renglones de texto (streams con o sin Flate; <hex>Tj y (texto)Tj agrupados por altura)
+function textoPDF(bytes: Uint8Array): string[] {
+  const buf = Buffer.from(bytes);
+  const s = buf.toString("latin1");
+  const lineas: { x: number; y: number; t: string }[] = [];
+  const re = /stream\r?\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    const ini = m.index + m[0].length;
+    const fin = s.indexOf("endstream", ini);
+    if (fin < 0) break;
+    const dict = s.slice(Math.max(0, m.index - 400), m.index);
+    let data: Buffer = buf.subarray(ini, fin);
+    if (/FlateDecode/.test(dict.slice(dict.lastIndexOf("<<")))) {
+      try { data = inflateSync(data); } catch { try { data = inflateRawSync(data.subarray(2)); } catch { continue; } }
+    }
+    const t = data.toString("latin1");
+    if (!/Tj|TJ/.test(t)) continue;
+    let x = 0, y = 0;
+    for (const bt of t.matchAll(/BT([\s\S]*?)ET/g)) {
+      const ops = /(-?[\d.]+)\s+(-?[\d.]+)\s+Td|(?:-?[\d.]+\s+){4}(-?[\d.]+)\s+(-?[\d.]+)\s+Tm|<([0-9A-Fa-f\s]+)>\s*Tj|\(((?:\\.|[^\\)])*)\)\s*Tj/g;
+      for (const op of bt[1].matchAll(ops)) {
+        if (op[1] !== undefined) { x = +op[1]; y = +op[2]; }
+        else if (op[3] !== undefined) { x = +op[3]; y = +op[4]; }
+        else if (op[5] !== undefined) {
+          const h = op[5].replace(/\s/g, ""); let str = "";
+          for (let i = 0; i < h.length; i += 2) str += String.fromCharCode(parseInt(h.slice(i, i + 2), 16));
+          lineas.push({ x, y, t: str });
+        } else if (op[6] !== undefined) lineas.push({ x, y, t: op[6].replace(/\\([()\\])/g, "$1") });
+      }
+    }
+  }
+  const porY = new Map<number, typeof lineas>();
+  for (const l of lineas) { const k = Math.round(l.y); if (!porY.has(k)) porY.set(k, []); porY.get(k)!.push(l); }
+  return [...porY].sort((a, b) => b[0] - a[0])
+    .map(([, ls]) => ls.sort((a, b) => a.x - b.x).map((l) => l.t).join(" ").replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+// Lee un comprobante de ML: conceptos, percepciones, IVA, totales, Doc. Ref. Valida que todo sume al centavo.
+function leerComprobanteML(lineas: string[]): Rec {
+  const out: Rec = { conceptos: [], perc: [], iva: [], problemas: [] };
+  let fase = 0;
+  for (const l of lineas) {
+    const u = mayus(l);
+    if (!out.cuit_emisor) { const c = u.match(/CUIT:\s*(\d{2}-\d{8}-\d)/); if (c) out.cuit_emisor = digitos(c[1]); }
+    if (!out.fecha) { const f = u.match(/FECHA DE EMISION:.*?(\d{2})\.(\d{2})\.(\d{4})/); if (f) out.fecha = `${f[3]}-${f[2]}-${f[1]}`; }
+    if (!out.numero) { const n = u.match(/^(\d{4,5})-(\d{8})$/); if (n) out.numero = `${n[1].padStart(5, "0")}-${n[2]}`; }
+    if (!out.letra && /^[ABC]$/.test(u)) out.letra = u;
+    if (!out.clase && /^ORIGINAL/.test(u)) out.clase = /NOTA DE CREDITO/.test(u) ? "NC" : /NOTA DE DEBITO/.test(u) ? "ND" : /FACTURA/.test(u) ? "FA" : null;
+    const dr = u.match(/DOC\. ?REF:\s*(\d{4,5})([ABC])(\d{8})/);
+    if (dr) out.doc_ref = { letra: dr[2], numero: `${dr[1].padStart(5, "0")}-${dr[3]}`, texto: `${dr[1]}${dr[2]}${dr[3]}` };
+    const mm = u.match(/(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+    if (!mm) continue;
+    const imp = aNum(mm[1]);
+    if (/^SUBTOTAL/.test(u)) { out.subtotal = imp; fase = 1; }
+    else if (/^TOTAL:/.test(u)) out.total = imp;
+    else if (/^I\.?V\.?A\.? INSC/.test(u)) {
+      const t = (u.match(/INSC\.?\s*([\d,]+?)(?:,0+)?%/) || [])[1] || "";
+      const tax = IVA_TASA[t] ?? IVA_TASA[t.replace(/,0+$/, "")];
+      if (!tax) out.problemas.push(`IVA con alícuota desconocida (${t}%)`);
+      out.iva.push({ tax, importe: imp });
+    } else if (/PERCEP/.test(u)) {
+      const p = PERCEP.find(([re]) => re.test(u));
+      if (!p) out.problemas.push(`Percepción que no reconozco: "${l.slice(0, 80)}"`);
+      out.perc.push({ tax: p ? p[1] : null, importe: imp, texto: l.slice(0, 80) });
+    } else if (fase === 0) {
+      const c = CONCEPTOS.find((k) => k.re.test(u));
+      if (!c) out.problemas.push(`Concepto que no reconozco: "${l.slice(0, 80)}"`);
+      out.conceptos.push({ code: c?.code ?? null, cuenta: c?.cuenta, label: c?.label || l.slice(0, 60), bonif: !!c?.bonif, importe: imp, desconocido: !c });
+    }
+  }
+  const nc = out.clase === "NC";
+  // FA: los conceptos de bonificación RESTAN; NC: todo es a favor (positivo dentro de la NC)
+  const sumaC = r2(out.conceptos.reduce((s: number, c: Rec) => s + (nc ? c.importe : (c.bonif ? -c.importe : c.importe)), 0));
+  out.percepciones = r2(out.perc.reduce((s: number, p: Rec) => s + p.importe, 0));
+  out.iva_total = r2(out.iva.reduce((s: number, p: Rec) => s + p.importe, 0));
+  if (out.subtotal === undefined || out.total === undefined) out.problemas.push("No encontré el subtotal o el total en el PDF");
+  else {
+    if (sumaC !== r2(out.subtotal)) out.problemas.push(`Los conceptos suman ${sumaC} y el subtotal dice ${out.subtotal}`);
+    if (r2(out.subtotal + out.percepciones + out.iva_total) !== r2(out.total)) out.problemas.push(`Subtotal ${out.subtotal} + percepciones ${out.percepciones} + IVA ${out.iva_total} ≠ total ${out.total}`);
+  }
+  if (out.iva.length > 1) out.problemas.push("Tiene más de una alícuota de IVA: cargalo a mano");
+  if (out.iva.length === 1 && Math.abs(out.subtotal * 0.21 - out.iva_total) > 1 && out.iva[0].tax === TAX.iva21) out.problemas.push(`El IVA ${out.iva_total} no es el 21% del subtotal ${out.subtotal}`);
+  // renglones agrupados por producto, neto de bonificaciones
+  const porCode = new Map<string, Rec>();
+  for (const c of out.conceptos) {
+    const k = String(c.code ?? c.cuenta);
+    if (!porCode.has(k)) porCode.set(k, { code: c.code, cuenta: c.cuenta, label: c.code ? null : c.label, importe: 0, detalle: [] });
+    const g = porCode.get(k)!;
+    g.importe = r2(g.importe + (nc ? c.importe : (c.bonif ? -c.importe : c.importe)));
+    g.detalle.push(`${c.bonif && !nc ? "−" : ""}${c.label} ${c.importe}`);
+  }
+  out.lineas = [...porCode.values()].sort((a, b) => ORDEN_CODE.indexOf(a.code) - ORDEN_CODE.indexOf(b.code));
+  if (out.lineas.some((l: Rec) => l.importe <= 0)) out.problemas.push("Un concepto queda en cero o negativo después de las bonificaciones: cargalo a mano");
+  // perc agrupadas por impuesto
+  const pt = new Map<number, number>();
+  for (const p of out.perc) if (p.tax) pt.set(p.tax, r2((pt.get(p.tax) || 0) + p.importe));
+  out.perc_odoo = [...pt].map(([tax, importe]) => ({ tax, importe }));
+  return out;
+}
+
+// La API de facturación de ML permite 5 consultas por MINUTO: se espera lo justo y, si no alcanza el tiempo de la
+// función, se corta con este aviso. Todo lo leído queda en compras_ml_cargos_docs y la próxima pasada sigue de ahí.
+const LIMITE_ML = "Mercado Libre permite solo 5 consultas por minuto a su facturación: esperá un minuto y tocá «Revisar» de nuevo (lo ya leído queda guardado)";
+class LimiteML extends Error {}
+let T0 = Date.now();
+async function mlFetch(tok: string, path: string, raw = false): Promise<any> {
+  for (let i = 0; i < 4; i++) {
+    const r = await fetch(ML_API + path, { headers: { Authorization: "Bearer " + tok } });
+    if (r.ok) return raw ? new Uint8Array(await r.arrayBuffer()) : await r.json();
+    if (r.status === 429) {
+      if (Date.now() - T0 > 95e3) throw new LimiteML(LIMITE_ML); // no llega antes del corte de 150 s
+      await new Promise((s) => setTimeout(s, 13e3));               // 1 consulta nueva cada 12 s
+      continue;
+    }
+    if (r.status < 500) return null; // 4xx: no existe / no aplica
+    await new Promise((s) => setTimeout(s, 800 * (i + 1)));
+  }
+  throw new LimiteML(LIMITE_ML);
+}
+// Comprobantes de facturación de ML de los períodos que tocan el mes (el ciclo va del 30 al 29): primero lo guardado;
+// a ML solo se le pregunta si falta alguno de `refs`, y cada lista se pide como mucho una vez por hora.
+async function docsFacturacion(sb: any, mes: string, refs: string[]): Promise<Rec[]> {
+  const [y, m] = mes.split("-").map(Number);
+  const claves = [`${mes}-01`, `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`];
+  const leer = async () => ((await sb.from("compras_ml_cargos_docs").select("*").in("periodo", claves)).data || []) as Rec[];
+  let docs = await leer();
+  const faltan = () => refs.filter((r) => !docs.some((d) => d.ref === r));
+  if (!faltan().length) return docs.filter((d) => !d.ref.startsWith("__"));
+  const tok = await mlToken(sb);
+  for (const key of claves) for (const [g, t] of [["ML", "BILL"], ["ML", "CREDIT_NOTE"], ["MP", "BILL"], ["MP", "CREDIT_NOTE"]]) {
+    if (!faltan().length) break;
+    const marca = `__lista|${key}|${g}|${t}`;
+    const ya = docs.find((d) => d.ref === marca);
+    if (ya && Date.now() - new Date(ya.leido_en).getTime() < 3600e3) continue;
+    const j = await mlFetch(tok, `/billing/integration/periods/key/${key}/documents?group=${g}&document_type=${t}&limit=50`);
+    const filas: Rec[] = [{ ref: marca, periodo: key, grupo: g, tipo: t, leido_en: new Date().toISOString() }];
+    for (const d of j?.results || []) for (const f of d.files || []) if (f.file_id && f.reference_number)
+      filas.push({ ref: String(f.reference_number), grupo: g, tipo: t, periodo: key, file_id: String(f.file_id), monto: d.amount });
+    await sb.from("compras_ml_cargos_docs").upsert(filas);
+    docs = await leer();
+  }
+  return docs.filter((d) => !d.ref.startsWith("__"));
+}
+// texto del PDF: guardado, o se baja una vez y se guarda (un comprobante fiscal no cambia)
+async function leerDocML(sb: any, d: Rec): Promise<Rec> {
+  let texto: string[] | null = Array.isArray(d.texto) ? d.texto : null;
+  if (!texto) {
+    const pdf = await mlFetch(await mlToken(sb), `/billing/integration/legal_document/${d.file_id}`, true);
+    if (!pdf) return { problemas: ["Mercado Libre no entregó el PDF"] };
+    texto = textoPDF(pdf);
+    await sb.from("compras_ml_cargos_docs").update({ texto, leido_en: new Date().toISOString() }).eq("ref", d.ref);
+  }
+  return leerComprobanteML(texto);
+}
+const refARCA = (c: Rec) => `${String(c.pv).padStart(4, "0")}${DOC[String(c.cod)]?.letra || "?"}${String(c.num).padStart(8, "0")}`;
+
+let PRODS: Record<string, Rec> | null = null;
+async function productosCargos() {
+  if (PRODS) return PRODS;
+  const p = await ex("product.product", "search_read", [[["default_code", "in", ["GC01", "GC03", "GC04", "GC06", "GC08", "GC11"]]]], { fields: ["id", "default_code", "property_account_expense_id"], context: { active_test: false } }) as Rec[];
+  PRODS = Object.fromEntries(p.map((x) => [x.default_code, { id: x.id, account: m2o(x.property_account_expense_id) }]));
+  return PRODS;
+}
+const CUENTAS: Record<string, number> = {};
+async function cuentaId(code: string) {
+  if (!CUENTAS[code]) CUENTAS[code] = ((await ex("account.account", "search_read", [[["code", "=", code], ["company_ids", "in", [C]]]], { fields: ["id"] }) as Rec[])[0] || {}).id;
+  return CUENTAS[code];
+}
+const lineaPagar = async (moveId: number) => (await ex("account.move.line", "search_read", [[["move_id", "=", moveId], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id", "amount_residual", "reconciled", "matched_debit_ids", "matched_credit_ids"] }) as Rec[])[0];
+
+// Arma lo que tiene que quedar en Odoo para un comprobante de cargos (sin escribir nada)
+async function specCargo(sb: any, comp: Rec, docsML: Rec[] | null, limite: string | null = null): Promise<Rec> {
+  const doc = DOC[String(comp.cod)];
+  const cuit = digitos(comp.cuit);
+  const numero = `${String(comp.pv).padStart(5, "0")}-${String(comp.num).padStart(8, "0")}`;
+  const base: Rec = { cuit, numero, nombre: doc ? `${doc.pref} ${numero}` : `Cód. ${comp.cod} ${numero}`, fecha: comp.fecha, total: r2(Math.abs(+comp.total || 0)), problemas: [] };
+  if (!doc) { base.problemas.push(`Tipo de comprobante ${comp.cod} (nota de débito u otro): cargalo a mano`); return base; }
+  base.doc = doc;
+  const arca = { neto: r2(Math.abs(+comp.neto || 0)), iva: r2(Math.abs(+comp.iva || 0)), otros: r2(Math.abs(+comp.otros || 0)), total: base.total };
+  if (doc.letra !== "A") {
+    // B (la suscripción): sin IVA discriminado ni percepciones; como siempre: GC08 por el total, IVA No Aplica
+    if (arca.otros) base.problemas.push("Factura B con otros tributos: cargala a mano");
+    if (cuit !== "30703088534" || doc.nc) base.problemas.push("Comprobante B que no es la suscripción de Mercado Libre: cargalo a mano");
+    return { ...base, letra: doc.letra, lineas: [{ code: "GC08", importe: base.total, detalle: ["Suscripción"] }], perc_odoo: [], iva: 0, iva_tax: TAX.noAplica, fuente: "ARCA" };
+  }
+  let docs = docsML;
+  if (!docs) {
+    try { docs = await docsFacturacion(sb, String(comp.fecha).slice(0, 7), [refARCA(comp)]); }
+    catch (e) { if (e instanceof LimiteML) { base.problemas.push(e.message); return base; } throw e; }
+  }
+  const d = docs.find((x) => x.ref === refARCA(comp));
+  if (!d) { base.problemas.push(limite || `No está en la facturación de Mercado Libre (${refARCA(comp)}): cargala a mano`); return base; }
+  let pdf: Rec;
+  try { pdf = await leerDocML(sb, d); }
+  catch (e) { if (e instanceof LimiteML) { base.problemas.push(e.message); return base; } throw e; }
+  const pr = [...(pdf.problemas || [])];
+  // contra ARCA, al centavo
+  if (pdf.numero && pdf.numero !== numero) pr.push(`El PDF es ${pdf.numero}, no ${numero}`);
+  if (pdf.cuit_emisor && pdf.cuit_emisor !== cuit) pr.push(`El PDF lo emite ${pdf.cuit_emisor}, ARCA dice ${cuit}`);
+  if ((pdf.clase === "NC") !== doc.nc) pr.push(`El PDF es ${pdf.clase} y ARCA dice ${doc.pref}`);
+  if (pdf.fecha && pdf.fecha !== comp.fecha) pr.push(`Fecha del PDF ${pdf.fecha} ≠ ARCA ${comp.fecha}`);
+  for (const [k, a, b] of [["total", arca.total, pdf.total], ["IVA", arca.iva, pdf.iva_total], ["neto", arca.neto, pdf.subtotal], ["percepciones", arca.otros, pdf.percepciones]] as [string, number, number][])
+    if (r2(a) !== r2(b ?? NaN)) pr.push(`${k}: ARCA ${a} ≠ PDF ${b}`);
+  if (doc.nc && !pdf.doc_ref) pr.push("La NC no trae Doc. Ref: cargala a mano");
+  return { ...base, letra: "A", lineas: pdf.lineas, perc_odoo: pdf.perc_odoo, perc_pdf: pdf.perc, iva: pdf.iva_total, iva_tax: pdf.iva[0]?.tax,
+    doc_ref: pdf.doc_ref ? { ...pdf.doc_ref, nombre: `FA-${pdf.doc_ref.letra} ${pdf.doc_ref.numero}` } : null,
+    concepto: pdf.conceptos.map((c: Rec) => c.label).join(" + "), problemas: pr, fuente: "PDF de ML" };
+}
+
+// Lo que hay hoy en Odoo para ese número (cualquier letra: la suscripción quedó como FA-A) y en qué difiere
+async function enOdooCargo(spec: Rec): Promise<Rec | null> {
+  const ps = await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(spec.cuit), spec.cuit]]]], { fields: ["id", "name"], context: { active_test: false } }) as Rec[];
+  spec.partner = ps[0] ? { id: ps[0].id, name: ps[0].name } : null;
+  const ms = await ex("account.move", "search_read", [[["name", "=like", "% " + spec.numero], ["move_type", "in", ["in_invoice", "in_refund"]], ["state", "!=", "cancel"], ["company_id", "=", C]]],
+    { fields: ["id", "name", "state", "partner_id", "amount_total", "amount_tax", "amount_residual", "payment_state", "invoice_date", "reversed_entry_id", "invoice_payments_widget"] }) as Rec[];
+  const m = ms.find((x) => !spec.partner || m2o(x.partner_id) === spec.partner.id) || ms[0];
+  if (!m) return null;
+  const ls = await ex("account.move.line", "search_read", [[["move_id", "=", m.id], ["display_type", "in", ["product", "tax"]]]], { fields: ["display_type", "product_id", "account_id", "tax_line_id", "balance"] }) as Rec[];
+  const prods = await productosCargos();
+  const codeDe = Object.fromEntries(Object.entries(prods).map(([k, v]) => [v.id, k]));
+  const lin: Record<string, number> = {};
+  for (const l of ls.filter((x) => x.display_type === "product")) { const k = codeDe[m2o(l.product_id)] ?? (l.account_id?.[1] || "?").split(" ")[0]; lin[k] = r2((lin[k] || 0) + Math.abs(l.balance)); }
+  const perc: Record<number, number> = {}; let iva = 0;
+  for (const l of ls.filter((x) => x.display_type === "tax")) { const t = m2o(l.tax_line_id); if (TAX_IVA.has(t)) iva = r2(iva + Math.abs(l.balance)); else perc[t] = r2((perc[t] || 0) + Math.abs(l.balance)); }
+  const dif: string[] = [];
+  if (spec.doc && m.name !== spec.nombre) dif.push(`está como ${m.name} y es ${spec.nombre}`);
+  if (m2o(m.partner_id) !== spec.partner?.id) dif.push(`proveedor ${m.partner_id?.[1]}`);
+  if (r2(m.amount_total) !== spec.total) dif.push(`total Odoo ${m.amount_total} ≠ ${spec.total}`);
+  if (spec.lineas) {
+    const quiere: Record<string, number> = {};
+    for (const l of spec.lineas) { const k = l.code ?? l.cuenta; quiere[k] = r2((quiere[k] || 0) + l.importe); }
+    for (const k of new Set([...Object.keys(quiere), ...Object.keys(lin)])) if (r2(quiere[k] || 0) !== r2(lin[k] || 0)) dif.push(`${k}: Odoo ${lin[k] || 0} → ${quiere[k] || 0}`);
+    if (r2(iva) !== r2(spec.iva || 0)) dif.push(`IVA Odoo ${iva} → ${spec.iva || 0}`);
+    const qp: Record<number, number> = Object.fromEntries((spec.perc_odoo || []).map((p: Rec) => [p.tax, p.importe]));
+    for (const t of new Set([...Object.keys(qp), ...Object.keys(perc)].map(Number))) if (r2(qp[t] || 0) !== r2(perc[t] || 0)) dif.push(`percepción ${t}: Odoo ${perc[t] || 0} → ${qp[t] || 0}`);
+  }
+  const pagos = (m.invoice_payments_widget?.content || []).map((p: Rec) => `${p.journal_name} ${p.date} ${p.amount}`);
+  if (m.state === "posted" && spec.doc && !spec.doc.nc && m.payment_state === "not_paid") dif.push("sin pago");
+  if (m.state === "posted" && spec.doc?.nc && m.amount_residual !== 0) dif.push("NC sin conciliar con su factura");
+  return { id: m.id, name: m.name, state: m.state, total: m.amount_total, pago: m.payment_state, pagos, diferencias: dif };
+}
+
+// Ajusta los impuestos al comprobante (percepciones exactas, IVA si difiere ≤ $0,05) y verifica al centavo
+async function ajustarYVerificar(id: number, sg: number, perc: Rec[], iva: number, total: number): Promise<Rec> {
+  const leer = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
+  let ls = await leer();
+  const cmds: unknown[] = [];
+  for (const p of perc) {
+    const l = ls.find((x) => m2o(x.tax_line_id) === p.tax);
+    if (!l) return { ok: false, error: `Odoo no generó la línea de la percepción ${p.tax}; quedó en BORRADOR`, id };
+    cmds.push([1, l.id, { balance: sg * p.importe, amount_currency: sg * p.importe }]);
+  }
+  const lIva = ls.filter((x) => x.tax_line_id && TAX_IVA.has(m2o(x.tax_line_id)));
+  const ivaOdoo = r2(Math.abs(lIva.reduce((s, l) => s + l.balance, 0)));
+  if (iva && lIva.length === 1 && ivaOdoo !== iva) {
+    if (Math.abs(iva - ivaOdoo) > 0.05) return { ok: false, error: `El IVA de Odoo (${ivaOdoo}) difiere del comprobante (${iva}) más que un redondeo: quedó en BORRADOR`, id };
+    cmds.push([1, lIva[0].id, { balance: sg * iva, amount_currency: sg * iva }]);
+  }
+  if (cmds.length) {
+    const tt = ls.find((x) => x.display_type === "payment_term");
+    cmds.push([1, tt.id, { balance: -sg * total, amount_currency: -sg * total }]);
+    await ex("account.move", "write", [[id], { line_ids: cmds }]);
+    ls = await leer();
+  }
+  const sumTax = (pred: (t: number) => boolean) => r2(Math.abs(ls.filter((l) => l.tax_line_id && pred(m2o(l.tax_line_id))).reduce((s, l) => s + l.balance, 0)));
+  const chk = { total: r2(Math.abs(ls.filter((l) => l.display_type === "payment_term").reduce((s, l) => s + l.balance, 0))),
+    iva: sumTax((t) => TAX_IVA.has(t)), percepciones: sumTax((t) => !TAX_IVA.has(t)),
+    debe: r2(ls.reduce((s, l) => s + l.debit, 0)), haber: r2(ls.reduce((s, l) => s + l.credit, 0)) };
+  const percTot = r2(perc.reduce((s, p) => s + p.importe, 0));
+  if (chk.total !== total || chk.iva !== r2(iva) || chk.percepciones !== percTot || chk.debe !== chk.haber)
+    return { ok: false, error: `No cerró al centavo (Odoo total ${chk.total} / IVA ${chk.iva} / perc ${chk.percepciones}): quedó en BORRADOR para revisar`, id, chk };
+  return { ok: true, chk };
+}
+
+async function lineasOdoo(spec: Rec): Promise<Rec[]> {
+  const prods = await productosCargos();
+  const out: Rec[] = [];
+  for (let i = 0; i < spec.lineas.length; i++) {
+    const l = spec.lineas[i];
+    const taxes = [spec.iva_tax || TAX.noAplica, ...(i === 0 ? spec.perc_odoo.map((p: Rec) => p.tax) : [])];
+    if (l.code) { if (!prods[l.code]) throw new Error("No encuentro el producto " + l.code); out.push({ product_id: prods[l.code].id, account_id: prods[l.code].account, quantity: 1, price_unit: l.importe, tax_ids: [[6, 0, taxes]] }); }
+    else out.push({ name: l.label || "Cargo financiero Mercado Pago", account_id: await cuentaId(l.cuenta), quantity: 1, price_unit: l.importe, tax_ids: [[6, 0, taxes]] });
+  }
+  return out;
+}
+
+// Una NC con Doc. Ref: se concilia con esa factura y el pago por Mercado Pago de la factura baja en el importe de la NC
+async function aplicarNC(ncId: number, ncTotal: number, faId: number, dry: boolean): Promise<Rec> {
+  const fa = (await ex("account.move", "read", [[faId], ["name", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
+  if (fa.amount_residual >= ncTotal - 0.005) {
+    if (dry) return { ok: true, plan: `se concilia con ${fa.name} (tiene saldo ${fa.amount_residual})` };
+    const lnc = await lineaPagar(ncId);
+    await ex("account.move", "js_assign_outstanding_line", [[faId], lnc.id]);
+    return { ok: true, concilia_con: fa.name };
+  }
+  const pagos = await ex("account.payment", "search_read", [[["reconciled_bill_ids", "in", [faId]], ["journal_id", "=", J_MP], ["state", "!=", "canceled"]]], { fields: ["id", "name", "amount", "date", "move_id"] }) as Rec[];
+  if (pagos.length !== 1) return { ok: false, error: `${fa.name} tiene ${pagos.length} pagos por Mercado Pago (se esperaba 1): aplicá la NC a mano` };
+  const pago = pagos[0];
+  const nuevo = r2(pago.amount - ncTotal);
+  if (nuevo <= 0) return { ok: false, error: `La NC (${ncTotal}) es mayor que el pago de ${fa.name} (${pago.amount}): aplicala a mano` };
+  if (dry) return { ok: true, plan: `se concilia con ${fa.name} y su pago ${pago.name} del ${pago.date} pasa de ${pago.amount} a ${nuevo}` };
+  const lfac = await lineaPagar(faId);
+  const parc = (lfac.matched_debit_ids as number[]).length ? await ex("account.partial.reconcile", "read", [lfac.matched_debit_ids, ["debit_move_id"]]) as Rec[] : [];
+  const contra = parc.map((p) => m2o(p.debit_move_id) as number);
+  const deContra = contra.length ? await ex("account.move.line", "read", [contra, ["move_id"]]) as Rec[] : [];
+  const otras = deContra.filter((l) => m2o(l.move_id) !== m2o(pago.move_id)).map((l) => l.id as number);
+  await ex("account.move.line", "remove_move_reconcile", [[lfac.id]]);
+  await ex("account.payment", "action_draft", [[pago.id]]);
+  await ex("account.payment", "write", [[pago.id], { amount: nuevo }]);
+  await ex("account.payment", "action_post", [[pago.id]]);
+  const lpago = (await ex("account.move.line", "search_read", [[["payment_id", "=", pago.id], ["account_id.account_type", "=", "liability_payable"]]], { fields: ["id"] }) as Rec[])[0];
+  const lnc = await lineaPagar(ncId);
+  await ex("account.move.line", "reconcile", [[...new Set([lfac.id as number, lpago.id as number, lnc.id as number, ...otras])]]);
+  const f2 = (await ex("account.move", "read", [[faId], ["amount_residual"]]) as Rec[])[0];
+  const n2 = (await ex("account.move", "read", [[ncId], ["amount_residual"]]) as Rec[])[0];
+  if (f2.amount_residual !== 0 || n2.amount_residual !== 0) return { ok: false, error: `La NC quedó cargada pero ${fa.name} quedó con saldo ${f2.amount_residual} y la NC con ${n2.amount_residual}: revisalo en Odoo` };
+  return { ok: true, concilia_con: fa.name, pago: { nombre: pago.name, antes: pago.amount, ahora: nuevo } };
+}
+
+// cargos {mes, arca:[comprobantes de ARCA de ML y MELI LOG]} → estado de cada uno (no escribe)
+async function cargos(sb: any, body: Rec) {
+  const mes = String(body.mes || "");
+  if (!/^\d{4}-\d{2}$/.test(mes)) throw new Error("Falta el mes (YYYY-MM)");
+  const arcaA = ((body.arca || []) as Rec[]).filter((c) => DOC[String(c.cod)]?.letra === "A").map(refARCA);
+  let docs: Rec[], limite: string | null = null;
+  try { docs = await docsFacturacion(sb, mes, arcaA); }
+  catch (e) { if (!(e instanceof LimiteML)) throw e; limite = e.message; docs = await docsFacturacion(sb, mes, []); }
+  const filas: Rec[] = [];
+  // de a uno: ML corta (429) si se le piden varios PDF juntos
+  const specs: Rec[] = [];
+  for (const comp of (body.arca || []) as Rec[]) specs.push(await specCargo(sb, comp, docs, limite));
+  for (const [i, comp] of ((body.arca || []) as Rec[]).entries()) {
+    const spec = specs[i];
+    const odoo = await enOdooCargo(spec);
+    let nc: Rec | null = null;
+    if (spec.doc?.nc && spec.doc_ref && !spec.problemas.length) {
+      const fa = await ex("account.move", "search_read", [[["name", "=", spec.doc_ref.nombre], ["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["company_id", "=", C]]], { fields: ["id", "name", "invoice_date"] }) as Rec[];
+      nc = fa.length ? { factura: fa[0].name, fecha: fa[0].invoice_date } : { error: `su factura ${spec.doc_ref.nombre} no está en Odoo` };
+      if (!fa.length) spec.problemas.push(`La NC refiere a ${spec.doc_ref.nombre}, que no está en Odoo: cargá esa factura primero`);
+    }
+    const estado = spec.problemas.length ? "revisar" : !odoo ? "falta" : odoo.diferencias.length ? "difiere" : "ok";
+    filas.push({ comp: { cuit: comp.cuit, cod: comp.cod, pv: comp.pv, num: comp.num, fecha: comp.fecha, total: comp.total }, nombre: spec.nombre, fuente: spec.fuente,
+      lineas: spec.lineas, perc: spec.perc_odoo, iva: spec.iva, total: spec.total, doc_ref: spec.doc_ref?.nombre || null, nc, problemas: spec.problemas, odoo, estado });
+  }
+  // lo que está en la facturación de ML del mes y no vino en ARCA (para no perder nada)
+  const enArca = new Set(((body.arca || []) as Rec[]).map(refARCA));
+  const sinArca = docs.filter((d) => !enArca.has(d.ref) && d.periodo === `${mes}-01`).map((d) => ({ ref: d.ref, grupo: d.grupo, tipo: d.tipo, monto: d.monto }));
+  return { ok: true, mes, filas, sin_arca: sinArca, aviso: limite };
+}
+
+// cargos_cargar {comp, dry_run} → crea el comprobante, o lo CORRIGE si ya está y difiere (mismo total)
+async function cargosCargar(sb: any, body: Rec) {
+  const dry = !!body.dry_run;
+  const spec = await specCargo(sb, body.comp || {}, null);
+  if (spec.problemas.length) return { ok: false, error: spec.problemas.join(" · ") };
+  const actual = await enOdooCargo(spec);
+  if (!spec.partner) return { ok: false, error: `No encuentro el proveedor con CUIT ${cuitFmt(spec.cuit)} en Odoo` };
+  if (actual && !actual.diferencias.length) return { ok: true, ya_cargada: true, move: actual };
+  const doc = spec.doc;
+  const sg = doc.nc ? -1 : 1;
+  let fa: Rec | null = null;
+  if (doc.nc) {
+    fa = (await ex("account.move", "search_read", [[["name", "=", spec.doc_ref.nombre], ["partner_id", "=", spec.partner.id], ["move_type", "=", "in_invoice"], ["state", "=", "posted"]]], { fields: ["id", "name"] }) as Rec[])[0] || null;
+    if (!fa) return { ok: false, error: `La NC refiere a ${spec.doc_ref.nombre}, que no está en Odoo: cargá esa factura primero` };
+  }
+  const plan: Rec = { comprobante: spec.nombre, proveedor: spec.partner.name, fuente: spec.fuente, total: spec.total, iva: spec.iva,
+    renglones: spec.lineas.map((l: Rec) => ({ producto: l.code || l.cuenta, importe: l.importe, de: l.detalle })), percepciones: spec.perc_odoo,
+    accion: actual ? `CORREGIR ${actual.name}: ${actual.diferencias.join(" · ")}` : "crear" };
+  if (actual && r2(actual.total) !== spec.total) return { ok: false, error: `${actual.name} está en Odoo por ${actual.total} y el comprobante es por ${spec.total}: revisalo a mano` };
+  if (!actual) {
+    const borr = await ex("account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "draft"], ["company_id", "=", C], ["partner_id", "=", spec.partner.id]]], { fields: ["id", "amount_total"] }) as Rec[];
+    if (borr.length) return { ok: false, error: `Hay ${borr.length} borrador(es) de ${spec.partner.name} en Odoo (id ${borr.map((b) => b.id).join(", ")}): resolvelos antes para no duplicar` };
+  }
+  if (doc.nc && !actual) plan.nc = (await aplicarNC(0, spec.total, fa!.id, true)).plan;
+  else if (!doc.nc && !actual) plan.pago = `Mercado Pago ${spec.fecha} $${spec.total}`;
+  if (dry) return { ok: true, dry_run: true, plan };
+
+  const lineas = await lineasOdoo(spec);
+  let id: number;
+  let contra: number[] = [];
+  if (actual) {
+    // corregir: se desconcilia (se recuerda con qué), se pasa a borrador, se rearma y se vuelve a conciliar igual
+    id = actual.id;
+    if (actual.state === "posted") {
+      const lp = await lineaPagar(id);
+      const ids = doc.nc ? lp.matched_credit_ids : lp.matched_debit_ids;
+      if ((ids as number[]).length) {
+        const parc = await ex("account.partial.reconcile", "read", [ids, [doc.nc ? "credit_move_id" : "debit_move_id"]]) as Rec[];
+        contra = parc.map((p) => m2o(p[doc.nc ? "credit_move_id" : "debit_move_id"]) as number);
+        await ex("account.move.line", "remove_move_reconcile", [[lp.id]]);
+      }
+      await ex("account.move", "button_draft", [[id]]);
+    }
+    const viejas = await ex("account.move.line", "search_read", [[["move_id", "=", id], ["display_type", "=", "product"]]], { fields: ["id"] }) as Rec[];
+    await ex("account.move", "write", [[id], { l10n_latam_document_type_id: doc.id, invoice_line_ids: [...viejas.map((l) => [2, l.id]), ...lineas.map((l) => [0, 0, l])] }]);
+  } else {
+    id = await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: spec.partner.id, journal_id: J_COMPRAS,
+      l10n_latam_document_type_id: doc.id, l10n_latam_document_number: spec.numero, invoice_date: spec.fecha, date: spec.fecha, company_id: C,
+      ...(doc.nc ? { reversed_entry_id: fa!.id, ref: `${spec.concepto} · Doc. Ref: ${spec.doc_ref.texto}` } : {}),
+      invoice_line_ids: lineas.map((l) => [0, 0, l]) }]) as number;
+  }
+  const v = await ajustarYVerificar(id, sg, spec.perc_odoo, spec.iva, spec.total);
+  if (!v.ok) return v;
+  await ex("account.move", "action_post", [[id]]);
+  const nm = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name;
+  let pago: Rec | null = null;
+  if (contra.length) {
+    const lp = await lineaPagar(id);
+    await ex("account.move.line", "reconcile", [[lp.id, ...contra]]);
+    pago = { reconciliada_de_nuevo: contra.length };
+  } else if (!doc.nc) {
+    const ctx = { active_model: "account.move", active_ids: [id] };
+    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: PML_MP_OUT, payment_date: spec.fecha, amount: spec.total, communication: nm }], { context: ctx }) as number;
+    await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+    pago = { diario: "Mercado Pago", fecha: spec.fecha, importe: spec.total };
+  } else {
+    const r = await aplicarNC(id, spec.total, fa!.id, false);
+    if (!r.ok) return { ...r, id };
+    pago = r;
+  }
+  const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0];
+  if (fin.amount_residual !== 0) return { ok: false, error: `${fin.name} quedó publicada pero con saldo ${fin.amount_residual}: revisala en Odoo`, id };
+  await sb.from("compras_ml_decisiones").upsert({ clave: `${spec.cuit}|${fin.name}`, categoria: "cargo_ml", nota: plan.accion, odoo_move_id: id, odoo_move_name: fin.name, actualizado_en: new Date().toISOString() });
+  return { ok: true, comprobante: fin, chk: v.chk, pago, accion: plan.accion };
+}
+
 // ── guardia de acceso de Core (sesión, service role, x-cron-key o clave de conector) ──
 async function _accesoPermitido(req: Request): Promise<boolean> {
   const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
@@ -467,12 +933,15 @@ function _servirConGuardia(...args: any[]) {
 _servirConGuardia(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
+    T0 = Date.now();
     const body = await req.json() as Rec;
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const modo = String(body.modo || "datos");
     let out: Rec;
     if (modo === "datos") out = await datos(sb, body);
     else if (modo === "cargar") out = await cargar(sb, body);
+    else if (modo === "cargos") out = await cargos(sb, body);
+    else if (modo === "cargos_cargar") out = await cargosCargar(sb, body);
     else if (modo === "padron") {
       // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
       const marcas: Rec = body.marcas || {};
