@@ -212,13 +212,19 @@ async function cargar(sb: any, body: Rec) {
   let partner: number | null = ya.length ? ya[0].id : null;
   // Duplicados (pedido de Diego 10-nov): mismo número (cualquier proveedor, por si el contacto está duplicado),
   // y cualquier BORRADOR del proveedor o por el mismo importe (un borrador puede no tener número todavía).
-  const mismoNumero = await ex("account.move", "search_read", [[["name", "=", nombre], ["move_type", "=", doc.nc ? "in_refund" : "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["id", "name", "state", "amount_total", "partner_id"] }) as Rec[];
+  const mismoNumero = await ex("account.move", "search_read", [[["name", "=", nombre], ["move_type", "=", doc.nc ? "in_refund" : "in_invoice"], ["state", "!=", "cancel"]]], { fields: ["id", "name", "state", "amount_total", "partner_id", "create_date"] }) as Rec[];
   const delProveedor = mismoNumero.filter((m) => !partner || m2o(m.partner_id) === partner);
-  if (delProveedor.length) return delProveedor[0].state === "draft"
-    ? { ok: false, error: `Ya hay un BORRADOR de ${nombre} en Odoo (id ${delProveedor[0].id}): revisalo y validalo ahí, no se crea otro.` }
-    : { ok: true, ya_cargada: true, move: delProveedor[0] };
-  if (mismoNumero.length) return { ok: false, error: `${nombre} ya está cargado con OTRO proveedor (${mismoNumero[0].partner_id?.[1]}): revisá el contacto antes de cargarlo.` };
-  const borr = await ex("account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "draft"], ["company_id", "=", C],
+  // Un borrador del MISMO comprobante (proveedor + número), creado en las últimas 6 h y por el mismo importe (±$0,05)
+  // es un intento anterior de esta carga que frenó por un control: se RETOMA en vez de crear otro.
+  let retomar: number | null = null;
+  if (delProveedor.length && delProveedor[0].state === "draft") {
+    const b = delProveedor[0];
+    const reciente = Date.now() - new Date(String(b.create_date).replace(" ", "T") + "Z").getTime() < 6 * 3600e3;
+    if (reciente && Math.abs(b.amount_total - total) <= 0.05) retomar = b.id;
+    else return { ok: false, error: `Ya hay un BORRADOR de ${nombre} en Odoo (id ${b.id}): revisalo y validalo ahí, no se crea otro.` };
+  } else if (delProveedor.length) return { ok: true, ya_cargada: true, move: delProveedor[0] };
+  if (mismoNumero.length && !retomar) return { ok: false, error: `${nombre} ya está cargado con OTRO proveedor (${mismoNumero[0].partner_id?.[1]}): revisá el contacto antes de cargarlo.` };
+  const borr = await ex("account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "draft"], ["company_id", "=", C], ["id", "!=", retomar || 0],
     "|", ["partner_id", "=", partner || 0], ["amount_total", "=", total]]], { fields: ["id", "name", "partner_id", "amount_total"] }) as Rec[];
   if (borr.length) return { ok: false, error: `Hay un BORRADOR en Odoo que puede ser este comprobante (id ${borr[0].id}, ${borr[0].partner_id?.[1] || "sin proveedor"}, ${borr[0].amount_total}): resolvelo antes para no duplicar.` };
   // ¿va por Compras? (envases / materias primas con trazabilidad): una OC del proveedor por el mismo importe (±$1)
@@ -278,20 +284,31 @@ async function cargar(sb: any, body: Rec) {
   // proveedor nuevo: como los de siempre (empresa, CUIT, responsabilidad según la letra), con el nombre de ARCA
   if (!partner) partner = await ex("res.partner", "create", [{ name: String(c.denom || cuitFmt(cuit)).trim(), vat: cuitFmt(cuit), is_company: true, country_id: COUNTRY_AR,
     l10n_latam_identification_type_id: ID_CUIT, l10n_ar_afip_responsibility_type_id: doc.letra === "C" ? 6 : 1, supplier_rank: 1 }]) as number;
-  const id = await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: partner, journal_id: J_COMPRAS,
+  const id: number = retomar ?? await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: partner, journal_id: J_COMPRAS,
     l10n_latam_document_type_id: doc.id, l10n_latam_document_number: numero, invoice_date: c.fecha, date: c.fecha, company_id: C,
     ...(faAnulada ? { reversed_entry_id: faAnulada.id } : {}),
     invoice_line_ids: lineas.map((l) => [0, 0, l]) }]) as number;
   const sg = doc.nc ? -1 : 1; // en la NC los impuestos van al haber y el proveedor al debe
   const leer = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
   let ls = await leer();
-  if (perc.length) {
-    const cmds: unknown[] = [];
-    for (const p of perc) {
-      const l = ls.find((x) => m2o(x.tax_line_id) === p.tax);
-      if (!l) return { ok: false, error: "Odoo no generó la línea de la percepción " + p.tax + "; quedó en BORRADOR", id };
-      cmds.push([1, l.id, { balance: sg * p.importe, amount_currency: sg * p.importe }]);
-    }
+  // Ajustes para que quede IGUAL al comprobante (como se hace a mano en Odoo, editando el impuesto):
+  //  · percepciones: el importe exacto de cada jurisdicción;
+  //  · IVA: si el vendedor redondeó distinto (hasta $0,05), el IVA del comprobante.
+  const cmds: unknown[] = [];
+  for (const p of perc) {
+    const l = ls.find((x) => m2o(x.tax_line_id) === p.tax);
+    if (!l) return { ok: false, error: "Odoo no generó la línea de la percepción " + p.tax + "; quedó en BORRADOR", id };
+    cmds.push([1, l.id, { balance: sg * p.importe, amount_currency: sg * p.importe }]);
+  }
+  const lIva = ls.filter((x) => x.tax_line_id && TAX_IVA.has(m2o(x.tax_line_id)));
+  const ivaOdoo = r2(Math.abs(lIva.reduce((s, l) => s + l.balance, 0)));
+  let ajusteIva = 0;
+  if (iva && lIva.length === 1 && ivaOdoo !== iva) {
+    ajusteIva = r2(iva - ivaOdoo);
+    if (Math.abs(ajusteIva) > 0.05) return { ok: false, error: `El IVA de Odoo (${ivaOdoo}) difiere en ${ajusteIva} del comprobante (${iva}): más que un redondeo, quedó en BORRADOR`, id };
+    cmds.push([1, lIva[0].id, { balance: sg * iva, amount_currency: sg * iva }]);
+  }
+  if (cmds.length) {
     const tt = ls.find((x) => x.display_type === "payment_term");
     cmds.push([1, tt.id, { balance: -sg * total, amount_currency: -sg * total }]);
     await ex("account.move", "write", [[id], { line_ids: cmds }]);
@@ -324,7 +341,7 @@ async function cargar(sb: any, body: Rec) {
   }
   const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0];
   await sb.from("compras_ml_decisiones").upsert({ clave: `${cuit}|${nombre}`, categoria: body.categoria, nota: body.nota || null, odoo_move_id: id, odoo_move_name: fin.name, actualizado_en: new Date().toISOString() });
-  return { ok: true, comprobante: fin, chk, pago };
+  return { ok: true, comprobante: fin, chk, pago, ajuste_iva: ajusteIva || undefined, retomado: retomar ? true : undefined };
 }
 
 // ── guardia de acceso de Core (sesión, service role, x-cron-key o clave de conector) ──

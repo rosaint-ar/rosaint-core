@@ -280,6 +280,8 @@ function analizar() {
         d.cierra = d.odoo ? d.odoo.state === 'posted' && Math.abs(d.odoo.total - Math.abs(d.total)) <= 0.01 : null;
         // ¿va por Compras? (envases / MP con trazabilidad): OC del proveedor por el mismo importe → se factura desde la OC
         d.oc = !d.odoo && !d.nc ? (DATOS.compras_odoo || []).find(o => o.cuit === d.cuit && Math.abs(o.total - Math.abs(d.total)) <= 1 && dias(d.fecha, o.fecha) >= -15 && dias(d.fecha, o.fecha) <= 60) : null;
+        // pendiente = falta cargarlo, o quedó en BORRADOR (un intento que frenó por un control: se retoma, no se duplica)
+        d.pendiente = !d.oc && (!d.odoo || d.odoo.state === 'draft');
         // como siempre en Odoo: se paga el TOTAL de la factura, por Mercado Pago, con la fecha de la factura
         d.fechaPago = d.nc || d.anulada ? null : d.fecha;
       }
@@ -304,7 +306,7 @@ function render() {
   if (!ARCA) { v.innerHTML = `<div class="empty">Subí el Excel de <b>Mis Comprobantes Recibidos</b> de ARCA del mes (el mismo del Conciliador) para cruzar las compras con sus facturas.</div>`; $('n-compras').textContent = '—'; return; }
   const G = VISTA.grupos;
   const docs = G.flatMap(g => g.docs);
-  const ok = docs.filter(d => d.odoo && d.cierra), dif = docs.filter(d => (d.odoo && !d.cierra) || d.oc), falta = docs.filter(d => !d.odoo && !d.oc);
+  const ok = docs.filter(d => d.odoo && d.cierra), falta = docs.filter(d => d.pendiente), dif = docs.filter(d => !d.pendiente && ((d.odoo && !d.cierra) || d.oc));
   const sum = (xs) => r2(xs.reduce((s, d) => s + (d.nc ? -1 : 1) * Math.abs(d.total), 0));
   $('n-compras').textContent = falta.length ? falta.length + ' por cargar' : '✓';
   let h = `<div class="summary">
@@ -316,7 +318,7 @@ function render() {
   </div>`;
   if (falta.length) h += `<div style="margin:-4px 0 14px;"><button class="btn primary" id="btnTodo">Cargar los ${falta.length} pendientes en Odoo</button> <span class="nota">Cada uno se verifica al centavo contra ARCA antes de validar; si algo no cierra, queda en borrador y te avisa.</span></div>`;
 
-  const orden = (g) => (g.docs.some(d => !d.odoo && !d.oc) ? 0 : g.docs.some(d => !d.cierra) ? 1 : 2);
+  const orden = (g) => (g.docs.some(d => d.pendiente) ? 0 : g.docs.some(d => !d.cierra) ? 1 : 2);
   for (const g of [...G].sort((a, b) => orden(a) - orden(b) || a.docs[0].fecha.localeCompare(b.docs[0].fecha))) {
     const est = orden(g) === 0 ? 'pend' : orden(g) === 1 ? 'aviso' : 'listo';
     const ex = explicarDiferencia(g);
@@ -344,7 +346,7 @@ function render() {
         : d.fechaPago ? `Mercado Pago ${fFecha(d.fechaPago)}` : '—';
       h += `<tr class="${d.nc ? 'nc' : ''}"><td>${fFecha(d.fecha)}</td><td class="mono">${esc(nombreDoc(d))}</td>
         <td class="num">${money(d.iva)}</td><td class="num">${d.otros ? money(d.otros) : '—'}</td><td class="num">${money((d.nc ? -1 : 1) * Math.abs(d.total))}</td>
-        <td>${odoo}</td><td>${pago}</td><td>${d.odoo || d.oc ? '' : `<button class="btn sm" data-cargar="${esc(k)}">Cargar</button>`}</td></tr>`;
+        <td>${odoo}</td><td>${pago}</td><td>${d.pendiente ? `<button class="btn sm" data-cargar="${esc(k)}">${d.odoo ? 'Completar' : 'Cargar'}</button>` : ''}</td></tr>`;
     }
     h += `</tbody></table>
       <div class="concil ${cierra ? '' : 'mal'}"><span>Facturado neto (FA − NC) <b>${money(g.facturado)}</b> · cobrado neto por Mercado Pago <b>${money(g.pagado)}</b>${motivos.length ? ' · ' + motivos.join(' · ') : ''}</span>
@@ -417,7 +419,7 @@ async function cargarUno(clave, sinConfirmar) {
   } catch (e) { setStatus('off', `${nombreDoc(d)}: ${e.message}`, 'err'); return false; }
 }
 async function cargarTodo() {
-  const pend = VISTA.grupos.flatMap(g => g.docs.filter(d => !d.odoo && !d.oc).map(d => ({ g, d })));
+  const pend = VISTA.grupos.flatMap(g => g.docs.filter(d => d.pendiente).map(d => ({ g, d })));
   // las FA primero y después las NC (así cada NC encuentra su factura para conciliarse)
   pend.sort((a, b) => (a.d.nc - b.d.nc) || a.d.fecha.localeCompare(b.d.fecha));
   // 1) ensayo de todos (no escribe nada): lo que da error o tiene aviso de posible duplicado queda AFUERA del lote
