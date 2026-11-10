@@ -882,6 +882,25 @@ async function cargosCargar(sb: any, body: Rec) {
   return { ok: true, comprobante: fin, chk: v.chk, pago, accion: plan.accion };
 }
 
+// pagar {comprobante, fecha, diario: mp|efectivo, importe, dry_run} — registra el pago de una factura de proveedor ya
+// validada que quedó a pagar (ej. honorarios pagados por transferencia, que no salen en la API de Mercado Pago)
+async function pagar(body: Rec) {
+  const m = (await ex("account.move", "search_read", [[["name", "=", String(body.comprobante || "")], ["company_id", "=", C], ["move_type", "=", "in_invoice"]]], { fields: ["id", "name", "state", "amount_residual", "payment_state", "partner_id"] }) as Rec[])[0];
+  if (!m) return { ok: false, error: "No encuentro " + body.comprobante };
+  if (m.state !== "posted") return { ok: false, error: `${m.name} no está validada` };
+  const d = PAGO_DIARIO[String(body.diario || "mp")];
+  if (!d) return { ok: false, error: "Diario de pago desconocido (mp | efectivo)" };
+  const importe = r2(+body.importe || 0);
+  if (!importe || importe > m.amount_residual + 0.001) return { ok: false, error: `Importe ${importe} inválido: ${m.name} tiene saldo ${m.amount_residual}` };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || ""))) return { ok: false, error: "Falta la fecha del pago" };
+  const plan = { comprobante: m.name, proveedor: m.partner_id[1], saldo: m.amount_residual, pago: `${d.nombre} ${body.fecha} $${importe}` };
+  if (body.dry_run) return { ok: true, dry_run: true, plan };
+  const ctx = { active_model: "account.move", active_ids: [m.id] };
+  const wid = await ex("account.payment.register", "create", [{ journal_id: d.journal, payment_method_line_id: d.pml, payment_date: body.fecha, amount: importe, communication: m.name }], { context: ctx }) as number;
+  await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
+  return { ok: true, plan, comprobante: (await ex("account.move", "read", [[m.id], ["name", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0] };
+}
+
 // reclasificar {fecha, ref, lineas:[{cuenta, debe, haber, nombre}], dry_run} — asiento de reclasificación de CARGOS de ML
 // entre cuentas de gasto (como RECLASIF-ML de mar-ago, Vario/2026/08/0006): suma cero, sin impuestos, sin tocar
 // ninguna factura. Solo cuentas de resultado (5.x) y una sola vez por ref.
@@ -950,6 +969,7 @@ _servirConGuardia(async (req: Request) => {
     else if (modo === "cargos") out = await cargos(sb, body);
     else if (modo === "cargos_cargar") out = await cargosCargar(sb, body);
     else if (modo === "reclasificar") out = await reclasificar(body);
+    else if (modo === "pagar") out = await pagar(body);
     else if (modo === "padron") {
       // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
       const marcas: Rec = body.marcas || {};
