@@ -125,6 +125,18 @@
       <div class="conn-name">Odoo <span class="conn-status" id="st-odoo">Verificando…</span></div>
       <div class="conn-desc">Facturas, borradores, percepciones y clientes. Via edge function odoo-explorar.</div>
       <div class="conn-meta" id="meta-odoo"></div>
+      <!-- Contraseña web de Odoo: una sola para todo Core (libros de IVA y todo lo que necesite sesión web) -->
+      <div class="conn-meta" id="cred-odoo">
+        <span>Contraseña web: <b id="cred-estado">verificando…</b></span>
+        <a href="#" id="cred-abrir">Actualizar contraseña</a>
+      </div>
+      <form id="cred-form" style="display:none;margin-top:10px;gap:8px;align-items:center;flex-wrap:wrap;" autocomplete="off">
+        <input type="password" id="cred-pass" placeholder="Contraseña nueva de Odoo" autocomplete="new-password"
+          style="font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);min-width:240px;">
+        <button type="submit" class="btn primary" id="cred-guardar">Guardar</button>
+        <button type="button" class="btn secondary" id="cred-cancelar">Cancelar</button>
+        <span class="conn-desc" id="cred-msg" style="width:100%;">Se prueba contra Odoo antes de guardarla; si Odoo no la acepta, no se guarda nada. Queda cifrada y la usan todos los módulos de Core.</span>
+      </form>
     </div>
     <div class="conn-actions">
       <button class="btn secondary" id="btn-ping-odoo">Probar</button>
@@ -254,7 +266,39 @@ async function cargarOdoo() {
   }
 }
 
-$('#btn-ping-odoo').addEventListener('click', () => { $('#st-odoo').textContent = 'Verificando…'; $('#st-odoo').className = 'conn-status'; cargarOdoo(); });
+$('#btn-ping-odoo').addEventListener('click', () => { $('#st-odoo').textContent = 'Verificando…'; $('#st-odoo').className = 'conn-status'; cargarOdoo(); cargarCredencial(); });
+
+// ─── Contraseña web de Odoo (única para todo Core; la guarda cifrada la función odoo-libros-iva) ───
+const FN_CRED = window.SUPABASE_URL.replace('.supabase.co', '.functions.supabase.co') + '/odoo-libros-iva';
+async function llamarCred(body) {
+  const r = await fetch(FN_CRED, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + window.SUPABASE_KEY }, body: JSON.stringify(body) });
+  return await r.json().catch(() => ({ ok: false, error: 'respuesta inválida (' + r.status + ')' }));
+}
+async function cargarCredencial() {
+  const e = $('#cred-estado');
+  e.textContent = 'verificando…'; e.style.color = '';
+  const d = await llamarCred({ modo: 'estado_credencial' });
+  if (!d.ok) { e.textContent = 'no se pudo verificar'; e.style.color = 'var(--hot)'; return; }
+  e.textContent = d.vigente ? `✓ vigente (${d.usuario})` : `✗ no coincide con la de Odoo (${d.usuario}): actualizala`;
+  e.style.color = d.vigente ? 'var(--ok)' : 'var(--hot)';
+  if (!d.vigente) $('#cred-form').style.display = 'flex';
+}
+$('#cred-abrir').addEventListener('click', (ev) => { ev.preventDefault(); $('#cred-form').style.display = 'flex'; $('#cred-pass').focus(); });
+$('#cred-cancelar').addEventListener('click', () => { $('#cred-pass').value = ''; $('#cred-form').style.display = 'none'; });
+$('#cred-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const p = $('#cred-pass').value;
+  if (!p) { $('#cred-msg').textContent = 'Escribí la contraseña.'; return; }
+  $('#cred-guardar').disabled = true; $('#cred-msg').textContent = 'Probándola en Odoo…'; $('#cred-msg').style.color = '';
+  const d = await llamarCred({ modo: 'guardar_credencial', password: p });
+  $('#cred-pass').value = '';
+  $('#cred-guardar').disabled = false;
+  if (!d.ok) { $('#cred-msg').textContent = d.error || 'No se pudo guardar.'; $('#cred-msg').style.color = 'var(--hot)'; return; }
+  $('#cred-msg').textContent = '✓ Guardada. Odoo la aceptó; ya la usan todos los módulos.'; $('#cred-msg').style.color = 'var(--ok)';
+  setTimeout(() => { $('#cred-form').style.display = 'none'; }, 2500);
+  cargarCredencial();
+});
+cargarCredencial();
 
 // ─── ML status ───
 // ml_auth tiene RLS activada (protege refresh_token). Usamos la RPC ml_auth_status()

@@ -73,6 +73,27 @@ _servirConGuardia(async (req: Request) => {
   const jsonErr = (msg: string) => new Response(JSON.stringify({ ok: false, error: msg }), { headers: { ...cors, "Content-Type": "application/json" }, status: 200 });
   try {
     let body: Rec = {}; try { body = await req.json(); } catch { /* */ }
+    // ── Credencial web de Odoo, ÚNICA para todo Core (secreto 'odoo_password' de la bóveda; la lee cualquier función
+    //    con get_odoo_password). Se administra desde Sistema → Integraciones → Odoo.
+    // estado_credencial: prueba la guardada contra Odoo (no la devuelve).
+    if (body.modo === "estado_credencial") {
+      let vigente = false, motivo = "";
+      try {
+        const pr = await (await jrpc("/web/session/authenticate", { db: ODOO_DB, login: ODOO_LOGIN, password: await getOdooPassword() })).json();
+        vigente = !!pr?.result?.uid; if (!vigente) motivo = String(pr?.error?.data?.message || "Odoo no la aceptó");
+      } catch (e) { motivo = String((e as Error).message || e); }
+      return new Response(JSON.stringify({ ok: true, vigente, usuario: ODOO_LOGIN, motivo }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    // guardar_credencial: se prueba primero contra Odoo y solo si la acepta se guarda cifrada. Nunca se devuelve.
+    if (body.modo === "guardar_credencial") {
+      const nueva = String(body.password || "");
+      if (nueva.length < 4) return jsonErr("Escribí la contraseña");
+      const prueba = await (await jrpc("/web/session/authenticate", { db: ODOO_DB, login: ODOO_LOGIN, password: nueva })).json();
+      if (!prueba?.result?.uid) return jsonErr(`Odoo no aceptó esa contraseña para ${ODOO_LOGIN}: no se guardó nada.`);
+      const g = await fetch(`${SUPABASE_URL}/rest/v1/rpc/set_odoo_password`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: "Bearer " + SERVICE_KEY }, body: JSON.stringify({ p: nueva }) });
+      if (!g.ok) return jsonErr("Odoo la aceptó pero no se pudo guardar (" + g.status + ")");
+      return new Response(JSON.stringify({ ok: true, usuario: ODOO_LOGIN }), { headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const mes = (body.mes as string) || "";
     const tipo = (body.tipo as string) === "purchase" ? "purchase" : "sale";
     if (!/^\d{4}-\d{2}$/.test(mes)) return jsonErr("Falta el mes (formato YYYY-MM)");
@@ -85,7 +106,12 @@ _servirConGuardia(async (req: Request) => {
     const authJson = await authRes.json();
     const sidM = (authRes.headers.get("set-cookie") || "").match(/session_id=([^;]+)/);
     const uid = authJson?.result?.uid as number | undefined;
-    if (!sidM || !uid) return jsonErr("No se pudo iniciar sesión en Odoo (revisá la credencial guardada)");
+    if (!sidM || !uid) {
+      // el motivo real que da Odoo (ej. "Access Denied" = la contraseña guardada ya no es la del usuario)
+      const motivo = String((authJson?.error?.data?.message || authJson?.error?.message || "sin respuesta") as string);
+      return jsonErr(`No se pudo iniciar sesión en Odoo con el usuario ${ODOO_LOGIN}: ${motivo}. ` +
+        (/access denied/i.test(motivo) ? "La contraseña guardada no coincide con la actual del usuario en Odoo (¿se cambió?): actualizala en Core → Sistema → Integraciones → Odoo." : "Revisá la credencial en Core → Sistema → Integraciones → Odoo."));
+    }
     const sid = sidM[1];
 
     // 2) opciones del reporte con el tipo elegido
