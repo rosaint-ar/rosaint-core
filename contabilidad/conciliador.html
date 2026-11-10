@@ -770,6 +770,12 @@ function renderCuadre() {
     ${filaInfo('Neto gravado', sumArca.neto, sumOdoo.neto, dif.neto)}
     ${fila('IVA', sumArca.iva, sumOdoo.iva, dif.iva)}
     ${fila('Otros tributos / percepciones', sumArca.otros, sumOdoo.otros, dif.otros)}
+    ${(r.clasifOtros || []).length ? (() => {
+      // de dónde sale el $0,00: los comprobantes que ARCA reparte distinto (mismo total e IVA) ya están descontados
+      const cA = r.clasifOtros.reduce((a, x) => a + x.arca.otros, 0), cO = r.clasifOtros.reduce((a, x) => a + (x.odoo.percepciones || 0), 0);
+      return `<tr><td style="padding-left:28px;color:var(--muted);font-size:12.5px;">↳ de eso, ${r.clasifOtros.length} repartido(s) distinto por ARCA, con el mismo total e IVA (combustible / factura B): ya descontado</td>
+        <td class="num" style="color:var(--muted);">${money(cA)}</td><td class="num" style="color:var(--muted);">${money(cO)}</td><td class="num" style="color:var(--muted);">${money(z(cA - cO))}</td></tr>`;
+    })() : ''}
     ${fila('Total', sumArca.total, sumOdoo.total, dif.total)}
     </tbody></table>`;
   if ((r.clasifOtros || []).length) {
