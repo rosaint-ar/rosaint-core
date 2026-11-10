@@ -400,7 +400,17 @@ function payload(g, d, dry) {
   return { modo: 'cargar', dry_run: dry, categoria: g.cat, detalle: `[ML ${g.nicks.join('/')}] ${titulos}`.slice(0, 240),
     comp: { cuit: d.cuit, denom: d.denom, cod: d.cod, pv: d.pv, num: d.num, fecha: d.fecha, neto: Math.abs(d.neto), nograv: Math.abs(d.nograv), iva: Math.abs(d.iva), otros: Math.abs(d.otros), total: Math.abs(d.total) },
     pago: d.fechaPago ? { fecha: d.fechaPago } : null,
-    fa_en_lote: d.faAnula ? nombreDoc(d.faAnula) : null };
+    fa_en_lote: d.faAnula ? nombreDoc(d.faAnula) : null,
+    marca: g.marca || null };
+}
+// Alta de una PERSONA: formato "Nombre Apellido (Marca)" — se pregunta la marca una vez por proveedor
+// (sugerencia: la tienda de ML si es un nombre y no un código).
+function pedirMarca(g, alta) {
+  if (!alta || !alta.persona || g.marca !== undefined) return;
+  const nick = (g.nicks[0] || '').trim();
+  const sug = /\d{3,}/.test(nick) ? '' : nick.toLowerCase().replace(/(^|[\s_-])\S/g, (x) => x.toUpperCase()).replace(/_/g, ' ');
+  const m = prompt(`Alta de ${alta.nombre} (persona).\n\n¿Marca o razón social para identificarla? Queda "${alta.nombre} (Marca)".\nDejalo vacío si no corresponde.`, sug);
+  g.marca = m === null ? null : (m.trim() || null);
 }
 async function aprender(g) { for (const sid of g.sellers) { const o = g.ords.find(x => Number(x.seller_id) === sid); await fn({ modo: 'aprender', cuit: g.cuit, seller_id: sid, nickname: o ? o.seller : null, razon_social: g.denom }).catch(() => {}); } }
 async function cargarUno(clave, sinConfirmar) {
@@ -410,7 +420,9 @@ async function cargarUno(clave, sinConfirmar) {
     const plan = await fn(payload(g, d, true));
     if (plan.ya_cargada) { setStatus('on', `${nombreDoc(d)} ya estaba en Odoo (${plan.move.name}).`, 'ok'); await cargarDatos(); return true; }
     const p = plan.plan;
-    if (!sinConfirmar && !confirm(`Cargar en Odoo:\n\n${p.comprobante} · ${p.proveedor}\nCuenta: ${p.cuenta}\nTotal ${money(p.total)} (IVA ${money(p.iva)}${p.percepciones.length ? ' + percepciones copiadas' : ''})\nPago: ${p.pago}${p.aviso ? '\n\n⚠ ' + p.aviso : ''}\n\n¿Confirmás?`)) return false;
+    if (!sinConfirmar) pedirMarca(g, p.alta);
+    const altaTxt = p.alta ? `\nAlta del proveedor: ${p.alta.nombre}${g.marca ? ' (' + g.marca + ')' : ''}\nDomicilio fiscal: ${p.alta.domicilio}` : '';
+    if (!sinConfirmar && !confirm(`Cargar en Odoo:\n\n${p.comprobante} · ${p.proveedor}${altaTxt}\nCuenta: ${p.cuenta}\nTotal ${money(p.total)} (IVA ${money(p.iva)}${p.percepciones.length ? ' + percepciones copiadas' : ''})\nPago: ${p.pago}${p.aviso ? '\n\n⚠ ' + p.aviso : ''}\n\n¿Confirmás?`)) return false;
     setStatus('load', `Cargando ${nombreDoc(d)}…`);
     const r = await fn(payload(g, d, false));
     await aprender(g);
@@ -435,7 +447,8 @@ async function cargarTodo() {
       else listos.push({ g, d, plan: r.plan });
     } catch (e) { afuera.push(`${nombreDoc(d)} ${d.denom}: ${e.message}`); }
   }
-  const lista = listos.map(({ g, d, plan }) => `• ${plan.comprobante} ${d.denom.slice(0, 28)} ${money(plan.total)} → ${CATS[g.cat].split(' ·')[0]}`).join('\n');
+  for (const { g, plan } of listos) pedirMarca(g, plan.alta); // una vez por persona nueva
+  const lista = listos.map(({ g, d, plan }) => `• ${plan.comprobante} ${(plan.alta ? plan.alta.nombre + (g.marca ? ' (' + g.marca + ')' : '') : d.denom).slice(0, 40)} ${money(plan.total)} → ${CATS[g.cat].split(' ·')[0]}`).join('\n');
   const txtAfuera = afuera.length ? `\n\nQuedan AFUERA (cargalos de a uno, mirándolos):\n${afuera.map(x => '• ' + x).join('\n')}` : '';
   if (!listos.length) { setStatus('off', 'No hay nada para cargar en lote.' + (afuera.length ? ' Revisá: ' + afuera.join(' | ') : ''), 'err'); return; }
   if (!confirm(`Se cargan ${listos.length} comprobantes en Odoo, verificados al centavo contra ARCA:\n\n${lista}${txtAfuera}\n\n¿Confirmás?`)) { setStatus('off', 'Carga cancelada.'); return; }

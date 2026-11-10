@@ -43,7 +43,8 @@ export async function consultarArca(cuit: string): Promise<any> {
   );
   const sobre = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a5="http://a5.soap.ws.server.puc.sr/"><soapenv:Header/><soapenv:Body><a5:getPersona_v2><token>${esc(t.token)}</token><sign>${esc(t.sign)}</sign><cuitRepresentada>${empresa}</cuitRepresentada><idPersona>${cuit}</idPersona></a5:getPersona_v2></soapenv:Body></soapenv:Envelope>`;
   const r = await fetch(
-    "https://aws.arca.gov.ar/sr-padron/webservices/personaServiceA5",
+    // El webservice sigue en afip.gov.ar (aws.arca.gov.ar NO existe en DNS; verificado 10-nov-2026)
+    "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5",
     {
       method: "POST",
       headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },

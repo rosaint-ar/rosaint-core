@@ -88,6 +88,9 @@ const ACENTOS: Record<string, string> = {
   tecnologia: "Tecnología", comercializacion: "Comercialización", produccion: "Producción", argentina: "Argentina", union: "Unión",
   farmacia: "Farmacia", farmaceutica: "Farmacéutica", cosmetica: "Cosmética", industria: "Industria", fabrica: "Fábrica", grafica: "Gráfica",
   aguila: "Águila", electrica: "Eléctrica", optica: "Óptica", economica: "Económica", tecnica: "Técnica", medica: "Médica",
+  damian: "Damián", fabian: "Fabián", junin: "Junín", peron: "Perón", lanus: "Lanús", catan: "Catán", dominico: "Domínico", velez: "Vélez",
+  dean: "Deán", cordoba: "Córdoba", tucuman: "Tucumán", neuquen: "Neuquén", constitucion: "Constitución", belgrano: "Belgrano", rios: "Ríos",
+  sarmiento: "Sarmiento", moron: "Morón", ituzaingo: "Ituzaingó",
   // marcas con mayúsculas propias
   eyg: "EyG",
 };
@@ -123,11 +126,23 @@ async function provinciaId(nombre: string): Promise<number | null> {
   if (/CAPITAL FEDERAL|CIUDAD AUTONOMA/.test(n)) return (ESTADOS.find((e) => /CIUDAD AUTONOMA/.test(sinAcento(e.name))) || {}).id ?? null;
   return (ESTADOS.find((e) => sinAcento(e.name) === n) || ESTADOS.find((e) => sinAcento(e.name).startsWith(n)) || {}).id ?? null;
 }
+// Calle del padrón ("SANTA FE AV. 2830 Piso:1 Dpto:A") → "Av. Santa Fe 2830 Piso 1 Dpto. A"
+function domicilioProlijo(dir: string): string {
+  let t = tipoOracion(String(dir || "").replace(/\s+(PISO|DPTO|DEPTO|OF|OFICINA|LOCAL):\s*/gi, " $1 "));
+  const av = t.match(/^(.*?)\s+(Av\.?|Avda\.?|Avenida)\s+(\d.*)$/i);
+  if (av) t = `Av. ${av[1]} ${av[3]}`;
+  return t.replace(/\bDpto\s+(\w+)/i, (_, d) => `Dpto. ${d.toUpperCase()}`).replace(/\bDepto\s+(\w+)/i, (_, d) => `Dpto. ${d.toUpperCase()}`).replace(/\s+/g, " ").trim();
+}
+const RESP_PADRON: Record<string, number> = { RI: 1, MONO: 6, EXENTO: 4 };
 async function datosPadron(cuit: string): Promise<Rec> {
   const p = await consultarArca(cuit);
   if (!p?.ok || !p.existe) return { ok: false, error: p?.error || "ARCA no devolvió datos de " + cuit };
+  const esCaba = /CAPITAL FEDERAL|CIUDAD AUTONOMA/.test(sinAcento(p.provincia || ""));
   return { ok: true, p, state_id: p.provincia ? await provinciaId(p.provincia) : null,
-    street: p.domicilio ? tipoOracion(p.domicilio) : null, city: p.localidad ? tipoOracion(p.localidad) : null, zip: p.cp || null };
+    street: p.domicilio ? domicilioProlijo(p.domicilio) : null,
+    // en CABA el padrón no trae localidad: se usa "Capital Federal", como ya figura en los contactos
+    city: p.localidad ? tipoOracion(p.localidad) : esCaba ? "Capital Federal" : null, zip: p.cp || null,
+    resp: RESP_PADRON[p.iva] || null };
 }
 
 // ── Mercado Libre ───────────────────────────────────────────────────────────
@@ -340,16 +355,24 @@ async function cargar(sb: any, body: Rec) {
     else if (dry && body.fa_en_lote) ncPendiente = String(body.fa_en_lote); // ensayo de un lote: la factura que anula se carga antes en el mismo lote
     else return { ok: false, error: `No encuentro la factura abierta de ${total} que anula esta NC: cargá primero esa factura (sin pago).` };
   }
-  const plan = { comprobante: nombre, proveedor: partner ? ya[0].name : `ALTA: ${c.denom} (${cuitFmt(cuit)})`, cuenta: cat.label, total, iva, percepciones: perc,
+  const plan: Rec = { comprobante: nombre, proveedor: partner ? ya[0].name : `ALTA: ${c.denom} (${cuitFmt(cuit)})`, cuenta: cat.label, total, iva, percepciones: perc,
     pago: !doc.nc && body.pago ? `Mercado Pago ${fechaPago} $${importePago}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : "sin pago (anulada por NC)",
     aviso: parecidas.length ? `Ojo: ya hay ${parecidas.map((p) => `${p.name} del ${p.invoice_date}`).join(", ")} del mismo proveedor por el mismo importe (puede ser una compra repetida; verificá que sea otro comprobante).` : null };
+  // proveedor nuevo: el ensayo ya trae del padrón el nombre con el formato de Diego y el domicilio fiscal
+  let alta: Rec | null = null;
+  if (!partner) {
+    alta = await datosPadron(cuit);
+    if (!alta.ok) return { ok: false, error: `No pude consultar el padrón de ARCA para dar de alta a ${c.denom} (${alta.error}). Reintentá en un rato: el proveedor se crea con su domicilio fiscal.` };
+    const persona = !!(alta.p.apellido && !alta.p.razon);
+    plan.proveedor = `ALTA: ${nombreProlijo(alta.p, body.marca)} (${cuitFmt(cuit)})`;
+    plan.alta = { nombre: nombreProlijo(alta.p, body.marca), persona, domicilio: [alta.street, alta.city, alta.zip, alta.p.provincia ? tipoOracion(alta.p.provincia) : null].filter(Boolean).join(" · ") };
+  }
   if (dry) return { ok: true, dry_run: true, plan };
 
   // proveedor nuevo: como los de siempre (empresa, CUIT, responsabilidad según la letra), con el formato de Diego
   // y el domicilio FISCAL del padrón de ARCA. Sin padrón no se da de alta a medias.
-  if (!partner) {
-    const d = await datosPadron(cuit);
-    if (!d.ok) return { ok: false, error: `No pude consultar el padrón de ARCA para dar de alta a ${c.denom} (${d.error}). Reintentá en un rato: el proveedor se crea con su domicilio fiscal.` };
+  if (!partner && alta) {
+    const d = alta;
     partner = await ex("res.partner", "create", [{ name: nombreProlijo(d.p, body.marca), vat: cuitFmt(cuit), is_company: true, country_id: COUNTRY_AR,
       street: d.street || false, city: d.city || false, zip: d.zip || false, state_id: d.state_id || false,
       l10n_latam_identification_type_id: ID_CUIT, l10n_ar_afip_responsibility_type_id: d.p.iva === "MONO" ? 6 : d.p.iva === "EXENTO" ? 4 : doc.letra === "C" ? 6 : 1, supplier_rank: 1 }]) as number;
@@ -456,11 +479,18 @@ _servirConGuardia(async (req: Request) => {
       const filas: Rec[] = [];
       for (const raw of (body.cuits || []) as string[]) {
         const cuit = digitos(raw);
-        const actual = (await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name", "vat", "street", "city", "zip", "state_id", "is_company", "l10n_ar_afip_responsibility_type_id"], context: { active_test: false } }) as Rec[]);
+        const campos = ["id", "name", "vat", "street", "city", "zip", "state_id", "is_company", "l10n_ar_afip_responsibility_type_id"];
+        let actual = (await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: campos, context: { active_test: false } }) as Rec[]);
         const d = await datosPadron(cuit);
+        if (!actual.length && d.ok) {
+          // CUIT mal escrito en Odoo (ej. "20-206184729-"): se busca por apellido / primera palabra y se comparan los DÍGITOS
+          const clave = String(d.p.apellido || d.p.razon || "").split(" ")[0];
+          if (clave.length >= 3) actual = ((await ex("res.partner", "search_read", [[["name", "ilike", clave]]], { fields: campos, context: { active_test: false }, limit: 80 })) as Rec[])
+            .filter((a) => digitos(a.vat) === cuit);
+        }
         filas.push({ cuit, partners: actual.map((a) => ({ id: a.id, name: a.name, vat: a.vat, street: a.street, city: a.city, zip: a.zip, provincia: a.state_id?.[1] || null, resp: a.l10n_ar_afip_responsibility_type_id?.[1] || null })),
           padron: d.ok ? { tipo: d.p.tipo, apellido: d.p.apellido, nombre: d.p.nombre, razon: d.p.razon, iva: d.p.iva, domicilio: d.p.domicilio, localidad: d.p.localidad, cp: d.p.cp, provincia: d.p.provincia } : { error: d.error },
-          propuesta: d.ok ? { name: nombreProlijo(d.p, marcas[cuit]), street: d.street, city: d.city, zip: d.zip, state_id: d.state_id } : null });
+          propuesta: d.ok ? { name: nombreProlijo(d.p, marcas[cuit]), vat: cuitFmt(cuit), street: d.street, city: d.city, zip: d.zip, state_id: d.state_id, l10n_ar_afip_responsibility_type_id: d.resp } : null });
       }
       out = { ok: true, filas };
     } else if (modo === "prolijar") {
@@ -468,11 +498,11 @@ _servirConGuardia(async (req: Request) => {
       const hechos: Rec[] = [];
       for (const ch of (body.cambios || []) as Rec[]) {
         const vals: Rec = {};
-        for (const k of ["name", "street", "city", "zip", "state_id", "vat"]) if (ch[k] !== undefined && ch[k] !== null && ch[k] !== "") vals[k] = ch[k];
+        for (const k of ["name", "street", "city", "zip", "state_id", "vat", "l10n_ar_afip_responsibility_type_id"]) if (ch[k] !== undefined && ch[k] !== null && ch[k] !== "") vals[k] = ch[k];
         if (!ch.partner_id || !Object.keys(vals).length) continue;
         vals.country_id = COUNTRY_AR;
         await ex("res.partner", "write", [[ch.partner_id], vals]);
-        hechos.push((await ex("res.partner", "read", [[ch.partner_id], ["id", "name", "vat", "street", "city", "zip", "state_id"]]) as Rec[])[0]);
+        hechos.push((await ex("res.partner", "read", [[ch.partner_id], ["id", "name", "vat", "street", "city", "zip", "state_id", "l10n_ar_afip_responsibility_type_id"]]) as Rec[])[0]);
       }
       out = { ok: true, hechos };
     }
