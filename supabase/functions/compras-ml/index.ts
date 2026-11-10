@@ -869,6 +869,34 @@ async function cargosCargar(sb: any, body: Rec) {
   return { ok: true, comprobante: fin, chk: v.chk, pago, accion: plan.accion };
 }
 
+// reclasificar {fecha, ref, lineas:[{cuenta, debe, haber, nombre}], dry_run} — asiento de reclasificación de CARGOS de ML
+// entre cuentas de gasto (como RECLASIF-ML de mar-ago, Vario/2026/08/0006): suma cero, sin impuestos, sin tocar
+// ninguna factura. Solo cuentas de resultado (5.x) y una sola vez por ref.
+async function reclasificar(body: Rec) {
+  const ref = String(body.ref || "");
+  if (!/^RECLASIF-ML/.test(ref)) return { ok: false, error: "La referencia tiene que empezar con RECLASIF-ML" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || ""))) return { ok: false, error: "Falta la fecha" };
+  const ls = (body.lineas || []) as Rec[];
+  const debe = r2(ls.reduce((s, l) => s + (+l.debe || 0), 0)), haber = r2(ls.reduce((s, l) => s + (+l.haber || 0), 0));
+  if (!ls.length || debe !== haber || !debe) return { ok: false, error: `No suma cero: debe ${debe} / haber ${haber}` };
+  if (ls.some((l) => !/^5\./.test(String(l.cuenta)))) return { ok: false, error: "Solo cuentas de resultado (5.x)" };
+  const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
+  if (ya.length) return { ok: true, ya_existia: ya[0].name };
+  const lineas: Rec[] = [];
+  for (const l of ls) {
+    const acc = await cuentaId(String(l.cuenta));
+    if (!acc) return { ok: false, error: "No existe la cuenta " + l.cuenta };
+    lineas.push({ account_id: acc, name: String(l.nombre || ref), debit: r2(+l.debe || 0), credit: r2(+l.haber || 0), tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] });
+  }
+  const jv = (await ex("account.journal", "search_read", [[["company_id", "=", C], ["type", "=", "general"], ["code", "=", "MISC"]]], { fields: ["id", "name"] }) as Rec[])[0]
+    || (await ex("account.move", "search_read", [[["ref", "ilike", "RECLASIF-ML"], ["company_id", "=", C]]], { fields: ["journal_id"], limit: 1 }) as Rec[]).map((m) => ({ id: m2o(m.journal_id), name: m.journal_id[1] }))[0];
+  if (!jv) return { ok: false, error: "No encuentro el diario de operaciones varias" };
+  if (body.dry_run) return { ok: true, dry_run: true, diario: jv.name, fecha: body.fecha, ref, debe, lineas: ls };
+  const id = await ex("account.move", "create", [{ move_type: "entry", journal_id: jv.id, date: body.fecha, ref, company_id: C, line_ids: lineas.map((l) => [0, 0, l]) }]) as number;
+  await ex("account.move", "action_post", [[id]]);
+  return { ok: true, asiento: (await ex("account.move", "read", [[id], ["name", "date", "ref", "amount_total", "state"]]) as Rec[])[0] };
+}
+
 // ── guardia de acceso de Core (sesión, service role, x-cron-key o clave de conector) ──
 async function _accesoPermitido(req: Request): Promise<boolean> {
   const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
@@ -908,6 +936,7 @@ _servirConGuardia(async (req: Request) => {
     else if (modo === "cargar") out = await cargar(sb, body);
     else if (modo === "cargos") out = await cargos(sb, body);
     else if (modo === "cargos_cargar") out = await cargosCargar(sb, body);
+    else if (modo === "reclasificar") out = await reclasificar(body);
     else if (modo === "padron") {
       // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
       const marcas: Rec = body.marcas || {};
