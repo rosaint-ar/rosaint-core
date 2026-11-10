@@ -1,31 +1,29 @@
-import { kw, COMPANY, serviceUserId, SB, SERVICE } from './odoo.ts';
+import { kw, COMPANY, SB, SERVICE } from './odoo.ts';
 import { signedCms } from './cms.ts';
 import { encrypt,decrypt } from './secrets.ts';
-const PARAM='rosaint.portal_arca.signer', CACHE='rosaint-2-constancia-production';
+// Firma del ticket de ARCA para ws_sr_constancia_inscripcion (consulta de padrón del alta profesional).
+// 10/11/2026: la firma se hace ACÁ, con el certificado propio del Core ("rosaint-core", CUIT 20310924130,
+// vence 30/06/2028) guardado en los secretos ARCA_CORE_CERT_B64 y ARCA_CORE_KEY_B64 (PEM en base64).
+// Antes la hacía una acción de servidor de Odoo con la clave de facturación; se sacó porque Odoo cobra
+// mantenimiento por cada línea de código propio. La clave de facturación de Odoo no se usa ni se toca.
+const CACHE='rosaint-2-constancia-production';
+function pemDer(pem:string){const clean=pem.replace(/-----[^-]+-----/g,'').replace(/\s/g,'');return Uint8Array.from(atob(clean),c=>c.charCodeAt(0));}
+function credenciales(){
+ const cert=Deno.env.get('ARCA_CORE_CERT_B64')||'', key=Deno.env.get('ARCA_CORE_KEY_B64')||'';
+ if(!cert||!key)throw Error('Falta el certificado del Core para ARCA (secretos ARCA_CORE_CERT_B64 y ARCA_CORE_KEY_B64).');
+ return {certB64:cert,keyPem:atob(key)};
+}
+async function firmar(tra:string,keyPem:string){
+ const k=await crypto.subtle.importKey('pkcs8',pemDer(keyPem),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
+ const sig=new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5',k,new TextEncoder().encode(tra)));
+ let s='';for(const b of sig)s+=String.fromCharCode(b);return btoa(s);
+}
+// Ya no instala nada en Odoo: verifica que la firma local esté lista (el nombre queda por compatibilidad).
 export async function installArcaSigner() {
- const user=await serviceUserId();
- const code=`# Rosaint: firma exclusiva de TRA de constancia; nunca exporta la clave privada.
-if env.uid != ${user}:
-    raise UserError('Operación reservada a la integración de Rosaint.')
-company = env['res.company'].browse(${COMPANY})
-key = company.l10n_ar_afip_ws_key_id
-cert = company.l10n_ar_afip_ws_crt_id
-if not key or not cert or key.company_id.id != ${COMPANY} or cert.company_id.id != ${COMPANY}:
-    raise UserError('Revisar certificado y clave ARCA de la empresa Rosaint.')
-if not cert.is_valid:
-    raise UserError('El certificado ARCA está vencido o no es válido.')
-now = datetime.datetime.utcnow()
-generation = (now - datetime.timedelta(minutes=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
-expiration = (now + datetime.timedelta(hours=11)).strftime('%Y-%m-%dT%H:%M:%SZ')
-tra = '<?xml version="1.0" encoding="UTF-8"?><loginTicketRequest version="1.0"><header><uniqueId>%s</uniqueId><generationTime>%s</generationTime><expirationTime>%s</expirationTime></header><service>ws_sr_constancia_inscripcion</service></loginTicketRequest>' % (int(time.time()), generation, expiration)
-signature = key._sign(tra, hashing_algorithm='sha256', formatting='base64').decode('ascii')
-action = {'type':'ir.actions.client','tag':'rosaint_arca_signature','params':{'tra':tra,'signature':signature,'certificate':cert.with_context(bin_size=False).pem_certificate.decode('ascii'),'cuit':company.vat}}
-`;
- let id=Number(await kw('ir.config_parameter','get_param',[PARAM])||0);
- const model=(await kw('ir.model','search_read',[[['model','=','res.company']]],{fields:['id'],limit:1}))[0];
- if(id){const current=(await kw('ir.actions.server','read',[[id],['name','model_id']]))[0];if(current?.name!=='Rosaint Core · Ticket ARCA padrón'||current.model_id[0]!==model.id)throw Error('Revisar acción de firma existente.');await kw('ir.actions.server','write',[[id],{code}]);}
- else {id=await kw('ir.actions.server','create',[{name:'Rosaint Core · Ticket ARCA padrón',model_id:model.id,state:'code',code}]);await kw('ir.config_parameter','set_param',[PARAM,String(id)]);}
- return {accion_id:id,empresa:COMPANY,clave_privada:'permanece_en_odoo'};
+ const {certB64,keyPem}=credenciales();
+ await firmar('prueba',keyPem);
+ signedCms('prueba',await firmar('prueba',keyPem),certB64);
+ return {firma:'supabase',certificado:'rosaint-core',empresa:COMPANY,odoo:'sin código propio'};
 }
 async function cache(method='GET',data?:any) {
  const res=await fetch(SB+'/rest/v1/portal_arca_cache?id=eq.'+CACHE,{method,headers:{apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
@@ -35,6 +33,7 @@ async function cache(method='GET',data?:any) {
 async function cachedTicket(){const c=await cache();if(!c?.cifrada||Date.parse(c.vence)<Date.now()+5*60e3)return null;try{return JSON.parse(await decrypt(c.cifrada,CACHE));}catch{return null;}}
 function xml(x:string,tag:string){return x.match(new RegExp('<(?:\\w+:)?'+tag+'(?:\\s[^>]*)?>([\\s\\S]*?)</(?:\\w+:)?'+tag+'>'))?.[1]?.trim()||'';}
 const unescape=(x:string)=>x.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+const isoZ=(d:Date)=>d.toISOString().slice(0,19)+'Z';
 export async function rosArcaTicket(){
  let saved=await cachedTicket();if(saved)return saved;
  const lock=await fetch(SB+'/rest/v1/rpc/portal_arca_tomar',{method:'POST',headers:{apikey:SERVICE,Authorization:'Bearer '+SERVICE,'Content-Type':'application/json'},body:'{}'});
@@ -42,10 +41,11 @@ export async function rosArcaTicket(){
  if(!await lock.json()) {for(let n=0;n<5;n++){await new Promise(r=>setTimeout(r,1000));saved=await cachedTicket();if(saved)return saved;}throw Error('ARCA se está renovando. Volvé a consultar en unos segundos.');}
  try {
   saved=await cachedTicket();if(saved)return saved;
-  const id=Number(await kw('ir.config_parameter','get_param',[PARAM])||0);if(!id)throw Error('Falta instalar la firma de padrón ARCA en Rosaint.');
-  const result=await kw('ir.actions.server','run',[[id]],{context:{active_model:'res.company',active_id:COMPANY,active_ids:[COMPANY]}});
-  const p=result?.params;if(result?.tag!=='rosaint_arca_signature'||!p?.tra||!p.signature||!p.certificate)throw Error('Odoo no devolvió la firma del ticket.');
-  const cms=signedCms(p.tra,p.signature,p.certificate);
+  const {certB64,keyPem}=credenciales();
+  const empresa=(await kw('res.company','read',[[COMPANY],['vat']]))[0];
+  const now=Date.now();
+  const tra=`<?xml version="1.0" encoding="UTF-8"?><loginTicketRequest version="1.0"><header><uniqueId>${Math.floor(now/1000)}</uniqueId><generationTime>${isoZ(new Date(now-3*60e3))}</generationTime><expirationTime>${isoZ(new Date(now+11*3600e3))}</expirationTime></header><service>ws_sr_constancia_inscripcion</service></loginTicketRequest>`;
+  const cms=signedCms(tra,await firmar(tra,keyPem),certB64);
   const soap=`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ws="http://wsaa.view.sua.dvadac.desein.afip.gov"><soapenv:Header/><soapenv:Body><ws:loginCms><ws:in0>${cms}</ws:in0></ws:loginCms></soapenv:Body></soapenv:Envelope>`;
   const response=await fetch('https://wsaa.afip.gov.ar/ws/services/LoginCms',{method:'POST',headers:{'Content-Type':'text/xml; charset=utf-8',SOAPAction:'""'},body:soap,signal:AbortSignal.timeout(25000)});
   const body=await response.text(),fault=unescape(xml(body,'faultstring'));
@@ -53,7 +53,7 @@ export async function rosArcaTicket(){
   const ticket=unescape(xml(body,'loginCmsReturn'));
   const token=xml(ticket,'token'),sign=xml(ticket,'sign'),expires=xml(ticket,'expirationTime');
   if(!response.ok||!token||!sign||!Number.isFinite(Date.parse(expires)))throw Error('ARCA no devolvió un ticket válido.');
-  const value={token,sign,expiration_time:expires,cuit:String(p.cuit).replace(/\D/g,'')};
+  const value={token,sign,expiration_time:expires,cuit:String(empresa?.vat||'').replace(/\D/g,'')};
   await cache('PATCH',{cifrada:await encrypt(JSON.stringify(value),CACHE),vence:expires});
   return value;
  } finally {await cache('PATCH',{bloqueado_hasta:null});}

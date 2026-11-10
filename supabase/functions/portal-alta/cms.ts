@@ -1,5 +1,5 @@
-// CMS SignedData attached (RFC 5652), RSA/SHA256. Firma realizada dentro de Odoo.
-// No recibe ni exporta la clave privada. Verificado contra openssl cms -verify.
+// CMS SignedData attached (RFC 5652), RSA/SHA256. Recibe la firma ya hecha (arca-signer.ts firma con el
+// certificado propio del Core desde los secretos de Supabase). Verificado contra openssl cms -verify (10/11/2026).
 const concat=(...parts:Uint8Array[])=>{const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let i=0;for(const p of parts){out.set(p,i);i+=p.length;}return out;};
 const hex=(s:string)=>Uint8Array.from(s.match(/../g)!.map(x=>parseInt(x,16)));
 function der(tag:number,data:Uint8Array){let n=data.length;const a=[];while(n){a.unshift(n&255);n>>>=8;}const len=data.length<128?new Uint8Array([data.length]):new Uint8Array([128|a.length,...a]);return concat(new Uint8Array([tag]),len,data);}
