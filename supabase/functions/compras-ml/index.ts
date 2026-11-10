@@ -88,16 +88,38 @@ async function comprasML(sb: any, desde: string, hasta: string) {
     for (let i = 0; i < 3 && !j; i++) { const r = await fetch(ML_API + q, { headers: { Authorization: "Bearer " + tok } }); if (r.ok) j = await r.json(); else await new Promise((s) => setTimeout(s, 700 * (i + 1))); }
     if (!j) throw new Error("Mercado Libre no respondió la lista de compras");
     for (const o of j.results || []) {
-      const pagos = (o.payments || []).filter((p: Rec) => p.status === "approved");
+      // lo que salió de Mercado Pago: todos los pagos acreditados (incluye la percepción que cobra ML) menos lo devuelto
+      const cobrados = (o.payments || []).filter((p: Rec) => ["approved", "refunded", "partially_refunded", "charged_back"].includes(p.status));
       out.push({
         id: String(o.id), pack: String(o.pack_id || o.id), fecha: String(o.date_created).slice(0, 10), status: o.status,
         seller_id: o.seller?.id, seller: o.seller?.nickname || "", total: o.total_amount,
-        pagado: r2(pagos.reduce((s: number, p: Rec) => s + (p.total_paid_amount || 0), 0)),
-        fecha_pago: (pagos[0]?.date_approved || o.date_created || "").slice(0, 10),
+        pagado: r2(cobrados.reduce((s: number, p: Rec) => s + (p.total_paid_amount || 0), 0)),
+        devuelto: r2(cobrados.reduce((s: number, p: Rec) => s + (p.transaction_amount_refunded || 0), 0)),
+        envio_en_pago: r2(cobrados.reduce((s: number, p: Rec) => s + (p.shipping_cost || 0), 0)),
+        envio: 0, shipment: o.shipping?.id ? String(o.shipping.id) : null,
+        fecha_pago: (cobrados[0]?.date_approved || o.date_created || "").slice(0, 10),
         items: (o.order_items || []).map((i: Rec) => ({ titulo: i.item?.title, cant: i.quantity, precio: i.unit_price, item_id: i.item?.id })),
       });
     }
     if (off + 50 >= (j.paging?.total || 0)) break;
+  }
+  // Envío que pagó el comprador y NO viene dentro del pago de la orden (verificado 10-nov: Mavima factura
+  // ítems + envío; el envío se cobra aparte). Un envío es por pack: se cuenta UNA vez, en la primera orden.
+  const porEnvio = new Map<string, Rec[]>();
+  for (const o of out) if (o.shipment && o.status === "paid") { if (!porEnvio.has(o.shipment)) porEnvio.set(o.shipment, []); porEnvio.get(o.shipment)!.push(o); }
+  const ids = [...porEnvio.keys()];
+  for (let i = 0; i < ids.length; i += 6) {
+    await Promise.all(ids.slice(i, i + 6).map(async (sid) => {
+      try {
+        const r = await fetch(`${ML_API}/shipments/${sid}`, { headers: { Authorization: "Bearer " + tok, "x-format-new": "true" } });
+        if (!r.ok) return;
+        const s = await r.json();
+        const costo = +(s.lead_time?.cost ?? s.shipping_option?.cost ?? 0) || 0;
+        const ords = porEnvio.get(sid)!;
+        const yaEnPagos = ords.reduce((a, o) => a + o.envio_en_pago, 0);
+        ords[0].envio = r2(Math.max(0, costo - yaEnPagos));
+      } catch { /* sin dato de envío: se informa como diferencia */ }
+    }));
   }
   return out;
 }
@@ -181,8 +203,9 @@ async function cargar(sb: any, body: Rec) {
   if (!total) return { ok: false, error: "Total en cero" };
   if (doc.letra === "A" && Math.abs(r2(neto + nograv + iva + otros) - total) > 0.01) return { ok: false, error: `Los importes de ARCA no cierran: neto ${neto} + no grav. ${nograv} + IVA ${iva} + otros ${otros} ≠ total ${total}` };
   if (doc.letra !== "A" && otros) return { ok: false, error: `Factura ${doc.letra} con "otros tributos" por $${otros}: cargala a mano.` };
-  const detalle = String(body.detalle || cat.label).slice(0, 250);
-  const importePago = body.pago?.importe != null ? r2(Math.min(+body.pago.importe, total)) : total;
+  // como siempre: el pago va por el TOTAL de la factura, por Mercado Pago, con la MISMA fecha de la factura
+  const importePago = total;
+  const fechaPago = c.fecha;
 
   // proveedor
   const ya = await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name"], context: { active_test: false }, limit: 1 }) as Rec[];
@@ -230,19 +253,34 @@ async function cargar(sb: any, body: Rec) {
   }
   const prod = await ex("product.product", "search_read", [[["default_code", "=", cat.code]]], { fields: ["id"], context: { active_test: false } }) as Rec[];
   if (prod.length !== 1) return { ok: false, error: "No encuentro el producto " + cat.code };
+  // Igual que como se cargaron siempre (verificado 10-nov sobre 15 facturas de compras de ML): UN renglón, cantidad 1,
+  // la descripción que pone Odoo para el producto ([GN01] Gastos varios no operativos, [INS_EXP] Insumos de oficina…),
+  // A al neto con su IVA; B y C por el total con "IVA No Aplica". Sin referencia ni nota.
   const lineas: Rec[] = doc.letra === "A"
-    ? [{ product_id: prod[0].id, account_id: cat.account, name: detalle, quantity: 1, price_unit: neto, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
-       ...(nograv ? [{ product_id: prod[0].id, account_id: cat.account, name: detalle + " (no gravado)", quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
-    : [{ product_id: prod[0].id, account_id: cat.account, name: detalle, quantity: 1, price_unit: total, tax_ids: [[6, 0, [TAX.noAplica]]] }];
+    ? [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: neto, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
+       ...(nograv ? [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
+    : [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: total, tax_ids: [[6, 0, [TAX.noAplica]]] }];
+  // NC de una compra cancelada: se crea como REVERSIÓN de la factura que anula (misma forma que el lote compras_b)
+  let faAnulada: Rec | null = null;
+  let ncPendiente = "";
+  if (doc.nc) {
+    const fa = partner ? await ex("account.move", "search_read", [[["partner_id", "=", partner], ["move_type", "=", "in_invoice"], ["state", "=", "posted"],
+      ["payment_state", "=", "not_paid"], ["amount_total", "=", total]]], { fields: ["id", "name"], order: "invoice_date asc, id asc", limit: 1 }) as Rec[] : [];
+    if (fa.length) faAnulada = fa[0];
+    else if (dry && body.fa_en_lote) ncPendiente = String(body.fa_en_lote); // ensayo de un lote: la factura que anula se carga antes en el mismo lote
+    else return { ok: false, error: `No encuentro la factura abierta de ${total} que anula esta NC: cargá primero esa factura (sin pago).` };
+  }
   const plan = { comprobante: nombre, proveedor: partner ? ya[0].name : `ALTA: ${c.denom} (${cuitFmt(cuit)})`, cuenta: cat.label, total, iva, percepciones: perc,
-    pago: !doc.nc && body.pago?.fecha && importePago > 0 ? `Mercado Pago ${body.pago.fecha} $${importePago}${importePago < total ? ` (quedan $${r2(total - importePago)} abiertos: se devolvió sin NC)` : ""}` : doc.nc ? "NC: se concilia con su factura" : "sin pago (anulada por NC)",
+    pago: !doc.nc && body.pago ? `Mercado Pago ${fechaPago} $${importePago}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : "sin pago (anulada por NC)",
     aviso: parecidas.length ? `Ojo: ya hay ${parecidas.map((p) => `${p.name} del ${p.invoice_date}`).join(", ")} del mismo proveedor por el mismo importe (puede ser una compra repetida; verificá que sea otro comprobante).` : null };
   if (dry) return { ok: true, dry_run: true, plan };
 
-  if (!partner) partner = await ex("res.partner", "create", [{ name: String(c.denom || cuitFmt(cuit)).trim(), vat: cuitFmt(cuit), is_company: /^3/.test(cuit), country_id: COUNTRY_AR,
+  // proveedor nuevo: como los de siempre (empresa, CUIT, responsabilidad según la letra), con el nombre de ARCA
+  if (!partner) partner = await ex("res.partner", "create", [{ name: String(c.denom || cuitFmt(cuit)).trim(), vat: cuitFmt(cuit), is_company: true, country_id: COUNTRY_AR,
     l10n_latam_identification_type_id: ID_CUIT, l10n_ar_afip_responsibility_type_id: doc.letra === "C" ? 6 : 1, supplier_rank: 1 }]) as number;
   const id = await ex("account.move", "create", [{ move_type: doc.nc ? "in_refund" : "in_invoice", partner_id: partner, journal_id: J_COMPRAS,
     l10n_latam_document_type_id: doc.id, l10n_latam_document_number: numero, invoice_date: c.fecha, date: c.fecha, company_id: C,
+    ...(faAnulada ? { reversed_entry_id: faAnulada.id } : {}),
     invoice_line_ids: lineas.map((l) => [0, 0, l]) }]) as number;
   const sg = doc.nc ? -1 : 1; // en la NC los impuestos van al haber y el proveedor al debe
   const leer = async () => await ex("account.move.line", "search_read", [[["move_id", "=", id]]], { fields: ["display_type", "tax_line_id", "balance", "debit", "credit"] }) as Rec[];
@@ -271,18 +309,18 @@ async function cargar(sb: any, body: Rec) {
   const ctx = { active_model: "account.move", active_ids: [id] };
   const nm = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name;
   let pago: Rec | null = null;
-  if (!doc.nc && body.pago?.fecha && importePago > 0) {
-    // se paga lo que realmente salió de Mercado Pago; si es menos que la factura (devolución sin NC), el resto queda abierto a la vista
-    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: PML_MP_OUT, payment_date: body.pago.fecha, amount: importePago, communication: nm,
-      ...(importePago < total ? { payment_difference_handling: "open" } : {}) }], { context: ctx }) as number;
+  if (!doc.nc && body.pago) {
+    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: PML_MP_OUT, payment_date: fechaPago, amount: importePago, communication: nm }], { context: ctx }) as number;
     await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
-    pago = { diario: "Mercado Pago", fecha: body.pago.fecha, importe: importePago, queda_abierto: r2(total - importePago) };
+    pago = { diario: "Mercado Pago", fecha: fechaPago, importe: importePago };
   }
-  if (doc.nc) {
-    // NC de una compra cancelada: se concilia con la factura abierta del mismo proveedor por el mismo importe
-    const fa = await ex("account.move", "search_read", [[["partner_id", "=", partner], ["move_type", "=", "in_invoice"], ["state", "=", "posted"], ["payment_state", "in", ["not_paid", "partial"]], ["amount_residual", "=", total]]], { fields: ["id", "name"], order: "invoice_date asc", limit: 1 }) as Rec[];
+  if (doc.nc && faAnulada) {
+    // la NC (reversión) se concilia con la factura que anula: las dos quedan saldadas, sin movimiento de plata
     const lp = (await ex("account.move.line", "search_read", [[["move_id", "=", id], ["display_type", "=", "payment_term"], ["reconciled", "=", false]]], { fields: ["id"] }) as Rec[])[0];
-    if (fa.length && lp) { await ex("account.move", "js_assign_outstanding_line", [[fa[0].id], lp.id]); pago = { concilia_con: fa[0].name }; }
+    if (lp) await ex("account.move", "js_assign_outstanding_line", [[faAnulada.id], lp.id]);
+    const st = (await ex("account.move", "read", [[faAnulada.id], ["payment_state", "amount_residual"]]) as Rec[])[0];
+    pago = { concilia_con: faAnulada.name, estado_factura: st.payment_state, saldo_factura: st.amount_residual };
+    if (st.amount_residual !== 0) return { ok: false, error: `La NC quedó cargada pero no saldó ${faAnulada.name} (saldo ${st.amount_residual}): revisalo en Odoo.`, id };
   }
   const fin = (await ex("account.move", "read", [[id], ["name", "state", "amount_total", "amount_residual", "payment_state", "partner_id"]]) as Rec[])[0];
   await sb.from("compras_ml_decisiones").upsert({ clave: `${cuit}|${nombre}`, categoria: body.categoria, nota: body.nota || null, odoo_move_id: id, odoo_move_name: fin.name, actualizado_en: new Date().toISOString() });

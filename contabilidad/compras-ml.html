@@ -255,29 +255,33 @@ function analizar() {
       g.nicks = [...new Set(g.ords.map(o => o.seller))];
       g.titulos = g.ords.flatMap(o => o.items.map(i => i.titulo));
       g.docs.sort((x, y) => x.fecha.localeCompare(y.fecha) || x.num - y.num);
-      g.facturado = r2(g.docs.reduce((s, d) => s + (d.nc ? -1 : 1) * Math.abs(d.total), 0));
-      g.pagado = r2(g.ords.filter(o => o.status === 'paid').reduce((s, o) => s + o.pagado, 0));
+      // Conciliación al centavo (verificada 10-nov): lo FACTURADO neto (FA − NC) contra lo COBRADO neto por Mercado Pago
+      // (pagos acreditados − devoluciones + envío que se pagó aparte). La diferencia se explica en dos partes:
+      //  · facturas vs cobros: Σ FA − (Σ pagos + envíos)  → debería ser 0 (centavos = redondeo del vendedor)
+      //  · devoluciones vs NC: Σ devuelto − Σ NC          → ML devolvió sin NC del vendedor (+) o la NC anuló algo que MP no devolvió (−)
+      const sFA = r2(g.docs.filter(d => !d.nc).reduce((s, d) => s + Math.abs(d.total), 0));
+      const sNC = r2(g.docs.filter(d => d.nc).reduce((s, d) => s + Math.abs(d.total), 0));
+      g.facturado = r2(sFA - sNC);
+      g.cargado = r2(g.ords.reduce((s, o) => s + (o.pagado || 0), 0));
+      g.envio = r2(g.ords.reduce((s, o) => s + (o.envio || 0), 0));
+      g.devuelto = r2(g.ords.reduce((s, o) => s + (o.devuelto || 0), 0));
+      g.pagado = r2(g.cargado - g.devuelto + g.envio);
+      g.difFacturas = r2(sFA - (g.cargado + g.envio));
+      g.difDevol = r2(g.devuelto - sNC);
       // NC de compras canceladas: cada NC anula la FA del mismo importe (la de número más bajo)
       const anuladas = new Set();
       for (const nc of g.docs.filter(d => d.nc)) { const fa = g.docs.find(d => !d.nc && !anuladas.has(d) && Math.abs(Math.abs(d.total) - Math.abs(nc.total)) <= 0.01); if (fa) anuladas.add(fa); }
+      const parDe = new Map(); // NC → FA que anula
+      for (const nc of g.docs.filter(d => d.nc)) { const fa = [...anuladas].find(f => Math.abs(Math.abs(f.total) - Math.abs(nc.total)) <= 0.01 && ![...parDe.values()].includes(f)); if (fa) parDe.set(nc, fa); }
       for (const d of g.docs) {
         d.anulada = anuladas.has(d);
+        d.faAnula = parDe.get(d) || null;
         d.odoo = enOdoo(d);
         d.cierra = d.odoo ? d.odoo.state === 'posted' && Math.abs(d.odoo.total - Math.abs(d.total)) <= 0.01 : null;
         // ¿va por Compras? (envases / MP con trazabilidad): OC del proveedor por el mismo importe → se factura desde la OC
         d.oc = !d.odoo && !d.nc ? (DATOS.compras_odoo || []).find(o => o.cuit === d.cuit && Math.abs(o.total - Math.abs(d.total)) <= 1 && dias(d.fecha, o.fecha) >= -15 && dias(d.fecha, o.fecha) <= 60) : null;
-        const pagos = g.ords.filter(o => o.status === 'paid').map(o => o.fecha_pago).sort();
-        d.fechaPago = d.nc || d.anulada ? null : (pagos.filter(p => p <= d.fecha).pop() || pagos[0] || d.fecha);
-      }
-      // lo pagado en ML se reparte entre las facturas vigentes (las ya cargadas lo consumen primero);
-      // si falta plata (devolución sin NC, ej. Compra Protegida) la factura se paga en parte y el resto queda abierto
-      let resto = g.pagado;
-      for (const d of g.docs.filter(x => !x.nc && !x.anulada && x.odoo)) resto = r2(resto - Math.abs(d.total));
-      for (const d of g.docs.filter(x => !x.nc && !x.anulada && !x.odoo)) {
-        const t = Math.abs(d.total); let imp = Math.min(t, Math.max(0, resto));
-        if (Math.abs(t - imp) <= 1) imp = t; // diferencias de centavos (redondeo de ML) se pagan completas
-        d.pagoImporte = r2(imp); resto = r2(resto - imp);
-        if (!(d.pagoImporte > 0)) d.fechaPago = null;
+        // como siempre en Odoo: se paga el TOTAL de la factura, por Mercado Pago, con la fecha de la factura
+        d.fechaPago = d.nc || d.anulada ? null : d.fecha;
       }
       g.sug = categoriaSugerida(g.cuit, g.titulos, g.docs);
       g.cat = g.sug.cat;
@@ -286,7 +290,7 @@ function analizar() {
     const vistos = new Set([...grupos.values()].flatMap(g => g.ords.map(o => o.id)));
     const porSellerMes = new Map();
     for (const o of ord.filter(o => o.status === 'paid' && o.fecha.startsWith(mes) && !vistos.has(o.id))) { if (!porSellerMes.has(o.seller_id)) porSellerMes.set(o.seller_id, []); porSellerMes.get(o.seller_id).push(o); }
-    for (const os of porSellerMes.values()) sinFactura.push({ seller: os[0].seller, cuit: cuitDeSeller.get(Number(os[0].seller_id)), ords: os, total: r2(os.reduce((s, o) => s + o.pagado, 0)), cat: categoriaSugerida('', os.flatMap(o => o.items.map(i => i.titulo)), []).cat });
+    for (const os of porSellerMes.values()) sinFactura.push({ seller: os[0].seller, cuit: cuitDeSeller.get(Number(os[0].seller_id)), ords: os, total: r2(os.reduce((s, o) => s + (o.pagado || 0) - (o.devuelto || 0) + (o.envio || 0), 0)), cat: categoriaSugerida('', os.flatMap(o => o.items.map(i => i.titulo)), []).cat });
   }
   VISTA = { mes, grupos: [...grupos.values()], sinFactura };
   render();
@@ -315,7 +319,10 @@ function render() {
   const orden = (g) => (g.docs.some(d => !d.odoo && !d.oc) ? 0 : g.docs.some(d => !d.cierra) ? 1 : 2);
   for (const g of [...G].sort((a, b) => orden(a) - orden(b) || a.docs[0].fecha.localeCompare(b.docs[0].fecha))) {
     const est = orden(g) === 0 ? 'pend' : orden(g) === 1 ? 'aviso' : 'listo';
-    const difPago = r2(g.facturado - g.pagado);
+    const ex = explicarDiferencia(g);
+    const motivos = ex.info ? [ex.texto] : [...(g.envio ? [`incluye envío pagado aparte ${money(g.envio)}`] : []), ...(ex.texto ? [ex.texto] : [])];
+    const cierra = ex.cierra;
+    const etiquetaCierre = !cierra ? '⚠ revisar' : ex.info ? 'ℹ las facturas cierran; ojo con el aviso' : '✓ cierra al centavo';
     h += `<div class="prov ${est}" data-cuit="${esc(g.cuit)}">
       <div class="prov-cab">
         <div><div class="nom">${esc(g.denom)}</div>
@@ -334,14 +341,14 @@ function render() {
         : `<span class="pill falta">falta</span>`;
       const pago = d.nc ? '<span class="pill gris">concilia con su FA</span>' : d.anulada ? '<span class="pill gris">anulada por NC</span>'
         : d.odoo ? (d.odoo.pagos || []).join(', ') || esc(d.odoo.pago || '')
-        : d.fechaPago ? `MP ${fFecha(d.fechaPago)}${d.pagoImporte < Math.abs(d.total) - 0.005 ? ` · ${money(d.pagoImporte)} <span class="pill warn">queda ${money(Math.abs(d.total) - d.pagoImporte)} abierto</span>` : ''}` : '<span class="pill warn">sin pago en ML</span>';
+        : d.fechaPago ? `Mercado Pago ${fFecha(d.fechaPago)}` : '—';
       h += `<tr class="${d.nc ? 'nc' : ''}"><td>${fFecha(d.fecha)}</td><td class="mono">${esc(nombreDoc(d))}</td>
         <td class="num">${money(d.iva)}</td><td class="num">${d.otros ? money(d.otros) : '—'}</td><td class="num">${money((d.nc ? -1 : 1) * Math.abs(d.total))}</td>
         <td>${odoo}</td><td>${pago}</td><td>${d.odoo || d.oc ? '' : `<button class="btn sm" data-cargar="${esc(k)}">Cargar</button>`}</td></tr>`;
     }
     h += `</tbody></table>
-      <div class="concil ${Math.abs(difPago) > 1 ? 'mal' : ''}"><span>Facturado neto (FA − NC) <b>${money(g.facturado)}</b> · pagado en ML <b>${money(g.pagado)}</b></span>
-      <span>${Math.abs(difPago) > 1 ? (difPago > 0 ? `⚠ facturaron ${money(difPago)} de más (falta una NC o se devolvió por Compra Protegida)` : `⚠ falta factura por ${money(-difPago)} (puede llegar el mes que viene)`) : '✓ cierra'}</span></div>
+      <div class="concil ${cierra ? '' : 'mal'}"><span>Facturado neto (FA − NC) <b>${money(g.facturado)}</b> · cobrado neto por Mercado Pago <b>${money(g.pagado)}</b>${motivos.length ? ' · ' + motivos.join(' · ') : ''}</span>
+      <span>${etiquetaCierre}</span></div>
     </div>`;
   }
   h += `<div class="bloque">Compras pagadas sin factura en ARCA <span class="pill warn">${VISTA.sinFactura.length}</span></div>`;
@@ -357,12 +364,41 @@ function render() {
   const bt = $('btnTodo'); if (bt) bt.addEventListener('click', cargarTodo);
 }
 
+// Facturado neto vs cobrado neto. Si difiere, se busca la causa EXACTA (al centavo) en los datos de ML;
+// si ninguna combinación la explica, queda "sin explicar" (nunca se adivina).
+function subconjunto(vals, objetivo) {
+  const n = Math.min(vals.length, 12);
+  for (let mask = 1; mask < (1 << n); mask++) {
+    let s = 0, idx = [];
+    for (let i = 0; i < n; i++) if (mask & (1 << i)) { s += vals[i].v; idx.push(vals[i]); }
+    if (Math.abs(s - objetivo) <= 0.01) return idx;
+  }
+  return null;
+}
+function explicarDiferencia(g) {
+  const dif = r2(g.facturado - g.pagado);
+  if (Math.abs(dif) < 0.005) return { cierra: true, texto: '' };
+  if (Math.abs(dif) <= 1) return { cierra: true, texto: `redondeo del vendedor ${money(dif)}` };
+  const canc = g.ords.filter(o => o.status !== 'paid');
+  if (g.envio && Math.abs(dif + g.envio) <= 0.01)
+    return { cierra: true, info: true, texto: `<b>el envío (${money(g.envio)}) se pagó en ML pero el vendedor no lo incluyó en su factura</b>: queda sin comprobante` };
+  if (dif > 0) {
+    const s = subconjunto(canc.filter(o => o.devuelto > 0).map(o => ({ v: o.devuelto, o })), dif);
+    if (s) return { cierra: false, texto: `<b>facturó ${money(dif)} de órdenes que se cancelaron y ML te devolvió</b> (${s.map(x => x.o.items.map(i => i.titulo).join(' + ')).join('; ')}), sin NC del vendedor` };
+  } else {
+    const s = subconjunto(canc.filter(o => o.pagado - o.devuelto > 0.005).map(o => ({ v: r2(o.pagado - o.devuelto), o })), -dif);
+    if (s) return { cierra: false, texto: `<b>Mercado Pago no devolvió ${money(-dif)} de una compra cancelada</b> (${s.map(x => x.o.items.map(i => i.titulo).join(' + ')).join('; ')}), aunque la NC del vendedor sí la anuló` };
+  }
+  return { cierra: false, texto: `<b>diferencia de ${money(dif)} sin explicar</b>: mirar la factura` };
+}
+
 function buscarDoc(clave) { for (const g of VISTA.grupos) for (const d of g.docs) if (claveDoc(d) === clave) return { g, d }; return null; }
 function payload(g, d, dry) {
   const titulos = [...new Set(g.titulos)].slice(0, 4).join(' + ');
   return { modo: 'cargar', dry_run: dry, categoria: g.cat, detalle: `[ML ${g.nicks.join('/')}] ${titulos}`.slice(0, 240),
     comp: { cuit: d.cuit, denom: d.denom, cod: d.cod, pv: d.pv, num: d.num, fecha: d.fecha, neto: Math.abs(d.neto), nograv: Math.abs(d.nograv), iva: Math.abs(d.iva), otros: Math.abs(d.otros), total: Math.abs(d.total) },
-    pago: d.fechaPago && d.pagoImporte > 0 ? { fecha: d.fechaPago, importe: d.pagoImporte } : null };
+    pago: d.fechaPago ? { fecha: d.fechaPago } : null,
+    fa_en_lote: d.faAnula ? nombreDoc(d.faAnula) : null };
 }
 async function aprender(g) { for (const sid of g.sellers) { const o = g.ords.find(x => Number(x.seller_id) === sid); await fn({ modo: 'aprender', cuit: g.cuit, seller_id: sid, nickname: o ? o.seller : null, razon_social: g.denom }).catch(() => {}); } }
 async function cargarUno(clave, sinConfirmar) {
