@@ -29,7 +29,13 @@ const CATS: Record<string, { code: string; account: number; label: string }> = {
   libreria:  { code: "GA04", account: 786, label: "Artículos de librería (papel, tintas, etiquetas)" },
   personal:  { code: "GN01", account: 934, label: "Gastos varios no operativos (personal)" },
   equipos:   { code: "GA05", account: 946, label: "Equipos de computación" },
+  // fuera de ML (10-nov-2026), como se vienen cargando:
+  peaje:       { code: "GA08", account: 0, label: "Peaje → Movilidad y viáticos (5.2.1.01.050)" },
+  honorarios:  { code: "GA18", account: 0, label: "Honorarios estudio contable (5.3.1.01.160)" },
+  medios_pago: { code: "GC03", account: 0, label: "Comisiones medios de pago (5.2.1.01.150)" },
 };
+// diarios de pago: Mercado Pago (también tarjeta, como puente) o Efectivo
+const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" } };
 const DOC: Record<string, { id: number; nc: boolean; letra: string; pref: string }> = {
   "1": { id: 1, nc: false, letra: "A", pref: "FA-A" }, "3": { id: 3, nc: true, letra: "A", pref: "NC-A" },
   "6": { id: 6, nc: false, letra: "B", pref: "FA-B" }, "8": { id: 8, nc: true, letra: "B", pref: "NC-B" },
@@ -95,11 +101,11 @@ const ACENTOS: Record<string, string> = {
   dean: "Deán", cordoba: "Córdoba", tucuman: "Tucumán", neuquen: "Neuquén", constitucion: "Constitución", belgrano: "Belgrano", rios: "Ríos",
   sarmiento: "Sarmiento", moron: "Morón", ituzaingo: "Ituzaingó",
   // marcas con mayúsculas propias
-  eyg: "EyG",
+  eyg: "EyG", fravega: "Frávega", parana: "Paraná",
 };
 const SOCIEDAD: [RegExp, string][] = [
   [/\bSOCIEDAD ANONIMA COMERCIAL E INDUSTRIAL\b/g, "S.A.C.I."], [/\bSOCIEDAD ANONIMA\b/g, "S.A."],
-  [/\bSOCIEDAD DE RESPONSABILIDAD LIMITADA\b/g, "S.R.L."], [/\bSOCIEDAD POR ACCIONES SIMPLIFICADA\b/g, "S.A.S."],
+  [/\bSOCIEDAD DE RESPONSABILIDAD LIMITADA\b/g, "S.R.L."], [/\bS\.?\s?A\.?\s?C\.?\s?I\.?\s?E\.?\s?I\.?(?=\s|$)/g, "S.A.C.I.E.I."], [/\bSOCIEDAD POR ACCIONES SIMPLIFICADA\b/g, "S.A.S."],
   [/\bS\.?\s?R\.?\s?L\.?(?=\s|$)/g, "S.R.L."], [/\bS\.?\s?A\.?\s?S\.?(?=\s|$)/g, "S.A.S."], [/\bS\.?\s?A\.?\s?C\.?\s?I\.?(?=\s|$)/g, "S.A.C.I."],
   [/\bS\.?\s?A\.?(?=\s|$)/g, "S.A."], [/\bS\.?\s?C\.?(?=\s|$)/g, "S.C."],
 ];
@@ -287,7 +293,9 @@ async function cargar(sb: any, body: Rec) {
   if (doc.letra !== "A" && otros) return { ok: false, error: `Factura ${doc.letra} con "otros tributos" por $${otros}: cargala a mano.` };
   // como siempre: el pago va por el TOTAL de la factura, por Mercado Pago, con la MISMA fecha de la factura
   const importePago = total;
-  const fechaPago = c.fecha;
+  const fechaPago = body.pago?.fecha || c.fecha;
+  const diarioPago = PAGO_DIARIO[String(body.pago?.diario || "mp")];
+  if (body.pago && !diarioPago) return { ok: false, error: "Diario de pago desconocido (mp | efectivo)" };
 
   // proveedor
   const ya = await ex("res.partner", "search_read", [[["vat", "in", [cuitFmt(cuit), cuit]]]], { fields: ["id", "name"], context: { active_test: false }, limit: 1 }) as Rec[];
@@ -329,7 +337,10 @@ async function cargar(sb: any, body: Rec) {
   }
   // percepciones: ARCA solo da el total; se copia el desglose de una factura del MISMO proveedor con la misma percepción
   let perc: { tax: number; importe: number }[] = [];
-  if (otros) {
+  if (otros && Array.isArray(body.percepciones) && body.percepciones.length) {
+    perc = (body.percepciones as Rec[]).map((x) => ({ tax: +x.tax, importe: r2(+x.importe) }));
+    if (r2(perc.reduce((a, x) => a + x.importe, 0)) !== otros) return { ok: false, error: `Las percepciones indicadas no suman los otros tributos de ARCA (${otros})` };
+  } else if (otros) {
     if (!partner) return { ok: false, error: `Trae percepciones por $${otros} que ARCA no detalla por jurisdicción y el proveedor no tiene facturas previas: cargala con "Percepciones (cargar)", que lee el PDF.` };
     const prev = await ex("account.move", "search_read", [[["partner_id", "=", partner], ["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "posted"]]], { fields: ["id", "name"], order: "invoice_date desc", limit: 40 }) as Rec[];
     for (const p of prev) {
@@ -339,15 +350,17 @@ async function cargar(sb: any, body: Rec) {
     }
     if (!perc.length) return { ok: false, error: `Trae percepciones por $${otros} que ARCA no detalla por jurisdicción: cargala con "Percepciones (cargar)", que lee el PDF.` };
   }
-  const prod = await ex("product.product", "search_read", [[["default_code", "=", cat.code]]], { fields: ["id"], context: { active_test: false } }) as Rec[];
+  const prod = await ex("product.product", "search_read", [[["default_code", "=", cat.code]]], { fields: ["id", "property_account_expense_id"], context: { active_test: false } }) as Rec[];
   if (prod.length !== 1) return { ok: false, error: "No encuentro el producto " + cat.code };
+  const cuentaCat = cat.account || m2o(prod[0].property_account_expense_id);
+  const nombreLinea = body.linea_nombre ? { name: String(body.linea_nombre) } : {};
   // Igual que como se cargaron siempre (verificado 10-nov sobre 15 facturas de compras de ML): UN renglón, cantidad 1,
   // la descripción que pone Odoo para el producto ([GN01] Gastos varios no operativos, [INS_EXP] Insumos de oficina…),
   // A al neto con su IVA; B y C por el total con "IVA No Aplica". Sin referencia ni nota.
   const lineas: Rec[] = doc.letra === "A"
-    ? [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: neto, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
-       ...(nograv ? [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
-    : [{ product_id: prod[0].id, account_id: cat.account, quantity: 1, price_unit: total, tax_ids: [[6, 0, [TAX.noAplica]]] }];
+    ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: neto, ...nombreLinea, tax_ids: [[6, 0, [...(taxIva ? [taxIva] : [TAX.noGravado]), ...perc.map((p) => p.tax)]]] },
+       ...(nograv ? [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: nograv, tax_ids: [[6, 0, [TAX.noGravado]]] }] : [])]
+    : [{ product_id: prod[0].id, account_id: cuentaCat, quantity: 1, price_unit: total, ...nombreLinea, tax_ids: [[6, 0, [TAX.noAplica]]] }];
   // NC de una compra cancelada: se crea como REVERSIÓN de la factura que anula (misma forma que el lote compras_b)
   let faAnulada: Rec | null = null;
   let ncPendiente = "";
@@ -359,7 +372,7 @@ async function cargar(sb: any, body: Rec) {
     else return { ok: false, error: `No encuentro la factura abierta de ${total} que anula esta NC: cargá primero esa factura (sin pago).` };
   }
   const plan: Rec = { comprobante: nombre, proveedor: partner ? ya[0].name : `ALTA: ${c.denom} (${cuitFmt(cuit)})`, cuenta: cat.label, total, iva, percepciones: perc,
-    pago: !doc.nc && body.pago ? `Mercado Pago ${fechaPago} $${importePago}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : "sin pago (anulada por NC)",
+    pago: !doc.nc && body.pago ? `${diarioPago.nombre} ${fechaPago} $${importePago}` : doc.nc ? `NC: reversión de ${faAnulada?.name || ncPendiente + " (se carga antes en este lote)"}, se concilian entre sí` : (c.anulada ? "sin pago (anulada por NC)" : "sin pago: queda a pagar"),
     aviso: parecidas.length ? `Ojo: ya hay ${parecidas.map((p) => `${p.name} del ${p.invoice_date}`).join(", ")} del mismo proveedor por el mismo importe (puede ser una compra repetida; verificá que sea otro comprobante).` : null };
   // proveedor nuevo: el ensayo ya trae del padrón el nombre con el formato de Diego y el domicilio fiscal
   let alta: Rec | null = null;
@@ -423,9 +436,9 @@ async function cargar(sb: any, body: Rec) {
   const nm = (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name;
   let pago: Rec | null = null;
   if (!doc.nc && body.pago) {
-    const wid = await ex("account.payment.register", "create", [{ journal_id: J_MP, payment_method_line_id: PML_MP_OUT, payment_date: fechaPago, amount: importePago, communication: nm }], { context: ctx }) as number;
+    const wid = await ex("account.payment.register", "create", [{ journal_id: diarioPago.journal, payment_method_line_id: diarioPago.pml, payment_date: fechaPago, amount: importePago, communication: nm }], { context: ctx }) as number;
     await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
-    pago = { diario: "Mercado Pago", fecha: fechaPago, importe: importePago };
+    pago = { diario: diarioPago.nombre, fecha: fechaPago, importe: importePago };
   }
   if (doc.nc && faAnulada) {
     // la NC (reversión) se concilia con la factura que anula: las dos quedan saldadas, sin movimiento de plata
@@ -818,8 +831,8 @@ async function cargosCargar(sb: any, body: Rec) {
     const borr = await ex("account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "draft"], ["company_id", "=", C], ["partner_id", "=", spec.partner.id]]], { fields: ["id", "amount_total"] }) as Rec[];
     if (borr.length) return { ok: false, error: `Hay ${borr.length} borrador(es) de ${spec.partner.name} en Odoo (id ${borr.map((b) => b.id).join(", ")}): resolvelos antes para no duplicar` };
   }
-  if (doc.nc && !actual) plan.pago = `reintegro por Mercado Pago ${spec.fecha} ${spec.total} (refiere a ${fa!.name}, que NO se toca)`;
-  else if (!doc.nc && !actual) plan.pago = `Mercado Pago ${spec.fecha} ${spec.total}`;
+  if (doc.nc && !actual) plan.pago = `reintegro por Mercado Pago ${spec.fecha} $${spec.total} (refiere a ${fa!.name}, que NO se toca)`;
+  else if (!doc.nc && !actual) plan.pago = `Mercado Pago ${spec.fecha} $${spec.total}`;
   if (dry) return { ok: true, dry_run: true, plan };
 
   const lineas = await lineasOdoo(spec);
