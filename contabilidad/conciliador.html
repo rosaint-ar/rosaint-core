@@ -277,7 +277,8 @@ const HEADERS_ARCA = {
 const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const CODIGOS_NC = new Set(['3', '8', '13', '23', '53', '110', '112', '113', '114', '203', '208', '213', '233']);
 // Comprobantes B y C (facturas, ND, NC, recibos, tiques B/C y MiPyME B/C): ARCA no discrimina el neto.
-const COD_B_C = new Set(['6', '7', '8', '9', '11', '12', '13', '15', '82', '83', '111', '206', '207', '208', '211', '212', '213']);
+// (61/64/68: cuenta de venta y liquidaciones B y C — ej. la liquidación B de comisiones de Santander, oct-26)
+const COD_B_C = new Set(['6', '7', '8', '9', '11', '12', '13', '15', '61', '64', '68', '82', '83', '111', '206', '207', '208', '211', '212', '213']);
 
 $('fileArca').addEventListener('change', (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -480,11 +481,18 @@ $('btnConciliar').addEventListener('click', async () => {
     if (lax) casiMatch.push({ arca:a, odoo:lax });
     else faltan.push(a);
   });
-  const sobran = [];
+  // Lo que está en Odoo y no en ARCA. Dos clases que NUNCA van a estar en ARCA se separan solas (10-nov-2026):
+  //  · tiques de controlador fiscal (tique factura A/B, tique): son fiscales y van al libro de IVA, pero ARCA no
+  //    los informa en Mis Comprobantes (Pan American estación 05422, José Levy, Monfran);
+  //  · sin comprobante fiscal argentino (CSC: alquileres a personas, servicios del exterior como Odoo Inc.).
+  // El resto queda para revisar a mano.
+  const sobran = [], tiques = [], sinFiscal = [];
   odoo.forEach(o => {
     if (arcaIdx.has(claveOdoo(o))) return;
     if (casiMatch.some(c => c.odoo === o)) return;
-    sobran.push(o);
+    if (/^\((81|82|83|111|118|119|120)\)|TIQUE|TICKET/i.test(o.tipo_doc_nombre || '')) tiques.push(o);
+    else if (/^CSC\//.test(o.comprobante || '') || !o.tipo_doc_nombre) sinFiscal.push(o);
+    else sobran.push(o);
   });
   // AL CENTAVO y EN PESOS (lo que va al libro de IVA), también en facturas en dólares (10-nov-2026). Antes se
   // toleraban $0,50 y las facturas en USD se comparaban en dólares, y así quedaban diferencias reales sin ver
@@ -509,7 +517,7 @@ $('btnConciliar').addEventListener('click', async () => {
 
   estado = {
     periodo, odoo, arca: arcaRows,
-    faltan, sobran, casiMatch, difs, coinciden, clasifOtros,
+    faltan, sobran, tiques, sinFiscal, casiMatch, difs, coinciden, clasifOtros,
     validadas: new Set(),
   };
   render();
@@ -565,8 +573,23 @@ function render() {
   }
   h += `</div>`;
 
+  // Las dos clases que nunca están en ARCA: se muestran aparte, informativas (no hace falta revisarlas)
+  const tablaInfo = (lista, conIva) => `<table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprobante</th>${conIva ? '<th class="num">IVA</th>' : ''}<th class="num">Total</th></tr></thead><tbody>${
+    lista.map(o => `<tr class="${o.es_nc?'nc':''}"><td>${esc(o.fecha_factura || '')}</td><td>${esc(o.proveedor)}</td><td class="mono">${esc(o.comprobante)}</td>${conIva ? `<td class="num">${money(o.iva || 0)}</td>` : ''}<td class="num">${money(o.total)}</td></tr>`).join('')}</tbody></table>`;
+  if ((r.tiques || []).length) {
+    const ivaT = r.tiques.reduce((a, o) => a + (o.iva || 0), 0);
+    h += `<div class="group"><h2>Tiques de controlador fiscal <span class="badge">${r.tiques.length}</span></h2>
+      <div class="val-info">Son comprobantes fiscales y van al libro de IVA (IVA ${money(ivaT)}), pero ARCA no informa en Mis Comprobantes los tiques de controlador fiscal: por eso nunca aparecen en el Excel. No es un error y no se cuentan en el cuadre contra ARCA.</div>
+      ${tablaInfo(r.tiques, true)}</div>`;
+  }
+  if ((r.sinFiscal || []).length) {
+    h += `<div class="group"><h2>Sin comprobante fiscal argentino <span class="badge">${r.sinFiscal.length}</span></h2>
+      <div class="val-info">Gastos sin factura electrónica argentina (alquileres a personas, servicios del exterior): no tienen IVA y nunca van a estar en ARCA. No se cuentan en el cuadre.</div>
+      ${tablaInfo(r.sinFiscal, false)}</div>`;
+  }
+
   h += `<div class="group"><h2>En Odoo pero no en ARCA <span class="badge a">${r.sobran.length}</span></h2>`;
-  if (!r.sobran.length) h += `<div class="empty">Ninguna.</div>`;
+  if (!r.sobran.length) h += `<div class="empty">Ninguna (fuera de los tiques y los gastos sin comprobante fiscal, que nunca están en ARCA).</div>`;
   else {
     h += `<div class="val-info">Marcá las que revisaste y considerás correctas. Las validadas cuentan para el cuadre final.</div>`;
     h += `<table><thead><tr>
@@ -686,7 +709,8 @@ function renderCuadre() {
   }), { neto:0, iva:0, otros:0, total:0 });
 
   const sobranValidadas = r.sobran.filter((o,i) => r.validadas.has('s'+i));
-  const odooContables = r.odoo.filter(o => !r.sobran.includes(o) || sobranValidadas.includes(o));
+  const fueraDeArca = new Set([...(r.tiques || []), ...(r.sinFiscal || [])]);
+  const odooContables = r.odoo.filter(o => !fueraDeArca.has(o) && (!r.sobran.includes(o) || sobranValidadas.includes(o)));
   const sumOdoo = odooContables.reduce((a,x) => ({
     neto:  a.neto  + x.neto,
     iva:   a.iva   + (x.iva || 0),
@@ -699,11 +723,13 @@ function renderCuadre() {
   (r.difs || []).forEach((d,i) => {
     if (r.validadas.has('d'+i)) { ajusteNeto += d.dNeto; ajusteIva += d.dIva; ajusteOtros += d.dOtros; ajusteTotal += d.dTot; }
   });
+  // redondeado al centavo (si no, la suma de decimales deja restos tipo 0,0000001 que se veían como "$-0,00")
+  const z = (n) => (Math.round((n + Number.EPSILON) * 100) / 100) || 0;
   const dif = {
-    neto:  (sumArca.neto  - sumOdoo.neto)  - ajusteNeto,
-    iva:   (sumArca.iva   - sumOdoo.iva)   - ajusteIva,
-    otros: sumArca.otros  - sumOdoo.otros - ajusteOtros - (r.clasifOtros || []).reduce((a, x) => a + x.dif, 0),
-    total: sumArca.total  - sumOdoo.total - ajusteTotal,
+    neto:  z((sumArca.neto  - sumOdoo.neto)  - ajusteNeto),
+    iva:   z((sumArca.iva   - sumOdoo.iva)   - ajusteIva),
+    otros: z(sumArca.otros  - sumOdoo.otros - ajusteOtros - (r.clasifOtros || []).reduce((a, x) => a + x.dif, 0)),
+    total: z(sumArca.total  - sumOdoo.total - ajusteTotal),
   };
   const tol = 0.005; // al centavo
   // El cuadre valida IVA y Total (lo que define el crédito fiscal y el control con AFIP).
@@ -748,6 +774,10 @@ function renderCuadre() {
     </tbody></table>`;
   if ((r.clasifOtros || []).length) {
     h += `<div class="val-info" style="padding:8px 18px 0;">"Otros tributos" clasificados distinto, con el mismo total e IVA (no es un error, ya descontado del cuadre): ${r.clasifOtros.map(x => `${esc(x.odoo.proveedor || x.arca.denom)} ${esc(x.odoo.comprobante)} — ARCA ${money(x.arca.otros)} / Odoo ${money(x.odoo.percepciones || 0)}`).join(' · ')}. Pasa con el impuesto interno del combustible (ARCA no lo informa en algunos tiques) y con facturas B, que Odoo carga por el total.</div>`;
+  }
+  if ((r.tiques || []).length) {
+    const ivaT = r.tiques.reduce((a, o) => a + (o.iva || 0), 0), totT = r.tiques.reduce((a, o) => a + (o.total || 0), 0);
+    h += `<div class="val-info" style="padding:8px 18px 0;">Libro de IVA de Odoo = lo de ARCA + ${r.tiques.length} tique(s) de controlador fiscal que ARCA no informa: IVA ${money(sumOdoo.iva)} + ${money(ivaT)} = <b>${money(z(sumOdoo.iva + ivaT))}</b> · total ${money(sumOdoo.total)} + ${money(totT)} = <b>${money(z(sumOdoo.total + totT))}</b>.</div>`;
   }
   const difSinResolver = (r.difs || []).filter((d,i) => !r.validadas.has('d'+i)).length;
 
