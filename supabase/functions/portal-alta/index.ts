@@ -1,3 +1,4 @@
+import {accessApprovedEmail} from './email-access.ts';
 import {tipoOracion} from './name-format.ts';
 import {simpleApprovalSummary} from './approval-simple.ts';
 import {automaticApprovalSummary} from './approval-automatic.ts';
@@ -657,8 +658,8 @@ async function approve(a: any, b: any, actor: string) {
     if(r.clave_aplicada && !r.aviso_acceso) {
       const messageId=`<rosaint-alta-aprobada-${a.id}@rosaint.com.ar>`;
       const existing=await kw('mail.mail','search_read',[[['message_id','=',messageId]]],{fields:['id'],limit:1});
-      if(!existing.length)await kw('mail.mail','create',[{subject:'Rosaint · Ya podés ingresar al portal profesional',email_to:a.email,email_from:'contacto@rosaint.com.ar',message_id:messageId,auto_delete:false,state:'outgoing',
-        body_html:`<div style="font-family:'Source Sans 3',sans-serif;color:#34495e;line-height:1.5"><h2 style="font-family:Sora,sans-serif;font-weight:400">Tu acceso está habilitado</h2><p>Hola ${esc(a.datos.razon)}. Ya podés ingresar con tu correo y la contraseña que elegiste al solicitar el alta.</p><p><a href="${esc(OD)}/web/login">Ingresar al portal profesional</a></p><p>Si no la recordás, usá «Restablecer contraseña» en la pantalla de ingreso.</p><p>Rosaint · Cosmética profesional</p></div>`}]);
+      if(!existing.length)await kw('mail.mail','create',[{subject:'ROSAINT · Tu acceso está habilitado',email_to:a.email,email_from:'"ROSAINT Cosmética profesional" <contacto@rosaint.com.ar>',reply_to:'"ROSAINT" <contacto@rosaint.com.ar>',message_id:messageId,auto_delete:false,state:'outgoing',
+        body_html:accessApprovedEmail(a.datos.razon)}]);
       r.aviso_acceso='en_cola'; r.invitacion='no_requiere'; await save();
     }
     if (!r.clave_aplicada && !r.invitacion && (!p.usuario?.active || r.acceso_activado)) {
