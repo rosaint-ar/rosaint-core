@@ -73,6 +73,7 @@ export function validate(raw: any) {
     "razon",
     "cartel",
     "calle",
+    "complemento",
     "localidad",
     "provincia",
     "telefono",
@@ -85,6 +86,7 @@ export function validate(raw: any) {
   if(!Object.hasOwn(DOCUMENTS,d.documento_tipo))throw new Failure('Elegí el tipo de documento.');
   if(d.condicion_iva && !Object.hasOwn(FISCAL,d.condicion_iva))throw new Failure('Elegí una condición IVA válida.');
   if(d.documento_tipo!=='CUIT' && d.condicion_iva!=='CF')throw new Failure('DNI y CUIL se admiten para consumidor final. Para otra condición, ingresá CUIT.');
+  if(d.complemento.length>180)throw new Failure('El piso, departamento o referencia admite hasta 180 caracteres.');
   d.email = d.email.toLowerCase();
   if (!Object.hasOwn(TYPES, d.tipo)) throw new Failure("Elegí tu actividad.");
   if(d.documento_tipo==='DNI') {
@@ -210,7 +212,7 @@ async function look(d: any) {
         "user_id",
         "property_product_pricelist",
         "company_id",
-        "street", "city", "state_id", "write_date", "x_studio_nombre_fantasia",
+        "street", "street2", "city", "state_id", "write_date", "x_studio_nombre_fantasia",
         "l10n_latam_identification_type_id", "l10n_ar_afip_responsibility_type_id",
       ],
       context: { active_test: false },
@@ -483,6 +485,7 @@ async function approve(a: any, b: any, actor: string) {
           country_id: 10,
           state_id: p.state_id,
           street: a.datos.calle,
+          street2: a.datos.complemento || false,
           city: a.datos.localidad,
           phone: a.datos.telefono,
           email: a.email,
@@ -505,7 +508,7 @@ async function approve(a: any, b: any, actor: string) {
     ]);
     if(p.partner&&p.cambios_cliente&&Object.keys(p.cambios_cliente.values).length){
       if(!r.cambios_cliente){r.cambios_cliente=p.cambios_cliente;await save();}
-      const [current]=await kw('res.partner','read',[[pid]],{fields:['name','x_studio_nombre_fantasia','email','phone','street','city','state_id','write_date']});
+      const [current]=await kw('res.partner','read',[[pid]],{fields:['name','x_studio_nombre_fantasia','email','phone','street','street2','city','state_id','write_date']});
       const update=contactPlan(current,a.datos,p.state_id,b.datos_actualizar,String(b.revision_cliente||''),r.cambios_cliente);
       if(!update.already_applied)await kw('res.partner','write',[[pid],update.values]);
       r.datos_actualizados=true;await save();
