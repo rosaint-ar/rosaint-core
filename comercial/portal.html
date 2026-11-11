@@ -253,12 +253,12 @@ function pintarDias() {
   $('dias').innerHTML = vals.map(([d, v]) => `<div class="${pedDia.has(d) ? 'ped' : ''}" style="height:${v / max * 100}%" title="${d.slice(8)}/${d.slice(5, 7)}: ${v} ${v === 1 ? 'cliente' : 'clientes'}${pedDia.has(d) ? ' · con pedido' : ''}"></div>`).join('');
   $('dias-ej').innerHTML = `<span>${ini.slice(8)}/${ini.slice(5, 7)}</span><span>${D.hasta.slice(8)}/${D.hasta.slice(5, 7)}</span>`;
 }
-function top(obj, n) { return Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n); }
+function topN(obj, n) { return Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n); }
 function pintarTops() {
   const fila = ([l, v]) => `<div><span title="${esc(l)}">${esc(l)}</span><b>${num(v)}</b></div>`;
-  const pag = top(D.paginas, 10);
+  const pag = topN(D.paginas, 10);
   $('paginas').innerHTML = pag.length ? pag.map(fila).join('') : '<p class="pp-nota">Sin páginas vistas por clientes en el período.</p>';
-  const an = top(D.anon.paginas, 8);
+  const an = topN(D.anon.paginas, 8);
   $('anon').innerHTML = an.length ? `<div><span>Visitantes distintos</span><b>${num(D.anon.visitantes.size)}</b></div>` + an.map(fila).join('') : '<p class="pp-nota">Nadie entró sin sesión en el período.</p>';
 }
 
