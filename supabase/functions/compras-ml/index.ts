@@ -1034,16 +1034,44 @@ async function corregirArca(body: Rec) {
 // pagar {comprobante, fecha, diario: mp|efectivo, importe, dry_run} — registra el pago de una factura de proveedor ya
 // validada que quedó a pagar (ej. honorarios pagados por transferencia, que no salen en la API de Mercado Pago)
 async function pagar(body: Rec) {
-  const m = (await ex("account.move", "search_read", [[["name", "=", String(body.comprobante || "")], ["company_id", "=", C], ["move_type", "=", "in_invoice"]]], { fields: ["id", "name", "state", "amount_residual", "payment_state", "partner_id"] }) as Rec[])[0];
+  const m = (await ex("account.move", "search_read", [[["name", "=", String(body.comprobante || "")], ["company_id", "=", C], ["move_type", "=", "in_invoice"]]], { fields: ["id", "name", "state", "amount_residual", "amount_total", "payment_state", "partner_id", "currency_id", "invoice_currency_rate", "invoice_date", "date"] }) as Rec[])[0];
   if (!m) return { ok: false, error: "No encuentro " + body.comprobante };
   if (m.state !== "posted") return { ok: false, error: `${m.name} no está validada` };
   const d = PAGO_DIARIO[String(body.diario || "mp")];
-  if (!d) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos)" };
+  if (!d) return { ok: false, error: "Diario de pago desconocido (mp | efectivo | internos | santander)" };
   const importe = r2(+body.importe || 0);
   if (!importe || importe > m.amount_residual + 0.001) return { ok: false, error: `Importe ${importe} inválido: ${m.name} tiene saldo ${m.amount_residual}` };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || ""))) return { ok: false, error: "Falta la fecha del pago" };
-  const plan = { comprobante: m.name, proveedor: m.partner_id[1], saldo: m.amount_residual, pago: `${d.nombre} ${body.fecha} $${importe}` };
+  const ext = m2o(m.currency_id) !== ARS_ID;
+  const moneda = ext ? `${m.currency_id[1]} ` : "$";
+  // Factura en moneda extranjera cargada con una cotización vieja (Odoo guarda la vigente al crearla): con
+  // tc_del_dia se corrige a la cotización de la fecha de la factura ANTES de pagar, así no aparece una diferencia de
+  // cambio falsa. Solo si no tiene pagos, es del mes que se cierra o posterior y no lleva impuestos.
+  let tc: Rec | null = null;
+  if (ext && body.tc_del_dia) {
+    const tasa = (await ex("res.currency.rate", "search_read", [[["currency_id", "=", m2o(m.currency_id)], ["company_id", "=", C], ["name", "<=", m.invoice_date]]], { fields: ["name", "inverse_company_rate"], order: "name desc", limit: 1 }) as Rec[])[0];
+    const actual = m.invoice_currency_rate ? r2(1 / m.invoice_currency_rate) : null;
+    if (!tasa) return { ok: false, error: `No hay cotización de ${m.currency_id[1]} cargada al ${m.invoice_date}` };
+    if (actual !== r2(tasa.inverse_company_rate)) {
+      const hoy = new Date(Date.now() - 3 * 3600e3);
+      const minimo = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+      if (String(m.date).slice(0, 7) < minimo) return { ok: false, error: `${m.name} es de un mes ya presentado: la cotización no se toca` };
+      if (m.amount_residual !== m.amount_total) return { ok: false, error: `${m.name} ya tiene pagos: la cotización no se toca` };
+      const imp = await ex("account.move.line", "search_count", [[["move_id", "=", m.id], ["display_type", "=", "tax"]]]) as number;
+      if (imp) return { ok: false, error: `${m.name} tiene impuestos: corregí la cotización a mano (el IVA en pesos tiene que quedar como ARCA)` };
+      tc = { antes: actual, despues: r2(tasa.inverse_company_rate), cotizacion_del: tasa.name };
+    }
+  }
+  const plan = { comprobante: m.name, proveedor: m.partner_id[1], saldo: `${moneda}${m.amount_residual}`, pago: `${d.nombre} ${body.fecha} ${moneda}${importe}`, ...(tc ? { cotizacion: tc } : {}) };
   if (body.dry_run) return { ok: true, dry_run: true, plan };
+  if (tc) {
+    await ex("account.move", "button_draft", [[m.id]]);
+    await ex("account.move", "write", [[m.id], { invoice_currency_rate: 1 / tc.despues }]);
+    await ex("account.move", "action_post", [[m.id]]);
+    const v = (await ex("account.move", "read", [[m.id], ["amount_total", "amount_total_signed"]]) as Rec[])[0];
+    if (Math.abs(Math.abs(v.amount_total_signed) - r2(v.amount_total * tc.despues)) > 0.01) return { ok: false, error: `${m.name}: después de corregir la cotización el total en pesos (${v.amount_total_signed}) no da ${moneda}${v.amount_total} × ${tc.despues}. No se registró el pago.` };
+    tc.total_pesos = Math.abs(v.amount_total_signed);
+  }
   const ctx = { active_model: "account.move", active_ids: [m.id] };
   const wid = await ex("account.payment.register", "create", [{ journal_id: d.journal, payment_method_line_id: d.pml, payment_date: body.fecha, amount: importe, communication: m.name }], { context: ctx }) as number;
   await ex("account.payment.register", "action_create_payments", [[wid]], { context: ctx });
