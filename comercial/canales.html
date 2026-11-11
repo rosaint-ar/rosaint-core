@@ -297,6 +297,22 @@
     .pct-off { color: var(--hot); font-weight: 700; }
     .pct-ok { color: var(--muted); }
     .control-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .control-card.warn { background: color-mix(in srgb, var(--warn) 8%, transparent); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+    .control-card.warn h4 { color: var(--warn); }
+    .control-tabla td { vertical-align: top; }
+    .control-tabla .sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; line-height: 1.35; }
+    .control-tabla .badge { font-size: 9.5px; padding: 1px 6px; vertical-align: 1px; }
+    .est { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .est-ok   { color: var(--ok);   background: color-mix(in srgb, var(--ok) 12%, transparent); }
+    .est-exc  { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+    .est-baja { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+    .est-mal  { color: var(--hot);  background: color-mix(in srgb, var(--hot) 12%, transparent); }
+    .est-sin  { color: var(--muted); background: var(--surface-2); }
+    .mg-bien { color: var(--ok); font-weight: 700; } .mg-justo { color: var(--warn); font-weight: 700; } .mg-mal { color: var(--hot); font-weight: 700; }
+    .pa-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+    .pa-opt input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
+    .input.pa-num { width: 64px; height: 30px; padding: 4px 8px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .btn.sm { padding: 4px 10px; font-size: 12px; }
 
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
@@ -1268,7 +1284,7 @@ async function cargarTodasVentasOdoo(btn) {
 // ─────── SUB-TAB PROMOCIONES ───────
 // Campañas de promoción de ML (DEAL / SMART) con fecha de fin. Semáforo por días
 // restantes. Datos en ml_promos / v_promo_items (edge function ml-promos-sync).
-let PROMOS = [], PROMO_ITEMS = [], CTRL_REGLAS = {}, CTRL_PUBS = [];
+let PROMOS = [], PROMO_ITEMS = [], CTRL_REGLAS = {}, CTRL_PUBS = [], CTRL_ROWS = [];
 const fFecha = f => f ? new Date(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '—';
 // Tamaño del producto según el título (para saber qué regla de descuento aplica).
 function tamanoDe(titulo) {
@@ -1301,17 +1317,19 @@ async function cargarPromociones() {
     <div id="promo-content"><div class="empty-box">Cargando…</div></div>
   `;
   try {
-    const [pr, it, rg, pubs] = await Promise.all([
+    const [pr, it, rg, pubs, ctrl] = await Promise.all([
       sb.from('ml_promos').select('*'),
       sb.from('v_promo_items').select('*'),
       sb.from('ml_reglas_descuento').select('*'),
       sb.from('v_rentabilidad_ml').select('item_id,titulo,activa,precio,precio_con_descuento,precio_meli'),
+      sb.from('v_ml_promo_control').select('*'),
     ]);
     if (pr.error) throw pr.error;
     PROMOS = pr.data || [];
     PROMO_ITEMS = it.data || [];
     CTRL_REGLAS = {}; (rg.data || []).forEach(r => { CTRL_REGLAS[r.tamano] = r; });
     CTRL_PUBS = pubs.data || [];
+    CTRL_ROWS = ctrl.data || [];
     renderControlDescuentos();
     renderPromos();
     cargarPromosAuto();
@@ -1335,73 +1353,80 @@ const pctTxt = n => (n == null) ? '—' : (+Number(n).toFixed(2)).toLocaleString
 // tamaño. Distingue DEAL (vos elegís) de SMART/oferta compartida (ML gestiona).
 // Combos: dos familias — combo-gel (30/35) y combo-crema (35/40).
 function renderControlDescuentos() {
+  // v2 (nov-2026): lee v_ml_promo_control = el precio que ve HOY el comprador (la promo activa más barata),
+  // cuánto pone Rosaint (en ofertas compartidas solo su parte; lo demás lo pone ML), el tope y el margen
+  // neto real (costos con mano de obra del Core + cargos ML + IIBB y publicidad medidos en Vendra).
   const cont = $('#promo-control');
   if (!cont) return;
+  const minMg = PAUTO_PAR.promos_margen_min_pct ?? 20;
+  const filasData = (CTRL_ROWS || []).map(r => {
+    const exc = r.exceso == null ? null : Number(r.exceso);
+    const mg = r.margen_general?.margen_pct != null ? Number(r.margen_general.margen_pct) : null;
+    const mgMeli = r.margen_meli?.margen_pct != null ? Number(r.margen_meli.margen_pct) : null;
+    const peorMg = [mg, mgMeli].filter(x => x != null).reduce((a, b) => Math.min(a, b), Infinity);
+    let est;
+    if (r.tope == null) est = { k: 'sin', txt: 'Sin regla', tip: 'No se reconoce el tamaño en el título' };
+    else if (exc > 0.1 && r.excepcion_aprobada) est = { k: 'exc', txt: 'Excepción aprobada', tip: `Se pasa ${fmtPts(exc)} del tope, aprobado a mano` };
+    else if (exc > 0.1) est = { k: 'mal', txt: 'Supera el tope', tip: `Se pasa ${fmtPts(exc)} del tope` };
+    else if (peorMg < minMg) est = { k: 'baja', txt: 'Margen bajo', tip: `Respeta el tope, pero el margen queda por debajo del ${minMg}%` };
+    else est = { k: 'ok', txt: 'OK', tip: exc > 0 ? `ML movió unos centavos el precio (+${fmtPts(exc)}): no cuenta` : 'Dentro del tope' };
+    return { r, exc, mg, mgMeli, est };
+  });
+  const orden = { mal: 0, baja: 1, exc: 2, sin: 3, ok: 4 };
+  filasData.sort((a, b) => (orden[a.est.k] - orden[b.est.k]) || ((a.mg ?? 99) - (b.mg ?? 99)));
+  const n = k => filasData.filter(x => x.est.k === k).length;
+  const mal = n('mal'), baja = n('baja'), exc = n('exc'), ok = n('ok');
 
-  // también las que solo tienen descuento Meli+ (antes quedaban afuera del control)
-  const enPromo = CTRL_PUBS.filter(p => p.activa && (p.precio_con_descuento != null || p.precio_meli != null) && Number(p.precio) > 0);
+  const mgCelda = (m, cad) => {
+    if (!m || m.margen_pct == null) return '<span class="pct-ok">—</span>';
+    const v = Number(m.margen_pct), cls = v < minMg ? 'mg-mal' : v < minMg + 5 ? 'mg-justo' : 'mg-bien';
+    const tip = `Ingreso neto $${fmtN(m.neto)} − cargos ML $${fmtN(m.cargos_ml)} − IIBB $${fmtN(m.iibb)} − costo $${fmtN(m.costo)} = ganancia $${fmtN(m.ganancia)}`
+      + (m.acos != null ? `\nSi la venta entra por publicidad (ACOS del mes ${String(m.acos).replace('.', ',')}%): ganancia $${fmtN(m.ganancia_con_ads)}` : '');
+    return `<span class="${cls}" title="${esc(tip)}">${pctTxt(v)}</span>${cad ? `<span class="sub">${cad}</span>` : ''}`
+      + (m.acos != null ? `<span class="sub" title="${esc(tip)}">con publicidad ${pctTxt(m.margen_con_ads_pct)}</span>` : '');
+  };
 
-  // Tipos de promo activa por item.
-  const tiposPorItem = {};
-  for (const pi of PROMO_ITEMS) {
-    if (pi.estado_en_promo === 'candidate') continue; // ofrecida por ML, no entramos
-    const promo = PROMOS.find(pr => pr.id === pi.promo_id && pr.estado === 'started');
-    if (!promo) continue;
-    (tiposPorItem[pi.item_id] = tiposPorItem[pi.item_id] || new Set()).add(promo.tipo);
-  }
-
-  const rows = [];
-  let excede = 0, sinRegla = 0, haySmart = false;
-  for (const p of enPromo) {
-    const tam = tamanoDe(p.titulo);
-    const regla = tam ? CTRL_REGLAS[tam] : null;
-    if (!regla) sinRegla++;
-    const tope = regla ? Number(regla.desc_meli_pct) : null;
-    const gen = p.precio_con_descuento != null ? 100 * (Number(p.precio) - Number(p.precio_con_descuento)) / Number(p.precio) : null;
-    const meli = p.precio_meli != null ? 100 * (Number(p.precio) - Number(p.precio_meli)) / Number(p.precio) : null;
-    const genExc = tope != null && gen != null && gen > tope + 0.001;
-    const meliExc = tope != null && meli != null && meli > tope + 0.001;
-    if (genExc || meliExc) excede++;
-    const tipos = tiposPorItem[p.item_id] ? Array.from(tiposPorItem[p.item_id]) : [];
-    if (tipos.includes('SMART')) haySmart = true;
-    rows.push({ titulo: p.titulo, etq: regla ? regla.etiqueta : '—', tope, gen, meli, genExc, meliExc, tipos });
-  }
-  // Los que superan el tope, primero.
-  rows.sort((a, b) => (((b.genExc || b.meliExc) ? 1 : 0) - ((a.genExc || a.meliExc) ? 1 : 0)));
-
-  const tipoBadges = tipos => tipos.map(t => t === 'SMART'
-    ? '<span class="badge cuotas" title="Oferta compartida: ML gestiona y co-financia el descuento; no fijás general/Meli+ por separado">SMART</span>'
-    : '<span class="badge cat" title="Oferta donde vos elegís el descuento">DEAL</span>').join(' ') || '<span class="pct-ok">—</span>';
-
-  const filas = rows.map(r => `
+  const filas = filasData.map(({ r, est }) => {
+    const esSmart = r.tipo === 'SMART';
+    const meliAparte = r.precio_meli != null && Number(r.precio_meli) < Number(r.precio_hoy);
+    const promoTxt = r.promo ? `${esc(r.promo)}${r.finish_date ? ' · hasta ' + fFecha(r.finish_date) : ''}` : 'sin promo';
+    const prox = r.precio_prox != null && r.promo_prox && r.inicio_prox
+      ? `<span class="sub">desde ${fFecha(r.inicio_prox)}: ${esc(r.promo_prox)} ${fmtARS(Number(r.precio_prox))}</span>` : '';
+    return `
     <tr>
-      <td>${esc(cleanTitle(r.titulo))}</td>
-      <td>${esc(r.etq)}</td>
-      <td class="num ${r.genExc ? 'pct-off' : ''}">${pctTxt(r.gen)}</td>
-      <td class="num ${r.meliExc ? 'pct-off' : ''}">${pctTxt(r.meli)}</td>
+      <td>${esc(cleanTitle(r.titulo))}<span class="sub">${esc(r.etiqueta || '')} · lista ${fmtARS(Number(r.lista))}</span></td>
+      <td class="num"><b>${fmtARS(Number(r.precio_hoy))}</b>${meliAparte ? `<span class="sub">Meli+ ${fmtARS(Number(r.precio_meli))}</span>` : ''}<span class="sub">${promoTxt}${esSmart ? ' <span class="badge cuotas" title="Oferta compartida: ML pone una parte del descuento">compartida</span>' : ''}</span>${prox}</td>
+      <td class="num">${pctTxt(r.pone_general)}${esSmart ? `<span class="sub">ML pone ${pctTxt(100 * (1 - Number(r.precio_hoy) / Number(r.lista)) - Number(r.pone_general))}</span>` : ''}${meliAparte ? `<span class="sub">Meli+ ${pctTxt(r.pone_meli)}</span>` : ''}</td>
       <td class="num pct-ok">${r.tope != null ? pctTxt(r.tope) : '—'}</td>
-      <td>${tipoBadges(r.tipos)}</td>
-    </tr>`).join('');
+      <td class="num">${mgCelda(r.margen_general, meliAparte ? 'precio general' : '')}${meliAparte && r.margen_meli ? `<div style="margin-top:4px;">${mgCelda(r.margen_meli, 'comprador Meli+')}</div>` : ''}</td>
+      <td><span class="est est-${est.k}" title="${esc(est.tip)}">${est.txt}</span></td>
+    </tr>`;
+  }).join('');
 
-  const clase = excede ? 'bad' : 'good';
-  const titulo = excede
-    ? `⚠ ${excede} publicación${excede !== 1 ? 'es' : ''} supera${excede !== 1 ? 'n' : ''} el tope de Meli+`
-    : '✓ Ningún descuento supera el tope de Meli+';
-  const notas = [];
-  if (haySmart) notas.push('Las <b>SMART</b> son ofertas compartidas: ML gestiona el descuento (y co-financia parte); no podés fijar general/Meli+ por separado.');
-  if (sinRegla) notas.push(`${sinRegla} sin regla por tamaño (revisar el título).`);
+  const clase = mal ? 'bad' : (baja ? 'warn' : 'good');
+  const titulo = mal
+    ? `⚠ ${mal} publicación${mal !== 1 ? 'es' : ''} supera${mal !== 1 ? 'n' : ''} el tope sin aprobación`
+    : baja ? `${baja} publicación${baja !== 1 ? 'es' : ''} con margen bajo` : '✓ Todo dentro de los topes';
+  const resumen = [`${ok} OK`, exc ? `${exc} excepción${exc !== 1 ? 'es' : ''} aprobada${exc !== 1 ? 's' : ''}` : '', baja ? `${baja} con margen bajo` : '', mal ? `${mal} para revisar` : '']
+    .filter(Boolean).join(' · ');
 
   cont.innerHTML = `
     <div class="control-card ${clase}">
-      <h4>${titulo}</h4>
-      <div style="font-size:12.5px; color:var(--muted);">Regla: el descuento nunca debe superar el tope Meli+ costeado por tamaño. Porcentajes exactos.</div>
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
+        <h4 style="margin:0;">${titulo}</h4>
+        <span style="font-size:12.5px; color:var(--muted);">${resumen}</span>
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Precio que ve <b>hoy</b> el comprador (la promoción activa más barata) y cuánto descuento ponés vos. En las ofertas compartidas cuenta solo tu parte: el resto lo pone Mercado Libre. Margen neto sin IVA, después de cargos de ML, Ingresos Brutos y costo con mano de obra.</div>
       <table class="control-tabla">
-        <thead><tr><th>Producto</th><th>Tamaño</th><th class="num">General</th><th class="num">Meli+</th><th class="num">Tope</th><th>Promo</th></tr></thead>
+        <thead><tr><th>Producto</th><th class="num">Precio hoy</th><th class="num">Ponés vos</th><th class="num">Tope</th><th class="num">Margen neto</th><th>Estado</th></tr></thead>
         <tbody>${filas}</tbody>
       </table>
-      ${notas.length ? `<div class="control-note">${notas.join(' ')}</div>` : ''}
+      <div class="control-note">Pasá el mouse sobre el margen para ver la cuenta. "Con publicidad" = una venta que entra por el anuncio, con el ACOS del mes (Vendra). Desvíos de unos centavos que hace ML al redondear no cuentan como exceso.</div>
     </div>`;
 }
+const fmtN = n => n == null ? '—' : Math.round(Number(n)).toLocaleString('es-AR');
+const fmtPts = n => (+Number(n).toFixed(2)).toLocaleString('es-AR') + ' pts';
+
 
 function renderPromos() {
   const fechas = PROMOS.map(p => p.sincronizado_en).filter(Boolean).sort();
@@ -1481,58 +1506,68 @@ let AUTO_PROMOS_HECHO = false;
 
 // ─────── PROMOS AUTOMÁTICAS (nov-2026) ───────
 // ml-promos-sync {accion:'barrer'} corre cada 3 h (cron ml-promos-barrer): entra solo a las campañas que
-// respetan el tope de descuento (ml_reglas_descuento.desc_meli_pct); lo que se pasa hasta
-// promos_tolerancia_pts queda acá para aprobar o rechazar, y avisa por mail.
+// respetan el tope de descuento (ml_reglas_descuento.desc_meli_pct) Y dejan el margen mínimo
+// (promos_margen_min_pct); lo que se pasa hasta promos_tolerancia_pts, o queda con margen bajo, se lista
+// acá para aprobar o rechazar y avisa por mail. Margen = ml_margen() (vista v_ml_promos_auto).
 let PAUTO = [], PAUTO_PAR = {};
 async function cargarPromosAuto() {
   const cont = $('#promo-auto'); if (!cont) return;
   const [a, p] = await Promise.all([
-    sb.from('ml_promos_auto').select('*').order('actualizado_en', { ascending: false }).limit(300),
-    sb.from('ml_parametros').select('clave,valor').in('clave', ['promos_auto', 'promos_tolerancia_pts']),
+    sb.from('v_ml_promos_auto').select('*').order('actualizado_en', { ascending: false }).limit(300),
+    sb.from('ml_parametros').select('clave,valor').in('clave', ['promos_auto', 'promos_tolerancia_pts', 'promos_margen_min_pct']),
   ]);
   if (a.error) { cont.innerHTML = `<div class="empty-box" style="color:var(--hot);">Promos automáticas: ${esc(a.error.message)}</div>`; return; }
   PAUTO = a.data || []; PAUTO_PAR = {}; (p.data || []).forEach(x => PAUTO_PAR[x.clave] = Number(x.valor));
   renderPromosAuto();
+  renderControlDescuentos(); // usa el margen mínimo
 }
 function renderPromosAuto() {
   const cont = $('#promo-auto');
-  const on = PAUTO_PAR.promos_auto === 1, tol = PAUTO_PAR.promos_tolerancia_pts ?? 3;
+  const on = PAUTO_PAR.promos_auto === 1, tol = PAUTO_PAR.promos_tolerancia_pts ?? 3, minMg = PAUTO_PAR.promos_margen_min_pct ?? 20;
   const hoy = Date.now();
   const vigente = x => !x.promo_fin || new Date(x.promo_fin).getTime() > hoy;
   const decidir = PAUTO.filter(x => x.estado === 'a_decidir' && vigente(x));
-  const aplicadas = PAUTO.filter(x => x.estado === 'aplicada').slice(0, 20);
+  const aplicadas = PAUTO.filter(x => x.estado === 'aplicada' && vigente(x));
   const fuera = PAUTO.filter(x => x.estado === 'fuera_de_tope' && vigente(x));
   const errores = PAUTO.filter(x => x.estado === 'error' && vigente(x));
   const precio = x => x.precio_general != null ? fmtARS(Number(x.precio_general)) : '—';
-  const cuanto = x => x.tipo === 'SMART' ? `vos ponés ${pctTxt(x.seller_pct)}` : (x.desc_pct != null ? `${pctTxt(x.desc_pct)} off` : '—');
-  const exc = x => x.exceso_pts == null ? '—' : (Number(x.exceso_pts) > 0 ? '+' : '') + (+Number(x.exceso_pts).toFixed(2)).toLocaleString('es-AR') + ' pts';
+  const cuanto = x => x.tipo === 'SMART' ? `${pctTxt(x.seller_pct)}<span class="sub">ML pone el resto</span>` : (x.desc_pct != null ? pctTxt(x.desc_pct) : '—');
+  const exc = x => x.exceso_pts == null ? '—' : Number(x.exceso_pts) > 0.05 ? `<span class="pct-off">+${fmtPts(x.exceso_pts)}</span>` : '<span class="pct-ok">dentro</span>';
+  const mg = x => {
+    const m = x.margen; if (!m || m.margen_pct == null) return '<span class="pct-ok">—</span>';
+    const v = Number(m.margen_pct), cls = v < minMg ? 'mg-mal' : v < minMg + 5 ? 'mg-justo' : 'mg-bien';
+    const tip = `Ingreso neto $${fmtN(m.neto)} − cargos ML $${fmtN(m.cargos_ml)} − IIBB $${fmtN(m.iibb)} − costo $${fmtN(m.costo)} = ganancia $${fmtN(m.ganancia)}`;
+    return `<span class="${cls}" title="${esc(tip)}">${pctTxt(v)}</span><span class="sub">$${fmtN(m.ganancia)} por venta</span>`;
+  };
   const fila = (x, botones) => `<tr>
-      <td>${esc(x.promo_nombre || x.promo_id)}<div style="color:var(--muted);font-size:11.5px;">${x.promo_fin ? 'hasta ' + fFecha(x.promo_fin) : ''}</div></td>
-      <td>${esc(cleanTitle(x.titulo || x.item_id))}</td>
+      <td>${esc(cleanTitle(x.titulo || x.item_id))}<span class="sub">${esc(x.promo_nombre || x.promo_id)}${x.promo_fin ? ' · hasta ' + fFecha(x.promo_fin) : ''}</span></td>
       <td class="num">${precio(x)}</td>
       <td class="num">${cuanto(x)}</td>
-      <td class="num">${x.tope_pct != null ? pctTxt(x.tope_pct) : '—'}</td>
-      <td class="num" style="${Number(x.exceso_pts) > 0 ? 'color:var(--hot);font-weight:600;' : ''}">${exc(x)}</td>
-      <td>${botones ? `<button class="btn primary" data-pa="aprobar" data-id="${x.id}">Aprobar</button> <button class="btn secondary" data-pa="rechazar" data-id="${x.id}">Rechazar</button>` : `<span style="color:var(--muted);font-size:12px;">${esc(x.detalle || '')}</span>`}</td>
+      <td class="num pct-ok">${x.tope_pct != null ? pctTxt(x.tope_pct) : '—'}</td>
+      <td class="num">${exc(x)}</td>
+      <td class="num">${mg(x)}</td>
+      <td style="white-space:nowrap;">${botones ? `<button class="btn primary sm" data-pa="aprobar" data-id="${x.id}">Aprobar</button> <button class="btn secondary sm" data-pa="rechazar" data-id="${x.id}">Rechazar</button>` : `<span class="sub" style="margin:0;">${esc(x.detalle || '')}</span>`}</td>
     </tr>`;
-  const tabla = (xs, b) => `<table class="promo-tabla"><thead><tr><th>Campaña</th><th>Producto</th><th class="num">Precio</th><th class="num">Descuento</th><th class="num">Tope</th><th class="num">Exceso</th><th></th></tr></thead><tbody>${xs.map(x => fila(x, b)).join('')}</tbody></table>`;
+  const tabla = (xs, b) => `<table class="control-tabla"><thead><tr><th>Producto · campaña</th><th class="num">Precio</th><th class="num">Ponés vos</th><th class="num">Tope</th><th class="num">Exceso</th><th class="num">Margen neto</th><th></th></tr></thead><tbody>${xs.map(x => fila(x, b)).join('')}</tbody></table>`;
   cont.innerHTML = `
-    <div class="promo-card" style="padding:14px 16px; margin-bottom:14px;">
-      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-        <b>Promos automáticas</b>
-        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="pa-on" ${on ? 'checked' : ''}> Entrar solo a las que respetan el tope</label>
-        <label style="display:flex;gap:6px;align-items:center;">Avisarme si se pasa hasta <input type="number" id="pa-tol" min="0" max="15" step="0.5" value="${tol}" style="width:60px;"> pts</label>
+    <div class="control-card">
+      <div style="display:flex; gap:10px 18px; align-items:center; flex-wrap:wrap;">
+        <h4 style="margin:0;">Promos automáticas</h4>
+        <label class="pa-opt"><input type="checkbox" id="pa-on" ${on ? 'checked' : ''}> Entrar solas si respetan tope y margen</label>
+        <label class="pa-opt">Margen mínimo <input type="number" class="input pa-num" id="pa-min" min="0" max="80" step="1" value="${minMg}"> %</label>
+        <label class="pa-opt">Avisarme si se pasan hasta <input type="number" class="input pa-num" id="pa-tol" min="0" max="15" step="0.5" value="${tol}"> pts</label>
         <span style="flex:1;"></span>
         <button class="btn secondary" id="pa-barrer">Revisar ahora</button>
       </div>
-      <div style="color:var(--muted); font-size:12px; margin-top:6px;">Revisa cada 3 horas las campañas que ofrece Mercado Libre. Tope = descuento máximo por tamaño (tabla de reglas). Las que se pasan más que la tolerancia quedan abajo, ignoradas, pero se pueden aprobar igual.</div>
-      ${decidir.length ? `<div class="divisor-inactivas">Para decidir · ${decidir.length}</div>${tabla(decidir, true)}` : '<div style="margin-top:10px;color:var(--muted);">Nada para decidir.</div>'}
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Cada 3 horas revisa las campañas que ofrece Mercado Libre. Entra sola a las que respetan el tope del tamaño y dejan al menos el margen mínimo; las demás te las deja acá (y por mail) para que decidas con los números.</div>
+      ${decidir.length ? `<div class="divisor-inactivas">Para decidir · ${decidir.length}</div>${tabla(decidir, true)}` : '<div style="margin-top:10px; font-size:13px; color:var(--muted);">Nada para decidir.</div>'}
       ${errores.length ? `<div class="divisor-inactivas">Con error · ${errores.length}</div>${tabla(errores, true)}` : ''}
-      ${aplicadas.length ? `<details style="margin-top:8px;"><summary>Aplicadas (últimas ${aplicadas.length})</summary>${tabla(aplicadas, false)}</details>` : ''}
-      ${fuera.length ? `<details style="margin-top:8px;"><summary>Ignoradas por pasarse del tope · ${fuera.length}</summary>${tabla(fuera, true)}</details>` : ''}
+      ${aplicadas.length ? `<details style="margin-top:10px;"><summary style="cursor:pointer; font-size:13px;">Aplicadas y vigentes · ${aplicadas.length}</summary>${tabla(aplicadas, false)}</details>` : ''}
+      ${fuera.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer; font-size:13px;">Ignoradas por pasarse mucho del tope · ${fuera.length}</summary>${tabla(fuera, true)}</details>` : ''}
     </div>`;
   $('#pa-on').addEventListener('change', e => guardarParPromos('promos_auto', e.target.checked ? 1 : 0));
   $('#pa-tol').addEventListener('change', e => guardarParPromos('promos_tolerancia_pts', Number(e.target.value)));
+  $('#pa-min').addEventListener('change', e => guardarParPromos('promos_margen_min_pct', Number(e.target.value)));
   $('#pa-barrer').addEventListener('click', barrerPromosAhora);
   cont.querySelectorAll('[data-pa]').forEach(b => b.addEventListener('click', () => decidirPromo(b.dataset.pa, Number(b.dataset.id), b)));
 }
@@ -1540,6 +1575,7 @@ async function guardarParPromos(clave, valor) {
   const { error } = await sb.from('ml_parametros').update({ valor }).eq('clave', clave);
   if (error) return toast('Error: ' + error.message, 'err');
   PAUTO_PAR[clave] = valor; toast('✓ Guardado', 'ok');
+  if (clave === 'promos_margen_min_pct') { renderPromosAuto(); renderControlDescuentos(); }
 }
 async function barrerPromosAhora() {
   const b = $('#pa-barrer'); b.disabled = true; b.textContent = 'Revisando…';

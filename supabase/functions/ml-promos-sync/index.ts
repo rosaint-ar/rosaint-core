@@ -135,6 +135,7 @@ async function barrerPromos(supabase: any, headers: any, sellerId: string, aplic
   };
   const auto = (await par("promos_auto", 0)) === 1;
   const tol = await par("promos_tolerancia_pts", 3);
+  const margenMin = await par("promos_margen_min_pct", 20);
   const { data: reglas } = await supabase.from("ml_reglas_descuento").select("*");
   const regla = new Map((reglas || []).map((x: any) => [x.tamano, x]));
   const { data: pubs } = await supabase.from("ml_publicaciones").select("item_id,titulo,activa");
@@ -187,11 +188,19 @@ async function barrerPromos(supabase: any, headers: any, sellerId: string, aplic
         if (general < mn) { fila.estado = "no_soportado"; fila.detalle = "ML pide un precio mínimo más alto"; }
       } else { fila.estado = "no_soportado"; fila.detalle = `Tipo ${c.type}: se gestiona a mano`; }
 
+      if (!fila.estado && fila.precio_general) {
+        // Margen neto real a ese precio (costos del Core + cargos ML + IIBB y publicidad de Vendra): función ml_margen
+        const { data: mg } = await supabase.rpc("ml_margen", { p_item: itemId, p_precio: Number(fila.precio_general), p_seller_pct: c.type === "SMART" ? fila.seller_pct : null });
+        fila.margen_pct = mg?.margen_pct ?? null;
+      }
       if (!fila.estado) {
-        if (fila.exceso_pts <= 0.05) fila.estado = auto && aplicar ? "aplicar" : "a_decidir";
+        const margenBajo = fila.margen_pct != null && fila.margen_pct < margenMin;
+        if (fila.exceso_pts <= 0.05 && margenBajo) { fila.estado = "a_decidir"; fila.detalle = `Dentro del tope, pero el margen queda en ${fila.margen_pct}% (mínimo ${margenMin}%)`; }
+        else if (fila.exceso_pts <= 0.05) fila.estado = auto && aplicar ? "aplicar" : "a_decidir";
         else if (fila.exceso_pts <= tol) fila.estado = "a_decidir";
         else fila.estado = "fuera_de_tope";
-        if (fila.estado === "a_decidir" && fila.exceso_pts <= 0.05) fila.detalle = "Dentro del tope (automático apagado)";
+        if (fila.detalle) { /* ya explicado (margen bajo) */ }
+        else if (fila.estado === "a_decidir" && fila.exceso_pts <= 0.05) fila.detalle = "Dentro del tope (automático apagado)";
         else if (fila.estado === "a_decidir") fila.detalle = `Se pasa ${fila.exceso_pts} pts del tope`;
         else if (fila.estado === "fuera_de_tope") fila.detalle = `Se pasa ${fila.exceso_pts} pts del tope (más que la tolerancia de ${tol})`;
       }
@@ -213,7 +222,7 @@ async function barrerPromos(supabase: any, headers: any, sellerId: string, aplic
 
 async function avisarPromos(supabase: any, res: any) {
   const fmt = (n: any) => n == null ? "—" : Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 });
-  const filas = (xs: any[], conExceso: boolean) => xs.map((f) => `<tr><td>${esc(f.promo_nombre)}</td><td>${esc(f.titulo)}</td><td style="text-align:right">$${fmt(f.precio_general)}</td><td style="text-align:right">${f.tipo === "SMART" ? `vos ponés ${f.seller_pct}%` : `${f.desc_pct}%`}</td><td style="text-align:right">tope ${f.tope_pct}%</td>${conExceso ? `<td style="text-align:right;color:#b45309"><b>+${f.exceso_pts} pts</b></td>` : ""}</tr>`).join("");
+  const filas = (xs: any[], conExceso: boolean) => xs.map((f) => `<tr><td>${esc(f.promo_nombre)}</td><td>${esc(f.titulo)}</td><td style="text-align:right">$${fmt(f.precio_general)}</td><td style="text-align:right">${f.tipo === "SMART" ? `vos ponés ${f.seller_pct}%` : `${f.desc_pct}%`}</td><td style="text-align:right">tope ${f.tope_pct}%</td><td style="text-align:right">margen ${f.margen_pct ?? "—"}%</td>${conExceso ? `<td style="text-align:right;color:#b45309"><b>+${f.exceso_pts} pts</b></td>` : ""}</tr>`).join("");
   let html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">`;
   if (res.nuevas_a_decidir.length) html += `<p><b>Promos de Mercado Libre para decidir</b> (se pasan un poco del tope):</p><table cellpadding="6" style="border-collapse:collapse;font-size:13px">${filas(res.nuevas_a_decidir, true)}</table>`;
   if (res.aplicadas_lista.length) html += `<p><b>Promos aplicadas solas</b> (dentro del tope):</p><table cellpadding="6" style="border-collapse:collapse;font-size:13px">${filas(res.aplicadas_lista, false)}</table>`;
@@ -347,6 +356,8 @@ _servirConGuardia(async (req) => {
             price: v.price,
             original_price: v.original_price,
             estado: v.estado, // started/pending = adentro · candidate = ML lo ofrece y no entramos
+            seller_pct: v.raw?.seller_percentage != null ? Number(v.raw.seller_percentage) : null, // ofertas compartidas: lo que pone Rosaint
+            meli_pct: v.raw?.meli_percentage != null ? Number(v.raw.meli_percentage) : null,
             sincronizado_en: new Date().toISOString(),
           }));
           const { error: eIt } = await supabase.from("ml_promo_items").upsert(filas, { onConflict: "promo_id,item_id" });
