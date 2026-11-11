@@ -69,7 +69,7 @@ export async function portal(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
 
   return {
     ok: true, desde, hasta, generado: new Date().toISOString(),
-    internos: pInternos.length, cuentas,
+    internos: pInternos.length, internos_ids: pInternos, cuentas,
     clientes: clientes.filter((u) => uidCliente.has(u.id as number)).map((u) => ({ uid: u.id, partner_id: m2oId(u.partner_id), nombre: m2oName(u.partner_id) || u.name, login: u.login,
       ultimo_ingreso: u.login_date || null, alta: u.create_date || null, activo: !!u.active })),
     ingresos: logins.filter((l) => uidCliente.has(m2oId(l.create_uid) as number)).map((l) => ({ uid: m2oId(l.create_uid), ts: l.create_date })),

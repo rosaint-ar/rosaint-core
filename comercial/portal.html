@@ -70,6 +70,7 @@
     <button class="m-pest on" data-tab="resumen" onclick="setTab('resumen')">Resumen</button>
     <button class="m-pest" data-tab="clientes" onclick="setTab('clientes')">Clientes<span class="c" id="t-cli"></span></button>
     <button class="m-pest" data-tab="productos" onclick="setTab('productos')">Productos</button>
+    <button class="m-pest" data-tab="busquedas" onclick="setTab('busquedas')">Búsquedas y pedidos<span class="c" id="t-bus"></span></button>
     <button class="m-pest" data-tab="campana" onclick="setTab('campana')">Campaña WhatsApp<span class="c" id="t-cam"></span></button>
   </nav>
 
@@ -99,6 +100,17 @@
   <section id="tab-productos" hidden>
     <table class="pp" id="tabla-prod"></table>
     <p class="pp-nota">«Vistas» son las fichas abiertas por clientes con cuenta. «Pedidos» son los confirmados por el portal en el período.</p>
+  </section>
+
+  <section id="tab-busquedas" hidden>
+    <div class="m-datos" id="ev-kpis"></div>
+    <div class="pp-grid">
+      <div class="pp-caja"><h3>Lo que más <em>buscan</em></h3><div class="pp-top" id="ev-busq"></div></div>
+      <div class="pp-caja"><h3>Buscaron y <em>no encontraron</em></h3><div class="pp-top" id="ev-sin"></div><p class="pp-nota">Productos que piden con otro nombre o que no tenemos: candidatos a sumar o a renombrar.</p></div>
+      <div class="pp-caja"><h3>Lo que <em>agregan</em> al pedido</h3><div class="pp-top" id="ev-agr"></div><p class="pp-nota">Veces que se agregó (en «Cargar pedido» o en la ficha) y unidades.</p></div>
+      <div class="pp-caja"><h3>Pedido de <em>acceso</em></h3><div class="pp-embudo" id="ev-alta"></div><p class="pp-nota">Personas que abrieron el formulario de /alta y hasta qué paso llegaron.</p></div>
+    </div>
+    <p class="pp-nota" id="ev-nota">Registro propio del portal (bloque «rosaint-eventos» en la cabecera de Odoo), activo desde el 11/11/2026: lo de antes no está. Sin el equipo ni las cuentas de prueba.</p>
   </section>
 
   <section id="tab-campana" hidden>
@@ -143,7 +155,7 @@ const nombreCorto = s => String(s || '').replace(/^\[[^\]]*\]\s*/, '').replace(/
 
 function setTab(t) {
   document.querySelectorAll('.m-pest').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  for (const s of ['resumen', 'clientes', 'productos', 'campana']) $('tab-' + s).hidden = s !== t;
+  for (const s of ['resumen', 'clientes', 'productos', 'busquedas', 'campana']) $('tab-' + s).hidden = s !== t;
   history.replaceState(null, '', '#' + t);
 }
 
@@ -206,6 +218,7 @@ async function cargar() {
     const d = await leer(desde, hasta);
     D = { ...armar(d), raw: d, desde, hasta }; ANT = null;
     pintarTodo(); estado('Odoo · ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    await cargarEventos(desde, hasta, d.internos_ids || []);
     if (PER !== 'todo') { try { ANT = armar(await leer(aDesde, aHasta)); pintarKpis(); } catch (_) { /* sin comparación */ } }
     await cargarCampana();
   } catch (e) { estado('No se pudo leer: ' + e.message, false, true); }
@@ -320,6 +333,60 @@ function pintarProductos() {
       : '<tr><td colspan="5" class="pp-nota" style="padding:20px">Sin productos vistos ni pedidos en el período.</td></tr>') + '</tbody>';
 }
 
+// Búsquedas y pedidos: el registro propio del portal (tabla portal_evento, lo anota el bloque de la cabecera de Odoo).
+// Las fechas del período son días de Argentina (UTC−3).
+async function cargarEventos(desde, hasta, internos) {
+  const fuera = new Set([...internos, ...EXCL.map(x => x.partner_id)].map(Number));
+  const ini = desde + 'T03:00:00Z', fin = new Date(new Date(sumar(hasta, 1) + 'T03:00:00Z')).toISOString();
+  let ev = [];
+  try {
+    for (let p = 0; p < 20; p++) {     // de a 1000 (tope del servidor)
+      const { data, error } = await sb.from('portal_evento').select('ts,partner_id,sesion,tipo,dato').gte('ts', ini).lt('ts', fin)
+        .in('tipo', ['busqueda', 'carrito', 'alta_paso', 'alta_enviada']).order('id').range(p * 1000, p * 1000 + 999);
+      if (error) throw error;
+      ev = ev.concat(data || []); if (!data || data.length < 1000) break;
+    }
+  } catch (e) { $('ev-kpis').innerHTML = `<p class="pp-nota">No se pudo leer el registro del portal: ${esc(e.message)}</p>`; return; }
+  ev = ev.filter(e => !fuera.has(Number(e.partner_id)));
+  const clave = q => String(q || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  /* mientras escribe salen "gel", "gel neu", "gel neutro": de una misma sesión, en menos de 45 s, queda la última */
+  const busq = [];
+  for (const e of ev.filter(e => e.tipo === 'busqueda')) {
+    const q = clave(e.dato?.q); if (!q) continue;
+    const prev = busq[busq.length - 1], t = Date.parse(e.ts);
+    if (prev && prev.sesion === e.sesion && t - prev.t < 45000 && (q.startsWith(prev.q) || prev.q.startsWith(q))) { Object.assign(prev, { q, t, n: +e.dato.n || 0, texto: e.dato.q }); continue; }
+    busq.push({ q, t, n: +e.dato.n || 0, texto: e.dato.q, sesion: e.sesion, pid: e.partner_id });
+  }
+  const porQ = {};
+  for (const b of busq) { const x = porQ[b.q] = porQ[b.q] || { texto: b.texto, veces: 0, sin: 0, gente: new Set() }; x.veces++; if (!b.n) x.sin++; x.gente.add(b.pid || b.sesion); }
+  const agr = {};
+  for (const e of ev.filter(e => e.tipo === 'carrito' && (e.dato?.accion || 'agregar') === 'agregar')) {
+    const k = e.dato.codigo || e.dato.id || e.dato.producto; if (!k) continue;
+    const x = agr[k] = agr[k] || { nombre: e.dato.producto || e.dato.codigo || 'Producto ' + k, veces: 0, uds: 0, gente: new Set() };
+    x.veces++; x.uds += +e.dato.cantidad || 1; x.gente.add(e.partner_id || e.sesion);
+  }
+  const paso = {}; for (const e of ev.filter(e => e.tipo === 'alta_paso')) { const n = +e.dato?.paso || 0; paso[e.sesion] = Math.max(paso[e.sesion] || 0, n); }
+  const enviadas = new Set(ev.filter(e => e.tipo === 'alta_enviada').map(e => e.sesion)).size;
+  const sinRes = busq.filter(b => !b.n).length, nAgr = Object.values(agr).reduce((a, x) => a + x.veces, 0), abrieron = Object.keys(paso).length;
+  $('t-bus').textContent = busq.length || '';
+  const dato = (n, l, sub, c) => `<div class="m-dato" style="--c:${c || 'var(--r-li)'}"><span class="m-num">${n}</span><span class="l">${l}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  $('ev-kpis').innerHTML = dato(num(busq.length), 'Búsquedas', `${num(Object.keys(porQ).length)} distintas`, 'var(--azul)')
+    + dato(num(sinRes), 'Sin resultados', busq.length ? Math.round(sinRes / busq.length * 100) + '% de las búsquedas' : '—', 'var(--rojo)')
+    + dato(num(nAgr), 'Productos agregados', `${num(Object.keys(agr).length)} productos distintos`, 'var(--acido)')
+    + dato(num(abrieron), 'Abrieron el pedido de acceso', `${num(enviadas)} lo enviaron`);
+  const fila = (l, v, sub) => `<div><span title="${esc(l)}">${esc(l)}${sub ? ` <small class="pp-nota" style="display:inline">${esc(sub)}</small>` : ''}</span><b>${v}</b></div>`;
+  const qs = Object.values(porQ).sort((a, b) => b.veces - a.veces);
+  $('ev-busq').innerHTML = qs.slice(0, 12).map(x => fila(x.texto, num(x.veces), x.gente.size > 1 ? `· ${x.gente.size} personas` : '')).join('') || '<p class="pp-nota">Nadie buscó en el período.</p>';
+  const sq = qs.filter(x => x.sin).sort((a, b) => b.sin - a.sin);
+  $('ev-sin').innerHTML = sq.slice(0, 12).map(x => fila(x.texto, num(x.sin))).join('') || '<p class="pp-nota">Todas las búsquedas encontraron algo.</p>';
+  const ag = Object.values(agr).sort((a, b) => b.veces - a.veces);
+  $('ev-agr').innerHTML = ag.slice(0, 12).map(x => fila(nombreCorto(x.nombre), num(x.veces), `· ${num(x.uds)} u.`)).join('') || '<p class="pp-nota">Nadie agregó productos en el período.</p>';
+  const NOM = ['Contacto', 'Actividad', 'Factura', 'Domicilio', 'Contraseña'];
+  const pasos = NOM.map((l, i) => [`Paso ${i + 1} · ${l}`, Object.values(paso).filter(n => n >= i + 1).length]).concat([['Lo enviaron', enviadas]]);
+  const max = Math.max(1, abrieron);
+  $('ev-alta').innerHTML = abrieron ? pasos.map(([l, n]) => `<div class="pp-paso"><span>${l}</span><div class="barra"><i style="width:${Math.max(n ? 1.5 : 0, n / max * 100)}%"></i></div><b>${num(n)}</b></div>`).join('') : '<p class="pp-nota">Nadie abrió el pedido de acceso en el período.</p>';
+}
+
 // Campaña: quienes recibieron la presentación por WhatsApp y qué hicieron DESPUÉS de recibirla (todo el histórico)
 async function cargarCampana() {
   const { data } = await sb.from('wsp_difusiones').select('*').eq('campana', CAMPANA).order('enviado');
@@ -346,7 +413,7 @@ async function cargarCampana() {
 }
 
 const t0 = location.hash.slice(1);
-if (['clientes', 'productos', 'campana'].includes(t0)) setTab(t0);
+if (['clientes', 'productos', 'busquedas', 'campana'].includes(t0)) setTab(t0);
 cargar();
 </script>
 </body>
