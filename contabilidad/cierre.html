@@ -77,6 +77,11 @@
         <span class="label">Para (contadora)</span>
         <input type="text" id="para" value="mariabelen@latinifiorito.com.ar">
       </div>
+      <!-- copia por defecto: Abril (estudio Latini Fiorito), pedido de Diego 11-nov-2026. Editable; varias separadas por coma. -->
+      <div class="field" style="flex:1;">
+        <span class="label">Copia (CC)</span>
+        <input type="text" id="cc" value="adegiorgio@latinifiorito.com.ar" placeholder="mails separados por coma (opcional)">
+      </div>
     </div>
     <div class="hint">Se mandan dos mails por separado: <b>primero Ingresos Brutos</b> (vence antes) y <b>después IVA</b>. Cada uno arma sus archivos directo de Odoo y podés sumarle archivos propios.</div>
   </div>
@@ -264,16 +269,19 @@ function crearEnvio(clave, generar, pendientes) {
   q('enviar').addEventListener('click', async () => {
     const to = $('para').value.trim();
     if (!to) { setStatus('off', 'Falta el mail de la contadora.', 'err'); return; }
+    const cc = $('cc').value.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean).join(',');
+    const mailMal = [to, ...cc.split(',')].filter(Boolean).find(x => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+    if (mailMal) { setStatus('off', `"${mailMal}" no parece un mail válido.`, 'err'); return; }
     if (!st.generados.length) { setStatus('off', 'Prepará los archivos primero.', 'err'); return; }
     if (st.mes !== $('periodo').value) { setStatus('off', 'Los archivos son de otro período: preparalos de nuevo.', 'err'); return; }
     const adj = [...st.generados, ...st.extras];
-    if (!confirm(`¿Enviar "${q('asunto').value}" a ${to} con ${adj.length} archivos?`)) return;
+    if (!confirm(`¿Enviar "${q('asunto').value}" a ${to}${cc ? ` (con copia a ${cc.split(',').join(', ')})` : ''} con ${adj.length} archivos?`)) return;
     q('enviar').disabled = true; setStatus('load', 'Enviando por Odoo…');
     const bodyHtml = '<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;">' + q('cuerpo').value.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>';
     try {
-      const r = await fetch(FN_MAIL, { method: 'POST', headers: HEADERS, body: JSON.stringify({ to, subject: q('asunto').value, body_html: bodyHtml, attachments: adj }) });
+      const r = await fetch(FN_MAIL, { method: 'POST', headers: HEADERS, body: JSON.stringify({ to, ...(cc ? { cc } : {}), subject: q('asunto').value, body_html: bodyHtml, attachments: adj }) });
       const d = await r.json();
-      if (d.ok) { setStatus('on', `✓ Enviado a ${to} desde contacto@rosaint.com.ar.`, 'ok'); st.generados = []; st.extras = []; st.mes = null; render(); }
+      if (d.ok) { setStatus('on', `✓ Enviado a ${to}${cc ? ` (copia a ${cc.split(',').join(', ')})` : ''} desde contacto@rosaint.com.ar.`, 'ok'); st.generados = []; st.extras = []; st.mes = null; render(); }
       else { setStatus('off', 'No se pudo enviar: ' + (d.motivo_falla || d.error || 'error'), 'err'); q('enviar').disabled = false; }
     } catch (err) { setStatus('off', 'Error: ' + err.message, 'err'); q('enviar').disabled = false; }
   });
