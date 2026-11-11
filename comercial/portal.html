@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal profesional · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
+  <style>
+    .pp-periodo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .pp-periodo button { background: var(--r-sup); border: 1px solid var(--r-li); padding: 7px 12px; font: 400 13px var(--sora); color: var(--r-tx); cursor: pointer; }
+    .pp-periodo button.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .pp-delta { font: 400 12px var(--sans); margin-left: 6px; }
+    .pp-delta.sube { color: #2E8B57; } .pp-delta.baja { color: var(--rojo); }
+    .m-dato .sub { display: block; font-size: 12.5px; color: var(--r-mu); margin-top: 2px; }
+    .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 4px; }
+    .pp-caja { background: var(--r-sup); padding: 16px 18px; }
+    .pp-caja h3 { margin: 0 0 12px; font: 400 16px var(--sora); }
+    .pp-caja h3 em { font-family: var(--bitter); font-style: italic; }
+    .pp-embudo { display: grid; gap: 7px; }
+    .pp-paso { display: grid; grid-template-columns: 170px 1fr 54px; gap: 10px; align-items: center; font-size: 13.5px; }
+    .pp-paso .barra { height: 22px; background: var(--r-bg); position: relative; }
+    .pp-paso .barra i { position: absolute; inset: 0 auto 0 0; background: var(--azul); }
+    .pp-paso:last-child .barra i { background: var(--acido); }
+    .pp-paso b { font: 400 15px var(--sora); text-align: right; }
+    .pp-dias { display: flex; align-items: flex-end; gap: 3px; height: 130px; border-bottom: 1px solid var(--r-li); }
+    .pp-dias div { flex: 1; background: var(--azul); min-height: 1px; position: relative; }
+    .pp-dias div.ped { background: var(--acido); }
+    .pp-dias-ej { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--r-mu); margin-top: 4px; }
+    .pp-top { display: grid; gap: 6px; font-size: 13.5px; }
+    .pp-top div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+    .pp-top span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pp-top b { font: 400 13.5px var(--sora); }
+    table.pp { width: 100%; border-collapse: collapse; background: var(--r-sup); font-size: 13.5px; }
+    table.pp th { text-align: left; font: 500 10.5px var(--sora); letter-spacing: .1em; text-transform: uppercase; color: var(--r-mu); padding: 10px 12px; border-bottom: 1px solid var(--r-li); cursor: pointer; white-space: nowrap; }
+    table.pp td { padding: 9px 12px; border-bottom: 1px solid var(--r-li); vertical-align: top; }
+    table.pp td.n, table.pp th.n { text-align: right; font-variant-numeric: tabular-nums; }
+    table.pp tr.cli { cursor: pointer; } table.pp tr.cli:hover td { background: var(--r-bg); }
+    .pp-est { font: 500 10px var(--sora); letter-spacing: .08em; text-transform: uppercase; padding: 3px 7px; white-space: nowrap; }
+    .pp-est.compro { background: var(--acido); color: var(--azul); }
+    .pp-est.carrito { background: #F5A623; color: var(--azul); }
+    .pp-est.miro { background: var(--r-panel); color: var(--r-tx); }
+    .pp-est.entro { background: var(--r-bg); color: var(--r-mu); border: 1px solid var(--r-li); }
+    .pp-det td { background: var(--r-bg); font-size: 13px; color: var(--r-mu); }
+    .pp-det ul { margin: 0; padding-left: 18px; columns: 2; }
+    .pp-barra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .pp-nota { font-size: 13px; color: var(--r-mu); margin: 10px 0 0; }
+    @media (max-width: 680px) { .pp-paso { grid-template-columns: 120px 1fr 44px; } .pp-det ul { columns: 1; } table.pp { font-size: 12.5px; } }
+  </style>
+</head>
+<body class="marca" data-page="portal" data-title="Portal profesional" data-subtitle="Cómo usan el portal los clientes · datos de Odoo (rosaint.odoo.com)">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Portal profesional · Métricas</span>
+      <h1 class="titular">Cómo se usa el <em>portal</em>.</h1>
+    </div>
+    <div class="m-cab-acc">
+      <div class="pp-periodo" id="periodo"></div>
+      <span class="m-vivo" id="estado"><i></i><span>Cargando…</span></span>
+    </div>
+  </div>
+
+  <nav class="m-pestanas">
+    <button class="m-pest on" data-tab="resumen" onclick="setTab('resumen')">Resumen</button>
+    <button class="m-pest" data-tab="clientes" onclick="setTab('clientes')">Clientes<span class="c" id="t-cli"></span></button>
+    <button class="m-pest" data-tab="productos" onclick="setTab('productos')">Productos</button>
+    <button class="m-pest" data-tab="campana" onclick="setTab('campana')">Campaña WhatsApp<span class="c" id="t-cam"></span></button>
+  </nav>
+
+  <section id="tab-resumen">
+    <div class="m-datos" id="kpis"></div>
+    <div class="pp-grid">
+      <div class="pp-caja"><h3>Del usuario a la <em>compra</em></h3><div class="pp-embudo" id="embudo"></div></div>
+      <div class="pp-caja"><h3>Clientes por <em>día</em></h3><div class="pp-dias" id="dias"></div><div class="pp-dias-ej" id="dias-ej"></div><p class="pp-nota">Azul: clientes distintos que entraron. Amarillo: días con pedido confirmado.</p></div>
+      <div class="pp-caja"><h3>Lo más <em>visto</em></h3><div class="pp-top" id="paginas"></div></div>
+      <div class="pp-caja"><h3>Sin <em>cuenta</em></h3><div class="pp-top" id="anon"></div><p class="pp-nota">Gente que abrió el portal sin iniciar sesión: el ingreso, el pedido de acceso o las preguntas frecuentes.</p></div>
+    </div>
+  </section>
+
+  <section id="tab-clientes" hidden>
+    <div class="pp-barra">
+      <input class="m-campo" id="buscar" placeholder="Buscar cliente…" oninput="pintarClientes()" style="max-width:320px">
+      <select class="m-campo" id="filtro" onchange="pintarClientes()">
+        <option value="activos">Con actividad en el período</option>
+        <option value="todos">Todos los que tienen usuario</option>
+        <option value="nunca">Tienen usuario y nunca entraron</option>
+      </select>
+    </div>
+    <table class="pp" id="tabla-cli"></table>
+    <p class="pp-nota">Tocá un cliente para ver qué miró y qué pidió. Las cuentas del equipo o de prueba no cuentan: <span id="excluidos"></span></p>
+  </section>
+
+  <section id="tab-productos" hidden>
+    <table class="pp" id="tabla-prod"></table>
+    <p class="pp-nota">«Vistas» son las fichas abiertas por clientes con cuenta. «Pedidos» son los confirmados por el portal en el período.</p>
+  </section>
+
+  <section id="tab-campana" hidden>
+    <div class="m-datos" id="cam-kpis"></div>
+    <table class="pp" id="tabla-cam"></table>
+    <p class="pp-nota">Cruza a quienes recibieron la presentación del portal por WhatsApp (WhatsApp › Difusión) con lo que hicieron después en el portal: no depende del período elegido.</p>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202610061943"></script>
+<script>
+// Portal profesional · Métricas. Datos crudos de Odoo por odoo-metricas (modo portal_metricas): páginas vistas
+// (website.track), ingresos (res.users.log), clientes con usuario y pedidos con website_id. Sin el equipo
+// (usuarios internos + portal_excluidos). Cada contacto se lleva a su cuenta (commercial_partner_id).
+const FN = window.SUPABASE_URL + '/functions/v1/odoo-metricas';
+const ODOO = 'https://rosaint.odoo.com';
+const CAMPANA = 'portal_profesional · prueba';
+const hoyAR = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+const sumar = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const dias = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5) + 1;
+const PERIODOS = [
+  ['hoy', 'Hoy', () => [hoyAR(), hoyAR()]],
+  ['7', '7 días', () => [sumar(hoyAR(), -6), hoyAR()]],
+  ['30', '30 días', () => [sumar(hoyAR(), -29), hoyAR()]],
+  ['mes', 'Este mes', () => [hoyAR().slice(0, 8) + '01', hoyAR()]],
+  ['mesant', 'Mes pasado', () => { const p = sumar(hoyAR().slice(0, 8) + '01', -1); return [p.slice(0, 8) + '01', p]; }],
+  ['todo', 'Todo', () => ['2026-03-01', hoyAR()]],
+];
+let PER = '30', D = null, ANT = null, EXCL = [], ALTAS = [], ORDEN = { k: 'ult', asc: false };
+try { PER = localStorage.getItem('pp_periodo') || PER; } catch (_) {}
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = id => document.getElementById(id);
+const plata = n => '$ ' + Math.round(n || 0).toLocaleString('es-AR');
+const num = n => Math.round(n || 0).toLocaleString('es-AR');
+const odooTs = s => new Date(String(s).replace(' ', 'T') + 'Z');                        // Odoo guarda en UTC
+const diaAR = s => odooTs(s).toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+const fechaCorta = s => s ? odooTs(s).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const nombreCorto = s => String(s || '').replace(/^\[[^\]]*\]\s*/, '').replace(/[«»]/g, '');
+
+function setTab(t) {
+  document.querySelectorAll('.m-pest').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  for (const s of ['resumen', 'clientes', 'productos', 'campana']) $('tab-' + s).hidden = s !== t;
+  history.replaceState(null, '', '#' + t);
+}
+
+async function leer(desde, hasta) {
+  const { data: s } = await sb.auth.getSession();
+  const r = await fetch(FN, { method: 'POST', headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + (s?.session?.access_token || ''), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modo: 'portal_metricas', desde, hasta, excluir: EXCL.map(x => x.partner_id) }) }).then(r => r.json());
+  if (!r.ok) throw new Error(r.error || 'Odoo no respondió');
+  return r;
+}
+
+// Todo lo de un período, por cuenta de cliente
+function armar(d) {
+  const cta = pid => (pid && d.cuentas[pid]) || pid;
+  const nombre = {}, ultimo = {}, usuarioDe = {};
+  for (const c of d.clientes) { const k = cta(c.partner_id); nombre[k] = nombre[k] || c.nombre; if (c.activo) usuarioDe[k] = true;
+    if (c.ultimo_ingreso && (!ultimo[k] || c.ultimo_ingreso > ultimo[k])) ultimo[k] = c.ultimo_ingreso; usuarioDe['u' + c.uid] = k; }
+  const C = {};
+  const cli = k => C[k] = C[k] || { k, nombre: nombre[k] || 'Contacto ' + k, ingresos: 0, paginas: 0, productos: {}, dias: new Set(), carrito: 0, compro: 0, pedidos: [], vistas: [], ult: null };
+  for (const i of d.ingresos) { const k = usuarioDe['u' + i.uid]; if (!k) continue; const c = cli(k); c.ingresos++; c.dias.add(diaAR(i.ts)); if (!c.ult || i.ts > c.ult) c.ult = i.ts; }
+  const anon = { visitantes: new Set(), paginas: {} };
+  const paginas = {}, prodVistas = {};
+  for (const v of d.vistas) {
+    if (!v.partner_id) { anon.visitantes.add(v.visitante); if (v.url) { const p = nombrePagina(v); anon.paginas[p] = (anon.paginas[p] || 0) + 1; } continue; }
+    const c = cli(cta(v.partner_id)); c.dias.add(diaAR(v.ts)); if (!c.ult || v.ts > c.ult) c.ult = v.ts;
+    if (v.producto_id && !v.url) { c.productos[v.producto_id] = v.producto; prodVistas[v.producto_id] = prodVistas[v.producto_id] || { nombre: v.producto, vistas: 0, clientes: new Set(), cant: 0, neto: 0 }; prodVistas[v.producto_id].vistas++; prodVistas[v.producto_id].clientes.add(c.k); continue; }
+    if (v.url) { c.paginas++; c.vistas.push(v); const p = nombrePagina(v); paginas[p] = (paginas[p] || 0) + 1; }
+  }
+  const lineasDe = {}; for (const l of d.lineas) (lineasDe[l.pedido_id] = lineasDe[l.pedido_id] || []).push(l);
+  for (const o of d.pedidos) {
+    const c = cli(cta(o.partner_id)); c.pedidos.push({ ...o, lineas: lineasDe[o.id] || [] });
+    if (o.estado === 'draft' || o.estado === 'sent') c.carrito += o.neto || 0; else c.compro += o.neto || 0;
+    if (!['draft', 'sent'].includes(o.estado)) for (const l of lineasDe[o.id] || []) { const p = prodVistas[l.producto_id] = prodVistas[l.producto_id] || { nombre: l.producto, vistas: 0, clientes: new Set(), cant: 0, neto: 0 }; p.cant += l.cantidad; p.neto += l.neto; }
+  }
+  for (const c of Object.values(C)) c.estado = c.compro ? 'compro' : c.carrito ? 'carrito' : Object.keys(c.productos).length ? 'miro' : 'entro';
+  const confirmados = d.pedidos.filter(o => !['draft', 'sent'].includes(o.estado)), abiertos = d.pedidos.filter(o => ['draft', 'sent'].includes(o.estado));
+  const usuarios = Object.keys(nombre).filter(k => usuarioDe[k]);
+  return { C, cta, nombre, ultimo, usuarios, anon, paginas, prodVistas, confirmados, abiertos,
+    kp: { clientes: Object.keys(C).filter(k => C[k].dias.size).length, ingresos: d.ingresos.length, paginas: d.vistas.filter(v => v.partner_id && v.url).length,
+      anon: anon.visitantes.size, pedidos: confirmados.length, monto: confirmados.reduce((a, o) => a + (o.neto || 0), 0), carritos: abiertos.length, montoCarr: abiertos.reduce((a, o) => a + (o.neto || 0), 0) } };
+}
+
+// Nombre legible de una página: la página de Odoo, la ficha de producto o la ruta
+function nombrePagina(v) {
+  if (v.pagina) return v.pagina;
+  const u = String(v.url || '').replace(ODOO, '').split('?')[0] || '/';
+  const m = u.match(/^\/shop\/(\d{5})-/); if (m) return 'Ficha ' + m[1];
+  const fijos = { '/': 'Inicio', '/web/login': 'Ingreso', '/alta': 'Pedir acceso', '/shop': 'Tienda', '/shop/cart': 'Carrito', '/my': 'Mi cuenta', '/my/orders': 'Mis pedidos', '/pedido-rapido': 'Cargar pedido' };
+  return fijos[u] || u;
+}
+
+async function cargar() {
+  const [desde, hasta] = PERIODOS.find(p => p[0] === PER)[2]();
+  const n = dias(desde, hasta), aHasta = sumar(desde, -1), aDesde = sumar(aHasta, -(n - 1));
+  pintarPeriodo(); estado('Leyendo Odoo…', true);
+  try {
+    const [ex, al] = await Promise.all([sb.from('portal_excluidos').select('*').order('nombre'), sb.from('portal_altas').select('id, estado, creada')]);
+    EXCL = ex.data || []; ALTAS = al.data || [];
+    const [d, a] = await Promise.all([leer(desde, hasta), PER === 'todo' ? null : leer(aDesde, aHasta)]);
+    D = { ...armar(d), raw: d, desde, hasta }; ANT = a ? armar(a) : null;
+    pintarTodo(); estado('Odoo · ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+  } catch (e) { estado('No se pudo leer: ' + e.message, false, true); }
+}
+function estado(t, cargando, error) { const el = $('estado'); el.classList.toggle('off', !!error); el.querySelector('span').textContent = t; }
+function pintarPeriodo() { $('periodo').innerHTML = PERIODOS.map(([k, l]) => `<button class="${k === PER ? 'on' : ''}" onclick="elegir('${k}')">${l}</button>`).join(''); }
+function elegir(k) { PER = k; try { localStorage.setItem('pp_periodo', k); } catch (_) {} cargar(); }
+
+function pintarTodo() { pintarKpis(); pintarEmbudo(); pintarDias(); pintarTops(); pintarClientes(); pintarProductos(); cargarCampana(); }
+
+function delta(a, b) {
+  if (!ANT || b == null) return '';
+  if (!b) return a ? '<span class="pp-delta sube">nuevo</span>' : '';
+  const p = Math.round((a - b) / b * 100); if (!p) return '<span class="pp-delta">=</span>';
+  return `<span class="pp-delta ${p > 0 ? 'sube' : 'baja'}">${p > 0 ? '+' : ''}${p}%</span>`;
+}
+function pintarKpis() {
+  const k = D.kp, a = ANT && ANT.kp;
+  const altasPer = ALTAS.filter(x => x.creada.slice(0, 10) >= D.desde && x.creada.slice(0, 10) <= D.hasta);
+  const dato = (n, l, sub, c) => `<div class="m-dato" style="--c:${c || 'var(--r-li)'}"><span class="m-num">${n}</span><span class="l">${l}</span>${sub ? `<span class="sub">${sub}</span>` : ''}</div>`;
+  $('kpis').innerHTML =
+    dato(num(k.clientes) + delta(k.clientes, a && a.clientes), 'Clientes que entraron', `de ${num(D.usuarios.length)} con usuario`, 'var(--azul)') +
+    dato(num(k.ingresos) + delta(k.ingresos, a && a.ingresos), 'Inicios de sesión', `${num(k.paginas)} páginas vistas`) +
+    dato(num(k.pedidos) + delta(k.pedidos, a && a.pedidos), 'Pedidos por el portal', plata(k.monto) + ' sin IVA', 'var(--acido)') +
+    dato(num(k.carritos), 'Carritos sin confirmar', k.carritos ? plata(k.montoCarr) : 'ninguno', '#F5A623') +
+    dato(num(altasPer.length), 'Pedidos de acceso', `${altasPer.filter(x => x.estado === 'aprobada').length} aprobados · ${altasPer.filter(x => !['aprobada', 'rechazada'].includes(x.estado)).length} por revisar`) +
+    dato(num(k.anon) + delta(k.anon, a && a.anon), 'Visitantes sin cuenta', 'abrieron el portal sin sesión');
+}
+function pintarEmbudo() {
+  const C = Object.values(D.C);
+  const pasos = [
+    ['Tienen usuario', D.usuarios.length],
+    ['Entraron alguna vez', D.usuarios.filter(k => D.ultimo[k]).length],
+    ['Entraron en el período', C.filter(c => c.dias.size).length],
+    ['Miraron productos', C.filter(c => Object.keys(c.productos).length || c.pedidos.length).length],
+    ['Armaron un carrito', C.filter(c => c.pedidos.length).length],
+    ['Compraron', C.filter(c => c.compro).length],
+  ];
+  const max = Math.max(1, pasos[0][1]);
+  $('embudo').innerHTML = pasos.map(([l, n]) => `<div class="pp-paso"><span>${l}</span><div class="barra"><i style="width:${Math.max(n ? 1.5 : 0, n / max * 100)}%"></i></div><b>${num(n)}</b></div>`).join('');
+}
+function pintarDias() {
+  const n = Math.min(dias(D.desde, D.hasta), 92), ini = sumar(D.hasta, -(n - 1));
+  const porDia = {}, pedDia = new Set(D.confirmados.map(o => diaAR(o.fecha)));
+  for (const c of Object.values(D.C)) for (const d of c.dias) (porDia[d] = porDia[d] || new Set()).add(c.k);
+  const vals = Array.from({ length: n }, (_, i) => { const d = sumar(ini, i); return [d, (porDia[d] || new Set()).size]; });
+  const max = Math.max(1, ...vals.map(v => v[1]));
+  $('dias').innerHTML = vals.map(([d, v]) => `<div class="${pedDia.has(d) ? 'ped' : ''}" style="height:${v / max * 100}%" title="${d.slice(8)}/${d.slice(5, 7)}: ${v} ${v === 1 ? 'cliente' : 'clientes'}${pedDia.has(d) ? ' · con pedido' : ''}"></div>`).join('');
+  $('dias-ej').innerHTML = `<span>${ini.slice(8)}/${ini.slice(5, 7)}</span><span>${D.hasta.slice(8)}/${D.hasta.slice(5, 7)}</span>`;
+}
+function top(obj, n) { return Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n); }
+function pintarTops() {
+  const fila = ([l, v]) => `<div><span title="${esc(l)}">${esc(l)}</span><b>${num(v)}</b></div>`;
+  const pag = top(D.paginas, 10);
+  $('paginas').innerHTML = pag.length ? pag.map(fila).join('') : '<p class="pp-nota">Sin páginas vistas por clientes en el período.</p>';
+  const an = top(D.anon.paginas, 8);
+  $('anon').innerHTML = an.length ? `<div><span>Visitantes distintos</span><b>${num(D.anon.visitantes.size)}</b></div>` + an.map(fila).join('') : '<p class="pp-nota">Nadie entró sin sesión en el período.</p>';
+}
+
+const EST = { compro: 'Compró', carrito: 'Carrito abierto', miro: 'Miró, no compró', entro: 'Solo entró' };
+function pintarClientes() {
+  const q = $('buscar').value.trim().toLowerCase(), f = $('filtro').value;
+  let filas;
+  if (f === 'nunca') filas = D.usuarios.filter(k => !D.ultimo[k]).map(k => ({ k, nombre: D.nombre[k], nunca: true }));
+  else {
+    filas = Object.values(D.C).filter(c => c.dias.size || c.pedidos.length);
+    if (f === 'todos') { const ya = new Set(filas.map(c => String(c.k))); filas = filas.concat(D.usuarios.filter(k => !ya.has(String(k))).map(k => ({ k, nombre: D.nombre[k], inactivo: true, ult: D.ultimo[k] }))); }
+  }
+  if (q) filas = filas.filter(c => String(c.nombre || '').toLowerCase().includes(q));
+  const val = { nombre: c => String(c.nombre || ''), ult: c => c.ult || '', dias: c => c.dias ? c.dias.size : 0, prod: c => c.productos ? Object.keys(c.productos).length : 0, compro: c => (c.compro || 0) + (c.carrito || 0) / 1000 };
+  const g = val[ORDEN.k] || val.ult;
+  filas.sort((a, b) => { const x = g(a), y = g(b); return (x > y ? 1 : x < y ? -1 : 0) * (ORDEN.asc ? 1 : -1); });
+  $('t-cli').textContent = Object.values(D.C).filter(c => c.dias.size).length || '';
+  const th = (k, l, cl) => `<th class="${cl || ''}" onclick="ordenar('${k}')">${l}${ORDEN.k === k ? (ORDEN.asc ? ' ↑' : ' ↓') : ''}</th>`;
+  $('tabla-cli').innerHTML = `<thead><tr>${th('nombre', 'Cliente')}<th>Estado</th>${th('ult', 'Último movimiento')}${th('dias', 'Días', 'n')}${th('prod', 'Productos vistos', 'n')}${th('compro', 'Pedidos', 'n')}</tr></thead><tbody>` +
+    (filas.length ? filas.map(c => c.nunca || c.inactivo
+      ? `<tr><td>${esc(c.nombre)}</td><td><span class="pp-est entro">${c.nunca ? 'Nunca entró' : 'Sin actividad'}</span></td><td>${c.ult ? fechaCorta(c.ult) : '—'}</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>`
+      : `<tr class="cli" onclick="detalle(this, '${c.k}')"><td>${esc(c.nombre)}</td><td><span class="pp-est ${c.estado}">${EST[c.estado]}</span></td><td>${fechaCorta(c.ult)}</td><td class="n">${c.dias.size}</td><td class="n">${Object.keys(c.productos).length}</td>
+         <td class="n">${c.compro ? plata(c.compro) : c.carrito ? '<span title="carrito sin confirmar">(' + plata(c.carrito) + ')</span>' : '—'}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="pp-nota" style="padding:20px">Nadie en este filtro.</td></tr>') + '</tbody>';
+  $('excluidos').innerHTML = EXCL.map(x => `${esc(x.nombre)} <button class="rb suave" style="padding:2px 4px" onclick="incluir(${x.partner_id})" title="Volver a contarlo">✕</button>`).join(' · ') || 'ninguna';
+}
+function ordenar(k) { ORDEN = { k, asc: ORDEN.k === k ? !ORDEN.asc : k === 'nombre' }; pintarClientes(); }
+function detalle(tr, k) {
+  const sig = tr.nextElementSibling; if (sig && sig.classList.contains('pp-det')) { sig.remove(); return; }
+  const c = D.C[k]; const det = document.createElement('tr'); det.className = 'pp-det';
+  const prods = Object.values(c.productos).map(nombreCorto);
+  const peds = c.pedidos.map(o => `<li><a href="${ODOO}/odoo/sales/${o.id}" target="_blank" rel="noopener">${esc(o.nombre)}</a> · ${fechaCorta(o.fecha)} · ${plata(o.neto)} · ${o.estado === 'draft' || o.estado === 'sent' ? 'sin confirmar' : 'confirmado'}: ${esc(o.lineas.map(l => nombreCorto(l.producto) + ' ×' + l.cantidad).join(', '))}</li>`);
+  det.innerHTML = `<td colspan="6"><b>Pedidos</b><ul>${peds.join('') || '<li>Ninguno en el período</li>'}</ul><b>Productos que miró</b><ul>${prods.map(p => `<li>${esc(p)}</li>`).join('') || '<li>Ninguno</li>'}</ul>
+    <b>Páginas</b> ${esc([...new Set(c.vistas.map(nombrePagina))].join(' · ') || '—')}<br>
+    <button class="rb suave" style="padding:6px 0" onclick="excluir(${k}, '${esc(String(c.nombre).replace(/'/g, ''))}')">Es una cuenta del equipo o de prueba: no contarla</button></td>`;
+  tr.after(det);
+}
+async function excluir(pid, nombre) {
+  if (!confirm(`¿Dejar de contar a ${nombre} en las métricas del portal?`)) return;
+  const { data: u } = await sb.auth.getUser();
+  const { error } = await sb.from('portal_excluidos').upsert({ partner_id: pid, nombre, motivo: 'Marcado desde Métricas del portal', creado_por: u?.user?.email || null });
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  cargar();
+}
+async function incluir(pid) {
+  if (!confirm('¿Volver a contar esta cuenta en las métricas?')) return;
+  const { error } = await sb.from('portal_excluidos').delete().eq('partner_id', pid);
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  cargar();
+}
+
+function pintarProductos() {
+  const filas = Object.values(D.prodVistas).sort((a, b) => b.vistas - a.vistas || b.neto - a.neto);
+  $('tabla-prod').innerHTML = '<thead><tr><th>Producto</th><th class="n">Vistas</th><th class="n">Clientes</th><th class="n">Unidades pedidas</th><th class="n">Pedidos sin IVA</th></tr></thead><tbody>' +
+    (filas.length ? filas.slice(0, 60).map(p => `<tr><td>${esc(nombreCorto(p.nombre))}</td><td class="n">${num(p.vistas)}</td><td class="n">${p.clientes.size || '—'}</td><td class="n">${p.cant ? num(p.cant) : '—'}</td><td class="n">${p.neto ? plata(p.neto) : '—'}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="pp-nota" style="padding:20px">Sin productos vistos ni pedidos en el período.</td></tr>') + '</tbody>';
+}
+
+// Campaña: quienes recibieron la presentación por WhatsApp y qué hicieron DESPUÉS de recibirla (todo el histórico)
+async function cargarCampana() {
+  const { data } = await sb.from('wsp_difusiones').select('*').eq('campana', CAMPANA).order('enviado');
+  const env = data || [];
+  $('t-cam').textContent = env.length || '';
+  if (!env.length) { $('cam-kpis').innerHTML = ''; $('tabla-cam').innerHTML = '<tbody><tr><td class="pp-nota" style="padding:20px">Todavía no se mandó la presentación del portal.</td></tr></tbody>'; return; }
+  let h = D;
+  if (PER !== 'todo') { try { h = armar(await leer(env[0].enviado.slice(0, 10), hoyAR())); } catch (_) {} }
+  const filas = env.map(e => {
+    const c = h.C[e.partner_id] || null, desde = e.enviado.replace('T', ' ').slice(0, 19);
+    const entro = c && c.ult && c.ult >= desde;
+    const compro = c && c.pedidos.some(o => !['draft', 'sent'].includes(o.estado) && o.fecha >= desde);
+    const carrito = c && c.pedidos.some(o => ['draft', 'sent'].includes(o.estado) && o.fecha >= desde);
+    return { ...e, entro, compro, carrito, usuario: h.usuarios.map(String).includes(String(e.partner_id)) };
+  });
+  const n = f => filas.filter(f).length;
+  const dato = (v, l, c) => `<div class="m-dato" style="--c:${c}"><span class="m-num">${v}</span><span class="l">${l}</span></div>`;
+  $('cam-kpis').innerHTML = dato(filas.length, 'Recibieron', 'var(--r-li)') + dato(n(f => f.leido), 'Leyeron', 'var(--r-li)') + dato(n(f => f.respondio), 'Respondieron', 'var(--azul)')
+    + dato(n(f => f.entro), 'Entraron al portal', 'var(--azul)') + dato(n(f => f.compro), 'Compraron', 'var(--acido)') + dato(n(f => f.baja), 'No les interesa', 'var(--rojo)');
+  const si = (b, t) => b ? `<span class="pp-est compro">${t}</span>` : '';
+  $('tabla-cam').innerHTML = '<thead><tr><th>Cliente</th><th>Mensaje</th><th>Tiene usuario</th><th>Después del mensaje</th></tr></thead><tbody>' + filas.map(f => `<tr>
+    <td>${esc(f.nombre)}</td><td>${f.baja ? 'No le interesa' : f.respondio ? 'Respondió' : f.leido ? 'Leído' : f.estado === 'fallo' ? 'No llegó' : 'Entregado'}</td>
+    <td>${f.usuario ? 'Sí' : 'No'}</td><td>${[si(f.entro, 'Entró'), si(f.carrito, 'Armó carrito'), si(f.compro, 'Compró')].filter(Boolean).join(' ') || '—'}</td></tr>`).join('') + '</tbody>';
+}
+
+const t0 = location.hash.slice(1);
+if (['clientes', 'productos', 'campana'].includes(t0)) setTab(t0);
+cargar();
+</script>
+</body>
+</html>

@@ -172,7 +172,7 @@
       <div>
         <div class="df-barra">
           <span id="df-cuenta" class="wa-cuando"></span>
-          <button class="rb linea" onclick="dfMarcarRecientes()">Marcar los 15 más recientes</button>
+          <button class="rb linea" onclick="dfMarcarRecientes()">Marcar los 20 más recientes</button>
           <button class="rb suave" onclick="dfLimpiar()">Desmarcar</button>
           <button class="rb si" id="df-enviar" onclick="dfEnviar()" disabled>Enviar</button>
         </div>
@@ -659,7 +659,7 @@ function formCarrito(btn, id){
 }
 
 // ---------------- Difusión: plantilla con imagen y botones a una lista elegida (wsp-webhook difusion_enviar)
-const DF = { plantilla: 'portal_profesional', campana: 'portal_profesional · prueba', imagen: 'https://rosaint-ar.github.io/rosaint-core/shared/wsp/portal-profesional.png', max: 15 };
+const DF = { plantilla: 'portal_profesional', campana: 'portal_profesional · prueba', imagen: 'https://rosaint-ar.github.io/rosaint-core/shared/wsp/portal-profesional.png', max: 20 };
 let DF_TPL = null, DF_CLI = [], DF_ENV = [], DF_SEL = new Set();
 async function cargarDifusion(){
   const [t, cli, bajas, env] = await Promise.all([
@@ -699,7 +699,7 @@ function pintarDfLista(){
   pintarDfCuenta();
 }
 function dfMarcar(tel, si){
-  if (si && DF_SEL.size >= DF.max) { pintarDfLista(); resultado('df-res', false, `La prueba es de hasta ${DF.max} personas.`); return; }
+  if (si && DF_SEL.size >= DF.max) { pintarDfLista(); resultado('df-res', false, `Cada envío es de hasta ${DF.max} personas.`); return; }
   si ? DF_SEL.add(tel) : DF_SEL.delete(tel); pintarDfCuenta();
 }
 function dfMarcarRecientes(){ DF_SEL = new Set(DF_CLI.filter(c => !c.ya).slice(0, DF.max).map(c => c.telefono_wa)); pintarDfLista(); }
