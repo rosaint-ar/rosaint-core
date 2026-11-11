@@ -202,16 +202,19 @@ async function cargar() {
   try {
     const [ex, al] = await Promise.all([sb.from('portal_excluidos').select('*').order('nombre'), sb.from('portal_altas').select('id, estado, creada')]);
     EXCL = ex.data || []; ALTAS = al.data || [];
-    const [d, a] = await Promise.all([leer(desde, hasta), PER === 'todo' ? null : leer(aDesde, aHasta)]);
-    D = { ...armar(d), raw: d, desde, hasta }; ANT = a ? armar(a) : null;
+    // De a una: Odoo rechaza muchas consultas juntas. Primero el período (se pinta), después el anterior (comparación).
+    const d = await leer(desde, hasta);
+    D = { ...armar(d), raw: d, desde, hasta }; ANT = null;
     pintarTodo(); estado('Odoo · ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    if (PER !== 'todo') { try { ANT = armar(await leer(aDesde, aHasta)); pintarKpis(); } catch (_) { /* sin comparación */ } }
+    await cargarCampana();
   } catch (e) { estado('No se pudo leer: ' + e.message, false, true); }
 }
 function estado(t, cargando, error) { const el = $('estado'); el.classList.toggle('off', !!error); el.querySelector('span').textContent = t; }
 function pintarPeriodo() { $('periodo').innerHTML = PERIODOS.map(([k, l]) => `<button class="${k === PER ? 'on' : ''}" onclick="elegir('${k}')">${l}</button>`).join(''); }
 function elegir(k) { PER = k; try { localStorage.setItem('pp_periodo', k); } catch (_) {} cargar(); }
 
-function pintarTodo() { pintarKpis(); pintarEmbudo(); pintarDias(); pintarTops(); pintarClientes(); pintarProductos(); cargarCampana(); }
+function pintarTodo() { pintarKpis(); pintarEmbudo(); pintarDias(); pintarTops(); pintarClientes(); pintarProductos(); }
 
 function delta(a, b) {
   if (!ANT || b == null) return '';
