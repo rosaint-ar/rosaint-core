@@ -20,6 +20,7 @@ const utc = (dia: string, sumarDias = 0) => {
 };
 
 export async function portal(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
+  if (body.modo === "portal_vivo") return await vivo(body, ex);
   if (body.modo !== "portal_metricas") return { ok: false, error: "modo desconocido" };
   const desde = String(body.desde || "").slice(0, 10), hasta = String(body.hasta || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) return { ok: false, error: "Faltan desde/hasta (AAAA-MM-DD)" };
@@ -79,4 +80,26 @@ export async function portal(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
     lineas: lineas.map((l) => ({ pedido_id: m2oId(l.order_id), producto_id: m2oId(l.product_id), producto: m2oName(l.product_id),
       cantidad: l.product_uom_qty, neto: l.price_subtotal })),
   };
+}
+
+// ====== Avisos en vivo (shared/portal-vivo.js) ======
+// modo "portal_vivo": sin ids → los contactos del equipo (usuarios internos, también dados de baja);
+// con ids → quién es cada contacto que anda por el portal: nombre, su cuenta, teléfono y ciudad.
+async function vivo(body: Rec, ex: Ex): Promise<Rec> {
+  const internos = await ex("res.users", "search_read", [[["share", "=", false], ["active", "in", [true, false]]]], { fields: ["partner_id"] });
+  const equipo = [...new Set(internos.map((u) => m2oId(u.partner_id)).filter(Boolean))];
+  const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter((n) => n > 0).slice(0, 50);
+  if (!ids.length) return { ok: true, internos: equipo };
+  const F = ["name", "commercial_partner_id", "mobile", "phone", "city"];
+  const cs = await ex("res.partner", "read", [ids], { fields: F });
+  const cuentasIds = [...new Set(cs.map((c) => m2oId(c.commercial_partner_id)).filter((x) => x && !ids.includes(x as number)))] as number[];
+  const ks = cuentasIds.length ? await ex("res.partner", "read", [cuentasIds], { fields: F }) : [];
+  const por: Record<number, Rec> = {};
+  for (const c of [...cs, ...ks]) por[c.id as number] = c;
+  const contactos = cs.map((c) => {
+    const cid = m2oId(c.commercial_partner_id) ?? (c.id as number), k = por[cid] || c;
+    return { id: c.id, cuenta: cid, nombre: k.name || c.name, persona: cid !== c.id ? c.name : "",
+      tel: c.mobile || k.mobile || c.phone || k.phone || "", ciudad: k.city || c.city || "" };
+  });
+  return { ok: true, internos: equipo, contactos };
 }

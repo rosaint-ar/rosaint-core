@@ -425,6 +425,14 @@ async function mount() {
   const fp = document.createElement('script');
   fp.src = root + 'shared/ficha-producto.js?v=202610291';
   document.head.appendChild(fp);
+
+  // Portal en vivo: plaquita cuando un cliente entra al Portal profesional (se apaga con <body data-rosaint-vivo="no">)
+  if (document.body.dataset.rosaintVivo !== 'no') {
+    const pv = document.createElement('script');
+    pv.src = root + 'shared/portal-vivo.js?v=202611111';
+    pv.onload = () => { try { window.RosaintPortalVivo && window.RosaintPortalVivo.start(); } catch (e) { /* */ } };
+    document.head.appendChild(pv);
+  }
 }
 
 if (document.readyState === 'loading') {
