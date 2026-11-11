@@ -109,6 +109,9 @@
     .pend .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; font-weight: 800; }
     .pend .ic.critico { background: color-mix(in srgb, var(--hot) 15%, transparent); color: var(--hot); box-shadow: 0 0 14px -6px var(--hot); }
     .pend .ic.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+    .pend .ic.portal { background: var(--accent-tint); color: var(--text); }
+    .pend .ic.portal svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .pend .portal-action { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
     .pend .tx { flex: 1; min-width: 0; font-size: 13px; }
     .pend .tx strong { font-weight: 650; }
     .pend .cnt { font-weight: 800; font-size: 15px; }
@@ -302,7 +305,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="shared/supabase.js?v=202610061904"></script>
 <script src="shared/charts.js"></script>
-<script src="shell/shell.js?v=202610061943"></script>
+<script src="shell/shell.js?v=20261111altas"></script>
 <script src="produccion/programador.js?v=202610291319"></script>
 <script src="produccion/plan-del-dia.js?v=202610291319"></script>
 <script>
@@ -700,9 +703,19 @@ async function cargarTransferencias() {
   }
 }
 
+let _alertasRevision = 0;
 async function cargarAlertas() {
+  const revision = ++_alertasRevision;
   const alertas = [];
   const _fallos = []; // controles que no se pudieron hacer
+  // Sólo cantidad: el inicio no descarga nombres, documentos ni datos de las altas.
+  // Cuenta exacta, incluso si la bandeja supera el límite de filas de PostgREST.
+  try {
+    const { count, error } = await sb.rpc('portal_altas_resumen', {}, { head: true, count: 'exact' })
+      .in('estado', ['recibida', 'revisar', 'error_aprobacion']);
+    if (error || !Number.isInteger(count) || count < 0) _fallos.push('altas del portal');
+    else if (count) alertas.push({ cls: 'portal', texto: '<strong>' + count + ' solicitud' + (count === 1 ? '' : 'es') + ' de acceso al portal</strong><small class="portal-action">Revisar y aprobar →</small>', cnt: count, href: 'comercial/altas-portal.html', icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M19 8v6m-3-3h6"/></svg>' });
+  } catch { _fallos.push('altas del portal'); }
   const { data: mpsSinInci, error: _e_mpsSinInci } = await sb.from('v_mps_sin_inci_en_uso').select('codigo'); if (_e_mpsSinInci) _fallos.push('v_mps_sin_inci_en_uso');
   if (mpsSinInci && mpsSinInci.length) alertas.push({ cls: 'critico', texto: '<strong>' + mpsSinInci.length + ' materia' + (mpsSinInci.length === 1 ? '' : 's') + ' prima' + (mpsSinInci.length === 1 ? '' : 's') + '</strong> sin INCI y en uso', cnt: mpsSinInci.length, href: 'laboratorio/materias-primas.html' });
   const { data: packsVig, error: _e_packsVig } = await sb.from('items').select('codigo').eq('tipo', 'PACK').eq('estado', 'vigente'); if (_e_packsVig) _fallos.push('items');
@@ -728,13 +741,17 @@ async function cargarAlertas() {
     if (mat.length) alertas.push({ cls: 'critico', texto: '<strong>Faltan ' + mat.length + ' material' + (mat.length === 1 ? '' : 'es') + '</strong> para el plan de producción de hoy', cnt: mat.length, href: 'produccion/programar.html' });
   }
   if (transfPendientes) alertas.push({ cls: transfViejas ? 'critico' : 'warn', texto: '<strong>' + transfPendientes + ' transferencia' + (transfPendientes === 1 ? '' : 's') + '</strong> sin confirmar en Tienda Nube', cnt: transfPendientes, href: '#transferencias' });
+  if (revision !== _alertasRevision) return; // una respuesta anterior no repone solicitudes ya resueltas
   document.getElementById('alertas-count').textContent = alertas.length ? '(' + alertas.length + ')' : '';
   const cont = document.getElementById('alertas-list');
   // si algún control no se pudo hacer, se dice: no es lo mismo que "todo en orden"
   if (_fallos.length) alertas.push({ cls: 'warn', texto: '<strong>No se pudieron revisar ' + _fallos.length + ' control(es)</strong> (' + _fallos.join(', ').replace(/[<>&]/g, '') + '). Refrescá en un rato.', cnt: '!' });
   if (!alertas.length) { cont.innerHTML = '<div class="pend-ok">✓ Sin pendientes. Todo en orden.</div>'; return; }
-  cont.innerHTML = alertas.map(a => `<a href="${a.href}"><span class="ic ${a.cls}">${a.cls === 'critico' ? '!' : '⚠'}</span><span class="tx">${a.texto}</span><span class="cnt">${escapeHTML(String(a.cnt))}</span></a>`).join('');
+  cont.innerHTML = alertas.map(a => `<a href="${a.href || '#alertas-list'}"><span class="ic ${a.cls}">${a.icon || (a.cls === 'critico' ? '!' : '⚠')}</span><span class="tx">${a.texto}</span><span class="cnt">${escapeHTML(String(a.cnt))}</span></a>`).join('');
 }
+// El aviso breve existente refresca también el pendiente persistente del inicio.
+window.addEventListener('rosaint:alta-recibida', () => cargarAlertas());
+window.addEventListener('focus', () => { if (!document.hidden) cargarAlertas(); });
 
 async function cargarMLStatus() {
   try {

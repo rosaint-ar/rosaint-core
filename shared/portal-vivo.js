@@ -150,6 +150,7 @@
       hot, `${i.nom}: ${hot?d.tx:"entró al portal"}. Abrir`, ()=>abrir(i.cuenta), hot?16000:11000);
   }
   function avisarAlta(){
+    window.dispatchEvent(new Event('rosaint:alta-recibida'));
     sonar(true);
     const root=(document.querySelector('script[src*="shared/portal-vivo.js"]')||{}).src||"";
     const url=root.replace(/shared\/portal-vivo\.js.*$/,"comercial/altas-portal.html");

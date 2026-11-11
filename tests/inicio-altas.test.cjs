@@ -1,0 +1,20 @@
+const fs=require('fs'),assert=require('node:assert/strict'),vm=require('node:vm');
+const html=fs.readFileSync('index.html','utf8');
+const start=html.indexOf('let _alertasRevision'),end=html.indexOf('async function cargarMLStatus',start);
+assert(start>0&&end>start);const source=html.slice(start,end);
+for(const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g))if(!/\bsrc=/.test(match[1]))new vm.Script(match[2]);
+const nodes={'alertas-count':{textContent:''},'alertas-list':{innerHTML:''}},events={};
+let records=[],fail=false,calls=[],defer=null;
+const ctx={document:{getElementById:id=>nodes[id],hidden:false},HOY:'2026-11-11',transfPendientes:0,transfViejas:0,escapeHTML:s=>String(s),planDelDia:async()=>({pedidos:[]}),addEventListener:(name,fn)=>events[name]=fn};ctx.window=ctx;
+ctx.sb={rpc:(name,args,opts)=>({in:async(field,states)=>{calls.push({name,args,opts,field,states});const answer=fail?{error:{message:'error'}}:{count:records.filter(r=>states.includes(r.estado)).length,error:null};if(defer){const p=defer;defer=null;await p;}return answer;}}),from:()=>{const q={select:()=>q,eq:()=>q,order:()=>q,limit:()=>q,then:resolve=>Promise.resolve({data:[],error:null}).then(resolve)};return q;}};
+vm.createContext(ctx);vm.runInContext(source,ctx);const rendered=()=>nodes['alertas-list'].innerHTML;
+(async()=>{
+ records=[{estado:'recibida'},{estado:'aprobada'},{estado:'rechazada'},{estado:'aprobando'}];await ctx.cargarAlertas();assert.match(rendered(),/1 solicitud de acceso/);assert.match(rendered(),/href="comercial\/altas-portal.html"/);assert.match(rendered(),/class="ic portal"/);assert.equal(calls[0].opts.head,true);assert.equal(calls[0].opts.count,'exact');
+ records=[{estado:'revisar'},{estado:'error_aprobacion'}];await ctx.cargarAlertas();assert.match(rendered(),/2 solicitudes de acceso/);
+ records=[{estado:'aprobada'},{estado:'rechazada'}];await ctx.cargarAlertas();assert.doesNotMatch(rendered(),/ic portal/);assert.match(rendered(),/pend-ok/);
+ fail=true;await ctx.cargarAlertas();assert.match(rendered(),/altas del portal/);assert.doesNotMatch(rendered(),/pend-ok/);fail=false;
+ records=[{estado:'recibida'}];let release;defer=new Promise(r=>release=r);const old=ctx.cargarAlertas();records=[];await ctx.cargarAlertas();release();await old;assert.match(rendered(),/pend-ok/);assert.doesNotMatch(rendered(),/ic portal/);
+ const before=calls.length;events['rosaint:alta-recibida']();await new Promise(r=>setImmediate(r));assert.equal(calls.length,before+1);
+ assert(fs.readFileSync('shared/portal-vivo.js','utf8').includes("window.dispatchEvent(new Event('rosaint:alta-recibida'))"));
+ console.log('PASS: 6 escenarios (conteo, pendientes, resueltas, error, respuestas fuera de orden y aviso en vivo). Sintaxis del inicio válida.');
+})().catch(e=>{console.error(e);process.exitCode=1});
