@@ -88,6 +88,21 @@
     .wa-tpl span.st { font: 500 10.5px var(--sora); letter-spacing: .08em; }
     .st-REJECTED { color: var(--rojo); }
     .wa-badge.compro { background: var(--k-pedido); color: var(--papel); }
+    /* Difusión */
+    .df-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .df-prev img { width: 100%; display: block; }
+    .df-prev .txt { font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; }
+    .df-prev .btn-wa { border-top: 1px solid var(--r-li); padding: 8px 0 0; font: 400 13px var(--sora); color: var(--r-mu); display: flex; flex-direction: column; gap: 6px; }
+    .df-barra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+    .df-barra #df-enviar { margin-left: auto; }
+    .df-lista { background: var(--r-sup); max-height: 560px; overflow-y: auto; }
+    .df-fila { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--r-li); cursor: pointer; }
+    .df-fila:hover { background: var(--r-bg); }
+    .df-fila input { width: 17px; height: 17px; accent-color: var(--azul); }
+    .df-fila .n { font: 400 14.5px var(--sora); }
+    .df-fila .d { font-size: 12.5px; color: var(--r-mu); }
+    .df-fila.ya { opacity: .55; cursor: default; }
+    @media (max-width: 860px) { .df-grid { grid-template-columns: 1fr; } }
     .wa-prev { background: var(--r-bg); padding: 10px 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; border-left: 3px solid #25D366; }
     @media (max-width: 680px) {
       .wa-item { grid-template-columns: 1fr; gap: 10px; }
@@ -118,6 +133,7 @@
     <button class="m-pest" data-tab="seguimientos" onclick="setTab('seguimientos')">Seguimientos<span class="c" id="t-seg"></span></button>
     <button class="m-pest" data-tab="chats" onclick="setTab('chats')">Chats</button>
     <button class="m-pest" data-tab="carritos" onclick="setTab('carritos')">Carritos<span class="c" id="t-car"></span></button>
+    <button class="m-pest" data-tab="difusion" onclick="setTab('difusion')">Difusión</button>
     <button class="m-pest" data-tab="conector" onclick="setTab('conector')">Conector</button>
   </nav>
 
@@ -149,6 +165,26 @@
   </section>
 
   <!-- ===================== CONECTOR ===================== -->
+  <section id="tab-difusion" hidden>
+    <p class="wa-intro">Mensajes con imagen y botones (plantillas de Meta) a una lista que elegís acá. Sale desde el número de Rosaint, una vez por persona, y nunca a quien tocó «No me interesa». Las respuestas caen en «Sin responder». Cada mensaje cuesta unos US$ 0,06.</p>
+    <div class="df-grid">
+      <div class="df-prev wa-card" id="df-prev"><p>Cargando la plantilla…</p></div>
+      <div>
+        <div class="df-barra">
+          <span id="df-cuenta" class="wa-cuando"></span>
+          <button class="rb linea" onclick="dfMarcarRecientes()">Marcar los 15 más recientes</button>
+          <button class="rb suave" onclick="dfLimpiar()">Desmarcar</button>
+          <button class="rb si" id="df-enviar" onclick="dfEnviar()" disabled>Enviar</button>
+        </div>
+        <div class="wa-res" id="df-res"></div>
+        <div class="df-lista" id="df-lista"><div class="m-vacio">Cargando clientes…</div></div>
+      </div>
+    </div>
+    <div class="wa-grupo" style="margin-top:22px">Resultado de la campaña</div>
+    <div class="m-datos" id="df-datos"></div>
+    <div class="wa-lista" id="df-envios"></div>
+  </section>
+
   <section id="tab-conector" hidden>
     <div class="wa-grid">
       <div class="wa-card corte">
@@ -224,7 +260,8 @@ let filtroCat = null;
 
 function setTab(t){
   document.querySelectorAll('.m-pest').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  for (const s of ['pendientes', 'seguimientos', 'chats', 'carritos', 'conector']) document.getElementById('tab-' + s).hidden = t !== s;
+  for (const s of ['pendientes', 'seguimientos', 'chats', 'carritos', 'difusion', 'conector']) document.getElementById('tab-' + s).hidden = t !== s;
+  if (t === 'difusion') cargarDifusion();
   if (t === 'conector') { estado(); estadoSuscripcion(); }
   if (t === 'chats') cargarChats();
   if (t === 'seguimientos') cargarSeguimientos();
@@ -621,6 +658,85 @@ function formCarrito(btn, id){
   it.appendChild(f);
 }
 
+// ---------------- Difusión: plantilla con imagen y botones a una lista elegida (wsp-webhook difusion_enviar)
+const DF = { plantilla: 'portal_profesional', campana: 'portal_profesional · prueba', imagen: 'https://rosaint-ar.github.io/rosaint-core/shared/wsp/portal-profesional.png', max: 15 };
+let DF_TPL = null, DF_CLI = [], DF_ENV = [], DF_SEL = new Set();
+async function cargarDifusion(){
+  const [t, cli, bajas, env] = await Promise.all([
+    api({ accion: 'plantilla', nombre: DF.plantilla }).catch(e => ({ ok: false, error: e.message })),
+    sb.from('cliente_metricas').select('partner_id, nombre, telefono_wa, total_facturas, ultima_compra')
+      .eq('es_profesional', true).gt('total_facturas', 0).not('partner_id', 'in', '(1,3,7,15)')
+      .order('ultima_compra', { ascending: false, nullsFirst: false }).limit(200),
+    sb.from('wsp_chat_estado').select('telefono').not('no_marketing', 'is', null),
+    sb.from('wsp_difusiones').select('*').eq('campana', DF.campana).order('enviado', { ascending: false }),
+  ]);
+  DF_TPL = t.ok ? t.plantilla : null;
+  const baja = new Set((bajas.data || []).map(x => x.telefono));
+  DF_ENV = env.data || [];
+  const enviado = new Set(DF_ENV.map(x => x.telefono));
+  const vistos = new Set();
+  DF_CLI = (cli.data || []).filter(c => /^549\d{10}$/.test(c.telefono_wa || '') && !baja.has(c.telefono_wa) && !vistos.has(c.telefono_wa) && vistos.add(c.telefono_wa))
+    .slice(0, 40).map(c => ({ ...c, ya: enviado.has(c.telefono_wa) }));
+  pintarDfPrev(t.error); pintarDfLista(); pintarDfEnvios();
+}
+function pintarDfPrev(error){
+  const el = document.getElementById('df-prev');
+  if (!DF_TPL) { el.innerHTML = `<span class="eyebrow">Plantilla</span><p>No se pudo leer «${esc(DF.plantilla)}»${error ? ': ' + esc(error) : ''}.</p>`; return; }
+  const est = { APPROVED: ['Aprobada por Meta', 'escribio'], PENDING: ['Meta la está revisando', ''], REJECTED: ['Rechazada por Meta', ''] }[DF_TPL.status] || [DF_TPL.status, ''];
+  el.innerHTML = `<span class="eyebrow">Presentación del Portal profesional</span>
+    <div><span class="wa-badge ${est[1]}" style="margin:0">${esc(est[0])}</span></div>
+    ${DF_TPL.imagen ? `<img src="${DF.imagen}" alt="">` : ''}
+    <div class="txt">${esc(DF_TPL.cuerpo.replace('{{1}}', 'Carla')).replace(/\*([^*]+)\*/g, '<b>$1</b>')}</div>
+    <div class="btn-wa">${DF_TPL.botones.map(b => `<span>${b.type === 'URL' ? '↗' : '↩'} ${esc(b.text)}</span>`).join('')}</div>`;
+}
+function pintarDfLista(){
+  const lista = document.getElementById('df-lista');
+  if (!DF_CLI.length) { lista.innerHTML = '<div class="m-vacio">No hay profesionales con WhatsApp que hayan comprado.</div>'; return; }
+  lista.innerHTML = DF_CLI.map(c => `<label class="df-fila ${c.ya ? 'ya' : ''}" title="${esc(telLindo(c.telefono_wa))}">
+      <input type="checkbox" ${c.ya ? 'disabled checked' : DF_SEL.has(c.telefono_wa) ? 'checked' : ''} onchange="dfMarcar('${esc(c.telefono_wa)}', this.checked)">
+      <span><span class="n">${esc(c.nombre)}</span><br><span class="d">${c.total_facturas} ${c.total_facturas === 1 ? 'compra' : 'compras'} · última el ${fFecha(c.ultima_compra)}/${String(c.ultima_compra || '').slice(2, 4)}</span></span>
+      <span class="d">${c.ya ? 'Ya lo recibió' : ''}</span></label>`).join('');
+  pintarDfCuenta();
+}
+function dfMarcar(tel, si){
+  if (si && DF_SEL.size >= DF.max) { pintarDfLista(); resultado('df-res', false, `La prueba es de hasta ${DF.max} personas.`); return; }
+  si ? DF_SEL.add(tel) : DF_SEL.delete(tel); pintarDfCuenta();
+}
+function dfMarcarRecientes(){ DF_SEL = new Set(DF_CLI.filter(c => !c.ya).slice(0, DF.max).map(c => c.telefono_wa)); pintarDfLista(); }
+function dfLimpiar(){ DF_SEL.clear(); pintarDfLista(); }
+function pintarDfCuenta(){
+  const n = DF_SEL.size, ok = DF_TPL && DF_TPL.status === 'APPROVED';
+  document.getElementById('df-cuenta').textContent = `${n} de ${DF.max} elegidos · ≈ US$ ${(n * 0.0618).toFixed(2).replace('.', ',')}`;
+  const b = document.getElementById('df-enviar');
+  b.disabled = !n || !ok;
+  b.textContent = ok ? `Enviar a ${n || ''}`.trim() : 'Espera la aprobación de Meta';
+}
+async function dfEnviar(){
+  const elegidos = DF_CLI.filter(c => DF_SEL.has(c.telefono_wa));
+  if (!elegidos.length || !confirm(`¿Mandar la presentación del portal a ${elegidos.length} ${elegidos.length === 1 ? 'persona' : 'personas'}? (≈ US$ ${(elegidos.length * 0.0618).toFixed(2)})`)) return;
+  const b = document.getElementById('df-enviar'); b.disabled = true; b.textContent = 'Enviando…';
+  const { data: u } = await sb.auth.getUser();
+  try {
+    const r = await api({ accion: 'difusion_enviar', campana: DF.campana, plantilla: DF.plantilla, imagen_url: DF.imagen, usuario: u && u.user ? u.user.email : null,
+      destinatarios: elegidos.map(c => ({ telefono: c.telefono_wa, nombre: c.nombre, partner_id: c.partner_id })) });
+    if (!r.ok) throw new Error(r.error);
+    const fallos = r.resultados.filter(x => !x.ok);
+    resultado('df-res', !fallos.length, `Enviados: ${r.enviados}` + (fallos.length ? `\nNo enviados: ${fallos.map(x => telLindo(x.telefono) + ' (' + x.error + ')').join(' · ')}` : ''));
+    DF_SEL.clear(); await cargarDifusion();
+  } catch (e) { resultado('df-res', false, 'No se pudo enviar: ' + e.message); pintarDfCuenta(); }
+}
+function pintarDfEnvios(){
+  const e = DF_ENV, cuenta = f => e.filter(f).length;
+  const dato = (n, l, c) => `<div class="m-dato" style="--c:${c}"><span class="m-num">${n}</span><span class="l">${l}</span></div>`;
+  document.getElementById('df-datos').innerHTML = e.length ? dato(cuenta(x => x.estado !== 'fallo'), 'Enviados', 'var(--r-li)') + dato(cuenta(x => x.entregado || x.leido), 'Entregados', 'var(--r-li)')
+    + dato(cuenta(x => x.leido), 'Leídos', 'var(--acido)') + dato(cuenta(x => x.respondio), 'Respondieron', 'var(--k-pedido)') + dato(cuenta(x => x.baja), 'No les interesa', 'var(--rojo)') : '';
+  const EST = { enviado: 'Enviado', entregado: 'Entregado', leido: 'Leído', fallo: 'No llegó' };
+  document.getElementById('df-envios').innerHTML = e.length ? e.map(x => `<div class="wa-item" style="--k:${x.baja ? 'var(--rojo)' : x.respondio ? 'var(--k-pedido)' : x.leido ? 'var(--acido)' : 'var(--r-li)'}">
+      <div class="wa-cuerpo"><div class="wa-l1"><span class="wa-nombre">${esc(x.nombre || telLindo(x.telefono))}</span><span class="wa-cuando">${esc(EST[x.estado] || x.estado)} · ${new Date(x.enviado).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>${x.respondio ? '<span class="wa-badge escribio">Respondió</span>' : ''}${x.baja ? '<span class="wa-badge">No le interesa</span>' : ''}</div>${x.error ? `<div class="wa-ult">${esc(x.error)}</div>` : ''}</div>
+      <div class="wa-lado"><a class="rb linea" href="https://api.whatsapp.com/send?phone=${encodeURIComponent(x.telefono)}" target="_blank" rel="noopener">Abrir chat</a></div></div>`).join('')
+    : '<div class="m-vacio">Todavía no se mandó a nadie.</div>';
+}
+
 // ---------------- Conector
 async function estado(){
   const n = document.getElementById('c-numero');
@@ -696,6 +812,12 @@ function recargarPronto(){ clearTimeout(RECARGA); RECARGA = setTimeout(refrescar
 sb.channel('wsp-mensajes')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wsp_mensajes' }, recargarPronto)
   .on('postgres_changes', { event: '*', schema: 'public', table: 'wsp_seguimientos' }, recargarPronto)
+  // difusión: entregado / leído / respondió / baja llegan solos mientras la pestaña está abierta
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'wsp_difusiones' }, () => {
+    if (!document.getElementById('tab-difusion').hidden) { clearTimeout(window._dfT); window._dfT = setTimeout(async () => {
+      const { data } = await sb.from('wsp_difusiones').select('*').eq('campana', DF.campana).order('enviado', { ascending: false });
+      DF_ENV = data || []; pintarDfEnvios(); }, 800); }
+  })
   .subscribe((st) => { VIVO = st === 'SUBSCRIBED'; pintarVivo(); recargarPronto(); });
 setInterval(refrescarTodo, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarTodo(); });
@@ -705,7 +827,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
   await cargarSeguimientos();
   await cargarPendientes();
   const t = location.hash.slice(1);
-  if (['seguimientos', 'chats', 'carritos', 'conector'].includes(t)) setTab(t);
+  if (['seguimientos', 'chats', 'carritos', 'difusion', 'conector'].includes(t)) setTab(t);
 })();
 </script>
 </body>
