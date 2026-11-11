@@ -1,5 +1,6 @@
 import {tipoOracion} from './name-format.ts';
 import {simpleApprovalSummary} from './approval-simple.ts';
+import {automaticApprovalSummary} from './approval-automatic.ts';
 import {accessCreationError} from './access-error.ts';
 import {accessLink} from './access-link.ts';
 // Rosaint · alta pública y aprobación interna. No hay autoaprobación.
@@ -307,6 +308,25 @@ async function review(a: any, actor: string) {
 async function plan(a: any, b: any) {
   if (!["recibida", "revisar", "error_aprobacion"].includes(a.estado))
     throw new Failure("La solicitud ya fue resuelta o está en proceso.", 409);
+  let automaticOdoo:any=null,automaticOptions:any=null;
+  if(b.via_automatica===true){
+    automaticOdoo=await look(a.datos);
+    const summary=automaticApprovalSummary({...a,analisis:{...a.analisis,odoo:automaticOdoo}});
+    if(!summary.available)throw new Failure('Necesitamos revisar este caso: '+summary.reason,409);
+    if(a.aprobacion){b={...b,...a.aprobacion};}
+    else {
+      if(Number(b.revision_solicitud)!==a.version)throw new Failure('La solicitud cambió. Actualizá el resumen antes de aprobar.',409);
+      const p=automaticOdoo.fichas[0];
+      if(p&&(!b.revision_cliente||p.write_date!==b.revision_cliente))throw new Failure('Los datos del cliente cambiaron. Actualizá el resumen antes de aprobar.',409);
+      automaticOptions=await options();
+      b={...b,lista_id:automaticOptions.listas.some((x:any)=>x.id===p?.property_product_pricelist?.[0])?p.property_product_pricelist[0]:32,
+        comercial_id:automaticOptions.comerciales.some((x:any)=>x.id===p?.user_id?.[0])?p.user_id[0]:automaticOptions.comerciales.find((x:any)=>x.id===2)?.id,
+        responsabilidad_id:summary.fiscal_id,identidad_verificada:true,fiscal_verificado:true,
+        reemplazar:summary.access_change,actualizar_condiciones:false,documento_revisado:false,
+        datos_actualizar:summary.changes.map((c:any)=>c.field),revision_cliente:p?.write_date||'',
+        revision:'Aprobación del equipo desde el resumen automático. '+summary.reason+' Aplicar diferencias mostradas, conservar datos vacíos, historial y condiciones existentes.'};
+    }
+  }
   const opts = {
     lista_id: Number(b.lista_id),
     comercial_id: Number(b.comercial_id),
@@ -329,13 +349,13 @@ async function plan(a: any, b: any) {
       "Hay una aprobación parcial. Reintentá con las mismas condiciones.",
       409,
     );
-  const op = await options();
+  const op = automaticOptions || await options();
   if (
     !op.listas.some((x: any) => x.id === opts.lista_id) ||
     !op.comerciales.some((x: any) => x.id === opts.comercial_id)
   )
     throw new Failure("Lista o comercial no permitido.");
-  const o = await look(a.datos);
+  const o = automaticOdoo || await look(a.datos);
   if(b.via_simple===true){const summary=simpleApprovalSummary({...a,analisis:{...a.analisis,odoo:o}});if(!summary.available||b.actualizar_condiciones===true)throw new Failure('La solicitud requiere revisión: '+(summary.reason||'cambiaron las condiciones.'),409);}
   if (o.fichas.length > 1 || o.fichas.some((p: any) => !p.active))
     throw new Failure(
@@ -422,6 +442,7 @@ async function plan(a: any, b: any) {
 async function approve(a: any, b: any, actor: string) {
   if (a.estado === "aprobada") return { solicitud: a, ya_resuelta: true };
   const p = await plan(a, b);
+  b={...b,...p.opciones};
   if (b.ensayo === true) return { ensayo: true, plan: p };
   const locked = await db(
     `portal_altas?id=eq.${enc(a.id)}&version=eq.${a.version}&estado=in.(recibida,revisar,error_aprobacion)`,
@@ -810,6 +831,7 @@ async function handle(req: Request, b: any) {
     return {
       solicitud: {...a,nombre_propuesto:tipoOracion(a.datos.razon)},
       resumen: simpleApprovalSummary(a),
+      resumen_automatico: automaticApprovalSummary(a),
       eventos: await db(
         "portal_altas_eventos?alta_id=eq." + enc(a.id) + "&order=creada.asc",
       ),

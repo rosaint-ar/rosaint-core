@@ -56,6 +56,21 @@ ${!s.resume?'<details class="alta-extra"><summary>No aprobar esta solicitud</sum
     if(current.resumen.resume)return {id:selected,...a.aprobacion,via_simple:true};
     return {id:selected,via_simple:true,lista_id:opts.listas.some(x=>x.id===p.property_product_pricelist?.[0])?p.property_product_pricelist[0]:32,comercial_id:opts.comerciales.some(x=>x.id===p.user_id?.[0])?p.user_id[0]:opts.comerciales[0]?.id,responsabilidad_id:current.resumen.fiscal_id,identidad_verificada:true,fiscal_verificado:true,reemplazar:false,actualizar_condiciones:false,documento_revisado:false,revision_cliente:p.write_date,datos_actualizar:Array.from(document.querySelectorAll('[data-simple-field]:checked')).map(x=>x.dataset.simpleField),revision:'Aprobación humana desde el resumen de cliente existente. Correo, documento y condición fiscal coinciden con Odoo. Conservar condiciones y aplicar sólo los datos seleccionados.'};
   }
+  function automaticView(r){
+    const a=r.solicitud,s=r.resumen_automatico,p=a.analisis.odoo.fichas[0],d=a.datos;
+    const fiscal={RI:'Responsable inscripto',MONO:'Monotributista',CF:'Consumidor final',EXENTO:'Exento'}[d.condicion_iva];
+    const button=s.resume?'Reintentar aprobación':s.access_change?'Aprobar y actualizar acceso':s.new_client?'Aprobar acceso':'Aprobar y actualizar';
+    const lastError=[...(r.eventos||[])].reverse().find(v=>v.accion==='error_aprobacion')?.detalle?.mensaje;
+    $('#detalle').innerHTML=`<article class="alta-panel alta-simple"><p class="eyebrow">${e(states[a.estado])}</p><h2>${e(p?.name?.trim()||a.nombre_propuesto||d.razon)}</h2><p class="alta-simple-contact">${e(d.cartel||opts.tipos[d.tipo]||d.tipo)} · ${e(fiscal)}</p>
+<dl><dt>Correo para ingresar</dt><dd>${e(a.email)}</dd><dt>${e(d.documento_tipo||'CUIT')}</dt><dd>${e(a.cuit)}</dd><dt>Teléfono</dt><dd>${e(d.telefono)}</dd><dt>Domicilio solicitado</dt><dd>${e([d.calle,d.complemento,d.localidad,d.provincia].filter(Boolean).join(', '))}</dd></dl>
+<div class="alta-match"><span aria-hidden="true">✓</span><div><strong>${s.new_client?'Nueva cuenta':'Cliente identificado'}</strong><p>${e(s.reason)}</p></div></div>
+${s.resume?`<div class="altas-note error"><strong>La aprobación quedó incompleta</strong><p>${e(lastError||'No se pudo terminar la activación.')}</p><p>Se retomarán los cambios ya aprobados.</p></div>`:s.changes.length?`<section class="alta-simple-changes"><h3>Se actualizará al aprobar</h3><div class="alta-diff-table">${s.changes.map(c=>`<div class="alta-diff-row"><strong>${e(c.label)}</strong><span><small>Actual</small>${e(c.current)}</span><span><small>Nuevo</small>${e(c.proposed)}</span></div>`).join('')}</div></section>`:!s.new_client?'<p class="alta-no-changes">Los datos del cliente ya están actualizados.</p>':''}
+${s.access_change?`<div class="altas-note"><strong>Nuevo correo de acceso</strong><p>Ingresará con <b>${e(a.email)}</b>. Se deshabilitará el acceso anterior: ${s.previous_logins.map(e).join(', ')}. Se conserva la misma ficha y su historial.</p></div>`:''}
+<p class="alta-preserve">${s.new_client?'Se creará la ficha con estos datos y las condiciones profesionales habituales.':'Se conservan los datos que no cambiaron, la condición fiscal, las condiciones comerciales y todo el historial. Los campos vacíos no borran información.'} ${d.clave_elegida?'Podrá ingresar con la contraseña elegida al registrarse.':'Recibirá un enlace para crear su contraseña.'}</p>
+<div class="alta-simple-submit"><button class="btn btn-primary" data-action="automatica">${e(button)}</button><small>${s.resume?'Retoma la aprobación anterior.':'Una sola aprobación habilita el acceso y aplica los cambios mostrados.'}</small></div>
+<details class="alta-extra"><summary>Otras opciones e historial</summary><button class="btn" data-action="manual">Revisar cambios por separado</button><h3>Historial</h3><ul class="alta-history">${r.eventos.map(v=>`<li>${new Date(v.creada).toLocaleString('es-AR')} · ${e(v.accion.replaceAll('_',' '))}</li>`).join('')}</ul>${!s.resume?'<label>Motivo para rechazar<textarea id="motivo" rows="2" maxlength="1500"></textarea></label><button class="btn btn-danger" data-action="rechazar">Rechazar solicitud</button>':''}</details></article>`;
+    $('#detalle').dataset.paths=JSON.stringify(a.archivos.map(f=>f.path));
+  }
   function resolvedView(r){
     const a=r.solicitud;
     $('#detalle').innerHTML=`<article class="alta-panel alta-simple"><p class="eyebrow">Aprobada</p><h2>${e(a.datos.razon)}</h2><p class="alta-simple-contact">${e(a.email)}</p><div class="alta-match"><span aria-hidden="true">✓</span><div><strong>Acceso habilitado</strong><p>La aprobación quedó registrada en la ficha del cliente.</p></div></div><p class="alta-preserve">${a.resultado?.datos_actualizados?'Se aplicaron los datos seleccionados.':'Se conservaron los datos de la ficha.'}${a.resultado?.clave_aplicada?' El cliente puede usar la contraseña que eligió al registrarse.':''}${a.resultado?.aviso_acceso==='en_cola'?' El aviso de acceso quedó preparado para envío.':''}</p><details class="alta-extra"><summary>Ver resolución e historial</summary><p>Ficha Odoo: ${a.resultado?.partner_id||'—'} · Usuario: ${a.resultado?.user_id||'—'}</p><ul class="alta-history">${r.eventos.map(v=>`<li>${new Date(v.creada).toLocaleString('es-AR')} · ${e(v.accion.replaceAll('_',' '))} · ${e(v.actor)}</li>`).join('')}</ul></details></article>`;
@@ -153,6 +168,7 @@ ${!s.resume?'<details class="alta-extra"><summary>No aprobar esta solicitud</sum
       saved = a.aprobacion || {};
     list();
     if(!manual&&a.estado==='aprobada'){resolvedView(r);$('#detalle .alta-extra').insertAdjacentHTML('beforebegin',accessLinkPanel());return;}
+    if(!manual&&!refreshError&&r.resumen_automatico?.available){automaticView(r);notice('Revisá los datos y aprobá cuando esté todo bien.');return;}
     if(!manual&&!refreshError&&r.resumen?.available){simpleView(r);notice('Solicitud lista para decidir.');return;}
     const pairs = [
       ...(!closed&&!an.odoo?.fichas?.length&&a.nombre_propuesto?[["Nombre en Odoo",a.nombre_propuesto]]:[]),
@@ -247,6 +263,13 @@ ${a.estado === "error_aprobacion" ? '<div class="altas-note error">Operación in
       }
       if(b.dataset.action==='manual'){await detail(selected,true,true);return;}
       if(b.dataset.action==='resumen'){await detail(selected,false,true);return;}
+      if(b.dataset.action==='automatica'){
+        const a=current.solicitud;
+        notice('Aplicando la aprobación y los cambios mostrados…');
+        try{await api('aprobar',{id:selected,via_automatica:true,revision_solicitud:a.version,revision_cliente:a.analisis.odoo.fichas[0]?.write_date||''});await load();notice('Solicitud aprobada. Se actualizaron los datos necesarios y el acceso quedó habilitado.');}
+        catch(err){await detail(selected,false,true);throw err;}
+        return;
+      }
       if(b.dataset.action==='simple'){
         const choices=simpleChoices();notice(current.resumen.resume?'Retomando la habilitación…':'Aprobando el acceso…');
         try{await api('aprobar',choices);await load();notice('Solicitud aprobada. El acceso y los cambios seleccionados quedaron registrados.');}
