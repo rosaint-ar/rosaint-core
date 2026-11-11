@@ -1,0 +1,207 @@
+<!-- rosaint-eventos -->
+<script id="rosaint-eventos-js">
+(function(){
+  if(window.__rosaintEventos) return; window.__rosaintEventos=true;
+  /* ---------------------------------------------------------------------
+     Registro propio del portal profesional de Rosaint (rosaint.odoo.com).
+     Anota lo que Odoo no guarda: búsquedas (también las que no encontraron
+     nada), lo que se agrega en «Cargar pedido», el carrito y los pasos de la
+     compra, los pasos del pedido de acceso, WhatsApp y descargas. Lo manda a
+     la función portal-evento (base del Core) y se ve en Core › Portal
+     profesional › Métricas y en los avisos en vivo.
+     SOLO OBSERVA: no toca el buscador, los formularios ni el carrito; si algo
+     de esto fallara, el portal sigue igual (todo va dentro de try).
+     Viaja el id del contacto con la sesión abierta y qué hizo: nada de lo que
+     la persona escribe en sus datos.
+     Fuente: rosaint-core/portal-odoo/bloque-eventos.html (copiado del de EyG).
+     OJO Odoo: nunca poner un signo peso pegado a una comilla en este bloque.
+     --------------------------------------------------------------------- */
+  // Interruptor: con EV_PRUEBA en true sólo registra el navegador que tenga
+  // localStorage rosaint_ev_prueba = 1 (para probar en el portal real sin afectar a nadie).
+  var EV_PRUEBA = true;
+  var EV_ON = !EV_PRUEBA || (function(){ try{ return localStorage.getItem('rosaint_ev_prueba') === '1'; }catch(e){ return false; } })();
+  if(!EV_ON) return;
+  var EV_URL = 'https://jayhjhifrfcdecofwgbf.supabase.co/functions/v1/portal-evento';
+  var evCola = [], evPid = null, evReloj = null, evUlt = '';
+
+  function limpiar(t){ return String(t||'').replace(/\s+/g,' ').trim().slice(0,80); }
+  function param(n){ try{ return new URLSearchParams(location.search).get(n)||''; }catch(e){ return ''; } }
+  function visible(el){ return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length)); }
+
+  function sesionId(){
+    try{
+      var ahora = Date.now(), s = localStorage.getItem('rosaint_ses'), t = +(localStorage.getItem('rosaint_ses_t')||0);
+      if(!s || ahora - t > 30*60*1000){ s = Math.random().toString(36).slice(2) + ahora.toString(36); localStorage.setItem('rosaint_ses', s); }
+      localStorage.setItem('rosaint_ses_t', String(ahora));
+      return s;
+    }catch(e){ return ''; }
+  }
+  // Quién es: se le pregunta a la sesión de Odoo y, si hay cliente, se recuerda en la pestaña.
+  // (En EyG se vio que <html data-logged> dice "false" también con la sesión iniciada: no sirve.)
+  function quienEs(){
+    if(evPid !== null) return;
+    if(/^\/web\/(login|session\/logout)/.test(location.pathname)){ try{ sessionStorage.removeItem('rosaint_pid'); }catch(e){} }
+    else { try{ var c = sessionStorage.getItem('rosaint_pid'); if(c){ evPid = +c || 0; return; } }catch(e){} }
+    evPid = -1;   // preguntando
+    fetch('/web/session/get_session_info', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:'{"jsonrpc":"2.0","method":"call","params":{}}'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){ evPid = (j && j.result && j.result.partner_id) || 0; try{ if(evPid) sessionStorage.setItem('rosaint_pid', String(evPid)); }catch(e){} enviar(); })
+      .catch(function(){ evPid = 0; enviar(); });
+  }
+  function enviar(){
+    if(!evCola.length || evPid === null || evPid === -1) return;
+    var cuerpo = JSON.stringify({p: evPid, s: sesionId(), e: evCola.splice(0, 40)});
+    try{
+      if(navigator.sendBeacon && navigator.sendBeacon(EV_URL, new Blob([cuerpo], {type:'text/plain'}))) { if(evCola.length) enviar(); return; }
+    }catch(e){}
+    try{ fetch(EV_URL, {method:'POST', body:cuerpo, keepalive:true, headers:{'Content-Type':'text/plain'}}); }catch(e){}
+    if(evCola.length) enviar();
+  }
+  function registrar(tipo, dato){
+    try{
+      var clave = tipo + JSON.stringify(dato||{});
+      if(clave === evUlt) return;                 // el mismo evento dos veces seguidas no suma
+      evUlt = clave;
+      evCola.push({t: tipo, r: (location.pathname + location.search).slice(0,200), d: dato||{}});
+      quienEs();
+      clearTimeout(evReloj);
+      if(evCola.length >= 20) enviar(); else evReloj = setTimeout(enviar, 2500);
+    }catch(e){}
+  }
+  window.addEventListener('pagehide', enviar);
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') enviar(); });
+
+  /* ---------- 1. qué página es ---------- */
+  function quePagina(){
+    var p = location.pathname, mo = document.documentElement.getAttribute('data-main-object') || '', m;
+    if(p === '/' || p === '/inicio' || p === '/home') return {tipo:'inicio'};
+    if(p === '/pedido-rapido') return {tipo:'cargar_pedido'};
+    if((m = mo.match(/^product\.template\((\d+)/))) return {tipo:'producto', id:+m[1], nombre: limpiar((document.querySelector('h1[itemprop="name"], #product_details h1, h1')||{}).textContent || document.title.split('|')[0])};
+    if((m = p.match(/^\/shop\/category\/(?:[^\/]*-)?(\d+)/))) return {tipo:'categoria', id:+m[1], nombre: limpiar(document.title.split('|')[0])};
+    if(p === '/shop' || /^\/shop\/page\/\d+/.test(p)) return param('search') ? {tipo:'resultados', q: limpiar(param('search'))} : {tipo:'catalogo'};
+    if(p === '/shop/cart') return {tipo:'carrito'};
+    if(/^\/shop\/(checkout|address|extra_info)/.test(p)) return {tipo:'compra_datos'};
+    if(/^\/shop\/payment/.test(p)) return {tipo:'compra_pago'};
+    if(/^\/shop\/confirmation/.test(p)) return {tipo:'compra_confirmada'};
+    if(/^\/my\/orders\/\d+/.test(p)) return {tipo:'mi_pedido'};
+    if(/^\/my\/orders/.test(p)) return {tipo:'mis_pedidos'};
+    if(/^\/my\/invoices/.test(p)) return {tipo:'mis_facturas'};
+    if(/^\/mis-entregas/.test(p)) return {tipo:'mis_entregas'};
+    if(/^\/mis-pagos/.test(p)) return {tipo:'mis_pagos'};
+    if(p === '/my' || p.indexOf('/my/') === 0) return {tipo:'mi_cuenta'};
+    if(/^\/web\/login/.test(p)) return {tipo:'login'};
+    if(/^\/web\/(signup|reset_password)/.test(p)) return {tipo:'clave'};
+    if(/^\/alta/.test(p)) return {tipo:'alta'};
+    if(/^\/preguntas-frecuentes/.test(p)) return {tipo:'ayuda'};
+    if(/^\/contactus|^\/registro-profesionales/.test(p)) return {tipo:'contacto'};
+    return {tipo:'otra'};
+  }
+  function contar(sel){ try{ return document.querySelectorAll(sel).length; }catch(e){ return 0; } }
+  function alCargar(){
+    try{
+      var pg = quePagina();
+      registrar('pagina', pg);
+      if(pg.tipo === 'resultados'){
+        var n = contar('#products_grid .oe_product, .o_wsale_products_grid_table_wrapper .oe_product');
+        registrar('busqueda', {q: pg.q, n: n, donde:'catalogo'});
+      }
+      if(pg.tipo === 'login' && document.querySelector('.alert-danger, .o_login_error')) registrar('login_error', {});
+      vigilarAlta();
+    }catch(e){}
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', alCargar); else alCargar();
+
+  /* ---------- 2. buscador de «Cargar pedido» (#rp-search) ----------
+     Se escucha lo que se escribe y, cuando deja de escribir, se cuenta cuántos
+     productos quedaron a la vista (el portal muestra #rp-empty si no hay ninguno). */
+  var tmpBusq = null;
+  document.addEventListener('input', function(ev){
+    var t = ev.target;
+    if(!t || !t.matches || !t.matches('#rp-search, input[name="search"]')) return;
+    clearTimeout(tmpBusq);
+    tmpBusq = setTimeout(function(){
+      try{
+        var q = (t.value||'').trim();
+        if(q.length < 3) return;
+        var vacio = document.getElementById('rp-empty');
+        var n = (vacio && visible(vacio)) ? 0 : [].filter.call(document.querySelectorAll('form.rp-add'), visible).length;
+        registrar('busqueda', {q: limpiar(q), n: n, donde: t.id === 'rp-search' ? 'cargar_pedido' : 'catalogo'});
+      }catch(e){}
+    }, 1300);
+  }, true);
+
+  /* ---------- 3. lo que se agrega en «Cargar pedido» ----------
+     Cada producto es un formulario a /shop/cart/update con producto, cantidad y código. */
+  function nombreDe(form){
+    var q = form.querySelector('input[name="add_qty"]');
+    var a = q ? (q.getAttribute('aria-label')||'') : '';
+    return limpiar(a.replace(/^Cantidad de\s+/i, ''));
+  }
+  document.addEventListener('submit', function(ev){
+    try{
+      var f = ev.target, act = (f && f.getAttribute('action')) || '';
+      if(!/\/shop\/cart\/update/.test(act)) return;
+      var pid = f.elements && f.elements.product_id ? +f.elements.product_id.value || 0 : 0;
+      var cant = f.elements && f.elements.add_qty ? +f.elements.add_qty.value || 1 : 1;
+      registrar('carrito', {accion:'agregar', id: pid, cantidad: cant, codigo: f.getAttribute('data-code')||'', producto: nombreDe(f), donde: location.pathname === '/pedido-rapido' ? 'cargar_pedido' : 'ficha'});
+      enviar();
+    }catch(e){}
+  }, true);
+
+  /* ---------- 4. carrito: quitar y cambiar (en /shop/cart) ----------
+     Se anota cuando Odoo efectivamente lo actualiza (se mira la llamada de red,
+     sin tocarla) y se le pone el producto del último clic. En «Cargar pedido» no,
+     porque ahí ya se anotó al enviar el formulario. */
+  var ultimoClic = null;
+  document.addEventListener('click', function(ev){
+    try{
+      var el = ev.target && ev.target.closest ? ev.target : null; if(!el) return;
+      var a = el.closest('a'), href = a ? (a.getAttribute('href')||'') : '';
+      if(/wa\.me|api\.whatsapp\.com|whatsapp:/.test(href)) registrar('whatsapp', {seccion: location.pathname});
+      if(/\/my\/(invoices|orders)\/\d+.*(report_type=pdf|download=true)|\/report\/pdf\//.test(href))
+        registrar('descarga', {doc: /invoices/.test(href) ? 'factura' : (/orders/.test(href) ? 'pedido' : 'otro')});
+      var accion = el.closest('.js_delete_product, .fa-trash, .o_wsale_delete, [class*="delete"]') ? 'quitar'
+                 : (el.closest('.css_quantity, .js_add_cart_json') ? 'cambiar' : '');
+      if(!accion) return;
+      var caja = el.closest('tr, .o_cart_product, .js_product, form, div');
+      var nom = caja ? caja.querySelector('.oe_product_name, h6, strong, a[href*="/shop/"]') : null;
+      var idEl = caja ? caja.querySelector('input[name="product_id"], [data-product-id]') : null;
+      ultimoClic = {t: Date.now(), accion: accion, id: idEl ? +(idEl.value || idEl.getAttribute('data-product-id')) || 0 : 0, producto: limpiar(nom ? nom.textContent : '')};
+    }catch(e){}
+  }, true);
+  try{
+    new PerformanceObserver(function(lista){
+      lista.getEntries().forEach(function(e){
+        if(location.pathname === '/pedido-rapido') return;
+        if(!/\/shop\/cart\/(update_json|add)/.test(e.name)) return;
+        var c = (ultimoClic && Date.now() - ultimoClic.t < 8000) ? ultimoClic : {accion:'agregar', id:0, producto:''};
+        registrar('carrito', {accion: c.accion, id: c.id||0, producto: c.producto||'', donde:'carrito'});
+        ultimoClic = null;
+      });
+    }).observe({type:'resource', buffered:false});
+  }catch(e){}
+
+  /* ---------- 5. pedido de acceso (/alta): en qué paso va y si lo terminó ----------
+     El formulario muestra «Paso N de 5 · Nombre» y, al terminar, «Solicitud recibida».
+     Sólo se anota el número y el nombre del paso: nunca lo que la persona escribe. */
+  function vigilarAlta(){
+    if(!/^\/alta/.test(location.pathname) || !document.body) return;
+    var ultimo = '', enviado = false, reloj = null;
+    function mirar(){
+      try{
+        if(!enviado && document.querySelector('.rp-success')){ enviado = true; registrar('alta_enviada', {}); enviar(); return; }
+        var els = document.querySelectorAll('p, span, small, div, h2, h3, strong, legend');
+        for(var i = 0; i < els.length; i++){
+          var e = els[i]; if(e.children.length) continue;
+          var m = (e.textContent||'').match(/Paso\s+(\d)\s+de\s+5\s*·\s*(.+)/);
+          if(m && visible(e)){ var k = m[1] + m[2]; if(k !== ultimo){ ultimo = k; registrar('alta_paso', {paso: +m[1], nombre: limpiar(m[2])}); } return; }
+        }
+      }catch(e){}
+    }
+    mirar();
+    try{ new MutationObserver(function(){ clearTimeout(reloj); reloj = setTimeout(mirar, 400); }).observe(document.body, {childList:true, subtree:true, characterData:true}); }catch(e){}
+  }
+})();
+</script>
+<!-- /rosaint-eventos -->
