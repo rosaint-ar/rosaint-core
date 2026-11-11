@@ -709,7 +709,7 @@ function pintarDfCuenta(){
   document.getElementById('df-cuenta').textContent = `${n} de ${DF.max} elegidos · ≈ US$ ${(n * 0.0618).toFixed(2).replace('.', ',')}`;
   const b = document.getElementById('df-enviar');
   b.disabled = !n || !ok;
-  b.textContent = ok ? `Enviar a ${n || ''}`.trim() : 'Espera la aprobación de Meta';
+  b.textContent = !ok ? 'Espera la aprobación de Meta' : n ? `Enviar a ${n}` : 'Elegí a quién enviar';
 }
 async function dfEnviar(){
   const elegidos = DF_CLI.filter(c => DF_SEL.has(c.telefono_wa));
