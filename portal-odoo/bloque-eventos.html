@@ -18,7 +18,7 @@
      --------------------------------------------------------------------- */
   // Interruptor: con EV_PRUEBA en true sólo registra el navegador que tenga
   // localStorage rosaint_ev_prueba = 1 (para probar en el portal real sin afectar a nadie).
-  var EV_PRUEBA = true;
+  var EV_PRUEBA = false;
   var EV_ON = !EV_PRUEBA || (function(){ try{ return localStorage.getItem('rosaint_ev_prueba') === '1'; }catch(e){ return false; } })();
   if(!EV_ON) return;
   var EV_URL = 'https://jayhjhifrfcdecofwgbf.supabase.co/functions/v1/portal-evento';
