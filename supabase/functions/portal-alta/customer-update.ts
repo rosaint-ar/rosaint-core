@@ -1,10 +1,11 @@
+import {tipoOracion} from './name-format.ts';
 // Existing customer data is preserved unless an approver selects individual fields.
 export const CONTACT_FIELDS=['name','x_studio_nombre_fantasia','email','phone','street','street2','city','state_id'];
 // JSONB does not preserve object key order. A retry compares values, not serialization order.
 export function sameApproval(a:any,b:any){const stable=(v:any):any=>Array.isArray(v)?v.map(stable):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;return JSON.stringify(stable(a))===JSON.stringify(stable(b));}
 const labels={name:'Nombre',x_studio_nombre_fantasia:'Nombre comercial',email:'Correo de contacto',phone:'Teléfono',street:'Calle y número',street2:'Piso, departamento o referencia',city:'Localidad',state_id:'Provincia'};
 const text=(v:any)=>String(v||'').trim();
-export function proposedContact(d:any,stateId:number){return {name:text(d.razon),x_studio_nombre_fantasia:text(d.cartel),email:text(d.email).toLowerCase(),phone:text(d.telefono),street:text(d.calle),street2:text(d.complemento),city:text(d.localidad),state_id:stateId};}
+export function proposedContact(d:any,stateId:number){return {name:tipoOracion(d.razon),x_studio_nombre_fantasia:text(d.cartel),email:text(d.email).toLowerCase(),phone:text(d.telefono),street:text(d.calle),street2:text(d.complemento),city:text(d.localidad),state_id:stateId};}
 export function selectedContactFields(value:any){if(value===undefined)return [];if(!Array.isArray(value)||value.some(k=>typeof k!=='string'||!CONTACT_FIELDS.includes(k)))throw Error('Selección de datos inválida.');return [...new Set(value)].sort();}
 export function contactChanges(partner:any,d:any,stateId:number){
  const proposed=proposedContact(d,stateId);

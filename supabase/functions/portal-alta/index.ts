@@ -1,3 +1,4 @@
+import {tipoOracion} from './name-format.ts';
 import {simpleApprovalSummary} from './approval-simple.ts';
 import {accessCreationError} from './access-error.ts';
 import {accessLink} from './access-link.ts';
@@ -390,6 +391,7 @@ async function plan(a: any, b: any) {
   const changes=partner?contactChanges(partner,a.datos,state.id):[];
   const contactUpdate=partner?contactPlan(partner,a.datos,state.id,b.datos_actualizar,String(b.revision_cliente||''),a.resultado?.cambios_cliente):null;
   return {
+    nombre_propuesto:tipoOracion(a.datos.razon),
     cambios_cliente:contactUpdate,
     clave_disponible: passwordAvailable,
     opciones: opts,
@@ -400,7 +402,7 @@ async function plan(a: any, b: any) {
     pasos: [
       partner
         ? `Vincular ficha ${partner.id}: ${partner.name}`
-        : "Crear ficha de cliente en Odoo",
+        : `Crear ficha de cliente en Odoo: ${tipoOracion(a.datos.razon)}`,
       ...(partner&&!b.actualizar_condiciones?['Conservar la lista de precios y el responsable comercial actuales']:[`Asignar ${op.listas.find((x: any) => x.id === opts.lista_id).name}`,`Responsable: ${op.comerciales.find((x: any) => x.id === opts.comercial_id).name}`]),
       ...(partner?[...(changes.filter((x:any)=>Object.hasOwn(contactUpdate?.values||{},x.field)).map((x:any)=>`${x.label}: ${x.current_label||'sin dato'} → ${x.proposed_label}`)), 'Conservar los demás datos, documento y condición fiscal del cliente']:[]),
       others.length
@@ -476,7 +478,7 @@ async function approve(a: any, b: any, actor: string) {
         );
       pid = await kw("res.partner", "create", [
         {
-          name: a.datos.razon,
+          name: p.nombre_propuesto,
           x_studio_nombre_fantasia: a.datos.cartel || false,
           ref: `ROSAINT-ALTA-${a.id}`,
           vat: a.datos.documento_tipo==='DNI' ? a.cuit : fmt(a.cuit),
@@ -585,7 +587,7 @@ async function approve(a: any, b: any, actor: string) {
         "create",
         [
           {
-            ...(!p.partner?{name:a.datos.razon,email:a.email}:{}),
+            ...(!p.partner?{name:p.nombre_propuesto,email:a.email}:{}),
             login: a.email,
             partner_id: pid,
             groups_id: [[6, 0, [10]]],
@@ -806,7 +808,7 @@ async function handle(req: Request, b: any) {
   }
   if (b.accion === "detalle")
     return {
-      solicitud: a,
+      solicitud: {...a,nombre_propuesto:tipoOracion(a.datos.razon)},
       resumen: simpleApprovalSummary(a),
       eventos: await db(
         "portal_altas_eventos?alta_id=eq." + enc(a.id) + "&order=creada.asc",
