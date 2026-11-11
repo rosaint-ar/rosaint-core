@@ -1078,6 +1078,50 @@ async function pagar(body: Rec) {
   return { ok: true, plan, comprobante: (await ex("account.move", "read", [[m.id], ["name", "amount_total", "amount_residual", "payment_state"]]) as Rec[])[0] };
 }
 
+// cerrar_saldo {comprobante, fecha, dry_run} — un comprobante de proveedor que quedó con un saldo de centavos (≤ $1)
+// se cierra contra "Ajuste por redondeo" (4.2.1.01.030) con un asiento chico conciliado. No toca el comprobante.
+async function cerrarSaldo(body: Rec) {
+  const m = (await ex("account.move", "search_read", [[["name", "=", String(body.comprobante || "")], ["company_id", "=", C], ["move_type", "in", ["in_invoice", "in_refund"]], ["state", "=", "posted"]]], { fields: ["id", "name", "partner_id"] }) as Rec[])[0];
+  if (!m) return { ok: false, error: "No encuentro " + body.comprobante };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || ""))) return { ok: false, error: "Falta la fecha" };
+  const lp = (await ex("account.move.line", "search_read", [[["move_id", "=", m.id], ["account_id.account_type", "=", "liability_payable"], ["reconciled", "=", false]]], { fields: ["id", "account_id", "amount_residual"] }) as Rec[])[0];
+  if (!lp || !lp.amount_residual) return { ok: true, ya_cerrado: true };
+  const saldo = r2(lp.amount_residual);
+  if (Math.abs(saldo) > 1) return { ok: false, error: `${m.name} tiene saldo ${saldo}: no es un redondeo` };
+  const red = await cuentaId("4.2.1.01.030");
+  const plan = { comprobante: m.name, proveedor: m.partner_id[1], saldo, contra: "4.2.1.01.030 Ajuste por redondeo", fecha: body.fecha };
+  if (body.dry_run) return { ok: true, dry_run: true, plan };
+  const nm = `Redondeo: cierra el saldo de ${m.name}`;
+  // el saldo deudor (nos deben) se cancela con un haber al proveedor, y al revés
+  const id = await ex("account.move", "create", [{ move_type: "entry", journal_id: 34, date: body.fecha, ref: `REDONDEO ${m.name}`, company_id: C, line_ids: [
+    [0, 0, { account_id: m2o(lp.account_id), partner_id: m2o(m.partner_id), name: nm, debit: saldo < 0 ? -saldo : 0, credit: saldo > 0 ? saldo : 0 }],
+    [0, 0, { account_id: red, name: nm, debit: saldo > 0 ? saldo : 0, credit: saldo < 0 ? -saldo : 0, tax_ids: [[6, 0, []]], tax_tag_ids: [[6, 0, []]] }] ] }]) as number;
+  await ex("account.move", "action_post", [[id]]);
+  const nl = (await ex("account.move.line", "search_read", [[["move_id", "=", id], ["account_id", "=", m2o(lp.account_id)]]], { fields: ["id"] }) as Rec[])[0];
+  await ex("account.move.line", "reconcile", [[lp.id, nl.id]]);
+  const fin = (await ex("account.move", "read", [[m.id], ["name", "amount_residual", "payment_state"]]) as Rec[])[0];
+  return { ok: true, plan, asiento: (await ex("account.move", "read", [[id], ["name"]]) as Rec[])[0].name, comprobante: fin };
+}
+
+// anular_asiento {nombre, ref, motivo, dry_run} — cancela un asiento manual de Operaciones varias que resultó mal
+// (ej. una deuda que se creía impaga y estaba pagada). Solo si coinciden nombre y referencia, no tiene impuestos y
+// nada de él está conciliado. Queda cancelado (no se borra) con el motivo en el chatter.
+async function anularAsiento(body: Rec) {
+  const a = (await ex("account.move", "search_read", [[["name", "=", String(body.nombre || "")], ["ref", "=", String(body.ref || "")], ["company_id", "=", C], ["move_type", "=", "entry"]]], { fields: ["id", "name", "ref", "state", "date", "journal_id", "amount_total"] }) as Rec[])[0];
+  if (!a) return { ok: false, error: "No encuentro el asiento con ese nombre y referencia" };
+  if (a.state === "cancel") return { ok: true, ya_anulado: true };
+  if (m2o(a.journal_id) !== 34) return { ok: false, error: "Solo asientos de Operaciones varias" };
+  const ls = await ex("account.move.line", "search_read", [[["move_id", "=", a.id]]], { fields: ["account_id", "balance", "reconciled", "tax_line_id", "tax_ids", "matched_debit_ids", "matched_credit_ids"] }) as Rec[];
+  if (ls.some((l) => l.reconciled || (l.matched_debit_ids || []).length || (l.matched_credit_ids || []).length)) return { ok: false, error: "Tiene apuntes conciliados: desconciliar primero" };
+  if (ls.some((l) => l.tax_line_id || (l.tax_ids || []).length)) return { ok: false, error: "Tiene impuestos: anulalo a mano" };
+  const plan = { asiento: a.name, ref: a.ref, fecha: a.date, importe: a.amount_total, apuntes: ls.map((l) => `${l.account_id[1]} ${l.balance}`), motivo: body.motivo || "" };
+  if (body.dry_run) return { ok: true, dry_run: true, plan };
+  await ex("account.move", "button_draft", [[a.id]]);
+  await ex("account.move", "button_cancel", [[a.id]]);
+  if (body.motivo) await ex("account.move", "message_post", [[a.id]], { body: "Anulado desde Core: " + String(body.motivo) });
+  return { ok: true, plan, estado: (await ex("account.move", "read", [[a.id], ["state"]]) as Rec[])[0].state };
+}
+
 // reclasificar {fecha, ref, lineas:[{cuenta, debe, haber, nombre}], dry_run} — asiento de reclasificación de CARGOS de ML
 // entre cuentas de gasto (como RECLASIF-ML de mar-ago, Vario/2026/08/0006): suma cero, sin impuestos, sin tocar
 // ninguna factura. Solo cuentas de resultado (5.x) y una sola vez por ref.
@@ -1147,6 +1191,8 @@ _servirConGuardia(async (req: Request) => {
     else if (modo === "cargos_cargar") out = await cargosCargar(sb, body);
     else if (modo === "reclasificar") out = await reclasificar(body);
     else if (modo === "pagar") out = await pagar(body);
+    else if (modo === "cerrar_saldo") out = await cerrarSaldo(body);
+    else if (modo === "anular_asiento") out = await anularAsiento(body);
     else if (modo === "corregir_arca") out = await corregirArca(body);
     else if (modo === "padron") {
       // propuesta (NO escribe): nombre con el formato de Diego + domicilio fiscal, contra lo que hay hoy en Odoo
