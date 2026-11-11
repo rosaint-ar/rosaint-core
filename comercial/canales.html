@@ -1295,6 +1295,7 @@ async function cargarPromociones() {
       <span style="flex:1;"></span>
       <button class="btn primary" id="btnSyncPromos">Sincronizar promociones</button>
     </div>
+    <div id="promo-auto"></div>
     <div id="promo-control"></div>
     <div id="promo-alert"></div>
     <div id="promo-content"><div class="empty-box">Cargando…</div></div>
@@ -1313,6 +1314,7 @@ async function cargarPromociones() {
     CTRL_PUBS = pubs.data || [];
     renderControlDescuentos();
     renderPromos();
+    cargarPromosAuto();
     $('#btnSyncPromos').addEventListener('click', sincronizarPromos);
     // Al abrir, si las promociones se trajeron hace más de una hora, se vuelven a leer de ML (una vez por visita)
     if (!AUTO_PROMOS_HECHO && window.syncAlAbrir) {
@@ -1342,6 +1344,7 @@ function renderControlDescuentos() {
   // Tipos de promo activa por item.
   const tiposPorItem = {};
   for (const pi of PROMO_ITEMS) {
+    if (pi.estado_en_promo === 'candidate') continue; // ofrecida por ML, no entramos
     const promo = PROMOS.find(pr => pr.id === pi.promo_id && pr.estado === 'started');
     if (!promo) continue;
     (tiposPorItem[pi.item_id] = tiposPorItem[pi.item_id] || new Set()).add(promo.tipo);
@@ -1434,7 +1437,8 @@ function renderPromos() {
 }
 
 function renderPromoCard(p) {
-  const items = PROMO_ITEMS.filter(x => x.promo_id === p.id);
+  const items = PROMO_ITEMS.filter(x => x.promo_id === p.id && x.estado_en_promo !== 'candidate');
+  const ofrecidos = PROMO_ITEMS.filter(x => x.promo_id === p.id && x.estado_en_promo === 'candidate').length;
   const esProxima = p.estado !== 'started';
   const dias = diasHasta(esProxima ? p.start_date : p.finish_date);
   let finTxt;
@@ -1463,7 +1467,7 @@ function renderPromoCard(p) {
       <summary>
         <span class="promo-nombre">${esc(p.nombre || p.id)} ${tipoBadge}</span>
         <span class="promo-fin ${finCls}">${finTxt}</span>
-        <span class="promo-cnt">${items.length} prod.</span>
+        <span class="promo-cnt">${items.length} prod.${ofrecidos ? ` · <span style="color:var(--muted)" title="ML los ofrece y no entramos">${ofrecidos} sin entrar</span>` : ''}</span>
       </summary>
       <div class="promo-body">
         ${items.length
@@ -1474,6 +1478,90 @@ function renderPromoCard(p) {
 }
 
 let AUTO_PROMOS_HECHO = false;
+
+// ─────── PROMOS AUTOMÁTICAS (nov-2026) ───────
+// ml-promos-sync {accion:'barrer'} corre cada 3 h (cron ml-promos-barrer): entra solo a las campañas que
+// respetan el tope de descuento (ml_reglas_descuento.desc_meli_pct); lo que se pasa hasta
+// promos_tolerancia_pts queda acá para aprobar o rechazar, y avisa por mail.
+let PAUTO = [], PAUTO_PAR = {};
+async function cargarPromosAuto() {
+  const cont = $('#promo-auto'); if (!cont) return;
+  const [a, p] = await Promise.all([
+    sb.from('ml_promos_auto').select('*').order('actualizado_en', { ascending: false }).limit(300),
+    sb.from('ml_parametros').select('clave,valor').in('clave', ['promos_auto', 'promos_tolerancia_pts']),
+  ]);
+  if (a.error) { cont.innerHTML = `<div class="empty-box" style="color:var(--hot);">Promos automáticas: ${esc(a.error.message)}</div>`; return; }
+  PAUTO = a.data || []; PAUTO_PAR = {}; (p.data || []).forEach(x => PAUTO_PAR[x.clave] = Number(x.valor));
+  renderPromosAuto();
+}
+function renderPromosAuto() {
+  const cont = $('#promo-auto');
+  const on = PAUTO_PAR.promos_auto === 1, tol = PAUTO_PAR.promos_tolerancia_pts ?? 3;
+  const hoy = Date.now();
+  const vigente = x => !x.promo_fin || new Date(x.promo_fin).getTime() > hoy;
+  const decidir = PAUTO.filter(x => x.estado === 'a_decidir' && vigente(x));
+  const aplicadas = PAUTO.filter(x => x.estado === 'aplicada').slice(0, 20);
+  const fuera = PAUTO.filter(x => x.estado === 'fuera_de_tope' && vigente(x));
+  const errores = PAUTO.filter(x => x.estado === 'error' && vigente(x));
+  const precio = x => x.precio_general != null ? fmtARS(Number(x.precio_general)) : '—';
+  const cuanto = x => x.tipo === 'SMART' ? `vos ponés ${pctTxt(x.seller_pct)}` : (x.desc_pct != null ? `${pctTxt(x.desc_pct)} off` : '—');
+  const exc = x => x.exceso_pts == null ? '—' : (Number(x.exceso_pts) > 0 ? '+' : '') + (+Number(x.exceso_pts).toFixed(2)).toLocaleString('es-AR') + ' pts';
+  const fila = (x, botones) => `<tr>
+      <td>${esc(x.promo_nombre || x.promo_id)}<div style="color:var(--muted);font-size:11.5px;">${x.promo_fin ? 'hasta ' + fFecha(x.promo_fin) : ''}</div></td>
+      <td>${esc(cleanTitle(x.titulo || x.item_id))}</td>
+      <td class="num">${precio(x)}</td>
+      <td class="num">${cuanto(x)}</td>
+      <td class="num">${x.tope_pct != null ? pctTxt(x.tope_pct) : '—'}</td>
+      <td class="num" style="${Number(x.exceso_pts) > 0 ? 'color:var(--hot);font-weight:600;' : ''}">${exc(x)}</td>
+      <td>${botones ? `<button class="btn primary" data-pa="aprobar" data-id="${x.id}">Aprobar</button> <button class="btn secondary" data-pa="rechazar" data-id="${x.id}">Rechazar</button>` : `<span style="color:var(--muted);font-size:12px;">${esc(x.detalle || '')}</span>`}</td>
+    </tr>`;
+  const tabla = (xs, b) => `<table class="promo-tabla"><thead><tr><th>Campaña</th><th>Producto</th><th class="num">Precio</th><th class="num">Descuento</th><th class="num">Tope</th><th class="num">Exceso</th><th></th></tr></thead><tbody>${xs.map(x => fila(x, b)).join('')}</tbody></table>`;
+  cont.innerHTML = `
+    <div class="promo-card" style="padding:14px 16px; margin-bottom:14px;">
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <b>Promos automáticas</b>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="pa-on" ${on ? 'checked' : ''}> Entrar solo a las que respetan el tope</label>
+        <label style="display:flex;gap:6px;align-items:center;">Avisarme si se pasa hasta <input type="number" id="pa-tol" min="0" max="15" step="0.5" value="${tol}" style="width:60px;"> pts</label>
+        <span style="flex:1;"></span>
+        <button class="btn secondary" id="pa-barrer">Revisar ahora</button>
+      </div>
+      <div style="color:var(--muted); font-size:12px; margin-top:6px;">Revisa cada 3 horas las campañas que ofrece Mercado Libre. Tope = descuento máximo por tamaño (tabla de reglas). Las que se pasan más que la tolerancia quedan abajo, ignoradas, pero se pueden aprobar igual.</div>
+      ${decidir.length ? `<div class="divisor-inactivas">Para decidir · ${decidir.length}</div>${tabla(decidir, true)}` : '<div style="margin-top:10px;color:var(--muted);">Nada para decidir.</div>'}
+      ${errores.length ? `<div class="divisor-inactivas">Con error · ${errores.length}</div>${tabla(errores, true)}` : ''}
+      ${aplicadas.length ? `<details style="margin-top:8px;"><summary>Aplicadas (últimas ${aplicadas.length})</summary>${tabla(aplicadas, false)}</details>` : ''}
+      ${fuera.length ? `<details style="margin-top:8px;"><summary>Ignoradas por pasarse del tope · ${fuera.length}</summary>${tabla(fuera, true)}</details>` : ''}
+    </div>`;
+  $('#pa-on').addEventListener('change', e => guardarParPromos('promos_auto', e.target.checked ? 1 : 0));
+  $('#pa-tol').addEventListener('change', e => guardarParPromos('promos_tolerancia_pts', Number(e.target.value)));
+  $('#pa-barrer').addEventListener('click', barrerPromosAhora);
+  cont.querySelectorAll('[data-pa]').forEach(b => b.addEventListener('click', () => decidirPromo(b.dataset.pa, Number(b.dataset.id), b)));
+}
+async function guardarParPromos(clave, valor) {
+  const { error } = await sb.from('ml_parametros').update({ valor }).eq('clave', clave);
+  if (error) return toast('Error: ' + error.message, 'err');
+  PAUTO_PAR[clave] = valor; toast('✓ Guardado', 'ok');
+}
+async function barrerPromosAhora() {
+  const b = $('#pa-barrer'); b.disabled = true; b.textContent = 'Revisando…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-promos-sync', { body: { accion: 'barrer' } });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    toast(`✓ ${data.aplicadas} aplicadas · ${data.a_decidir} para decidir · ${data.fuera_de_tope} fuera de tope`, 'ok');
+    await cargarPromociones();
+  } catch (err) { toast('Error: ' + err.message, 'err'); b.disabled = false; b.textContent = 'Revisar ahora'; }
+}
+async function decidirPromo(accion, id, btn) {
+  btn.disabled = true; btn.textContent = accion === 'aprobar' ? 'Aplicando…' : 'Guardando…';
+  try {
+    const { data, error } = await sb.functions.invoke('ml-promos-sync', { body: { accion, id } });
+    if (error) throw new Error(error.message);
+    if (data && data.ok === false) throw new Error(data.error || 'Error');
+    toast(accion === 'aprobar' ? '✓ Entró a la promoción' : '✓ Rechazada: no se vuelve a proponer', 'ok');
+    await cargarPromociones();
+  } catch (err) { toast('Error: ' + err.message, 'err'); btn.disabled = false; btn.textContent = accion === 'aprobar' ? 'Aprobar' : 'Rechazar'; }
+}
+
 async function sincronizarPromos(auto) {
   const btn = $('#btnSyncPromos'); const prev = btn.textContent;
   btn.disabled = true; btn.textContent = 'Sincronizando…';
