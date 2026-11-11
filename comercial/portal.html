@@ -200,7 +200,7 @@ async function cargar() {
   const n = dias(desde, hasta), aHasta = sumar(desde, -1), aDesde = sumar(aHasta, -(n - 1));
   pintarPeriodo(); estado('Leyendo Odoo…', true);
   try {
-    const [ex, al] = await Promise.all([sb.from('portal_excluidos').select('*').order('nombre'), sb.from('portal_altas').select('id, estado, creada')]);
+    const [ex, al] = await Promise.all([sb.from('portal_excluidos').select('*').order('nombre'), sb.rpc('portal_altas_resumen')]);
     EXCL = ex.data || []; ALTAS = al.data || [];
     // De a una: Odoo rechaza muchas consultas juntas. Primero el período (se pinta), después el anterior (comparación).
     const d = await leer(desde, hasta);
