@@ -80,6 +80,15 @@
     .cal-det .r span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .cal-det .r b { font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
     .cal-det .f { color: var(--muted); font-size: 11px; }
+    /* acciones de cada vencimiento: marcar hecho / volver a pendiente / quitar */
+    .cal-det .r { align-items: center; padding: 2px 0; }
+    .cal-det .r.hecho span { text-decoration: line-through; color: var(--muted); }
+    .cal-det .acc { display: inline-flex; gap: 4px; flex-shrink: 0; }
+    .cal-det .acc button { border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px; font: inherit; font-size: 11px; line-height: 1; padding: 3px 6px; cursor: pointer; }
+    .cal-det .acc button:hover { color: var(--accent); border-color: var(--accent); }
+    .cal-det .acc button.ok { color: var(--ok); }
+    .cal-det .acc button.quitar:hover { color: var(--hot); border-color: var(--hot); }
+    .cal-det .como { color: var(--ok); font-size: 10.5px; }
     .cal-vencido { font-size: 11.5px; font-weight: 700; color: var(--hot); margin-top: 4px; }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
     @media (max-width: 900px) { .row-2 { grid-template-columns: 1fr; } }
@@ -378,8 +387,41 @@ function pintarDetalle() {
     return;
   }
   const lst = _venc.filter(v => v.fecha === _calSel);
-  el.innerHTML = `<div class="f">El ${fechaCorta(_calSel)} · <a href="javascript:void(0)" id="cal-cerrar">cerrar</a></div>` + lst.map(v => `<div class="r" title="${escapeHTML((v.como || '') + (v.nota ? ' · ' + v.nota : ''))}"><span>${escapeHTML(v.concepto)}</span><b class="${claseVenc(v) === 'vencido' ? 'cal-vencido' : ''}">${$pesos(v.importe)}${v.estimado ? '*' : ''}</b></div>`).join('');
+  el.innerHTML = `<div class="f">El ${fechaCorta(_calSel)} · <a href="javascript:void(0)" id="cal-cerrar">cerrar</a></div>` + lst.map(v => {
+    const hecho = v.estado === 'pagado';
+    const acc = hecho
+      ? `<button data-venc="pendiente" data-id="${v.id}" title="Volver a pendiente">↺</button>`
+      : `<button class="ok" data-venc="hecho" data-id="${v.id}" title="Marcar como hecho / pagado">✓</button>`;
+    return `<div class="r${hecho ? ' hecho' : ''}" title="${escapeHTML((v.como || '') + (v.nota ? ' · ' + v.nota : ''))}"><span>${escapeHTML(v.concepto)}${hecho && v.como ? `<br><span class="como">✓ ${escapeHTML(v.como)}</span>` : ''}</span>`
+      + `<b class="${claseVenc(v) === 'vencido' ? 'cal-vencido' : ''}">${$pesos(v.importe)}${v.estimado ? '*' : ''}</b>`
+      + `<span class="acc">${acc}<button class="quitar" data-venc="quitar" data-id="${v.id}" title="Quitar del calendario">×</button></span></div>`;
+  }).join('');
   document.getElementById('cal-cerrar').addEventListener('click', () => { _calSel = null; pintarCalendario(); });
+  el.querySelectorAll('[data-venc]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); accionVenc(b.dataset.venc, +b.dataset.id); }));
+}
+// Marcar hecho (estado 'pagado' + cómo y cuándo), volver a pendiente o quitar un vencimiento.
+// El aviso diario por mail (avisar_vencimientos) solo avisa los pendientes: lo hecho o quitado deja de avisarse.
+async function accionVenc(accion, id) {
+  const v = _venc.find(x => x.id === id); if (!v) return;
+  let cambio = null;
+  if (accion === 'hecho') {
+    const sug = v.como && !/^(VEP|Contadora|Débito)/i.test(v.como) ? v.como : (v.como || '');
+    const como = prompt(`Marcar como hecho:\n«${v.concepto}»\n\n¿Cómo se hizo o pagó? (opcional, ej. "VEP Mercado Pago")`, sug);
+    if (como === null) return;
+    const hoy = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    cambio = { estado: 'pagado', como: ((como || '').trim() ? como.trim() + ' · ' : '') + hoy, actualizado: new Date().toISOString() };
+  } else if (accion === 'pendiente') {
+    if (!confirm(`¿Volver a pendiente «${v.concepto}»?`)) return;
+    cambio = { estado: 'pendiente', actualizado: new Date().toISOString() };
+  } else if (accion === 'quitar') {
+    if (!confirm(`¿Quitar «${v.concepto}» del calendario?\n\nDeja de aparecer y de avisarse. No se puede deshacer (si es algo que ya hiciste, mejor marcalo con ✓).`)) return;
+  }
+  const q = accion === 'quitar' ? sb.from('vencimientos').delete().eq('id', id) : sb.from('vencimientos').update(cambio).eq('id', id);
+  const { error } = await q;
+  if (error) { alert('No se pudo guardar: ' + error.message); return; }
+  if (accion === 'quitar') _venc = _venc.filter(x => x.id !== id); else Object.assign(v, cambio);
+  if (!_venc.some(x => x.fecha === _calSel)) _calSel = null;
+  pintarCalendario();
 }
 document.getElementById('cal-prev').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m - 2, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
 document.getElementById('cal-next').addEventListener('click', () => { const [y, m] = _calMes.split('-').map(Number); const d = new Date(y, m, 1); _calMes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); _calSel = null; pintarCalendario(); });
