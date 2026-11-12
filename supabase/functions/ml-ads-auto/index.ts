@@ -1,114 +1,173 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  Edge Function: ml-ads-auto  (v1)
-//  Motor de automatización defensiva de Mercado Ads.
-//   1. Lee parámetros (switch, presupuesto, rent.min, dias malos, max acciones)
-//   2. Trae ads active + campaign_id, cruza con v_rentabilidad_ml
-//   3. Guarda snapshot diario (upsert item+fecha)
-//   4. Cuenta dias malos consecutivos y pausa los que llegan al umbral
-//   5. Controla techo de presupuesto mensual
-//   6. Registra todo en ml_ads_bitacora. SOLO PAUSA (nunca activa/sube).
-//  Body opcional: { "dry_run": true }  fuerza simulación (no escribe en ML)
+//  Edge Function: ml-ads-auto  (v2, nov-2026) — Publicidad inteligente + Competencia
+//  La v1 (motor que pausaba anuncios) quedó en simulación porque Mercado Ads no deja escribir por API
+//  a apps no certificadas (401 mclics). Respaldo de la v1: scratchpad ml-ads-auto.v1.bak.ts.
+//
+//  Acciones (body):
+//   {accion:'traer_ads'}    métricas por anuncio en 7 y 30 días → ml_ads_metricas
+//                           (el análisis y las recomendaciones salen de la vista v_ml_ads_analisis)
+//   {accion:'competencia'}  por cada búsqueda de ml_competencia_busquedas: productos de catálogo de la
+//                           competencia del mismo tamaño, vendedores y precio más bajo, Full, y el
+//                           puesto en "más vendidos" de la categoría → ml_competencia (foto diaria)
+//   {accion:'todo'}         las dos (cron diario ml-ads-competencia)
 // ═══════════════════════════════════════════════════════════════════════════
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const ML_API = "https://api.mercadolibre.com";
 const ML_TOKEN_URL = `${ML_API}/oauth/token`;
-const SITE_ID = "MLA";
-
+const ADVERTISER = 8126;
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info, x-proxy-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const hoyAR = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+const diasAtras = (n: number) => new Date(Date.now() - 3 * 3600 * 1000 - n * 86400000).toISOString().slice(0, 10);
 
 async function asegurarToken(supabase: any): Promise<string> {
   const { data: auth, error } = await supabase.from("ml_auth").select("*").eq("id", 1).single();
   if (error || !auth) throw new Error("No hay credenciales de ML.");
-  if (!auth.refresh_token) throw new Error("Falta el refresh token. Reconecta ML.");
   const vence = auth.token_expira_en ? new Date(auth.token_expira_en).getTime() : 0;
   if (auth.access_token && vence > Date.now() + 5 * 60 * 1000) return auth.access_token;
   const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    client_id: Deno.env.get("ML_APP_ID")!,
-    client_secret: Deno.env.get("ML_SECRET")!,
-    refresh_token: auth.refresh_token,
+    grant_type: "refresh_token", client_id: Deno.env.get("ML_APP_ID")!, client_secret: Deno.env.get("ML_SECRET")!, refresh_token: auth.refresh_token,
   });
-  const resp = await fetch(ML_TOKEN_URL, {
-    method: "POST",
-    headers: { "accept": "application/json", "content-type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
+  const resp = await fetch(ML_TOKEN_URL, { method: "POST", headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
   const data = await resp.json();
-  if (!resp.ok) throw new Error("No se pudo renovar el token: " + JSON.stringify(data));
-  const expiraEn = new Date(Date.now() + (data.expires_in ?? 21600) * 1000).toISOString();
+  if (!resp.ok) throw new Error("No renovó token: " + JSON.stringify(data));
   await supabase.from("ml_auth").update({
     access_token: data.access_token, refresh_token: data.refresh_token,
-    token_expira_en: expiraEn, actualizado_en: new Date().toISOString(),
+    token_expira_en: new Date(Date.now() + (data.expires_in ?? 21600) * 1000).toISOString(), actualizado_en: new Date().toISOString(),
   }).eq("id", 1);
   return data.access_token;
 }
 
-async function obtenerAdvertiserId(headers: any, supabase: any): Promise<number> {
-  const { data: par } = await supabase.from("ml_parametros").select("valor").eq("clave", "ads_advertiser_id").single();
-  if (par && Number(par.valor) > 0) return Number(par.valor);
-  const r = await fetch(`${ML_API}/advertising/advertisers?product_id=PADS`, { headers: { ...headers, "Api-Version": "1" } });
-  if (!r.ok) throw new Error(`No se pudo obtener advertiser_id (HTTP ${r.status}).`);
-  const data = await r.json();
-  const mla = (data?.advertisers || []).find((a: any) => a.site_id === SITE_ID) || data?.advertisers?.[0];
-  if (!mla?.advertiser_id) throw new Error("No hay advertiser_id para MLA.");
-  return Number(mla.advertiser_id);
+async function getJSON(url: string, headers: any, intentos = 3): Promise<any> {
+  for (let i = 0; i < intentos; i++) {
+    const r = await fetch(url, { headers });
+    if (r.ok) return await r.json();
+    if (r.status === 404) return null;
+    if (r.status === 429 || r.status >= 500) { await espera(1500 * (i + 1)); continue; }
+    throw new Error(`${url.replace(ML_API, "")}: HTTP ${r.status}`);
+  }
+  return null;
 }
 
-const f = (d: Date) => d.toISOString().slice(0, 10);
+// ───────────── Publicidad ─────────────
+async function traerAds(supabase: any, headers: any) {
+  const h2 = { ...headers, "Api-Version": "2" };
+  const camp = await getJSON(`${ML_API}/marketplace/advertising/MLA/advertisers/${ADVERTISER}/product_ads/campaigns/search?limit=50`, h2);
+  const nombreCamp = new Map((camp?.results || []).map((c: any) => [Number(c.id), `${c.name}${c.status !== "active" ? " (pausada)" : ""}`]));
+  const metr = "cost,clicks,prints,acos,direct_units_quantity,indirect_units_quantity,organic_units_quantity,direct_amount,total_amount,organic_units_amount";
+  const res: Record<string, number> = {};
+  for (const [ventana, dias] of [["7d", 7], ["30d", 30]] as const) {
+    const desde = diasAtras(dias), hasta = diasAtras(1);
+    const filas: any[] = [];
+    for (let offset = 0; offset < 1000; offset += 50) {
+      const d = await getJSON(`${ML_API}/marketplace/advertising/MLA/advertisers/${ADVERTISER}/product_ads/ads/search?limit=50&offset=${offset}&date_from=${desde}&date_to=${hasta}&metrics=${metr}`, h2);
+      const rs = d?.results || [];
+      for (const a of rs) {
+        const m = a.metrics || {};
+        filas.push({
+          ventana, item_id: a.item_id, campaign_id: a.campaign_id || null, campana: nombreCamp.get(Number(a.campaign_id)) || (a.campaign_id ? String(a.campaign_id) : "sin campaña"),
+          estado: a.status, costo: m.cost || 0, clics: m.clicks || 0, impresiones: m.prints || 0,
+          u_directas: m.direct_units_quantity || 0, u_indirectas: m.indirect_units_quantity || 0, u_organicas: m.organic_units_quantity || 0,
+          monto_directo: m.direct_amount || 0, monto_total: m.total_amount || 0, monto_organico: m.organic_units_amount || 0, acos: m.acos ?? null,
+          desde, hasta, traido_en: new Date().toISOString(),
+        });
+      }
+      if (rs.length < 50 || offset + 50 >= (d?.paging?.total ?? 0)) break;
+    }
+    if (filas.length) {
+      await supabase.from("ml_ads_metricas").delete().eq("ventana", ventana);
+      const { error } = await supabase.from("ml_ads_metricas").insert(filas);
+      if (error) throw new Error("ml_ads_metricas: " + error.message);
+    }
+    res[ventana] = filas.length;
+  }
+  return res;
+}
 
-// Trae TODOS los ads del advertiser en el rango, con su campaign_id real y status.
-async function traerTodosLosAds(headers: any, advertiserId: number, desde: string, hasta: string): Promise<any[]> {
-  const todos: any[] = [];
-  let offset = 0;
-  for (let i = 0; i < 20; i++) {
-    const url = `${ML_API}/advertising/advertisers/${advertiserId}/product_ads/items`
-      + `?limit=50&offset=${offset}&date_from=${desde}&date_to=${hasta}`
-      + `&metrics=cost,acos,direct_units_quantity,total_amount`;
-    const r = await fetch(url, { headers: { ...headers, "api-version": "2" } });
-    if (!r.ok) break;
-    const data = await r.json();
-    const arr = data?.results || data?.items || [];
-    for (const a of arr) {
-      todos.push({
-        item_id: a.item_id ?? a.id,
-        status: a.status,
-        campaign_id: a.campaign_id ?? null,
-        cost: a?.metrics?.cost ?? a?.metrics_summary?.cost ?? 0,
-        acos: a?.metrics?.acos ?? a?.metrics_summary?.acos ?? null,
+// ───────────── Competencia ─────────────
+function aGramos(txt: string | null | undefined): number | null {
+  if (!txt) return null;
+  const m = String(txt).toLowerCase().replace(",", ".").match(/(\d+(?:\.\d+)?)\s*(kg|kilo|g|gr|gramos|l|lt|litros?|ml|cc)\b/);
+  if (!m) return null;
+  const n = Number(m[1]), u = m[2];
+  if (["kg", "kilo", "l", "lt", "litro", "litros"].includes(u)) return Math.round(n * 1000);
+  return Math.round(n); // g, ml, cc (densidad ≈ 1)
+}
+function tamanoProducto(p: any): number | null {
+  const at = (id: string) => (p.attributes || []).find((a: any) => a.id === id)?.value_name;
+  const unidades = Number(at("UNITS_PER_PACK") || 1) || 1;
+  const g = aGramos(at("UNIT_WEIGHT")) ?? aGramos(at("UNIT_VOLUME")) ?? aGramos(at("NET_WEIGHT")) ?? aGramos(p.name);
+  return g == null ? null : g * unidades;
+}
+
+async function competencia(supabase: any, headers: any) {
+  const { data: busq } = await supabase.from("ml_competencia_busquedas").select("*").eq("activo", true);
+  if (!busq?.length) return { busquedas: 0 };
+  // categoría y producto de catálogo de cada publicación nuestra
+  const ids = busq.map((b: any) => b.item_id);
+  const items = await getJSON(`${ML_API}/items?ids=${ids.join(",")}&attributes=id,category_id,catalog_product_id`, headers);
+  const nuestra = new Map((items || []).map((x: any) => [x.body?.id, x.body]));
+  // "más vendidos" por categoría (top 20 de ML)
+  const rank = new Map<string, Map<string, number>>();
+  for (const cat of new Set([...nuestra.values()].map((x: any) => x?.category_id).filter(Boolean))) {
+    const h = await getJSON(`${ML_API}/highlights/MLA/category/${cat}`, headers);
+    rank.set(cat as string, new Map((h?.content || []).map((c: any) => [c.id, c.position])));
+  }
+  const fecha = hoyAR();
+  const filas: any[] = [];
+  const cacheItems = new Map<string, any>();
+  for (const b of busq) {
+    const mia: any = nuestra.get(b.item_id) || {};
+    const rk = rank.get(mia.category_id) || new Map();
+    const s = await getJSON(`${ML_API}/products/search?site_id=MLA&status=active&limit=30&q=${encodeURIComponent(b.q)}`, headers);
+    let pos = 0;
+    const candidatos = (s?.results || []).map((p: any) => ({ p, pos: ++pos }))
+      .filter(({ p }: any) => { const g = tamanoProducto(p); return g != null && Math.abs(g - b.gramos) <= b.gramos * 0.05; });
+    // nuestro propio producto de catálogo siempre entra (para ver nuestro puesto)
+    if (mia.catalog_product_id && !candidatos.some((c: any) => c.p.id === mia.catalog_product_id)) {
+      const pr = await getJSON(`${ML_API}/products/${mia.catalog_product_id}`, headers);
+      if (pr) candidatos.push({ p: pr, pos: null });
+    }
+    for (const { p, pos } of candidatos.slice(0, 15)) {
+      let its = cacheItems.get(p.id);
+      if (its === undefined) { its = (await getJSON(`${ML_API}/products/${p.id}/items?limit=50`, headers))?.results || []; cacheItems.set(p.id, its); }
+      if (!its.length) continue; // producto sin vendedores activos
+      const masBarato = its.reduce((a: any, x: any) => (Number(x.price) < Number(a.price) ? x : a), its[0]);
+      const marca = (p.attributes || []).find((a: any) => a.id === "BRAND")?.value_name || null;
+      const rkPos = rk.get(p.id) ?? (p.parent_id ? rk.get(p.parent_id) : undefined) ?? null;
+      filas.push({
+        fecha, item_id: b.item_id, product_id: p.id, posicion: pos, nombre: p.name, marca, gramos: tamanoProducto(p),
+        precio: Number(masBarato.price), precio_lista: masBarato.original_price ? Number(masBarato.original_price) : null,
+        vendedores: its.length, es_full: its.some((x: any) => x.shipping?.logistic_type === "fulfillment"),
+        envio_gratis: !!masBarato.shipping?.free_shipping, ranking_cat: rkPos,
+        es_rosaint: p.id === mia.catalog_product_id || /rosaint/i.test(marca || ""),
       });
     }
-    const total = data?.paging?.total ?? arr.length;
-    offset += 50;
-    if (offset >= total || arr.length === 0) break;
   }
-  return todos;
+  if (filas.length) {
+    await supabase.from("ml_competencia").delete().eq("fecha", fecha);
+    const { error } = await supabase.from("ml_competencia").insert(filas);
+    if (error) throw new Error("ml_competencia: " + error.message);
+  }
+  // se guarda historia de 120 días (para ver bajas de precio de la competencia)
+  await supabase.from("ml_competencia").delete().lt("fecha", diasAtras(120));
+  return { busquedas: busq.length, productos: filas.length };
 }
 
-// PUT de status por item (active/paused) vía endpoint marketplace nuevo.
-async function pausarAd(headers: any, advertiserId: number, itemId: string, campaignId: number): Promise<{ ok: boolean; detalle: any }> {
-  const url = `${ML_API}/marketplace/advertising/${SITE_ID}/advertisers/${advertiserId}/product_ads/ads?channel=marketplace`;
-  const r = await fetch(url, {
-    method: "PUT",
-    headers: { ...headers, "api-version": "2", "content-type": "application/json" },
-    body: JSON.stringify({ target: [itemId], payload: { status: "paused", campaign_id: campaignId } }),
-  });
-  let body: any = null; try { body = await r.json(); } catch { body = await r.text(); }
-  return { ok: r.ok, detalle: { http: r.status, body } };
-}
-
-
-// ===== Control de acceso (auditoría 6-oct-2026) =====
-// Entra solo: un usuario con sesión de Core, un proceso automático con la clave interna (header
-// x-cron-key = secreto CONTROL_CRON_KEY) o el propio servidor (service role). La clave pública que
-// está en las páginas NO alcanza: antes dejaba entrar a cualquiera.
-async function _accesoPermitido(req: Request): Promise<boolean> {
+// ───────────── Acceso: sesión del Core, clave interna o el secreto de ml_config (cron) ─────────────
+async function accesoPermitido(req: Request, supabase: any): Promise<boolean> {
   const interna = Deno.env.get("CONTROL_CRON_KEY") || "";
   if (interna && req.headers.get("x-cron-key") === interna) return true;
+  const proxy = req.headers.get("x-proxy-secret") || "";
+  if (proxy) {
+    const { data } = await supabase.from("ml_config").select("valor").eq("clave", "proxy_secret").maybeSingle();
+    if (data?.valor && data.valor === proxy) return true;
+  }
   const a = req.headers.get("Authorization") || "";
   if (!a.startsWith("Bearer ")) return false;
   const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -116,159 +175,26 @@ async function _accesoPermitido(req: Request): Promise<boolean> {
   const apikey = req.headers.get("apikey") || "sb_publishable_I2b_s6jYVI1Cas3vGHLvbQ_OWXkU0vB";
   try {
     const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/user`, { headers: { apikey, Authorization: a } });
-    if (!r.ok) return false;
-    const u = await r.json();
-    return !!(u && u.id);
+    return r.ok && !!(await r.json())?.id;
   } catch { return false; }
 }
-function _servirConGuardia(...args: any[]) {
-  const h = args[args.length - 1];
-  args[args.length - 1] = async (req: Request, info: any) => {
-    if (req.method === "OPTIONS" || await _accesoPermitido(req)) return h(req, info);
-    return new Response(JSON.stringify({ ok: false, error: "No autorizado: iniciá sesión en Core" }), {
-      status: 401, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
-  };
-  return (Deno.serve as any)(...args);
-}
 
-_servirConGuardia(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const out = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...cors, "content-type": "application/json" } });
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  if (!(await accesoPermitido(req, supabase))) return out({ ok: false, error: "No autorizado: iniciá sesión en Core" }, 401);
   try {
-    let dryRunForzado = false;
-    try { const b = await req.json(); if (b && b.dry_run === true) dryRunForzado = true; } catch (_) {}
-
-    // 1. Parámetros
-    const { data: pars } = await supabase.from("ml_parametros").select("clave,valor").like("clave", "ads_auto%");
-    const P: Record<string, number> = {};
-    (pars || []).forEach((r: any) => { P[r.clave] = Number(r.valor); });
-    const activo = P["ads_auto_activo"] === 1;
-    const rentMin = P["ads_auto_rentabilidad_min_pct"] ?? 15;
-    const diasMalos = P["ads_auto_dias_malos"] ?? 3;
-    const maxAcciones = P["ads_auto_max_acciones_corrida"] ?? 3;
-    const presupuestoMensual = P["ads_auto_presupuesto_mensual"] ?? 0;
-    const ejecutar = activo && !dryRunForzado;  // si switch OFF o dry_run, NO escribe en ML
-
-    const hoy = new Date();
-    const fechaHoy = f(hoy);
-    const desde = f(new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000));
-
-    const token = await asegurarToken(supabase);
-    const headers = { "Authorization": `Bearer ${token}` };
-    const advertiserId = await obtenerAdvertiserId(headers, supabase);
-
-    // 2. Ads reales con campaign_id + status
-    const ads = await traerTodosLosAds(headers, advertiserId, desde, fechaHoy);
-    const mapaCampania: Record<string, { campaign_id: number; status: string }> = {};
-    for (const a of ads) if (a.item_id) mapaCampania[a.item_id] = { campaign_id: a.campaign_id, status: a.status };
-
-    // 3. Rentabilidad por item
-    const { data: rent } = await supabase.from("v_rentabilidad_ml").select(
-      "item_id,titulo,rentabilidad_pct,rentabilidad_con_ads_7d_pct,ads_7d,ads_mes,ads_acos_7d,ventas_7d,ventas_total"
-    );
-    const porItem: Record<string, any> = {};
-    (rent || []).forEach((r: any) => { porItem[r.item_id] = r; });
-
-    // 4. Snapshot diario (solo items que están en ADS) + evaluación
-    const snapshots: any[] = [];
-    const candidatos: any[] = [];   // items active que hoy están "mal"
-    let gastoMesTotal = 0;
-
-    for (const a of ads) {
-      const r = porItem[a.item_id];
-      const adsMes = Number(r?.ads_mes ?? a.cost ?? 0);
-      gastoMesTotal += adsMes;
-      snapshots.push({
-        item_id: a.item_id, fecha: fechaHoy, campaign_id: a.campaign_id, status: a.status,
-        acos_7d: r?.ads_acos_7d ?? a.acos ?? null,
-        rentabilidad_con_ads_7d_pct: r?.rentabilidad_con_ads_7d_pct ?? null,
-        rentabilidad_pct: r?.rentabilidad_pct ?? null,
-        ads_7d: r?.ads_7d ?? null, ads_mes: adsMes,
-        ventas_7d: r?.ventas_7d ?? 0, ventas_total: r?.ventas_total ?? 0,
-      });
-      // "Dia malo": solo ads ACTIVE con gasto 7d > 0, rent con ADS por debajo del minimo
-      const rentAds = Number(r?.rentabilidad_con_ads_7d_pct ?? 0);
-      const gasto7 = Number(r?.ads_7d ?? 0);
-      const ventas7 = Number(r?.ventas_7d ?? 0);
-      const esMalo = a.status === "active" && gasto7 > 0 && rentAds < rentMin && ventas7 <= 1;
-      if (esMalo) candidatos.push({ item_id: a.item_id, campaign_id: a.campaign_id, gasto7, rentAds, titulo: r?.titulo });
-    }
-
-    if (snapshots.length) {
-      await supabase.from("ml_ads_snapshot_diario").upsert(snapshots, { onConflict: "item_id,fecha" });
-    }
-
-    // 5. Para cada candidato, contar dias malos consecutivos en el snapshot historico
-    const aPausar: any[] = [];
-    for (const c of candidatos) {
-      const { data: hist } = await supabase.from("ml_ads_snapshot_diario")
-        .select("fecha,rentabilidad_con_ads_7d_pct,ads_7d,ventas_7d,status")
-        .eq("item_id", c.item_id).order("fecha", { ascending: false }).limit(diasMalos);
-      let seguidos = 0;
-      for (const h of (hist || [])) {
-        const malo = h.status === "active" && Number(h.ads_7d ?? 0) > 0
-          && Number(h.rentabilidad_con_ads_7d_pct ?? 0) < rentMin && Number(h.ventas_7d ?? 0) <= 1;
-        if (malo) seguidos++; else break;
-      }
-      if (seguidos >= diasMalos) aPausar.push({ ...c, dias_malos: seguidos });
-    }
-
-    // Si hay presupuesto mensual y el gasto lo supera, forzar recorte aunque no lleguen a N dias
-    const excesoPresupuesto = presupuestoMensual > 0 && gastoMesTotal > presupuestoMensual;
-
-    // Priorizar por mayor gasto 7d y limitar por max acciones
-    aPausar.sort((x, y) => y.gasto7 - x.gasto7);
-    const ejecutarLista = aPausar.slice(0, maxAcciones);
-
-    // 6. Ejecutar (o simular) pausas
-    const acciones: any[] = [];
-    for (const item of ejecutarLista) {
-      if (!item.campaign_id) {
-        acciones.push({ item_id: item.item_id, accion: "pausar", resultado: "omitido", motivo: "sin campaign_id" });
-        continue;
-      }
-      let resultado = "simulado"; let detalle: any = { dias_malos: item.dias_malos, rentAds: item.rentAds, gasto7: item.gasto7 };
-      if (ejecutar) {
-        const res = await pausarAd(headers, advertiserId, item.item_id, item.campaign_id);
-        resultado = res.ok ? "ok" : "error";
-        detalle = { ...detalle, ...res.detalle };
-      }
-      const motivo = `Rent.ADS ${item.rentAds?.toFixed(1)}% < ${rentMin}% por ${item.dias_malos}d, gasto7 $${item.gasto7?.toFixed(0)}`;
-      acciones.push({ item_id: item.item_id, campaign_id: item.campaign_id, accion: "pausar", resultado, motivo });
-      await supabase.from("ml_ads_bitacora").insert({
-        item_id: item.item_id, campaign_id: item.campaign_id, accion: "pausar",
-        motivo, detalle, resultado,
-      });
-    }
-
-    // 7. Sugerencias (no ejecuta): items active rentables que podrian recibir mas budget
-    const sugerencias = (rent || [])
-      .filter((r: any) => Number(r.rentabilidad_con_ads_7d_pct ?? 0) >= 40 && Number(r.ventas_7d ?? 0) >= 2 && mapaCampania[r.item_id]?.status === "active")
-      .map((r: any) => ({ item_id: r.item_id, titulo: r.titulo, rent: r.rentabilidad_con_ads_7d_pct, ventas7: r.ventas_7d, campaign_id: mapaCampania[r.item_id]?.campaign_id }))
-      .slice(0, 10);
-
-    // Bitacora de la corrida
-    await supabase.from("ml_ads_bitacora").insert({
-      accion: "corrida",
-      motivo: ejecutar ? "ejecucion real" : (activo ? "dry_run forzado" : "switch OFF (simulado)"),
-      detalle: {
-        ads_total: ads.length, candidatos_hoy: candidatos.length, a_pausar: aPausar.length,
-        ejecutadas: ejecutarLista.length, gasto_mes_total: Math.round(gastoMesTotal),
-        presupuesto_mensual: presupuestoMensual, exceso_presupuesto: excesoPresupuesto,
-      },
-      resultado: "ok",
-    });
-
-    return new Response(JSON.stringify({
-      ok: true, modo: ejecutar ? "REAL" : (activo ? "dry_run" : "switch_OFF"),
-      advertiserId, ads_total: ads.length,
-      gasto_mes_total: Math.round(gastoMesTotal), presupuesto_mensual: presupuestoMensual, exceso_presupuesto: excesoPresupuesto,
-      candidatos_hoy: candidatos.length, a_pausar: aPausar.length,
-      acciones, sugerencias,
-      params: { activo, rentMin, diasMalos, maxAcciones, presupuestoMensual },
-    }, null, 2), { status: 200, headers: { ...cors, "content-type": "application/json" } });
+    let body: any = {};
+    try { body = await req.json(); } catch (_) { /* vacío */ }
+    const accion = body.accion || "todo";
+    const headers = { Authorization: `Bearer ${await asegurarToken(supabase)}` };
+    const res: any = { ok: true };
+    if (accion === "traer_ads" || accion === "todo") res.ads = await traerAds(supabase, headers);
+    if (accion === "competencia" || accion === "todo") res.competencia = await competencia(supabase, headers);
+    await supabase.from("ml_ads_bitacora").insert({ accion: "corrida", motivo: `v2 ${accion}`, detalle: res, resultado: "ok" });
+    return out(res);
   } catch (e) {
-    await supabase.from("ml_ads_bitacora").insert({ accion: "corrida", motivo: "error", detalle: { msg: (e as Error).message }, resultado: "error" });
-    return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), { status: 500, headers: { ...cors, "content-type": "application/json" } });
+    return out({ ok: false, error: (e as Error).message }, 500);
   }
 });

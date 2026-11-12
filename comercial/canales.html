@@ -313,6 +313,11 @@
     .pa-opt input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
     .input.pa-num { width: 64px; height: 30px; padding: 4px 8px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
     .btn.sm { padding: 4px 10px; font-size: 12px; }
+    .ads-plan-g { margin-top: 10px; font-size: 13px; line-height: 1.5; }
+    .ads-plan-g > div { color: var(--muted); }
+    .comp-det { margin: 6px 0 2px; display: grid; gap: 3px; font-size: 12px; }
+    .comp-det > div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px dashed var(--border); padding-top: 3px; }
+    .comp-det .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
@@ -898,6 +903,7 @@ async function cargarML() {
       <button class="subtab active" data-sub="pubs">Publicaciones</button>
       <button class="subtab" data-sub="promos">Promociones</button>
       <button class="subtab" data-sub="ads">Publicidad</button>
+      <button class="subtab" data-sub="comp">Competencia</button>
       <button class="subtab" data-sub="odoo">Ventas → Odoo</button>
       <button class="subtab" data-sub="preguntas">Preguntas</button>
       <button class="subtab" data-sub="precios">Precios sugeridos</button>
@@ -908,6 +914,7 @@ async function cargarML() {
     <div id="sub-pubs"></div>
     <div id="sub-promos" style="display:none;"></div>
     <div id="sub-ads" style="display:none;"></div>
+    <div id="sub-comp" style="display:none;"></div>
     <div id="sub-odoo" style="display:none;"></div>
     <div id="sub-preguntas" style="display:none;"></div>
     <div id="sub-precios" style="display:none;"></div>
@@ -918,11 +925,13 @@ async function cargarML() {
   $$('.subtab').forEach(st => st.addEventListener('click', () => {
     $$('.subtab').forEach(x => x.classList.toggle('active', x === st));
     const which = st.dataset.sub;
-    ['pubs','promos','ads','odoo','preguntas','facturas','precios','cfg'].forEach(v => {
+    ['pubs','promos','ads','comp','odoo','preguntas','facturas','precios','cfg'].forEach(v => {
       $('#sub-' + v).style.display = (v === which ? '' : 'none');
     });
     if (which === 'odoo' && !VENTAS_ODOO_CARGADO) cargarVentasOdoo();
     if (which === 'preguntas') cargarPreguntasML();
+    if (which === 'comp') cargarCompetencia();
+    if (which === 'ads') cargarPublicidad();
     if (which === 'facturas' && !FACTURAS_ML_CARGADO) cargarFacturasML();
   }));
 
@@ -2118,155 +2127,160 @@ async function sincronizarAdsGasto() {
   finally { btn.disabled = false; btn.textContent = prev; }
 }
 
-// ─────── 3.2) SUB-TAB PUBLICIDAD ───────
-const ADS_CLAVES = ['ads_auto_activo','ads_auto_frecuencia_hs','ads_auto_presupuesto_mensual','ads_auto_rentabilidad_min_pct','ads_auto_dias_malos','ads_auto_max_acciones_corrida'];
+// ─────── 3.2) SUB-TAB PUBLICIDAD (v2, nov-2026) ───────
+// Publicidad inteligente: v_ml_ads_analisis cruza las métricas de cada anuncio (ml_ads_metricas, las trae
+// ml-ads-auto cada día) con el margen real de hoy (v_ml_promo_control / ml_margen). Techo de ACOS = el que
+// deja $0 por venta por anuncio; ACOS objetivo = el que deja el margen mínimo (promos_margen_min_pct).
+// Mercado Ads no deja escribir por API a apps no certificadas: las acciones se aplican en el panel de
+// Publicidad (a mano o desde Chrome).
+const ADS_REC = {
+  pausar: { k: 'mal', txt: 'Pausar' }, bajar: { k: 'exc', txt: 'Bajar ACOS' }, activar: { k: 'ok', txt: 'Activar' },
+  mantener: { k: 'ok', txt: 'Mantener' }, sin_publicidad: { k: 'sin', txt: 'Sin publicidad' },
+};
+const ADS_ESTADO = { active: 'activo', paused: 'pausado', idle: 'sin circular', hold: 'en espera', 'sin anuncio': 'sin anuncio' };
+let ADS_ROWS = [], ADS_CAMP = null;
 
 async function cargarPublicidad() {
-  $('#sub-ads').innerHTML = `
-    <div id="motor-estado" class="motor-estado off"><span class="icon">⚪</span><div><b>Cargando…</b></div></div>
-
-    <div class="main-section">
-      <div class="head">
-        <div><h3>🤖 Motor de automatización</h3><div class="sub">Pausa publicaciones con ads que rinden mal, según las reglas de abajo. La corrida real la ejecuta un cron en Supabase.</div></div>
-      </div>
-
-      <div class="switch-row">
-        <input type="checkbox" id="auto-activo">
-        <div>
-          <div class="lbl" id="auto-activo-lbl">Cargando…</div>
-          <div class="desc">Encendido = el motor pausa avisos reales. Apagado = calcula y registra en la bitácora, pero no toca ML.</div>
-        </div>
-      </div>
-
-      <div class="field-grid">
-        <div class="field"><label>Frecuencia (horas)</label><input type="number" id="auto-frec" step="1" min="1"><div class="help">Cada cuánto corre el motor.</div></div>
-        <div class="field"><label>Presupuesto mensual (ARS)</label><input type="number" id="auto-presu" step="100" min="0"><div class="help">Techo global. Si se pasa, alerta.</div></div>
-        <div class="field"><label>Rentabilidad mínima con ADS (%)</label><input type="number" id="auto-rentmin" step="1" min="0"><div class="help">Por debajo, aviso candidato a pausa.</div></div>
-        <div class="field"><label>Días malos consecutivos</label><input type="number" id="auto-diasm" step="1" min="1"><div class="help">Antes de pausar.</div></div>
-        <div class="field"><label>Máx. acciones por corrida</label><input type="number" id="auto-max" step="1" min="1"><div class="help">Tope de pausas por vez.</div></div>
-      </div>
-
-      <div style="display:flex; gap:10px; align-items:center; margin-top:16px;">
-        <button class="btn primary" id="btnSaveMotor">Guardar configuración</button>
-        <button class="btn secondary" id="btnCorrer">Correr en seco</button>
-        <span class="status" id="motor-save-status" style="font-size:12px; color:var(--muted);"></span>
-      </div>
-    </div>
-
-    <div class="main-section">
-      <div class="head"><div><h3>Última corrida en seco</h3><div class="sub">Muestra qué haría el motor con los datos actuales. No modifica ML.</div></div></div>
-      <div id="corrida-out"><div class="empty-box">Todavía no corriste el motor. Tocá "Correr en seco".</div></div>
-    </div>
-
-    <div class="main-section">
-      <div class="head"><div><h3>Bitácora</h3><div class="sub">Últimas 30 corridas y acciones del motor.</div></div></div>
-      <div id="bitacora"><div class="empty-box">Cargando…</div></div>
-    </div>
-  `;
-
-  try {
-    const { data } = await sb.from('ml_parametros').select('clave, valor').in('clave', ADS_CLAVES);
-    const P = {};
-    (data || []).forEach(r => { P[r.clave] = r.valor != null ? Number(r.valor) : null; });
-    const activo = P['ads_auto_activo'] === 1;
-    $('#auto-activo').checked = activo;
-    actualizarMotorEstado(activo);
-    $('#auto-frec').value = P['ads_auto_frecuencia_hs'] ?? 3;
-    $('#auto-presu').value = P['ads_auto_presupuesto_mensual'] ?? 0;
-    $('#auto-rentmin').value = P['ads_auto_rentabilidad_min_pct'] ?? 15;
-    $('#auto-diasm').value = P['ads_auto_dias_malos'] ?? 3;
-    $('#auto-max').value = P['ads_auto_max_acciones_corrida'] ?? 3;
-  } catch (err) { toast('Error al cargar config: ' + err.message, 'err'); }
-
-  $('#auto-activo').addEventListener('change', e => actualizarMotorEstado(e.target.checked));
-  $('#btnSaveMotor').addEventListener('click', guardarMotor);
-  $('#btnCorrer').addEventListener('click', correrEnSeco);
-
-  await cargarBitacora();
+  const el = $('#sub-ads');
+  el.innerHTML = '<div class="empty-box">Cargando publicidad…</div>';
+  const [a, b] = await Promise.all([
+    sb.from('v_ml_ads_analisis').select('*'),
+    sb.from('ml_ads_metricas').select('traido_en,desde,hasta').eq('ventana', '30d').order('traido_en', { ascending: false }).limit(1),
+  ]);
+  if (a.error) { el.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(a.error.message)}</div>`; return; }
+  ADS_ROWS = a.data || [];
+  const meta = (b.data || [])[0];
+  renderPublicidad(meta);
 }
 
-function actualizarMotorEstado(activo) {
-  const est = $('#motor-estado'), lbl = $('#auto-activo-lbl');
-  if (activo) {
-    est.className = 'motor-estado on';
-    est.innerHTML = '<span class="icon">🟢</span><div><b>Motor encendido.</b> Pausa avisos que cumplen las reglas.</div>';
-    lbl.textContent = 'Encendido (pausa de verdad)';
-  } else {
-    est.className = 'motor-estado off';
-    est.innerHTML = '<span class="icon">⚪</span><div><b>Motor apagado.</b> Calcula y registra, pero no modifica ML.</div>';
-    lbl.textContent = 'Apagado';
-  }
+function renderPublicidad(meta) {
+  const el = $('#sub-ads');
+  const R = ADS_ROWS;
+  const sum = (f) => R.reduce((s, r) => s + Number(r[f] || 0), 0);
+  const gasto = sum('costo30'), uAds = sum('u_ads30'), uOrg = sum('u_org30'), resultado = sum('resultado_ads30');
+  const activos = R.filter(r => r.estado_anuncio === 'active');
+  const orden = { pausar: 0, bajar: 1, activar: 2, mantener: 3, sin_publicidad: 4 };
+  const filas = R.slice().sort((x, y) => (orden[x.recomendacion] - orden[y.recomendacion]) || (Number(y.costo30) - Number(x.costo30)));
+  const n = k => R.filter(r => r.recomendacion === k).length;
+
+  const fila = r => {
+    const rec = ADS_REC[r.recomendacion] || { k: 'sin', txt: r.recomendacion };
+    const acosCls = r.acos30 == null || Number(r.costo30) === 0 ? 'pct-ok' : Number(r.acos30) > Number(r.techo_acos) ? 'mg-mal' : Number(r.acos30) > Number(r.acos_obj) ? 'mg-justo' : 'mg-bien';
+    const gv = r.gan_venta_ads == null ? '<span class="pct-ok">—</span>'
+      : `<span class="${Number(r.margen_venta_ads) < (PAUTO_PAR.promos_margen_min_pct ?? 20) ? (Number(r.gan_venta_ads) <= 0 ? 'mg-mal' : 'mg-justo') : 'mg-bien'}">$${fmtN(r.gan_venta_ads)}</span><span class="sub">${pctTxt(r.margen_venta_ads)} de margen</span>`;
+    return `<tr>
+      <td>${esc(cleanTitle(r.titulo))}<span class="sub">${fmtARS(Number(r.precio_hoy))} · margen sin publicidad ${pctTxt(r.margen_pct)}</span></td>
+      <td>${esc(ADS_ESTADO[r.estado_anuncio] || r.estado_anuncio)}<span class="sub">${esc(r.campana || '')}</span></td>
+      <td class="num">${Number(r.costo30) ? fmtARS(Number(r.costo30)) : '—'}<span class="sub">${r.u_ads30} por anuncio · ${r.u_org30} solas</span></td>
+      <td class="num"><span class="${acosCls}">${Number(r.costo30) ? pctTxt(r.acos30) : '—'}</span>${Number(r.costo7) ? `<span class="sub">7 días: ${pctTxt(r.acos7)}</span>` : ''}</td>
+      <td class="num">${pctTxt(r.techo_acos)}<span class="sub">objetivo ${pctTxt(Math.max(0, Number(r.acos_obj)))}</span></td>
+      <td class="num">${gv}</td>
+      <td><span class="est est-${rec.k}">${rec.txt}</span><span class="sub" style="max-width:260px;">${esc(r.motivo || '')}</span></td>
+    </tr>`;
+  };
+
+  // Plan de campañas: agrupa por ACOS objetivo (bandas de 5 puntos) lo que conviene que circule
+  const circulan = R.filter(r => ['mantener', 'bajar', 'activar'].includes(r.recomendacion));
+  const grupos = {};
+  circulan.forEach(r => { const g = Number(r.grupo_acos); (grupos[g] = grupos[g] || []).push(r); });
+  const plan = Object.keys(grupos).map(Number).sort((a, b) => b - a).map(g => `
+    <div class="ads-plan-g"><b>Campaña ACOS objetivo ${g}%</b> <span class="pct-ok">(ROAS ${(100 / g).toFixed(1).replace('.', ',')})</span>
+      <div>${grupos[g].map(r => `${esc(cleanTitle(r.titulo))}${r.estado_anuncio !== 'active' ? ' <span class="est est-ok" style="font-size:10px;">activar</span>' : ''}`).join(' · ')}</div></div>`).join('');
+  const pausar = R.filter(r => r.recomendacion === 'pausar' || (r.recomendacion === 'sin_publicidad' && r.estado_anuncio === 'active'));
+
+  el.innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="v">${fmtARS(gasto)}</div><div class="l">Gasto en publicidad · 30 días</div></div>
+      <div class="kpi"><div class="v">${uAds} <span style="font-size:13px;color:var(--muted);font-weight:500;">+ ${uOrg} solas</span></div><div class="l">Ventas por anuncio (las publicitadas)</div></div>
+      <div class="kpi"><div class="v" style="color:${resultado > 0 ? 'var(--ok)' : 'var(--hot)'}">${fmtARS(resultado)}</div><div class="l">Lo que dejó la publicidad (ganancia − gasto, sin IVA)</div></div>
+      <div class="kpi"><div class="v">${activos.length}</div><div class="l">Anuncios circulando</div></div>
+    </div>
+    <div class="control-card">
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
+        <h4 style="margin:0;">Qué conviene hacer con cada anuncio</h4>
+        <span style="font-size:12.5px; color:var(--muted);">${[n('pausar') && `${n('pausar')} pausar`, n('bajar') && `${n('bajar')} bajar ACOS`, n('activar') && `${n('activar')} activar`, n('mantener') && `${n('mantener')} mantener`].filter(Boolean).join(' · ') || 'sin cambios'}</span>
+        <span style="flex:1;"></span>
+        <button class="btn secondary" id="btnAdsTraer">Actualizar datos</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Últimos 30 días${meta ? ` (${fFecha(meta.desde)} al ${fFecha(meta.hasta)}, leído ${fFecha(meta.traido_en)})` : ''}. <b>Techo</b> = ACOS en el que una venta por anuncio deja $0. <b>Objetivo</b> = el que deja tu margen mínimo (${PAUTO_PAR.promos_margen_min_pct ?? 20}%). Margen con el precio de hoy, costo con mano de obra, cargos de ML e Ingresos Brutos.</div>
+      <table class="control-tabla">
+        <thead><tr><th>Producto</th><th>Anuncio</th><th class="num">Gasto 30 d</th><th class="num">ACOS 30 d</th><th class="num">Techo · objetivo</th><th class="num">Deja por venta por anuncio</th><th>Recomendación</th></tr></thead>
+        <tbody>${filas.map(fila).join('')}</tbody>
+      </table>
+    </div>
+    <div class="control-card">
+      <h4 style="margin:0 0 4px;">Plan de campañas sugerido</h4>
+      <div style="font-size:12.5px; color:var(--muted);">Una sola campaña con ACOS 25% hace que ML gaste de más en los productos que aguantan menos. Agrupando por ACOS objetivo, cada producto paga solo lo que su margen permite.</div>
+      ${plan || '<div style="margin-top:8px;">Nada para publicitar con el margen actual.</div>'}
+      ${pausar.length ? `<div class="ads-plan-g"><b>Sacar de la publicidad</b><div>${pausar.map(r => esc(cleanTitle(r.titulo))).join(' · ')}</div></div>` : ''}
+      <div class="control-note">Mercado Libre no deja que el sistema cambie la publicidad por API (pedido de permiso hecho el 11-11). Estos cambios se hacen en Marketing → Publicidad; pedile a Claude que los aplique desde tu Chrome.</div>
+    </div>`;
+  $('#btnAdsTraer').addEventListener('click', () => actualizarAdsComp('traer_ads', '#btnAdsTraer', cargarPublicidad));
 }
 
-async function guardarMotor() {
-  const btn = $('#btnSaveMotor'); btn.disabled = true;
-  const st = $('#motor-save-status'); st.textContent = 'Guardando…'; st.style.color = 'var(--muted)';
+async function actualizarAdsComp(accion, btnSel, luego) {
+  const b = $(btnSel); const prev = b.textContent; b.disabled = true; b.textContent = 'Leyendo Mercado Libre…';
   try {
-    const pares = [
-      ['ads_auto_activo', $('#auto-activo').checked ? 1 : 0],
-      ['ads_auto_frecuencia_hs', Number($('#auto-frec').value) || 3],
-      ['ads_auto_presupuesto_mensual', Number($('#auto-presu').value) || 0],
-      ['ads_auto_rentabilidad_min_pct', Number($('#auto-rentmin').value) || 15],
-      ['ads_auto_dias_malos', Number($('#auto-diasm').value) || 3],
-      ['ads_auto_max_acciones_corrida', Number($('#auto-max').value) || 3],
-    ];
-    for (const [clave, valor] of pares) {
-      const { error } = await sb.from('ml_parametros').update({ valor, actualizado_en: new Date().toISOString() }).eq('clave', clave);
-      if (error) throw new Error(clave + ': ' + error.message);
-    }
-    const activo = $('#auto-activo').checked;
-    actualizarMotorEstado(activo);
-    st.textContent = '✓ Guardado'; st.style.color = 'var(--ok)';
-    toast(activo ? 'Motor ENCENDIDO' : 'Motor apagado', 'ok');
-  } catch (err) { st.textContent = '✗ ' + err.message; st.style.color = 'var(--hot)'; toast('Error: ' + err.message, 'err'); }
-  finally { btn.disabled = false; }
-}
-
-async function correrEnSeco() {
-  const btn = $('#btnCorrer');
-  const prev = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Corriendo…';
-  const out = $('#corrida-out');
-  try {
-    const { data, error } = await sb.functions.invoke('ml-ads-auto', { body: { dry_run: true } });
+    const { data, error } = await sb.functions.invoke('ml-ads-auto', { body: { accion } });
     if (error) throw new Error(error.message);
     if (data && data.ok === false) throw new Error(data.error || 'Error');
-    const sug = (data.sugerencias || []).map(s => `<li>${esc((s.titulo||'').replace(/ - Rosaint.*$/i,'').trim())} — rent ${Number(s.rent).toFixed(0)}%, ${s.ventas7} vts/7d</li>`).join('');
-    const modoBadge = data.modo === 'REAL' ? '<span class="modo-badge real">🟢 REAL</span>' : '<span class="modo-badge seco">⚪ en seco</span>';
-    out.innerHTML = `
-      ${data.exceso_presupuesto ? '<div class="alerta-presu">⚠ El gasto del mes supera el presupuesto.</div>' : ''}
-      <div class="resultado-grid">
-        <div class="rmet"><div class="v">${data.ads_total || 0}</div><div class="l">Avisos</div></div>
-        <div class="rmet ${data.exceso_presupuesto?'warn':''}"><div class="v">$${Number(data.gasto_mes_total||0).toLocaleString('es-AR')}</div><div class="l">Gasto / mes</div></div>
-        <div class="rmet warn"><div class="v">${data.candidatos_hoy || 0}</div><div class="l">Malos hoy</div></div>
-        <div class="rmet hot"><div class="v">${data.a_pausar || 0}</div><div class="l">A pausar</div></div>
-      </div>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Modo: ${modoBadge}</div>
-      ${sug ? `<div class="sugerencias"><b>🚀 Sugerencias para invertir más:</b><ul>${sug}</ul></div>` : ''}
-    `;
-    await cargarBitacora();
-  } catch (err) { out.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`; }
-  finally { btn.disabled = false; btn.textContent = prev; }
+    toast('✓ Actualizado', 'ok');
+    await luego();
+  } catch (err) { toast('Error: ' + err.message, 'err'); b.disabled = false; b.textContent = prev; }
 }
 
-async function cargarBitacora() {
-  const cont = $('#bitacora');
-  try {
-    const { data, error } = await sb.from('ml_ads_bitacora').select('*').order('ejecutado_en', { ascending: false }).limit(30);
-    if (error) throw error;
-    if (!data || !data.length) { cont.innerHTML = '<div class="empty-box">Sin registros todavía.</div>'; return; }
-    const ico = { ok: '✅', error: '❌', simulado: '⚪', omitido: '⏭️' };
-    cont.innerHTML = `
-      <table class="tbl">
-        <thead><tr><th>Fecha</th><th>Acción</th><th>Item ML</th><th>Motivo</th></tr></thead>
-        <tbody>
-          ${data.map(r => {
-            const f = new Date(r.ejecutado_en).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
-            const tag = r.accion === 'corrida' ? '🔄 corrida' : r.accion === 'pausar' ? '⏸️ pausar' : r.accion;
-            return `<tr><td class="date">${esc(f)}</td><td>${ico[r.resultado] || ''} ${esc(tag || '')}</td><td class="mono">${esc(r.item_id || '—')}</td><td class="muted">${esc(r.motivo || '—')}</td></tr>`;
-          }).join('')}
-        </tbody>
-      </table>`;
-  } catch (err) { cont.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.message)}</div>`; }
+// ─────── SUB-TAB COMPETENCIA (nov-2026) ───────
+// ml-ads-auto {accion:'competencia'} (cron diario): por cada búsqueda de ml_competencia_busquedas trae los
+// productos de catálogo del mismo tamaño, su precio más bajo, vendedores, Full y el puesto en "más vendidos".
+// Solo ve productos de catálogo: las publicaciones sueltas de otros vendedores no salen por la API.
+let COMP_RES = [], COMP_DET = [];
+async function cargarCompetencia() {
+  const el = $('#sub-comp');
+  el.innerHTML = '<div class="empty-box">Cargando competencia…</div>';
+  const [r, d] = await Promise.all([
+    sb.from('v_ml_competencia_resumen').select('*'),
+    sb.from('ml_competencia').select('*').eq('es_rosaint', false).order('precio'),
+  ]);
+  if (r.error) { el.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(r.error.message)}</div>`; return; }
+  COMP_RES = r.data || [];
+  const ult = COMP_RES[0]?.fecha;
+  COMP_DET = (d.data || []).filter(x => x.fecha === ult);
+  const filas = COMP_RES.slice().sort((a, b) => (Number(b.vs_mediana_pct ?? -999) - Number(a.vs_mediana_pct ?? -999)));
+  const conComp = filas.filter(x => Number(x.n) > 0);
+  const caros = conComp.filter(x => Number(x.vs_mediana_pct) > 30).length;
+  const alertas = filas.filter(x => x.cambio_min_7d_pct != null && Number(x.cambio_min_7d_pct) <= -10);
+  const fila = x => {
+    const det = COMP_DET.filter(c => c.item_id === x.item_id);
+    const vs = x.vs_mediana_pct == null ? '<span class="pct-ok">—</span>'
+      : `<span class="${Number(x.vs_mediana_pct) > 30 ? 'mg-mal' : Number(x.vs_mediana_pct) > 10 ? 'mg-justo' : 'mg-bien'}">${Number(x.vs_mediana_pct) > 0 ? '+' : ''}${x.vs_mediana_pct}%</span>`;
+    return `<tr>
+      <td><details><summary style="cursor:pointer;">${esc(cleanTitle(x.titulo))}</summary>
+        ${det.length ? `<div class="comp-det">${det.map(c => `<div><span>${esc(c.marca || '—')} · ${esc(c.nombre)}</span><span class="num">${fmtARS(Number(c.precio))}${c.es_full ? ' <span class="badge cuotas">FULL</span>' : ''}${c.ranking_cat ? ` <span class="pct-ok">#${c.ranking_cat} más vendidos</span>` : ''}</span></div>`).join('')}</div>` : '<div class="sub">Sin competidores de catálogo de este tamaño.</div>'}
+      </details><span class="sub">búsqueda: "${esc(x.q)}"</span></td>
+      <td class="num"><b>${fmtARS(Number(x.precio_hoy))}</b>${x.promo ? `<span class="sub">${esc(x.promo)}</span>` : ''}</td>
+      <td class="num">${Number(x.n) || 0}${Number(x.n_full) ? `<span class="sub">${x.n_full} con Full</span>` : ''}</td>
+      <td class="num">${x.minimo != null ? fmtARS(Number(x.minimo)) : '—'}<span class="sub">${esc(x.mas_barato || '')}</span></td>
+      <td class="num">${x.mediana != null ? fmtARS(Number(x.mediana)) : '—'}</td>
+      <td class="num">${vs}${Number(x.mas_baratos_que_vos) ? `<span class="sub">${x.mas_baratos_que_vos} más baratos que vos</span>` : ''}</td>
+      <td class="num">${x.cambio_min_7d_pct == null ? '<span class="pct-ok">—</span>' : `<span class="${Number(x.cambio_min_7d_pct) <= -10 ? 'mg-mal' : ''}">${Number(x.cambio_min_7d_pct) > 0 ? '+' : ''}${x.cambio_min_7d_pct}%</span>`}</td>
+      <td class="num">${x.ranking_nuestro ? '#' + x.ranking_nuestro : '<span class="pct-ok">fuera del top 20</span>'}</td>
+    </tr>`;
+  };
+  el.innerHTML = `
+    <div class="control-card ${alertas.length ? 'bad' : ''}">
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
+        <h4 style="margin:0;">${alertas.length ? `⚠ ${alertas.length} producto${alertas.length !== 1 ? 's' : ''} con la competencia bajando precio` : 'Competencia en Mercado Libre'}</h4>
+        <span style="font-size:12.5px; color:var(--muted);">${conComp.length} productos con competidores · ${caros} más de 30% arriba de la mediana${ult ? ` · foto del ${fFecha(ult)}` : ''}</span>
+        <span style="flex:1;"></span>
+        <button class="btn secondary" id="btnCompTraer">Actualizar competencia</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Productos de catálogo de otras marcas del mismo tamaño, con el precio más bajo al que se venden hoy. Tocá un producto para ver cada competidor. Se actualiza solo todos los días; las publicaciones sueltas (fuera de catálogo) no salen por la API.</div>
+      <table class="control-tabla">
+        <thead><tr><th>Producto</th><th class="num">Tu precio hoy</th><th class="num">Competidores</th><th class="num">Más barato</th><th class="num">Mediana</th><th class="num">Vos vs mediana</th><th class="num">Más barato · 7 días</th><th class="num">Tu puesto</th></tr></thead>
+        <tbody>${filas.map(fila).join('')}</tbody>
+      </table>
+    </div>`;
+  $('#btnCompTraer').addEventListener('click', () => actualizarAdsComp('competencia', '#btnCompTraer', cargarCompetencia));
 }
 
 // ─────── 3.3) SUB-TAB CONFIG ML ───────
