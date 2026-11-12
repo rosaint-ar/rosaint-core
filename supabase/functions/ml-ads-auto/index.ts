@@ -152,47 +152,81 @@ function tamanoProducto(p: any): number | null {
   return g == null ? null : g * unidades;
 }
 
+const sinAcentos = (t: string) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
 async function competencia(supabase: any, headers: any) {
   const { data: busq } = await supabase.from("ml_competencia_busquedas").select("*").eq("activo", true);
   if (!busq?.length) return { busquedas: 0 };
+  const { data: excl } = await supabase.from("ml_competencia_excluidos").select("item_id,product_id");
+  const excluido = new Set((excl || []).map((e: any) => `${e.item_id}|${e.product_id}`));
   // categoría y producto de catálogo de cada publicación nuestra
   const ids = busq.map((b: any) => b.item_id);
   const items = await getJSON(`${ML_API}/items?ids=${ids.join(",")}&attributes=id,category_id,catalog_product_id`, headers);
   const nuestra = new Map((items || []).map((x: any) => [x.body?.id, x.body]));
-  // "más vendidos" por categoría (top 20 de ML)
+  const { data: pubs } = await supabase.from("ml_publicaciones").select("item_id,activa");
+  const fecha = hoyAR();
+  const cacheItems = new Map<string, any>();
+  const itemsDe = async (pid: string) => {
+    let its = cacheItems.get(pid);
+    if (its === undefined) { its = (await getJSON(`${ML_API}/products/${pid}/items?limit=50`, headers))?.results || []; cacheItems.set(pid, its); }
+    return its;
+  };
+  const marcaDe = (p: any) => (p?.attributes || []).find((a: any) => a.id === "BRAND")?.value_name || null;
+
+  // "Más vendidos" por categoría (top 20 de ML), con nombre, marca y precio más bajo → ml_competencia_top
   const rank = new Map<string, Map<string, number>>();
+  const topFilas: any[] = [];
+  const nuestrosCat = new Set([...nuestra.values()].map((x: any) => x?.catalog_product_id).filter(Boolean));
   for (const cat of new Set([...nuestra.values()].map((x: any) => x?.category_id).filter(Boolean))) {
     const h = await getJSON(`${ML_API}/highlights/MLA/category/${cat}`, headers);
-    rank.set(cat as string, new Map((h?.content || []).map((c: any) => [c.id, c.position])));
+    const cont = h?.content || [];
+    rank.set(cat as string, new Map(cont.map((c: any) => [c.id, c.position])));
+    for (const c of cont.slice(0, 20)) {
+      let nombre = null, marca = null, precio = null;
+      if (c.type === "PRODUCT") {
+        const p = await getJSON(`${ML_API}/products/${c.id}`, headers);
+        nombre = p?.name || null; marca = marcaDe(p);
+        const its = await itemsDe(c.id);
+        if (its.length) precio = Math.min(...its.map((x: any) => Number(x.price)));
+      } else {
+        const it = await getJSON(`${ML_API}/items/${c.id}?attributes=title,price,attributes`, headers);
+        nombre = it?.title || null; precio = it?.price ?? null; marca = marcaDe(it);
+      }
+      topFilas.push({ fecha, categoria: cat, posicion: c.position, id: c.id, tipo: c.type, nombre, marca, precio,
+        es_rosaint: nuestrosCat.has(c.id) || /rosaint/i.test(marca || "") });
+    }
   }
-  const fecha = hoyAR();
+
   const filas: any[] = [];
-  const cacheItems = new Map<string, any>();
   for (const b of busq) {
     const mia: any = nuestra.get(b.item_id) || {};
     const rk = rank.get(mia.category_id) || new Map();
-    const s = await getJSON(`${ML_API}/products/search?site_id=MLA&status=active&limit=30&q=${encodeURIComponent(b.q)}`, headers);
+    const inc = b.incluye ? new RegExp(b.incluye, "i") : null, exc = b.excluye ? new RegExp(b.excluye, "i") : null;
+    const s = await getJSON(`${ML_API}/products/search?site_id=MLA&status=active&limit=40&q=${encodeURIComponent(b.q)}`, headers);
     let pos = 0;
     const candidatos = (s?.results || []).map((p: any) => ({ p, pos: ++pos }))
-      .filter(({ p }: any) => { const g = tamanoProducto(p); return g != null && Math.abs(g - b.gramos) <= b.gramos * 0.05; });
-    // nuestro propio producto de catálogo siempre entra (para ver nuestro puesto)
+      .filter(({ p }: any) => {
+        const nom = sinAcentos(p.name);
+        if (inc && !inc.test(nom)) return false;             // tiene que ser el mismo tipo de producto
+        if (exc && exc.test(nom)) return false;              // sin kits, combos ni otros usos
+        if (excluido.has(`${b.item_id}|${p.id}`)) return false; // marcado "no es competencia" en el Core
+        const g = tamanoProducto(p); return g != null && Math.abs(g - b.gramos) <= b.gramos * 0.05;
+      });
     if (mia.catalog_product_id && !candidatos.some((c: any) => c.p.id === mia.catalog_product_id)) {
       const pr = await getJSON(`${ML_API}/products/${mia.catalog_product_id}`, headers);
       if (pr) candidatos.push({ p: pr, pos: null });
     }
     for (const { p, pos } of candidatos.slice(0, 15)) {
-      let its = cacheItems.get(p.id);
-      if (its === undefined) { its = (await getJSON(`${ML_API}/products/${p.id}/items?limit=50`, headers))?.results || []; cacheItems.set(p.id, its); }
-      if (!its.length) continue; // producto sin vendedores activos
+      const its = await itemsDe(p.id);
+      if (!its.length) continue;
       const masBarato = its.reduce((a: any, x: any) => (Number(x.price) < Number(a.price) ? x : a), its[0]);
-      const marca = (p.attributes || []).find((a: any) => a.id === "BRAND")?.value_name || null;
-      const rkPos = rk.get(p.id) ?? (p.parent_id ? rk.get(p.parent_id) : undefined) ?? null;
+      const marca = marcaDe(p);
       filas.push({
         fecha, item_id: b.item_id, product_id: p.id, posicion: pos, nombre: p.name, marca, gramos: tamanoProducto(p),
         precio: Number(masBarato.price), precio_lista: masBarato.original_price ? Number(masBarato.original_price) : null,
         vendedores: its.length, es_full: its.some((x: any) => x.shipping?.logistic_type === "fulfillment"),
-        envio_gratis: !!masBarato.shipping?.free_shipping, ranking_cat: rkPos,
-        es_rosaint: p.id === mia.catalog_product_id || /rosaint/i.test(marca || ""),
+        envio_gratis: !!masBarato.shipping?.free_shipping, ranking_cat: rk.get(p.id) ?? (p.parent_id ? rk.get(p.parent_id) : undefined) ?? null,
+        es_rosaint: p.id === mia.catalog_product_id || /rosaint/i.test(marca || ""), categoria: mia.category_id || null,
       });
     }
   }
@@ -201,9 +235,35 @@ async function competencia(supabase: any, headers: any) {
     const { error } = await supabase.from("ml_competencia").insert(filas);
     if (error) throw new Error("ml_competencia: " + error.message);
   }
-  // se guarda historia de 120 días (para ver bajas de precio de la competencia)
+  if (topFilas.length) {
+    await supabase.from("ml_competencia_top").delete().eq("fecha", fecha);
+    await supabase.from("ml_competencia_top").insert(topFilas);
+  }
   await supabase.from("ml_competencia").delete().lt("fecha", diasAtras(120));
-  return { busquedas: busq.length, productos: filas.length };
+  await supabase.from("ml_competencia_top").delete().lt("fecha", diasAtras(120));
+
+  // Aviso por mail (una vez por día): la competencia bajó fuerte el precio o apareció alguien más barato
+  const { data: res } = await supabase.from("v_ml_competencia_resumen").select("*");
+  const { data: ayer } = await supabase.from("ml_competencia").select("item_id,product_id").eq("fecha", diasAtras(1));
+  const visto = new Set((ayer || []).map((x: any) => `${x.item_id}|${x.product_id}`));
+  const alertas: string[] = [];
+  for (const r of res || []) {
+    if (r.cambio_min_7d_pct != null && Number(r.cambio_min_7d_pct) <= -10)
+      alertas.push(`<li><b>${r.titulo}</b>: el más barato de la competencia bajó ${Math.abs(r.cambio_min_7d_pct)}% en 7 días (hoy $${Math.round(r.minimo).toLocaleString("es-AR")}, ${r.mas_barato}).</li>`);
+    const nuevos = filas.filter((f) => f.item_id === r.item_id && !f.es_rosaint && !visto.has(`${f.item_id}|${f.product_id}`) && Number(f.precio) < Number(r.precio_hoy));
+    if ((ayer || []).length && nuevos.length)
+      alertas.push(`<li><b>${r.titulo}</b>: competidor nuevo más barato que vos — ${nuevos.map((n) => `${n.marca || n.nombre} $${Math.round(n.precio).toLocaleString("es-AR")}`).join(", ")}.</li>`);
+  }
+  if (alertas.length) {
+    try {
+      await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/odoo-enviar-mail`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+        body: JSON.stringify({ to: "rosaint.ar@gmail.com", subject: `ML competencia: ${alertas.length} aviso(s)`,
+          body_html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222"><p>Movimientos de la competencia en Mercado Libre:</p><ul>${alertas.join("")}</ul><p><a href="https://rosaint-ar.github.io/rosaint-core/comercial/canales.html#ml">Ver en el Core (Canales → Mercado Libre → Competencia)</a></p></div>` }),
+      });
+    } catch (_) { /* el aviso no frena */ }
+  }
+  return { busquedas: busq.length, productos: filas.length, top: topFilas.length, alertas: alertas.length };
 }
 
 // ───────────── Acceso: sesión del Core, clave interna o el secreto de ml_config (cron) ─────────────

@@ -321,7 +321,15 @@
     .ads-plan-g > div { color: var(--muted); }
     .comp-det { margin: 6px 0 2px; display: grid; gap: 3px; font-size: 12px; }
     .comp-det > div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px dashed var(--border); padding-top: 3px; }
-    .comp-det .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .comp-det .num { white-space: nowrap; font-variant-numeric: tabular-nums; display: inline-flex; gap: 6px; align-items: center; }
+    .comp-det .btn.sm { padding: 1px 7px; font-size: 10.5px; }
+    .comp-tops { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; margin-top: 10px; font-size: 12.5px; }
+    .comp-top ul { list-style: none; margin: 6px 0 0; padding: 0; }
+    .comp-top li { display: flex; gap: 8px; align-items: baseline; border-top: 1px dashed var(--border); padding: 4px 0; }
+    .comp-top li .pos { width: 18px; color: var(--muted); text-align: right; flex: none; }
+    .comp-top li .nom { flex: 1; min-width: 0; }
+    .comp-top li .num { flex: none; font-variant-numeric: tabular-nums; }
+    .comp-top .sub { font-size: 12px; color: var(--muted); }
 
     .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tbl th {
@@ -2303,58 +2311,118 @@ async function actualizarAdsComp(accion, btnSel, luego) {
   } catch (err) { toast('Error: ' + err.message, 'err'); b.disabled = false; b.textContent = prev; }
 }
 
-// ─────── SUB-TAB COMPETENCIA (nov-2026) ───────
-// ml-ads-auto {accion:'competencia'} (cron diario): por cada búsqueda de ml_competencia_busquedas trae los
-// productos de catálogo del mismo tamaño, su precio más bajo, vendedores, Full y el puesto en "más vendidos".
-// Solo ve productos de catálogo: las publicaciones sueltas de otros vendedores no salen por la API.
-let COMP_RES = [], COMP_DET = [];
+// ─────── SUB-TAB COMPETENCIA (v2, nov-2026) ───────
+// ml-ads-auto {accion:'competencia'} (cron diario ml-ads-competencia): por cada búsqueda de
+// ml_competencia_busquedas trae los productos de catálogo del mismo tipo (filtros incluye/excluye) y tamaño,
+// su precio más bajo, vendedores y Full; los "más vendidos" de cada categoría (ml_competencia_top) y avisa por
+// mail si la competencia baja fuerte o aparece alguien más barato. Lo marcado "No es competencia" va a
+// ml_competencia_excluidos. Solo ve productos de catálogo: las publicaciones sueltas no salen por la API.
+const COMP_CAT = { MLA392701: 'Cuidado Corporal', MLA455813: 'Geles Conductores' };
+let COMP = { res: [], det: [], top: [], ult: null };
+
 async function cargarCompetencia() {
   const el = $('#sub-comp');
   el.innerHTML = '<div class="empty-box">Cargando competencia…</div>';
-  const [r, d] = await Promise.all([
+  const [r, d, t] = await Promise.all([
     sb.from('v_ml_competencia_resumen').select('*'),
-    sb.from('ml_competencia').select('*').eq('es_rosaint', false).order('precio'),
+    sb.from('ml_competencia').select('*').order('fecha', { ascending: false }).order('precio').limit(600),
+    sb.from('ml_competencia_top').select('*').order('fecha', { ascending: false }).order('posicion').limit(80),
   ]);
   if (r.error) { el.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(r.error.message)}</div>`; return; }
-  COMP_RES = r.data || [];
-  const ult = COMP_RES[0]?.fecha;
-  COMP_DET = (d.data || []).filter(x => x.fecha === ult);
-  const filas = COMP_RES.slice().sort((a, b) => (Number(b.vs_mediana_pct ?? -999) - Number(a.vs_mediana_pct ?? -999)));
-  const conComp = filas.filter(x => Number(x.n) > 0);
+  const ult = (r.data || [])[0]?.fecha;
+  COMP = { res: r.data || [], det: (d.data || []).filter(x => x.fecha === ult), top: (t.data || []).filter(x => x.fecha === (t.data || [])[0]?.fecha), ult };
+  renderCompetencia();
+}
+
+function sparkComp(serie) {
+  const s = (serie || []).filter(p => p.min != null);
+  if (s.length < 2) return '<span class="pct-ok" style="font-size:11px;">se arma con los días</span>';
+  const vals = s.flatMap(p => [Number(p.min), Number(p.med)]), mn = Math.min(...vals), mx = Math.max(...vals) || 1;
+  const W = 90, H = 26, x = i => (i * W / (s.length - 1)).toFixed(1), y = v => (H - 2 - (H - 4) * (v - mn) / Math.max(1, mx - mn)).toFixed(1);
+  const linea = k => s.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(Number(p[k]))}`).join(' ');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Precio de la competencia en 30 días"><path d="${linea('med')}" fill="none" stroke="var(--muted)" stroke-width="1.5"/><path d="${linea('min')}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+}
+
+function renderCompetencia() {
+  const el = $('#sub-comp');
+  const { res, det, top, ult } = COMP;
+  const minMg = PAUTO_PAR.promos_margen_min_pct ?? 20;
+  const conComp = res.filter(x => Number(x.n) > 0);
+  const filas = res.slice().sort((a, b) => (Number(b.vs_mediana_pct ?? -999) - Number(a.vs_mediana_pct ?? -999)));
   const caros = conComp.filter(x => Number(x.vs_mediana_pct) > 30).length;
-  const alertas = filas.filter(x => x.cambio_min_7d_pct != null && Number(x.cambio_min_7d_pct) <= -10);
+  const alertas = res.filter(x => x.cambio_min_7d_pct != null && Number(x.cambio_min_7d_pct) <= -10);
+  const compsHoy = det.filter(c => !c.es_rosaint);
+  const pctFull = compsHoy.length ? Math.round(100 * compsHoy.filter(c => c.es_full).length / compsHoy.length) : null;
+  const promVs = conComp.length ? Math.round(conComp.reduce((s, x) => s + Number(x.vs_mediana_pct || 0), 0) / conComp.length) : null;
+  const mgCls = v => v == null ? 'pct-ok' : Number(v) < minMg ? 'mg-mal' : Number(v) < minMg + 5 ? 'mg-justo' : 'mg-bien';
+  const catDe = id => (det.find(c => c.item_id === id && c.categoria) || {}).categoria;
+
   const fila = x => {
-    const det = COMP_DET.filter(c => c.item_id === x.item_id);
+    const comps = det.filter(c => c.item_id === x.item_id && !c.es_rosaint);
     const vs = x.vs_mediana_pct == null ? '<span class="pct-ok">—</span>'
       : `<span class="${Number(x.vs_mediana_pct) > 30 ? 'mg-mal' : Number(x.vs_mediana_pct) > 10 ? 'mg-justo' : 'mg-bien'}">${Number(x.vs_mediana_pct) > 0 ? '+' : ''}${x.vs_mediana_pct}%</span>`;
+    const cat = catDe(x.item_id);
     return `<tr>
       <td><details><summary style="cursor:pointer;">${esc(cleanTitle(x.titulo))}</summary>
-        ${det.length ? `<div class="comp-det">${det.map(c => `<div><span>${esc(c.marca || '—')} · ${esc(c.nombre)}</span><span class="num">${fmtARS(Number(c.precio))}${c.es_full ? ' <span class="badge cuotas">FULL</span>' : ''}${c.ranking_cat ? ` <span class="pct-ok">#${c.ranking_cat} más vendidos</span>` : ''}</span></div>`).join('')}</div>` : '<div class="sub">Sin competidores de catálogo de este tamaño.</div>'}
-      </details><span class="sub">búsqueda: "${esc(x.q)}"</span></td>
-      <td class="num"><b>${fmtARS(Number(x.precio_hoy))}</b>${x.promo ? `<span class="sub">${esc(x.promo)}</span>` : ''}</td>
-      <td class="num">${Number(x.n) || 0}${Number(x.n_full) ? `<span class="sub">${x.n_full} con Full</span>` : ''}</td>
-      <td class="num">${x.minimo != null ? fmtARS(Number(x.minimo)) : '—'}<span class="sub">${esc(x.mas_barato || '')}</span></td>
-      <td class="num">${x.mediana != null ? fmtARS(Number(x.mediana)) : '—'}</td>
+        ${comps.length ? `<div class="comp-det">${comps.map(c => `<div>
+            <span>${esc(c.marca || '—')} · ${esc(c.nombre)}<span class="sub" style="display:inline;margin-left:6px;">${c.vendedores} vendedor${c.vendedores !== 1 ? 'es' : ''}${c.gramos && Number(c.gramos) !== Number(x.gramos) ? ` · ${c.gramos} g` : ''}</span></span>
+            <span class="num">${fmtARS(Number(c.precio))}${c.es_full ? ' <span class="badge cuotas">FULL</span>' : ''}${c.ranking_cat ? ` <span class="pct-ok">#${c.ranking_cat}</span>` : ''}
+              <button class="btn secondary sm" data-noes="${esc(c.product_id)}" data-item="${esc(x.item_id)}" title="Sacarlo de la comparación">No es competencia</button></span>
+          </div>`).join('')}</div>` : '<div class="sub">Sin competidores de catálogo de este tipo y tamaño.</div>'}
+      </details><span class="sub">búsqueda "${esc(x.q)}"${cat ? ` · categoría ${esc(COMP_CAT[cat] || cat)}` : ''}</span></td>
+      <td class="num"><b>${fmtARS(Number(x.precio_hoy))}</b><span class="sub">${fmtARS(Number(x.precio_kg))}/kg</span></td>
+      <td class="num">${x.minimo != null ? fmtARS(Number(x.minimo)) : '—'}<span class="sub">${esc(x.mas_barato || '')}${Number(x.n) ? ` · ${x.n} competidor${Number(x.n) !== 1 ? 'es' : ''}${Number(x.n_full) ? `, ${x.n_full} con Full` : ''}` : ''}</span></td>
+      <td class="num">${x.mediana != null ? fmtARS(Number(x.mediana)) : '—'}${x.med_kg != null ? `<span class="sub">${fmtARS(Number(x.med_kg))}/kg</span>` : ''}</td>
       <td class="num">${vs}${Number(x.mas_baratos_que_vos) ? `<span class="sub">${x.mas_baratos_que_vos} más baratos que vos</span>` : ''}</td>
-      <td class="num">${x.cambio_min_7d_pct == null ? '<span class="pct-ok">—</span>' : `<span class="${Number(x.cambio_min_7d_pct) <= -10 ? 'mg-mal' : ''}">${Number(x.cambio_min_7d_pct) > 0 ? '+' : ''}${x.cambio_min_7d_pct}%</span>`}</td>
+      <td class="num">${x.margen_a_mediana == null ? '<span class="pct-ok">—</span>' : `<span class="${mgCls(x.margen_a_mediana)}">${pctTxt(x.margen_a_mediana)}</span><span class="sub">hoy ${pctTxt(x.margen_hoy)} · a +15%: <span class="${mgCls(x.margen_15_sobre_mediana)}">${pctTxt(x.margen_15_sobre_mediana)}</span></span>`}</td>
+      <td class="num">${Number(x.n) ? sparkComp(x.serie) : '<span class="pct-ok">—</span>'}${x.cambio_min_7d_pct != null ? `<span class="sub ${Number(x.cambio_min_7d_pct) <= -10 ? 'mg-mal' : ''}">más barato ${Number(x.cambio_min_7d_pct) > 0 ? '+' : ''}${x.cambio_min_7d_pct}% en 7 d</span>` : ''}</td>
       <td class="num">${x.ranking_nuestro ? '#' + x.ranking_nuestro : '<span class="pct-ok">fuera del top 20</span>'}</td>
     </tr>`;
   };
+
+  const cats = [...new Set(top.map(t => t.categoria))];
+  const topHtml = cats.map(cat => {
+    const lista = top.filter(t => t.categoria === cat && t.nombre).slice(0, 10);
+    const nuestros = [...new Set(res.filter(x => catDe(x.item_id) === cat).map(x => cleanTitle(x.titulo)))];
+    return `<div class="comp-top">
+      <b>${esc(COMP_CAT[cat] || cat)}</b><div class="sub" title="${esc(nuestros.join(' · '))}">${nuestros.length} publicaci${nuestros.length !== 1 ? 'ones' : 'ón'} tuya${nuestros.length !== 1 ? 's' : ''} compite${nuestros.length !== 1 ? 'n' : ''} acá</div>
+      <ul>${lista.map(t => `<li${t.es_rosaint ? ' class="mg-bien"' : ''}><span class="pos">${t.posicion}</span><span class="nom">${esc(t.marca || '')}${t.marca ? ' · ' : ''}${esc(t.nombre)}</span><span class="num">${t.precio != null ? fmtARS(Number(t.precio)) : '—'}</span></li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+
   el.innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="v ${promVs > 30 ? 'mg-mal' : promVs > 10 ? 'mg-justo' : 'mg-bien'}">${promVs == null ? '—' : (promVs > 0 ? '+' : '') + promVs + '%'}</div><div class="l">Tu precio contra la mediana de la competencia (promedio)</div></div>
+      <div class="kpi"><div class="v">${caros} <span style="font-size:13px;color:var(--muted);font-weight:500;">de ${conComp.length}</span></div><div class="l">Productos más de 30% arriba de la mediana</div></div>
+      <div class="kpi"><div class="v">${pctFull == null ? '—' : pctFull + '%'}</div><div class="l">Competidores que venden con Full (llegan en 24 h)</div></div>
+      <div class="kpi"><div class="v ${alertas.length ? 'mg-mal' : ''}">${alertas.length}</div><div class="l">Bajas fuertes de precio de la competencia en 7 días</div></div>
+    </div>
     <div class="control-card ${alertas.length ? 'bad' : ''}">
       <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
-        <h4 style="margin:0;">${alertas.length ? `⚠ ${alertas.length} producto${alertas.length !== 1 ? 's' : ''} con la competencia bajando precio` : 'Competencia en Mercado Libre'}</h4>
-        <span style="font-size:12.5px; color:var(--muted);">${conComp.length} productos con competidores · ${caros} más de 30% arriba de la mediana${ult ? ` · foto del ${fFecha(ult)}` : ''}</span>
+        <h4 style="margin:0;">${alertas.length ? `⚠ ${alertas.length} producto${alertas.length !== 1 ? 's' : ''} con la competencia bajando precio` : 'Tu precio contra la competencia'}</h4>
+        <span style="font-size:12.5px; color:var(--muted);">${ult ? `foto del ${fFecha(ult)} · se actualiza sola todos los días y te avisa por mail si alguien baja fuerte` : ''}</span>
         <span style="flex:1;"></span>
         <button class="btn secondary" id="btnCompTraer">Actualizar competencia</button>
       </div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Productos de catálogo de otras marcas del mismo tamaño, con el precio más bajo al que se venden hoy. Tocá un producto para ver cada competidor. Se actualiza solo todos los días; las publicaciones sueltas (fuera de catálogo) no salen por la API.</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Productos de catálogo de otras marcas del mismo tipo y tamaño, con el precio más bajo al que se venden hoy. <b>Si igualás la mediana</b> = tu margen neto a ese precio (costo con mano de obra, cargos de ML, IIBB); a veces subir el precio baja el margen porque cruza el cargo fijo o el envío gratis de ML. Tocá un producto para ver cada competidor y sacar los que no corresponden. La línea azul es el más barato y la gris la mediana de los últimos 30 días.</div>
       <table class="control-tabla">
-        <thead><tr><th>Producto</th><th class="num">Tu precio hoy</th><th class="num">Competidores</th><th class="num">Más barato</th><th class="num">Mediana</th><th class="num">Vos vs mediana</th><th class="num">Más barato · 7 días</th><th class="num">Tu puesto</th></tr></thead>
+        <thead><tr><th>Producto</th><th class="num">Tu precio hoy</th><th class="num">Más barato</th><th class="num">Mediana</th><th class="num">Vos vs mediana</th><th class="num">Si igualás la mediana</th><th class="num">30 días</th><th class="num">Tu puesto</th></tr></thead>
         <tbody>${filas.map(fila).join('')}</tbody>
       </table>
+    </div>
+    <div class="control-card">
+      <h4 style="margin:0 0 4px;">Quién lidera tus categorías</h4>
+      <div style="font-size:12.5px; color:var(--muted);">Los 10 más vendidos de cada categoría donde están tus publicaciones, según Mercado Libre. ${res.some(x => x.ranking_nuestro) || top.some(t => t.es_rosaint) ? `Rosaint aparece en el top 20 con ${res.filter(x => x.ranking_nuestro).map(x => esc(cleanTitle(x.titulo)) + " (#" + x.ranking_nuestro + ")").join(", ")}.` : "Ninguna publicación de Rosaint está hoy en el top 20."}</div>
+      <div class="comp-tops">${topHtml || '<div class="pct-ok">Sin datos todavía.</div>'}</div>
     </div>`;
   $('#btnCompTraer').addEventListener('click', () => actualizarAdsComp('competencia', '#btnCompTraer', cargarCompetencia));
+  el.querySelectorAll('[data-noes]').forEach(b => b.addEventListener('click', async (ev) => {
+    ev.preventDefault(); b.disabled = true;
+    const { error } = await sb.from('ml_competencia_excluidos').upsert({ item_id: b.dataset.item, product_id: b.dataset.noes, motivo: 'Marcado en el Core' }, { onConflict: 'item_id,product_id' });
+    if (error) { toast('Error: ' + error.message, 'err'); b.disabled = false; return; }
+    toast('✓ Sacado de la comparación', 'ok');
+    await cargarCompetencia();
+  }));
 }
 
 // ─────── 3.3) SUB-TAB CONFIG ML ───────
