@@ -347,7 +347,8 @@ async function cargarPersonas(tels){
 // Nombre a mostrar: la persona y su empresa si es un contacto de empresa; si el nombre del chat es un relleno («..»), el de Odoo
 function nombreChat(f){
   const o = ODOO[f.telefono];
-  if (o && o.persona) return o.persona + ' (' + o.nombre + ')';
+  // si en Odoo ya se llama «Nombre (Empresa)» (así llega al teléfono por HubSpot), no se repite la empresa
+  if (o && o.persona) return /(.+)s*$/.test(o.persona) ? o.persona : o.persona + ' (' + o.nombre + ')';
   const propio = /[a-záéíóúñ]{2}/i.test(f.nombre || '') ? f.nombre : '';
   const vinculo = (f.vinculo_estado === 'confirmado' || f.vinculo_estado === 'auto') && f.vinculo_nombre;
   return propio || (o && o.nombre) || vinculo || telLindo(f.telefono);
