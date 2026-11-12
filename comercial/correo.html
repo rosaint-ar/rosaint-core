@@ -753,7 +753,7 @@ function dominioBase(d){ const p = d.split('.'); if (p.length <= 2) return d; re
 // plataformas que mandan correo en nombre de muchas empresas distintas (y el propio dominio): también por dirección
 const POR_DIRECCION = new Set(['odoo.com', 'zendesk.com', 'rosaint.com.ar', 'rosaint.online']);
 function claveDe(email){ const d = (email.split('@')[1] || '').toLowerCase(); return !d || PUBLICOS.has(d) || POR_DIRECCION.has(dominioBase(d)) ? email : '@' + dominioBase(d); }
-function coincide(email, patron){ email = email.toLowerCase(); if (patron[0] !== '@') return email === patron; const dom = patron.slice(1), de = email.split('@')[1] || ''; return de === dom || de.endsWith('.' + dom); }
+function coincide(email, patron){ email = email.toLowerCase(); if (patron.startsWith('*@')) return (email.split('@')[1] || '') === patron.slice(2); if (patron[0] !== '@') return email === patron; const dom = patron.slice(1), de = email.split('@')[1] || ''; return de === dom || de.endsWith('.' + dom); }
 const plano = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 function rutaLinda(r){ if (r === 'INBOX') return NOMBRES.INBOX; const e = Object.keys(ESP).find(k => ESP[k] === r); return e ? NOMBRES[e] : r.replace(/^INBOX\./, '').replace(/\./g, ' › '); }
 

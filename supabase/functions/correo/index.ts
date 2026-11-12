@@ -97,7 +97,7 @@ Deno.serve(async (req: Request) => {
     }
     if (accion === "regla_guardar") {
       const patron = String(body.patron || "").trim().toLowerCase(), carpetaR = String(body.carpeta || "");
-      if (!/^([^@\s]+)?@[a-z0-9.-]+\.[a-z]{2,}$/.test(patron) || !carpetaR) return responder({ ok: false, error: "Regla inválida: hace falta remitente o @dominio, y la carpeta" });
+      if (!/^(\*|[^@\s*]+)?@[a-z0-9.-]+\.[a-z]{2,}$/.test(patron) || !carpetaR) return responder({ ok: false, error: "Regla inválida: hace falta remitente o @dominio, y la carpeta" });
       const r = await db("correo_reglas?on_conflict=patron", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" },
         body: JSON.stringify({ patron, carpeta: carpetaR, activa: body.activa !== false, creado_por: usuario }) });
       const j = await r.json();

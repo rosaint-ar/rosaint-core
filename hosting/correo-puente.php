@@ -271,11 +271,11 @@ function atender(array $b) {
           $patron = strtolower(trim((string)($r['patron'] ?? '')));
           $destino = (string)($r['carpeta'] ?? '');
           $fila = ['patron' => $patron, 'carpeta' => $destino, 'origen' => $carpeta, 'encontrados' => 0, 'movidos' => 0];
-          if (!preg_match('/^([^@\s]+)?@[a-z0-9.-]+\.[a-z]{2,}$/', $patron)) { $fila['error'] = 'patrón inválido'; $res[] = $fila; continue; }
+          if (!preg_match('/^(\*|[^@\s*]+)?@[a-z0-9.-]+\.[a-z]{2,}$/', $patron)) { $fila['error'] = 'patrón inválido'; $res[] = $fila; continue; }
           if (!in_array($destino, $carpetasExisten, true)) { $fila['error'] = 'no existe la carpeta'; $res[] = $fila; continue; }
           if ($destino === $carpeta) { if (count($origenes) === 1) { $fila['error'] = 'es la misma carpeta'; $res[] = $fila; } continue; }
           // el servidor busca "contiene"; después se confirma remitente por remitente
-          $cand = $imap->buscar(['de' => ltrim($patron, '@')]);
+          $cand = $imap->buscar(['de' => ltrim($patron, '*@')]);
           $uids = [];
           foreach ($imap->encabezadosVarios($cand, ['FROM']) as $uid => $x)
             if (coincideRemitente(_primerEmail(Mime::decodificarEncabezado($x['h']['from'] ?? '')), $patron)) $uids[] = $uid;
@@ -964,10 +964,14 @@ function fechaCorreo($s) {
   $s = preg_replace('/\s*\([^)]*\)\s*$/', '', $s);
   return strtotime($s);
 }
-// ¿el remitente entra en la regla? "@dominio.com" = ese dominio y sus subdominios; si no, la dirección exacta
+// ¿el remitente entra en la regla?
+//   "@dominio.com"  = ese dominio y sus subdominios
+//   "*@dominio.com" = SOLO ese dominio (ej. *@odoo.com = la gente de Odoo, sin los Odoo de cada empresa: x.odoo.com)
+//   si no, la dirección exacta
 function coincideRemitente($email, $patron) {
   $email = strtolower(trim((string)$email)); $patron = strtolower(trim((string)$patron));
   if ($email === '' || $patron === '') return false;
+  if (substr($patron, 0, 2) === '*@') return substr($email, strrpos($email, '@') + 1) === substr($patron, 2);
   if ($patron[0] === '@') { $dom = substr($patron, 1); $de = substr($email, strrpos($email, '@') + 1); return $de === $dom || substr($de, -strlen($dom) - 1) === '.' . $dom; }
   return $email === $patron;
 }
