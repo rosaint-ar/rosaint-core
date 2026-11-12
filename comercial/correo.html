@@ -137,6 +137,18 @@
     .or-regla small { color: var(--r-mu); }
     .or-regla button { background: none; border: 0; cursor: pointer; color: var(--r-mu); font-size: 15px; padding: 2px 6px; }
     .or-regla button:hover { color: var(--rojo); }
+    .lb-alta { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
+    .lb-alta .m-campo { padding: 7px 10px; }
+    .lb-alta #lb-patron { flex: 1 1 240px; }
+    .lb-alta #lb-nota { flex: 1 1 200px; }
+    .lb-fila { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--r-li); font-size: 13.5px; }
+    .lb-fila small { color: var(--r-mu); }
+    .lb-fila .fz { font: 500 10.5px var(--sora); letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border: 1px solid var(--r-li); background: none; color: var(--r-mu); cursor: default; white-space: nowrap; }
+    .lb-fila .fz.falta { border-color: var(--rojo); color: var(--rojo); cursor: pointer; }
+    .lb-fila > button.x { background: none; border: 0; cursor: pointer; color: var(--r-mu); font-size: 15px; padding: 2px 6px; }
+    .lb-fila > button.x:hover { color: var(--rojo); }
+    .lb-lista { max-height: 340px; overflow-y: auto; }
+    @media (max-width: 720px) { .lb-fila { grid-template-columns: minmax(0, 1fr) auto auto; } .lb-fila .nt { display: none; } }
     @media (max-width: 900px) { .or-tabla .c-ult, .or-tabla .c-ej { display: none; } }
     /* celular: cada remitente como tarjeta (la tabla de 6 columnas no entra) */
     @media (max-width: 720px) {
@@ -260,6 +272,20 @@
     <h3>Reglas <em>guardadas</em></h3>
     <p class="nota">Lo que llegue de estos remitentes se lleva solo a su carpeta (se revisa cada 10 minutos). Las agregás marcando «Siempre» al mover.</p>
     <div id="or-reglas-lista"></div>
+  </section>
+  <section class="or-reglas" id="or-blanca" hidden>
+    <h3>Lista <em>blanca</em></h3>
+    <p class="nota">Remitentes que <b>nunca son spam</b>. Si alguno cae en Spam, vuelve solo a la Bandeja (o a su carpeta, si tiene regla) en menos de 10 minutos.
+      Escribí una dirección (<code>persona@empresa.com</code>) o un dominio entero (<code>*@empresa.com</code>).<br>
+      <small>«En Ferozo» = también está cargada en el antispam del hosting, que ni siquiera la marca como spam. Esa lista solo se cambia desde el panel de Ferozo (Email → Filtro de Spam → contacto@ → Lista Negra / Blanca); lo que agregues acá queda como «Falta en Ferozo» hasta que se cargue allá.</small></p>
+    <form class="lb-alta" onsubmit="event.preventDefault(); agregarBlanca();">
+      <input class="m-campo" id="lb-patron" placeholder="*@proveedor.com.ar  o  persona@empresa.com" autocomplete="off">
+      <input class="m-campo" id="lb-nota" placeholder="Nota (opcional): quién es" autocomplete="off" maxlength="200">
+      <button class="rb si" type="submit">Agregar</button>
+      <input class="m-campo" id="lb-q" placeholder="Buscar en la lista" oninput="pintarBlanca()" autocomplete="off" style="flex:0 1 180px">
+    </form>
+    <div class="error" id="lb-error" style="color:var(--rojo);font-size:13px"></div>
+    <div class="lb-lista" id="lb-lista"></div>
   </section>
 </main>
 
@@ -493,6 +519,7 @@ function pintarLectura(){
       <button class="rb linea" onclick="redactar('responder')">Responder</button>
       <button class="rb suave" onclick="redactar('todos')">Responder a todos</button>
       <button class="rb suave" onclick="redactar('reenviar')">Reenviar</button>`}
+      ${carpeta === ESP['\\Junk'] ? '<button class="rb si" onclick="noEsSpam()" title="Volverlo a la Bandeja y que lo de este remitente no se pierda más en Spam">No es spam</button>' : ''}
       <span style="flex:1"></span>
       <button class="rb suave" onclick="unoSolo('noleido')" title="Volver a marcarlo como no leído">No leído</button>
       <button class="rb suave" onclick="unoSolo('${m.destacado ? 'nodestacar' : 'destacar'}')">${m.destacado ? 'Quitar ★' : 'Destacar ★'}</button>
@@ -745,7 +772,7 @@ async function enviar(soloBorrador){
 }
 
 // ---------------- ordenar la bandeja (la persona elige; el sistema solo sugiere)
-const ORD = { origen: 'INBOX', abierto: false, datos: null, grupos: [], elegidos: new Set(), destino: {}, siempre: new Set(), expandidos: new Set(), filtro: 'todos', reglas: [] };
+const ORD = { blanca: [], origen: 'INBOX', abierto: false, datos: null, grupos: [], elegidos: new Set(), destino: {}, siempre: new Set(), expandidos: new Set(), filtro: 'todos', reglas: [] };
 // dominios de correo personal: ahí se agrupa por dirección, no por dominio
 const PUBLICOS = new Set(['gmail.com', 'hotmail.com', 'hotmail.com.ar', 'yahoo.com', 'yahoo.com.ar', 'outlook.com', 'outlook.com.ar', 'live.com', 'live.com.ar', 'icloud.com', 'me.com', 'msn.com', 'fibertel.com.ar', 'speedy.com.ar', 'arnet.com.ar']);
 const SEGUNDO_NIVEL = new Set(['com.ar', 'gob.ar', 'gov.ar', 'net.ar', 'org.ar', 'edu.ar', 'int.ar', 'tur.ar', 'com.br', 'com.mx', 'com.uy', 'com.py', 'com.co', 'com.pe', 'co.uk', 'com.au']);
@@ -761,7 +788,7 @@ const origenRuta = () => ORD.origen === 'spam' ? (ESP['\\Junk'] || 'INBOX.spam')
 function cambiarOrigen(v){ ORD.origen = v; ORD.datos = null; ORD.elegidos.clear(); ORD.siempre.clear(); ORD.destino = {}; ORD.expandidos.clear(); cargarOrdenar(); }
 function modoOrdenar(si){
   ORD.abierto = si;
-  $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si;
+  $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si; $('or-blanca').hidden = !si;
   $('b-ordenar').textContent = si ? 'Volver al correo' : 'Ordenar la bandeja';
   if (si && !ORD.datos) cargarOrdenar();
   if (!si) recargar();
@@ -770,9 +797,9 @@ async function cargarOrdenar(){
   $('or-resumen').textContent = 'Leyendo la bandeja y las carpetas… (unos segundos)';
   $('or-filas').innerHTML = '<tr><td colspan="6"><div class="co-vacio">Leyendo la bandeja…</div></td></tr>';
   try {
-    const [d, r] = await Promise.all([api({ accion: 'remitentes', carpeta: origenRuta(), aprender: true }), api({ accion: 'reglas' })]);
-    ORD.datos = d; ORD.reglas = r.reglas || [];
-    armarGrupos(); pintarOrdenar(); pintarReglas();
+    const [d, r, b] = await Promise.all([api({ accion: 'remitentes', carpeta: origenRuta(), aprender: true }), api({ accion: 'reglas' }), api({ accion: 'lista_blanca' })]);
+    ORD.datos = d; ORD.reglas = r.reglas || []; ORD.blanca = b.lista || [];
+    armarGrupos(); pintarOrdenar(); pintarReglas(); pintarBlanca();
   } catch (err) { $('or-resumen').textContent = 'No se pudo leer la bandeja: ' + err.message; $('or-filas').innerHTML = ''; }
 }
 function armarGrupos(){
@@ -927,6 +954,79 @@ async function borrarRegla(id){
 async function aplicarReglas(){
   try { const r = await api({ accion: 'aplicar_reglas' }); avisar(r.movidos ? r.movidos + ' correos movidos por las reglas' : 'No había nada nuevo para mover'); const x = await api({ accion: 'reglas' }); ORD.reglas = x.reglas || []; pintarReglas(); if (r.movidos) cargarOrdenar(); }
   catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+
+// ---------------- lista blanca (nunca es spam)
+function pintarBlanca(){
+  const q = plano($('lb-q').value);
+  const l = ORD.blanca.filter(x => !q || plano(x.patron + ' ' + (x.nota || '')).includes(q));
+  const faltan = ORD.blanca.filter(x => !x.en_ferozo).length;
+  $('lb-lista').innerHTML = (l.length ? l.map(x => `<div class="lb-fila"><b>${esc(x.patron)}</b><small class="nt">${esc(x.nota || '')}</small>
+      ${x.en_ferozo ? '<span class="fz" title="También cargada en el antispam de Ferozo">En Ferozo</span>'
+        : `<button class="fz falta" onclick="marcarFerozo(${x.id})" title="Todavía no está en el antispam de Ferozo: los correos pueden caer en Spam (se rescatan solos). Tocá cuando la hayas cargado allá.">Falta en Ferozo</button>`}
+      <button class="x" onclick="quitarBlanca(${x.id})" title="Quitar de la lista">✕</button></div>`).join('')
+    : '<p class="nota" style="margin:0">' + (ORD.blanca.length ? 'Nada coincide con la búsqueda.' : 'La lista está vacía.') + '</p>')
+    + `<p class="nota" style="margin:8px 0 0">${ORD.blanca.length} en la lista${faltan ? ' · <b style="color:var(--rojo)">' + faltan + ' falta' + (faltan === 1 ? '' : 'n') + ' cargar en Ferozo</b>' : ' · todas cargadas en Ferozo'}.</p>`;
+}
+function normalizarPatron(v){
+  v = String(v || '').trim().toLowerCase().replace(/^mailto:/, '');
+  if (/^@[^@\s]+\.[a-z]{2,}$/.test(v)) v = '*' + v;                       // @empresa.com → *@empresa.com
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) && !v.includes('@')) v = '*@' + v;  // empresa.com → *@empresa.com
+  return v;
+}
+async function agregarBlanca(patron, nota){
+  const p = normalizarPatron(patron ?? $('lb-patron').value), n = nota ?? $('lb-nota').value.trim();
+  $('lb-error').textContent = '';
+  if (!/^(\*|[^@\s*]+)@[a-z0-9.-]+\.[a-z]{2,}$/.test(p)) { $('lb-error').textContent = 'Escribí una dirección (persona@empresa.com) o un dominio (*@empresa.com).'; return false; }
+  if (ORD.blanca.some(x => x.patron === p)) { $('lb-error').textContent = p + ' ya está en la lista.'; return false; }
+  try {
+    const r = await api({ accion: 'lista_blanca_agregar', patron: p, nota: n || null });
+    ORD.blanca.push(r.item); ORD.blanca.sort((a, b) => a.patron.localeCompare(b.patron));
+    if (patron == null) { $('lb-patron').value = ''; $('lb-nota').value = ''; }
+    pintarBlanca(); avisar(p + ' agregado: lo que llegue de ahí ya no se pierde en Spam');
+    return true;
+  } catch (err) { $('lb-error').textContent = err.message; avisar('No se pudo: ' + err.message, true); return false; }
+}
+async function quitarBlanca(id){
+  const x = ORD.blanca.find(y => y.id === id); if (!x) return;
+  const ok = await confirmar('Quitar de la <em>lista blanca</em>', `<b>${esc(x.patron)}</b> deja de rescatarse de Spam.` +
+    (x.en_ferozo ? '<br><br>Ojo: <b>sigue cargada en el antispam de Ferozo</b>. Para que Ferozo la vuelva a filtrar, quitala también en el panel (Email → Filtro de Spam → contacto@ → Lista Negra / Blanca).' : ''), 'Quitar');
+  if (!ok) return;
+  try { await api({ accion: 'lista_blanca_quitar', id }); ORD.blanca = ORD.blanca.filter(y => y.id !== id); pintarBlanca(); avisar('Quitado de la lista'); }
+  catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+async function marcarFerozo(id){
+  const x = ORD.blanca.find(y => y.id === id); if (!x) return;
+  const ok = await confirmar('¿Ya está en <em>Ferozo</em>?', `Marcá esto solo si <b>${esc(x.patron)}</b> ya está cargada en el panel de Ferozo (Email → Filtro de Spam → contacto@ → Lista Negra / Blanca → Crear nuevo → Lista blanca).`, 'Sí, ya está');
+  if (!ok) return;
+  try { const r = await api({ accion: 'lista_blanca_ferozo', id, en_ferozo: true }); x.en_ferozo = true; pintarBlanca(); }
+  catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+// leyendo un correo en Spam: «No es spam» → a la lista blanca y de vuelta a la Bandeja
+async function noEsSpam(){
+  if (!LEIDO) return;
+  const email = emailDe(LEIDO.de).toLowerCase(), dom = email.split('@')[1] || '';
+  const publico = PUBLICOS.has(dom);
+  $('dlg-tit').innerHTML = 'No es <em>spam</em>';
+  $('dlg-cuerpo').innerHTML = `<p style="margin:0 0 10px">Vuelve a la Bandeja y desde ahora no se pierde en Spam lo que llegue de:</p>
+    <label style="display:flex;gap:8px;margin-bottom:6px"><input type="radio" name="ne" value="${esc(email)}" ${publico ? 'checked' : ''}> esta dirección: <b>${esc(email)}</b></label>
+    ${publico ? '' : `<label style="display:flex;gap:8px"><input type="radio" name="ne" value="*@${esc(dom)}" checked> todo el dominio: <b>*@${esc(dom)}</b></label>`}
+    <label style="display:flex;gap:8px;margin-top:6px"><input type="radio" name="ne" value=""> solo este correo (no agregar a la lista)</label>`;
+  $('dlg-error').textContent = '';
+  $('dlg-ok').textContent = 'Mover a la Bandeja';
+  dlgResolver = null;
+  $('dlg-ok').onclick = async () => {
+    const elegido = (document.querySelector('input[name=ne]:checked') || {}).value || '';
+    try {
+      if (elegido && !(ORD.blanca || []).some(x => x.patron === elegido)) await api({ accion: 'lista_blanca_agregar', patron: elegido, nota: nombreDe(LEIDO.de) || null });
+      const uid = LEIDO.uid;
+      await api({ accion: 'mover', carpeta, uids: [uid], destino: 'INBOX' });
+      cerrarDlg(); sacar([uid]); pintarLista(); cargarCarpetas().catch(() => {});
+      ORD.blanca = []; ORD.datos = null;   // se relee al volver a Ordenar
+      avisar('Movido a la Bandeja' + (elegido ? ' · ' + elegido + ' quedó en la lista blanca' : ''));
+    } catch (err) { $('dlg-error').textContent = err.message; }
+  };
+  $('capa-dlg').hidden = false;
 }
 
 // ---------------- teclado y refresco

@@ -26,7 +26,7 @@ const PERMITIDOS = new Map([
   ["8a55f15a-184e-430b-9d2d-9067c1dbbd8a", "contacto@rosaint.com.ar"],
   ["c0e45351-4a9f-43ec-8197-784672a00653", "rosaint.ar@gmail.com"],
 ]);
-const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas"]);
+const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas", "lista_blanca"]);
 type Rec = Record<string, unknown>;
 
 // devuelve quién llama (o null si no puede)
@@ -111,14 +111,42 @@ Deno.serve(async (req: Request) => {
       await registrar({ usuario, accion, ok: r.ok, para: j[0]?.patron ?? null, destino: j[0]?.carpeta ?? null });
       return responder({ ok: r.ok });
     }
+    // ---- lista blanca: remitentes que nunca son spam (Correo → Ordenar → Lista blanca)
+    if (accion === "lista_blanca") {
+      const r = await db("correo_lista_blanca?select=*&order=patron");
+      return responder({ ok: true, lista: await r.json() });
+    }
+    if (accion === "lista_blanca_agregar") {
+      const patron = String(body.patron || "").trim().toLowerCase();
+      if (!/^(\*|[^@\s*]+)@[a-z0-9.-]+\.[a-z]{2,}$/.test(patron)) return responder({ ok: false, error: "Escribí una dirección (persona@empresa.com) o un dominio (*@empresa.com)" });
+      const r = await db("correo_lista_blanca?on_conflict=patron", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify({ patron, nota: body.nota ? String(body.nota).slice(0, 200) : null, creado_por: usuario }) });
+      const j = await r.json();
+      await registrar({ usuario, accion, ok: r.ok, para: patron, error: r.ok ? null : JSON.stringify(j).slice(0, 300) });
+      return responder(r.ok ? { ok: true, item: j[0] } : { ok: false, error: "No se pudo guardar" });
+    }
+    if (accion === "lista_blanca_quitar" || accion === "lista_blanca_ferozo") {
+      const id = Number(body.id); if (!id) return responder({ ok: false, error: "Falta id" });
+      const r = accion === "lista_blanca_quitar"
+        ? await db(`correo_lista_blanca?id=eq.${id}`, { method: "DELETE", headers: { Prefer: "return=representation" } })
+        : await db(`correo_lista_blanca?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ en_ferozo: !!body.en_ferozo }) });
+      const j = await r.json();
+      await registrar({ usuario, accion, ok: r.ok, para: j[0]?.patron ?? null, detalle: accion === "lista_blanca_ferozo" ? { en_ferozo: !!body.en_ferozo } : { estaba_en_ferozo: j[0]?.en_ferozo } });
+      return responder({ ok: r.ok, item: j[0] });
+    }
+
     let reglasActivas: Rec[] = [];
     if (accion === "aplicar_reglas") {
       reglasActivas = await (await db("correo_reglas?select=id,patron,carpeta&activa=eq.true")).json();
       // primero las de una dirección puntual, después las de dominio: así una excepción gana sobre la regla general
       reglasActivas.sort((a, b) => Number(String(a.patron).startsWith("@")) - Number(String(b.patron).startsWith("@")));
-      if (!reglasActivas.length) return responder({ ok: true, movidos: 0, reglas: [] });
+      // al final, la lista blanca: lo que siga en Spam de esos remitentes vuelve a la Bandeja
+      // (en la Bandeja misma no hace nada: es su propia carpeta)
+      const blanca: Rec[] = await (await db("correo_lista_blanca?select=patron")).json();
+      const reglasTodas = [...reglasActivas.map((x) => ({ patron: x.patron, carpeta: x.carpeta })), ...blanca.map((x) => ({ patron: x.patron, carpeta: "INBOX" }))];
+      if (!reglasTodas.length) return responder({ ok: true, movidos: 0, reglas: [] });
       // se revisa la Bandeja y también Spam: Ferozo manda ahí correos de proveedores y de Odoo, y los borra a los ~30 días
-      body = { accion: "ordenar", origenes: ["INBOX", "spam"], simular: !!body.simular, reglas: reglasActivas.map((x) => ({ patron: x.patron, carpeta: x.carpeta })) };
+      body = { accion: "ordenar", origenes: ["INBOX", "spam"], simular: !!body.simular, reglas: reglasTodas };
     }
 
     // adjuntos para enviar que ya están en Storage → base64 para el puente
@@ -155,7 +183,7 @@ Deno.serve(async (req: Request) => {
     if (accion === "aplicar_reglas" && out.ok && !out.simulado) {
       const ahora = new Date().toISOString();
       const ids = reglasActivas.map((x) => x.id).join(",");
-      await db(`correo_reglas?id=in.(${ids})`, { method: "PATCH", body: JSON.stringify({ ultima_vez: ahora }) });
+      if (ids) await db(`correo_reglas?id=in.(${ids})`, { method: "PATCH", body: JSON.stringify({ ultima_vez: ahora }) });
       const porPatron: Record<string, number> = {};
       for (const f of (out.reglas as Rec[]) || []) if (Number(f.movidos) > 0) porPatron[String(f.patron)] = (porPatron[String(f.patron)] || 0) + Number(f.movidos);
       for (const [patron, n] of Object.entries(porPatron)) {
