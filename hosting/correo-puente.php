@@ -198,6 +198,85 @@ function atender(array $b) {
         return ['ok' => true, 'borrada' => $carpeta, 'correos_que_tenia' => $total];
       }
 
+      // remitentes {carpeta?, aprender?} → la carpeta agrupada por remitente (para ordenar eligiendo).
+      //   aprender: además, por cada remitente, en qué carpetas propias ya hay correos suyos
+      //   (así se sugiere el destino según cómo se ordenó antes).
+      case 'remitentes': {
+        $imap->abrir($carpeta, true);
+        $uids = $imap->buscar([]);
+        $grupos = [];
+        foreach ($imap->encabezadosVarios($uids, ['FROM', 'SUBJECT', 'DATE']) as $uid => $x) {
+          $de = Mime::decodificarEncabezado($x['h']['from'] ?? '');
+          $l = Direcciones::listaSegura($de);
+          $email = $l ? strtolower($l[0]['email']) : (_primerEmail($de) ?: '(sin remitente)');
+          if (!isset($grupos[$email])) $grupos[$email] = ['email' => $email, 'nombre' => $l ? $l[0]['nombre'] : '', 'n' => 0, 'sin_leer' => 0, 'ultimo' => 0, 'asuntos' => []];
+          $g = &$grupos[$email];
+          $g['n']++;
+          if (!in_array('\\seen', array_map('strtolower', $x['flags']), true)) $g['sin_leer']++;
+          $t = isset($x['h']['date']) ? (int)fechaCorreo($x['h']['date']) : 0;
+          if ($t >= $g['ultimo']) { $g['ultimo'] = $t; if ($l && $l[0]['nombre'] !== '') $g['nombre'] = $l[0]['nombre']; }
+          $g['asuntos'][] = [$t, mb_substr(Mime::decodificarEncabezado($x['h']['subject'] ?? ''), 0, 90)];
+          unset($g);
+        }
+        foreach ($grupos as &$g) {   // los 3 asuntos más nuevos, para reconocer de qué se trata
+          usort($g['asuntos'], function ($a, $b) { return $b[0] - $a[0]; });
+          $g['asuntos'] = array_values(array_unique(array_column(array_slice($g['asuntos'], 0, 6), 1)));
+          $g['asuntos'] = array_slice($g['asuntos'], 0, 3);
+          $g['ultimo'] = $g['ultimo'] ? gmdate('c', $g['ultimo']) : null;
+        }
+        unset($g);
+        $out = ['ok' => true, 'carpeta' => $carpeta, 'total' => count($uids), 'remitentes' => array_values($grupos)];
+        if (!empty($b['aprender'])) {
+          $sistema = array_values($imap->especiales());
+          $aprendido = [];
+          foreach ($imap->carpetas(false) as $c) {
+            if ($c['ruta'] === 'INBOX' || $c['ruta'] === $carpeta || in_array($c['ruta'], $sistema, true) || !$c['se_puede_abrir']) continue;
+            // copias viejas de Enviados/Papelera con otro nombre: no enseñan a dónde va cada remitente
+            if (in_array(strtolower($c['nombre']), ['sent messages', 'deleted messages', 'deleted items', 'sent items', 'drafts', 'trash', 'spam', 'junk'], true)) continue;
+            $imap->abrir($c['ruta'], true);
+            $us = $imap->buscar([]);
+            if (!$us) continue;
+            foreach ($imap->encabezadosVarios($us, ['FROM']) as $x) {
+              $e = _primerEmail(Mime::decodificarEncabezado($x['h']['from'] ?? ''));
+              if ($e === '') continue;
+              $aprendido[$e][$c['ruta']] = ($aprendido[$e][$c['ruta']] ?? 0) + 1;
+            }
+          }
+          $out['aprendido'] = $aprendido;
+        }
+        return $out;
+      }
+
+      // ordenar {carpeta?, reglas:[{patron, carpeta}], simular?}
+      //   patron = "persona@dominio.com" (ese remitente) o "@dominio.com" (todo el dominio, también subdominios).
+      //   Mueve de la carpeta (por defecto la Bandeja) a la carpeta de cada regla. simular: solo cuenta.
+      case 'ordenar': {
+        $reglas = (array)($b['reglas'] ?? []);
+        if (!$reglas) throw new Exception('Faltan las reglas');
+        if (count($reglas) > 500) throw new Exception('Demasiadas reglas en una sola orden (máx. 500)');
+        $simular = !empty($b['simular']);
+        $carpetasExisten = array_column($imap->carpetas(false), 'ruta');
+        $imap->abrir($carpeta, $simular);
+        $res = []; $total = 0;
+        foreach ($reglas as $r) {
+          $patron = strtolower(trim((string)($r['patron'] ?? '')));
+          $destino = (string)($r['carpeta'] ?? '');
+          $fila = ['patron' => $patron, 'carpeta' => $destino, 'encontrados' => 0, 'movidos' => 0];
+          if (!preg_match('/^([^@\s]+)?@[a-z0-9.-]+\.[a-z]{2,}$/', $patron)) { $fila['error'] = 'patrón inválido'; $res[] = $fila; continue; }
+          if (!in_array($destino, $carpetasExisten, true)) { $fila['error'] = 'no existe la carpeta'; $res[] = $fila; continue; }
+          if ($destino === $carpeta) { $fila['error'] = 'es la misma carpeta'; $res[] = $fila; continue; }
+          // el servidor busca "contiene"; después se confirma remitente por remitente
+          $cand = $imap->buscar(['de' => ltrim($patron, '@')]);
+          $uids = [];
+          foreach ($imap->encabezadosVarios($cand, ['FROM']) as $uid => $x)
+            if (coincideRemitente(_primerEmail(Mime::decodificarEncabezado($x['h']['from'] ?? '')), $patron)) $uids[] = $uid;
+          $fila['encontrados'] = count($uids);
+          if ($uids && !$simular) { $imap->mover($uids, $destino); $fila['movidos'] = count($uids); $total += count($uids); }
+          $res[] = $fila;
+        }
+        return ['ok' => true, 'simulado' => $simular, 'movidos' => $total, 'reglas' => $res];
+      }
+
       // enviar {para, cc?, cco?, asunto, texto?, html?, adjuntos?:[{nombre,tipo,base64}],
       //         de_nombre?, responder?:{carpeta,uid,todos?}, reenviar?:{carpeta,uid}}
       // guardar_borrador: los mismos campos; lo deja en Borradores sin mandarlo.
@@ -539,6 +618,18 @@ class Imap {
     }
     return $out;
   }
+  // encabezados + marcas de muchos correos (de a 500 por pedido) → [uid => ['h' => [...], 'flags' => [...]]]
+  function encabezadosVarios(array $uids, array $campos) {
+    $out = [];
+    foreach (array_chunk($uids, 500) as $parte) {
+      foreach ($this->fetch($parte, '(UID FLAGS BODY.PEEK[HEADER.FIELDS (' . implode(' ', $campos) . ')])') as $uid => $m) {
+        $hraw = '';
+        foreach ($m as $k => $v) if (strpos($k, 'BODY[HEADER.FIELDS') === 0) $hraw = (string)$v;
+        $out[$uid] = ['h' => Mime::encabezados($hraw), 'flags' => array_map('strval', (array)($m['FLAGS'] ?? []))];
+      }
+    }
+    return $out;
+  }
   function encabezados($uid, array $campos) {
     $f = $this->fetch([$uid], '(UID BODY.PEEK[HEADER.FIELDS (' . implode(' ', $campos) . ')])');
     if (!isset($f[$uid])) return null;
@@ -861,6 +952,13 @@ function fechaCorreo($s) {
   $s = preg_replace('/^\s*[A-Za-z]{3,9},\s*/', '', (string)$s);
   $s = preg_replace('/\s*\([^)]*\)\s*$/', '', $s);
   return strtotime($s);
+}
+// ¿el remitente entra en la regla? "@dominio.com" = ese dominio y sus subdominios; si no, la dirección exacta
+function coincideRemitente($email, $patron) {
+  $email = strtolower(trim((string)$email)); $patron = strtolower(trim((string)$patron));
+  if ($email === '' || $patron === '') return false;
+  if ($patron[0] === '@') { $dom = substr($patron, 1); $de = substr($email, strrpos($email, '@') + 1); return $de === $dom || substr($de, -strlen($dom) - 1) === '.' . $dom; }
+  return $email === $patron;
 }
 // dirección del remitente en minúsculas (para clasificar)
 function _primerEmail($s) { try { $l = Direcciones::lista($s); return $l ? strtolower($l[0]['email']) : ''; } catch (Throwable $e) { return preg_match('/[\w.+-]+@[\w.-]+/', (string)$s, $m) ? strtolower($m[0]) : ''; } }

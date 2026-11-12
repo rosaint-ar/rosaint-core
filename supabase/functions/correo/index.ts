@@ -26,7 +26,7 @@ const PERMITIDOS = new Map([
   ["8a55f15a-184e-430b-9d2d-9067c1dbbd8a", "contacto@rosaint.com.ar"],
   ["c0e45351-4a9f-43ec-8197-784672a00653", "rosaint.ar@gmail.com"],
 ]);
-const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto"]);
+const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas"]);
 type Rec = Record<string, unknown>;
 
 // devuelve quién llama (o null si no puede)
@@ -89,6 +89,37 @@ Deno.serve(async (req: Request) => {
   if (!token) return responder({ ok: false, error: "Falta el secreto CORREO_PUENTE_TOKEN" });
 
   try {
+    // ---- reglas para ordenar (las elige la persona en Correo → Ordenar; viven en correo_reglas)
+    const db = (ruta: string, init: RequestInit = {}) => fetch(`${SB_URL}/rest/v1/${ruta}`, { ...init, headers: sbHeaders({ "Content-Type": "application/json", ...(init.headers as Record<string, string> || {}) }) });
+    if (accion === "reglas") {
+      const r = await db("correo_reglas?select=*&order=carpeta,patron");
+      return responder({ ok: true, reglas: await r.json() });
+    }
+    if (accion === "regla_guardar") {
+      const patron = String(body.patron || "").trim().toLowerCase(), carpetaR = String(body.carpeta || "");
+      if (!/^([^@\s]+)?@[a-z0-9.-]+\.[a-z]{2,}$/.test(patron) || !carpetaR) return responder({ ok: false, error: "Regla inválida: hace falta remitente o @dominio, y la carpeta" });
+      const r = await db("correo_reglas?on_conflict=patron", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify({ patron, carpeta: carpetaR, activa: body.activa !== false, creado_por: usuario }) });
+      const j = await r.json();
+      await registrar({ usuario, accion, ok: r.ok, destino: carpetaR, para: patron, error: r.ok ? null : JSON.stringify(j).slice(0, 300) });
+      return responder(r.ok ? { ok: true, regla: j[0] } : { ok: false, error: "No se pudo guardar la regla" });
+    }
+    if (accion === "regla_borrar") {
+      const id = Number(body.id); if (!id) return responder({ ok: false, error: "Falta id" });
+      const r = await db(`correo_reglas?id=eq.${id}`, { method: "DELETE", headers: { Prefer: "return=representation" } });
+      const j = await r.json();
+      await registrar({ usuario, accion, ok: r.ok, para: j[0]?.patron ?? null, destino: j[0]?.carpeta ?? null });
+      return responder({ ok: r.ok });
+    }
+    let reglasActivas: Rec[] = [];
+    if (accion === "aplicar_reglas") {
+      reglasActivas = await (await db("correo_reglas?select=id,patron,carpeta&activa=eq.true")).json();
+      // primero las de una dirección puntual, después las de dominio: así una excepción gana sobre la regla general
+      reglasActivas.sort((a, b) => Number(String(a.patron).startsWith("@")) - Number(String(b.patron).startsWith("@")));
+      if (!reglasActivas.length) return responder({ ok: true, movidos: 0, reglas: [] });
+      body = { accion: "ordenar", carpeta: "INBOX", simular: !!body.simular, reglas: reglasActivas.map((x) => ({ patron: x.patron, carpeta: x.carpeta })) };
+    }
+
     // adjuntos para enviar que ya están en Storage → base64 para el puente
     if ((accion === "enviar" || accion === "guardar_borrador") && Array.isArray(body.adjuntos)) {
       const lista: Rec[] = [];
@@ -119,7 +150,30 @@ Deno.serve(async (req: Request) => {
       out = { ...out, ...g };
     }
 
-    if (!SOLO_LECTURA.has(accion)) {
+    // reglas aplicadas: cuándo y cuántos movió cada una
+    if (accion === "aplicar_reglas" && out.ok && !out.simulado) {
+      const ahora = new Date().toISOString();
+      for (const f of (out.reglas as Rec[]) || []) {
+        const regla = reglasActivas.find((x) => x.patron === f.patron);
+        if (!regla) continue;
+        const cambio: Rec = { ultima_vez: ahora };
+        if (Number(f.movidos) > 0) {
+          const act = await (await db(`correo_reglas?select=movidos&id=eq.${regla.id}`)).json();
+          cambio.movidos = Number(act[0]?.movidos || 0) + Number(f.movidos);
+        }
+        await db(`correo_reglas?id=eq.${regla.id}`, { method: "PATCH", body: JSON.stringify(cambio) });
+      }
+    }
+
+    // el cron aplica las reglas cada 10 min: solo se anota cuando movió algo (o falló)
+    const anotar = accion === "aplicar_reglas" ? (!out.ok || Number(out.movidos) > 0) && !out.simulado : !SOLO_LECTURA.has(accion);
+    if (anotar) {
+      if (accion === "aplicar_reglas" || accion === "ordenar") {
+        const hechas = ((out.reglas as Rec[]) || []).filter((f) => Number(f.movidos) > 0 || f.error).map((f) => ({ patron: f.patron, carpeta: f.carpeta, movidos: f.movidos, error: f.error }));
+        await registrar({ usuario, accion, ok: !!out.ok, error: out.ok ? null : String(out.error || "").slice(0, 500), carpeta: body.carpeta ?? "INBOX",
+          detalle: { movidos: out.movidos, simulado: out.simulado || undefined, reglas: hechas } });
+        return responder(out);
+      }
       const para = [body.para, body.cc, body.cco].flat().filter(Boolean).map((x) => typeof x === "string" ? x : (x as Rec).email).join(", ");
       await registrar({
         usuario, accion, ok: !!out.ok, error: out.ok ? null : String(out.error || "").slice(0, 500),

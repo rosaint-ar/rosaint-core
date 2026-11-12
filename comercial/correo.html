@@ -101,6 +101,57 @@
     .co-aviso.mal { background: var(--rojo); }
     .co-aviso button { background: none; border: 0; color: var(--acido); font: 600 13px var(--sans); margin-left: 12px; cursor: pointer; padding: 0; }
 
+    /* ---- Ordenar: la bandeja agrupada por remitente; la persona elige a dónde va cada uno */
+    .co[hidden], .or[hidden] { display: none; }
+    .or { background: var(--r-sup); }
+    .or-cab { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--r-li); }
+    .or-cab p { margin: 0; font-size: 14px; flex: 1 1 360px; color: var(--r-mu); line-height: 1.5; }
+    .or-cab p b { color: var(--r-tx); }
+    .or-filtros { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--r-li); }
+    .or-filtros .m-campo { padding: 7px 10px; min-width: 220px; }
+    .or-tabla { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .or-tabla th { font: 500 10.5px var(--sora); letter-spacing: .1em; text-transform: uppercase; color: var(--r-mu); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--r-li); position: sticky; top: 0; background: var(--r-sup); z-index: 1; }
+    .or-tabla td { padding: 8px 10px; border-bottom: 1px solid var(--r-li); vertical-align: top; font-size: 13.5px; }
+    .or-tabla tr.on td { background: color-mix(in srgb, var(--acido) 18%, transparent); }
+    .or-tabla tr.sub td { background: color-mix(in srgb, var(--r-panel) 30%, transparent); font-size: 13px; }
+    .or-tabla tr.sub td:nth-child(2) { padding-left: 30px; }
+    .or-tabla .quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .or-tabla .dir { font-size: 12px; color: var(--r-mu); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .or-tabla .ej { font-size: 12px; color: var(--r-mu); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+    .or-tabla .num { font-family: var(--sora); text-align: right; white-space: nowrap; }
+    .or-tabla .num small { display: block; color: var(--r-mu); font-size: 11px; }
+    .or-tabla select { width: 100%; padding: 6px 6px; font-size: 13px; }
+    .or-tabla select.sug { border-color: var(--azul); }
+    .or-tabla .por { font-size: 11.5px; color: var(--r-mu); margin-top: 3px; }
+    .or-tabla .ver { background: none; border: 0; padding: 0; font: 400 12px var(--sans); color: var(--r-tx); text-decoration: underline; text-decoration-color: var(--acido); text-decoration-thickness: 2px; cursor: pointer; }
+    .or-tabla label.siempre { font-size: 12.5px; display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; cursor: pointer; }
+    .or-cuerpo { max-height: calc(100vh - 330px); min-height: 300px; overflow-y: auto; }
+    .or-pie { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--r-li); background: color-mix(in srgb, var(--acido) 25%, var(--r-sup)); }
+    .or-pie[hidden] { display: none; }
+    .or-pie span { flex: 1; font-size: 14px; }
+    .or-reglas { margin-top: 10px; background: var(--r-sup); padding: 14px 16px; }
+    .or-reglas h3 { font: 400 17px var(--sora); margin: 0 0 4px; }
+    .or-reglas h3 em { font-family: var(--bitter); font-style: italic; }
+    .or-reglas .nota { font-size: 13px; color: var(--r-mu); margin: 0 0 10px; }
+    .or-regla { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--r-li); font-size: 13.5px; }
+    .or-regla small { color: var(--r-mu); }
+    .or-regla button { background: none; border: 0; cursor: pointer; color: var(--r-mu); font-size: 15px; padding: 2px 6px; }
+    .or-regla button:hover { color: var(--rojo); }
+    @media (max-width: 900px) { .or-tabla .c-ult, .or-tabla .c-ej { display: none; } }
+    /* celular: cada remitente como tarjeta (la tabla de 6 columnas no entra) */
+    @media (max-width: 720px) {
+      .or-tabla, .or-tabla tbody { display: block; }
+      .or-tabla thead, .or-tabla colgroup { display: none; }
+      .or-tabla tr { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 6px 8px; padding: 10px 12px; border-bottom: 1px solid var(--r-li); }
+      .or-tabla tr.on { background: color-mix(in srgb, var(--acido) 18%, transparent); }
+      .or-tabla tr.sub { background: color-mix(in srgb, var(--r-panel) 30%, transparent); }
+      .or-tabla td { display: block; padding: 0; border: 0; background: none !important; }
+      .or-tabla tr.sub td:nth-child(2) { padding-left: 0; }
+      .or-tabla td.c-ult { display: none; }
+      .or-tabla td:nth-child(5), .or-tabla td:nth-child(6) { grid-column: 2 / -1; }
+      .or-cuerpo { max-height: none; }
+    }
+
     .co-volver { display: none; }
     @media (max-width: 1100px) {
       .co { grid-template-columns: 200px minmax(0, 1fr); height: auto; }
@@ -129,6 +180,7 @@
     </div>
     <div class="m-cab-acc">
       <span class="m-vivo" id="vivo"><i></i><span>Conectando…</span></span>
+      <button class="rb linea" id="b-ordenar" onclick="modoOrdenar(!ORD.abierto)">Ordenar la bandeja</button>
       <button class="rb si" onclick="redactar()">Escribir correo</button>
     </div>
   </div>
@@ -174,6 +226,40 @@
       <div class="co-vacio"><img class="iso" src="../shared/marca/isotipo-original.svg" alt="" style="width:46px;margin:0 auto 10px;display:block"><h3>Elegí un <em>correo</em></h3><div>Se abre acá. Al abrirlo queda como leído.</div></div>
     </section>
   </div>
+
+  <!-- ordenar: la bandeja agrupada por remitente -->
+  <section class="or" id="or" hidden>
+    <div class="or-cab">
+      <p id="or-resumen">Leyendo la bandeja…</p>
+      <button class="rb suave" onclick="cargarOrdenar()">Volver a leer</button>
+      <button class="rb linea" onclick="modoOrdenar(false)">Volver al correo</button>
+    </div>
+    <div class="or-filtros">
+      <input class="m-campo" id="or-q" placeholder="Filtrar por empresa o dirección" oninput="pintarOrdenar()" autocomplete="off">
+      <button class="co-chip on" data-f="todos" onclick="filtroOrd('todos')">Todos</button>
+      <button class="co-chip" data-f="sug" onclick="filtroOrd('sug')">Con sugerencia</button>
+      <button class="co-chip" data-f="sin" onclick="filtroOrd('sin')">Sin sugerencia</button>
+      <span style="flex:1"></span>
+      <button class="rb suave" onclick="elegirSugeridas()" title="Marca todas las filas que tienen carpeta sugerida, para que las revises antes de mover">Marcar todas las sugeridas</button>
+    </div>
+    <div class="or-cuerpo">
+      <table class="or-tabla">
+        <colgroup><col style="width:34px"><col><col style="width:86px"><col class="c-ult" style="width:92px"><col style="width:250px"><col style="width:84px"></colgroup>
+        <thead><tr><th></th><th>Remitente</th><th class="num">Correos</th><th class="c-ult">Último</th><th>Llevar a</th><th title="Lo que llegue después de este remitente va solo a esa carpeta">Siempre</th></tr></thead>
+        <tbody id="or-filas"><tr><td colspan="6"><div class="co-vacio">Leyendo la bandeja…</div></td></tr></tbody>
+      </table>
+    </div>
+    <div class="or-pie" id="or-pie" hidden>
+      <span id="or-pie-txt"></span>
+      <button class="rb suave" onclick="ORD.elegidos.clear(); pintarOrdenar()">Desmarcar</button>
+      <button class="rb si" id="or-mover" onclick="moverElegidos()">Mover ahora</button>
+    </div>
+  </section>
+  <section class="or-reglas" id="or-reglas" hidden>
+    <h3>Reglas <em>guardadas</em></h3>
+    <p class="nota">Lo que llegue de estos remitentes se lleva solo a su carpeta (se revisa cada 10 minutos). Las agregás marcando «Siempre» al mover.</p>
+    <div id="or-reglas-lista"></div>
+  </section>
 </main>
 
 <!-- redactar -->
@@ -524,13 +610,14 @@ function confirmar(titulo, html, boton){
   return new Promise(res => {
     $('dlg-tit').innerHTML = titulo; $('dlg-cuerpo').innerHTML = '<p style="margin:0">' + html + '</p>'; $('dlg-error').textContent = '';
     $('dlg-ok').textContent = boton || 'Aceptar';
-    $('dlg-ok').onclick = () => { cerrarDlg(); res(true); };
+    // al aceptar se suelta primero el «cancelar»: si no, cerrarDlg() lo resolvía como NO antes del SÍ
+    $('dlg-ok').onclick = () => { dlgResolver = null; cerrarDlg(); res(true); };
     dlgResolver = () => res(false);
     $('capa-dlg').hidden = false;
   });
 }
 function cerrarDlg(){ $('capa-dlg').hidden = true; if (dlgResolver) { const r = dlgResolver; dlgResolver = null; r(); } }
-function ventanaCarpeta(modo){
+function ventanaCarpeta(modo, alCrear){
   const actual = CARPETAS.find(c => c.ruta === carpeta);
   $('dlg-error').textContent = '';
   dlgResolver = null;
@@ -543,7 +630,7 @@ function ventanaCarpeta(modo){
     $('dlg-ok').textContent = 'Crear';
     $('dlg-ok').onclick = async () => {
       const nombre = $('dlg-nombre').value.trim(); if (!nombre) return;
-      try { const r = await api({ accion: 'crear_carpeta', nombre, padre: $('dlg-padre').value }); cerrarDlg(); avisar('Carpeta creada'); await cargarCarpetas(); elegirCarpeta(r.ruta); }
+      try { const r = await api({ accion: 'crear_carpeta', nombre, padre: $('dlg-padre').value }); cerrarDlg(); avisar('Carpeta creada'); await cargarCarpetas(); if (alCrear) alCrear(r.ruta); else elegirCarpeta(r.ruta); }
       catch (err) { $('dlg-error').textContent = err.message; }
     };
     $('capa-dlg').hidden = false; setTimeout(() => $('dlg-nombre').focus(), 30);
@@ -656,13 +743,193 @@ async function enviar(soloBorrador){
   finally { $('r-env').disabled = $('r-borr').disabled = false; $('r-env').textContent = 'Enviar'; }
 }
 
+// ---------------- ordenar la bandeja (la persona elige; el sistema solo sugiere)
+const ORD = { abierto: false, datos: null, grupos: [], elegidos: new Set(), destino: {}, siempre: new Set(), expandidos: new Set(), filtro: 'todos', reglas: [] };
+// dominios de correo personal: ahí se agrupa por dirección, no por dominio
+const PUBLICOS = new Set(['gmail.com', 'hotmail.com', 'hotmail.com.ar', 'yahoo.com', 'yahoo.com.ar', 'outlook.com', 'outlook.com.ar', 'live.com', 'live.com.ar', 'icloud.com', 'me.com', 'msn.com', 'fibertel.com.ar', 'speedy.com.ar', 'arnet.com.ar']);
+const SEGUNDO_NIVEL = new Set(['com.ar', 'gob.ar', 'gov.ar', 'net.ar', 'org.ar', 'edu.ar', 'int.ar', 'tur.ar', 'com.br', 'com.mx', 'com.uy', 'com.py', 'com.co', 'com.pe', 'co.uk', 'com.au']);
+function dominioBase(d){ const p = d.split('.'); if (p.length <= 2) return d; return SEGUNDO_NIVEL.has(p.slice(-2).join('.')) ? p.slice(-3).join('.') : p.slice(-2).join('.'); }
+// plataformas que mandan correo en nombre de muchas empresas distintas (y el propio dominio): también por dirección
+const POR_DIRECCION = new Set(['odoo.com', 'zendesk.com', 'rosaint.com.ar', 'rosaint.online']);
+function claveDe(email){ const d = (email.split('@')[1] || '').toLowerCase(); return !d || PUBLICOS.has(d) || POR_DIRECCION.has(dominioBase(d)) ? email : '@' + dominioBase(d); }
+function coincide(email, patron){ email = email.toLowerCase(); if (patron[0] !== '@') return email === patron; const dom = patron.slice(1), de = email.split('@')[1] || ''; return de === dom || de.endsWith('.' + dom); }
+const plano = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function rutaLinda(r){ if (r === 'INBOX') return NOMBRES.INBOX; const e = Object.keys(ESP).find(k => ESP[k] === r); return e ? NOMBRES[e] : r.replace(/^INBOX\./, '').replace(/\./g, ' › '); }
+
+function modoOrdenar(si){
+  ORD.abierto = si;
+  $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si;
+  $('b-ordenar').textContent = si ? 'Volver al correo' : 'Ordenar la bandeja';
+  if (si && !ORD.datos) cargarOrdenar();
+  if (!si) recargar();
+}
+async function cargarOrdenar(){
+  $('or-resumen').textContent = 'Leyendo la bandeja y las carpetas… (unos segundos)';
+  $('or-filas').innerHTML = '<tr><td colspan="6"><div class="co-vacio">Leyendo la bandeja…</div></td></tr>';
+  try {
+    const [d, r] = await Promise.all([api({ accion: 'remitentes', carpeta: 'INBOX', aprender: true }), api({ accion: 'reglas' })]);
+    ORD.datos = d; ORD.reglas = r.reglas || [];
+    armarGrupos(); pintarOrdenar(); pintarReglas();
+  } catch (err) { $('or-resumen').textContent = 'No se pudo leer la bandeja: ' + err.message; $('or-filas').innerHTML = ''; }
+}
+function armarGrupos(){
+  const d = ORD.datos, g = {};
+  for (const x of d.remitentes) {
+    const k = claveDe(x.email);
+    const gr = g[k] || (g[k] = { clave: k, dominio: k[0] === '@', emails: [], n: 0, sin_leer: 0, ultimo: '' });
+    gr.emails.push(x); gr.n += x.n; gr.sin_leer += x.sin_leer; if ((x.ultimo || '') > gr.ultimo) gr.ultimo = x.ultimo || '';
+  }
+  const carpetasPropias = CARPETAS.filter(c => c.ruta !== 'INBOX' && !Object.values(ESP).includes(c.ruta) && c.se_puede_abrir !== false && !/^(sent|deleted) messages$|^archive$/i.test(c.nombre));
+  ORD.grupos = Object.values(g).map(gr => {
+    gr.emails.sort((a, b) => b.n - a.n);
+    const top = gr.emails[0];
+    gr.nombre = top.nombre || (gr.dominio ? gr.clave.slice(1) : top.email);
+    gr.asunto = (top.asuntos || [])[0] || '';
+    gr.sug = sugerir(gr.clave, gr.dominio ? null : gr.clave, gr.nombre, carpetasPropias);
+    gr.emails.forEach(e => { e.clave = e.email; e.sug = sugerir(e.email, e.email, e.nombre, carpetasPropias, true); });
+    return gr;
+  }).sort((a, b) => b.n - a.n);
+  // lo ya elegido que siga existiendo se conserva; la sugerencia se precarga pero NO se marca
+  for (const gr of ORD.grupos) for (const k of [gr.clave, ...gr.emails.map(e => e.email)]) {
+    const item = k === gr.clave ? gr : gr.emails.find(e => e.email === k);
+    if (!(k in ORD.destino) && item.sug) ORD.destino[k] = item.sug.ruta;
+  }
+}
+// sugerencia: 1) regla que ya existe · 2) dónde se guardaron antes sus correos · 3) carpeta con su nombre
+function sugerir(patron, email, nombre, carpetas, soloAprendido){
+  if (patron === CASILLA) return null;   // lo que manda la propia casilla (avisos de Odoo, reenvíos) no tiene carpeta natural
+  const regla = ORD.reglas.find(r => r.patron === patron);
+  if (regla) return { ruta: regla.carpeta, por: 'Ya tiene regla' };
+  const cuenta = {};
+  for (const [e, porCarpeta] of Object.entries(ORD.datos.aprendido || {})) {
+    if (email ? e !== email : !coincide(e, patron)) continue;
+    for (const [c, n] of Object.entries(porCarpeta)) if (!/.(archive|sent messages|deleted messages)$/i.test(c)) cuenta[c] = (cuenta[c] || 0) + n;
+  }
+  // con un solo correo guardado no alcanza para sugerir
+  const mejor = Object.entries(cuenta).filter(([c, n]) => n >= 2 && CARPETAS.some(x => x.ruta === c)).sort((a, b) => b[1] - a[1])[0];
+  if (mejor) return { ruta: mejor[0], por: 'Ya guardaste ' + mejor[1] + ' correo' + (mejor[1] === 1 ? '' : 's') + ' suyo' + (mejor[1] === 1 ? '' : 's') + ' ahí' };
+  if (soloAprendido) return null;
+  const dom = plano((patron[0] === '@' ? patron.slice(1) : patron.split('@')[1] || '').split('.').slice(0, -1).join(''));
+  const nom = plano(nombre);
+  const porNombre = carpetas.find(c => { const f = plano(c.nombre); return f.length >= 3 && ((dom && (dom.includes(f) || (dom.length >= 5 && f.includes(dom)))) || (nom.length >= 4 && (nom.includes(f) || f.includes(nom)))); });
+  return porNombre ? { ruta: porNombre.ruta, por: 'Por el nombre de la carpeta' } : null;
+}
+function filtroOrd(f){ ORD.filtro = f; document.querySelectorAll('.or-filtros .co-chip').forEach(b => b.classList.toggle('on', b.dataset.f === f)); pintarOrdenar(); }
+function opcionesDestino(sel){
+  const propias = CARPETAS.filter(c => c.ruta !== 'INBOX' && c.se_puede_abrir !== false && !Object.values(ESP).includes(c.ruta)).sort((a, b) => rutaLinda(a.ruta).localeCompare(rutaLinda(b.ruta), 'es'));
+  const pap = ESP['\\Trash'];
+  return `<option value="">— Elegí —</option>` + propias.map(c => `<option value="${esc(c.ruta)}" ${c.ruta === sel ? 'selected' : ''}>${esc(rutaLinda(c.ruta))}</option>`).join('')
+    + (pap ? `<option value="${esc(pap)}" ${pap === sel ? 'selected' : ''}>🗑 Papelera</option>` : '') + `<option value="__nueva">＋ Carpeta nueva…</option>`;
+}
+function filaOrd(item, sub){
+  const k = item.clave, on = ORD.elegidos.has(k), dest = ORD.destino[k] || '', sug = item.sug;
+  const quien = sub ? item.email : item.nombre;
+  const dir = sub ? (item.nombre ? item.nombre : '') : (item.dominio ? item.clave + (item.emails.length > 1 ? ' · ' + item.emails.length + ' direcciones' : '') : item.clave);
+  const ej = sub ? (item.asuntos || [])[0] || '' : item.asunto;
+  return `<tr class="${on ? 'on' : ''} ${sub ? 'sub' : ''}" data-k="${esc(k)}">
+    <td><input type="checkbox" ${on ? 'checked' : ''} onchange="elegirOrd(this.closest('tr').dataset.k, this.checked)" aria-label="Elegir"></td>
+    <td><div class="quien" title="${esc(quien)}">${esc(quien)}</div><div class="dir">${esc(dir)}${!sub && item.emails.length > 1 ? ` · <button class="ver" onclick="expandir2(this.closest('tr').dataset.k)">${ORD.expandidos.has(k) ? 'ocultar' : 'ver cada una'}</button>` : ''}</div>
+      ${ej ? `<div class="ej" title="${esc(ej)}">«${esc(ej)}»</div>` : ''}</td>
+    <td class="num">${item.n}${item.sin_leer ? `<small>${item.sin_leer} sin leer</small>` : ''}</td>
+    <td class="c-ult" style="font-size:12.5px;color:var(--r-mu)">${esc(cuando(item.ultimo))}</td>
+    <td><select class="m-campo ${sug && dest === sug.ruta ? 'sug' : ''}" onchange="destinoOrd(this.closest('tr').dataset.k, this.value)">${opcionesDestino(dest)}</select>
+      ${sug ? `<div class="por">${dest === sug.ruta ? 'Sugerida: ' : 'Sugerencia: ' + esc(rutaLinda(sug.ruta)) + ' · '}${esc(sug.por)}</div>` : ''}</td>
+    <td><label class="siempre"><input type="checkbox" ${ORD.siempre.has(k) ? 'checked' : ''} onchange="siempreOrd(this.closest('tr').dataset.k, this.checked)">siempre</label></td>
+  </tr>`;
+}
+function pintarOrdenar(){
+  const d = ORD.datos; if (!d) return;
+  const q = plano($('or-q').value);
+  let lista = ORD.grupos;
+  if (ORD.filtro === 'sug') lista = lista.filter(g => g.sug);
+  if (ORD.filtro === 'sin') lista = lista.filter(g => !g.sug);
+  if (q) lista = lista.filter(g => plano(g.nombre + ' ' + g.clave + ' ' + g.emails.map(e => e.email + ' ' + e.nombre).join(' ')).includes(q));
+  const conSug = ORD.grupos.filter(g => g.sug).length;
+  $('or-resumen').innerHTML = `La bandeja tiene <b>${d.total.toLocaleString('es-AR')} correos</b> de <b>${ORD.grupos.length} remitentes</b> (agrupados por empresa). Para <b>${conSug}</b> hay una carpeta sugerida. Elegí a dónde va cada uno y tocá «Mover ahora»; nada se mueve sin que lo elijas.`;
+  const MAX = 300;
+  $('or-filas').innerHTML = lista.slice(0, MAX).map(g => filaOrd(g) + (ORD.expandidos.has(g.clave) ? g.emails.map(e => filaOrd(e, true)).join('') : '')).join('')
+    + (lista.length > MAX ? `<tr><td colspan="6" style="text-align:center;color:var(--r-mu)">Se muestran los ${MAX} remitentes con más correos. Filtrá para ver otros (quedan ${lista.length - MAX}).</td></tr>` : '')
+    + (!lista.length ? '<tr><td colspan="6"><div class="co-vacio">Ningún remitente coincide.</div></td></tr>' : '');
+  pintarPieOrd();
+}
+function itemOrd(k){ for (const g of ORD.grupos) { if (g.clave === k) return g; const e = g.emails.find(x => x.email === k); if (e) return e; } return null; }
+function pintarPieOrd(){
+  const elegidos = [...ORD.elegidos].map(itemOrd).filter(Boolean);
+  const correos = elegidos.reduce((s, x) => s + x.n, 0), faltan = elegidos.filter(x => !ORD.destino[x.clave]).length;
+  const reglas = [...ORD.elegidos].filter(k => ORD.siempre.has(k)).length;
+  $('or-pie').hidden = !elegidos.length;
+  $('or-pie-txt').innerHTML = `<b>${elegidos.length}</b> remitente${elegidos.length === 1 ? '' : 's'} · <b>${correos.toLocaleString('es-AR')}</b> correos` + (reglas ? ` · ${reglas} quedan como regla` : '') + (faltan ? ` · <b style="color:var(--rojo)">falta elegir carpeta en ${faltan}</b>` : '');
+  $('or-mover').disabled = !!faltan || !elegidos.length;
+}
+function elegirOrd(k, si){ if (si) ORD.elegidos.add(k); else ORD.elegidos.delete(k); const tr = document.querySelector(`#or-filas tr[data-k="${CSS.escape(k)}"]`); if (tr) tr.classList.toggle('on', si); pintarPieOrd(); }
+function siempreOrd(k, si){ if (si) { ORD.siempre.add(k); ORD.elegidos.add(k); } else ORD.siempre.delete(k); pintarOrdenar(); }
+function expandir2(k){ if (ORD.expandidos.has(k)) ORD.expandidos.delete(k); else ORD.expandidos.add(k); pintarOrdenar(); }
+function elegirSugeridas(){
+  let n = 0;
+  for (const g of ORD.grupos) if (g.sug && ORD.destino[g.clave] === g.sug.ruta && !ORD.elegidos.has(g.clave)) { ORD.elegidos.add(g.clave); n++; }
+  pintarOrdenar(); avisar(n ? n + ' remitentes marcados con su carpeta sugerida: revisalos antes de mover' : 'No hay más sugeridas para marcar');
+}
+function destinoOrd(k, v){
+  if (v === '__nueva') {
+    ventanaCarpeta('crear', ruta => { ORD.destino[k] = ruta; ORD.elegidos.add(k); pintarOrdenar(); });
+    pintarOrdenar(); return;
+  }
+  if (v) { ORD.destino[k] = v; ORD.elegidos.add(k); } else { delete ORD.destino[k]; ORD.elegidos.delete(k); }
+  pintarOrdenar();
+}
+async function moverElegidos(){
+  const elegidos = [...ORD.elegidos].map(itemOrd).filter(Boolean);
+  if (!elegidos.length || elegidos.some(x => !ORD.destino[x.clave])) return;
+  // primero las direcciones puntuales, después los dominios: así una excepción gana sobre la regla general
+  const reglas = elegidos.map(x => ({ patron: x.clave, carpeta: ORD.destino[x.clave] })).sort((a, b) => (a.patron[0] === '@') - (b.patron[0] === '@'));
+  const correos = elegidos.reduce((s, x) => s + x.n, 0);
+  const aPapelera = reglas.filter(r => r.carpeta === ESP['\\Trash']).length;
+  const nuevasReglas = reglas.filter(r => ORD.siempre.has(r.patron));
+  const ok = await confirmar('Mover <em>' + correos.toLocaleString('es-AR') + ' correos</em>',
+    `De ${elegidos.length} remitente${elegidos.length === 1 ? '' : 's'}, desde la Bandeja a la carpeta que elegiste para cada uno.` +
+    (aPapelera ? `<br>${aPapelera} van a la <b>Papelera</b> (se pueden recuperar desde ahí).` : '') +
+    (nuevasReglas.length ? `<br><br>Además quedan <b>${nuevasReglas.length} regla${nuevasReglas.length === 1 ? '' : 's'}</b>: lo que llegue después de esos remitentes va solo a su carpeta.` : '') +
+    '<br><br>Si algo queda mal, se vuelve a la Bandeja moviéndolo desde la carpeta.', 'Mover ahora');
+  if (!ok) return;
+  $('or-mover').disabled = true; $('or-mover').textContent = 'Moviendo…';
+  try {
+    const r = await api({ accion: 'ordenar', carpeta: 'INBOX', reglas });
+    const errores = (r.reglas || []).filter(f => f.error);
+    for (const nr of nuevasReglas) { try { await api({ accion: 'regla_guardar', patron: nr.patron, carpeta: nr.carpeta }); } catch (e) { errores.push({ patron: nr.patron, error: 'no se guardó la regla: ' + e.message }); } }
+    avisar('Listo: ' + r.movidos.toLocaleString('es-AR') + ' correos movidos' + (nuevasReglas.length ? ' y ' + nuevasReglas.length + ' reglas guardadas' : '') + (errores.length ? ' · ' + errores.length + ' con problema: ' + errores.map(e => e.patron + ' (' + e.error + ')').join(', ') : ''), !!errores.length);
+    ORD.elegidos.clear(); ORD.siempre.clear();
+    await cargarCarpetas().catch(() => {});
+    await cargarOrdenar();
+  } catch (err) { avisar('No se pudo mover: ' + err.message, true); }
+  finally { $('or-mover').textContent = 'Mover ahora'; pintarPieOrd(); }
+}
+function pintarReglas(){
+  const l = ORD.reglas;
+  $('or-reglas-lista').innerHTML = (l.length ? l.map(r => `<div class="or-regla"><span><b>${esc(r.patron)}</b></span><span>→ ${esc(rutaLinda(r.carpeta))}</span>
+      <small>${r.movidos ? r.movidos.toLocaleString('es-AR') + ' movidos' : 'todavía nada'}${r.ultima_vez ? ' · revisada ' + esc(cuando(r.ultima_vez)) : ''}</small>
+      <button onclick="borrarRegla(${r.id})" title="Quitar la regla (los correos ya movidos quedan donde están)">✕</button></div>`).join('')
+    : '<p class="nota" style="margin:0">Todavía no hay reglas.</p>')
+    + (l.length ? `<div style="margin-top:10px"><button class="rb linea" onclick="aplicarReglas()">Aplicar las reglas ahora</button></div>` : '');
+}
+async function borrarRegla(id){
+  const r = ORD.reglas.find(x => x.id === id); if (!r) return;
+  const ok = await confirmar('Quitar la <em>regla</em>', `Lo que llegue de <b>${esc(r.patron)}</b> se va a quedar en la Bandeja. Los correos que ya se movieron no cambian.`, 'Quitar');
+  if (!ok) return;
+  try { await api({ accion: 'regla_borrar', id }); ORD.reglas = ORD.reglas.filter(x => x.id !== id); pintarReglas(); avisar('Regla quitada'); }
+  catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+async function aplicarReglas(){
+  try { const r = await api({ accion: 'aplicar_reglas' }); avisar(r.movidos ? r.movidos + ' correos movidos por las reglas' : 'No había nada nuevo para mover'); const x = await api({ accion: 'reglas' }); ORD.reglas = x.reglas || []; pintarReglas(); if (r.movidos) cargarOrdenar(); }
+  catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+
 // ---------------- teclado y refresco
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { if (!$('capa-dlg').hidden) cerrarDlg(); else if (!$('capa-red').hidden) cerrarRedactar(); }
 });
 // se actualiza solo cada 2 minutos con la pestaña a la vista (sin apretar nada); sin abusar del servidor de correo
 setInterval(() => {
-  if (document.hidden || ocupado || !$('capa-red').hidden || !$('capa-dlg').hidden || seleccion.size || pagina > 1) return;
+  if (document.hidden || ocupado || ORD.abierto || !$('capa-red').hidden || !$('capa-dlg').hidden || seleccion.size || pagina > 1) return;
   recargar();
 }, 120000);
 
