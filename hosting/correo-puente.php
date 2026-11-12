@@ -72,6 +72,7 @@ function atender(array $b) {
       // estado → casilla, capacidades del servidor, carpetas especiales
       case 'estado':
         return ['ok' => true, 'casilla' => $usuario, 'php' => PHP_VERSION, 'mbstring' => function_exists('mb_convert_encoding'),
+          'post_max_size' => ini_get('post_max_size'), 'memory_limit' => ini_get('memory_limit'),
           'capacidades' => $imap->capacidades, 'especiales' => $imap->especiales()];
 
       // carpetas {conteos?} → [{ruta, nombre, padre, especial, total?, sin_leer?}]
@@ -478,6 +479,9 @@ class Imap {
     if (!empty($b['hasta'])) $c[] = 'BEFORE ' . $fecha($b['hasta']);
     foreach (['de' => 'FROM', 'para' => 'TO', 'asunto' => 'SUBJECT', 'texto' => 'TEXT', 'cuerpo' => 'BODY'] as $k => $cl)
       if (isset($b[$k]) && trim((string)$b[$k]) !== '') $c[] = $cl . ' ' . self::lit(trim((string)$b[$k]));
+    // "q": búsqueda rápida en remitente, destinatario o asunto (solo encabezados: ~1 s).
+    // "texto" busca también dentro del cuerpo y en contacto@ tarda ~90 s (recorre los 9.700 correos).
+    if (isset($b['q']) && trim((string)$b['q']) !== '') { $l = trim((string)$b['q']); $c[] = 'OR OR FROM ' . self::lit($l) . ' SUBJECT ' . self::lit($l) . ' TO ' . self::lit($l); }
     if (!empty($b['sin_leer'])) $c[] = 'UNSEEN';
     if (!empty($b['destacados'])) $c[] = 'FLAGGED';
     if (!empty($b['desde_uid'])) $c[] = 'UID ' . (int)$b['desde_uid'] . ':*';

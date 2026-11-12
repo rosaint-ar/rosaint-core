@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Correo · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="icon" type="image/svg+xml" href="../shell/logo.svg">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <link rel="stylesheet" href="../shared/marca/marca.css?v=202610271">
+  <style>
+    /* Correo de contacto@rosaint.com.ar. Tres columnas: carpetas · correos · lectura.
+       Todo pasa por la función `correo` (Supabase) → puente PHP en el hosting → la casilla de Ferozo. */
+    .co { display: grid; grid-template-columns: 220px minmax(300px, 370px) minmax(0, 1fr); gap: 10px; height: calc(100vh - 205px); min-height: 480px; }
+    .co-col { background: var(--r-sup); min-height: 0; display: flex; flex-direction: column; }
+
+    /* carpetas */
+    .co-carp { overflow-y: auto; padding: 8px 0; flex: 1; }
+    .co-c { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; border-left: 3px solid transparent; padding: 7px 12px 7px calc(12px + var(--n, 0) * 14px); font: 400 13.5px var(--sans); color: var(--r-tx); cursor: pointer; }
+    .co-c:hover { background: color-mix(in srgb, var(--r-panel) 45%, transparent); }
+    .co-c.on { border-left-color: var(--acido); background: color-mix(in srgb, var(--acido) 22%, transparent); font-weight: 600; }
+    .co-c.drop { outline: 2px dashed var(--r-tx); outline-offset: -2px; }
+    .co-c .nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .co-c .n { font: 400 12px var(--sora); color: var(--r-mu); }
+    .co-c .n.hay { color: var(--r-tx); font-weight: 500; }
+    .co-c.esp .nom { font-family: var(--sora); font-size: 13px; }
+    .co-sep { height: 1px; background: var(--r-li); margin: 6px 12px; }
+    .co-carp-acc { display: flex; gap: 0; padding: 6px 6px; border-top: 1px solid var(--r-li); flex-wrap: wrap; justify-content: space-between; }
+    .co-carp-acc .rb { padding: 6px 5px; font-size: 12px; }
+
+    /* lista */
+    .co-busca { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--r-li); align-items: center; }
+    .co-busca .m-campo { flex: 1; min-width: 0; padding: 8px 10px; }
+    .co-chips { display: flex; gap: 4px; padding: 8px 10px 0; flex-wrap: wrap; }
+    .co-chip { font: 400 12px var(--sora); padding: 4px 9px; border: 1px solid var(--r-li); background: none; color: var(--r-tx); cursor: pointer; }
+    .co-chip.on { background: var(--acido); border-color: var(--acido); color: var(--azul); }
+    .co-info { padding: 6px 12px; font-size: 12.5px; color: var(--r-mu); display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; }
+    .co-info .rb { padding: 3px 6px; font-size: 12px; }
+    .co-sel { display: flex; gap: 2px; align-items: center; padding: 6px 8px; background: color-mix(in srgb, var(--acido) 30%, var(--r-sup)); flex-wrap: wrap; }
+    .co-sel[hidden] { display: none; }
+    .co-sel .rb { padding: 5px 8px; font-size: 12.5px; }
+    .co-sel select { padding: 4px 6px; font-size: 12.5px; max-width: 150px; }
+    .co-lista { overflow-y: auto; flex: 1; }
+    .co-m { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 8px; padding: 9px 12px 9px 8px; border-bottom: 1px solid var(--r-li); cursor: pointer; border-left: 3px solid transparent; position: relative; }
+    .co-m:hover { background: color-mix(in srgb, var(--r-panel) 40%, transparent); }
+    .co-m.on { background: color-mix(in srgb, var(--r-panel) 75%, transparent); border-left-color: var(--r-tx); }
+    .co-m.nuevo { border-left-color: var(--acido); }
+    .co-m.nuevo .de, .co-m.nuevo .as { font-weight: 600; }
+    .co-m input { margin: 3px 0 0; grid-row: span 2; cursor: pointer; }
+    .co-m .de { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .co-m .cu { font: 400 11.5px var(--sora); color: var(--r-mu); white-space: nowrap; text-align: right; }
+    .co-m .as { font-size: 13px; color: var(--r-tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; grid-column: 2; }
+    .co-m .ic { grid-column: 3; text-align: right; font-size: 12px; color: var(--r-mu); white-space: nowrap; }
+    .co-m .ic .est { color: var(--rojo); }
+    .co-mas { padding: 12px; text-align: center; }
+
+    /* lectura */
+    .co-lee { overflow: hidden; }
+    .co-lee-cab { padding: 16px 20px 12px; border-bottom: 1px solid var(--r-li); }
+    .co-lee-cab h2 { font: 400 19px/1.3 var(--sora); margin: 0 0 8px; word-break: break-word; }
+    .co-lee-cab .q { font-size: 13px; color: var(--r-mu); line-height: 1.55; word-break: break-word; }
+    .co-lee-cab .q b { color: var(--r-tx); font-weight: 600; }
+    .co-lee-acc { display: flex; gap: 2px; flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--r-li); align-items: center; }
+    .co-lee-acc .rb { padding: 7px 10px; font-size: 13px; }
+    .co-lee-acc select { padding: 5px 6px; font-size: 13px; max-width: 170px; }
+    .co-adj { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 20px; border-bottom: 1px solid var(--r-li); }
+    .co-adj button { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--r-li); background: var(--r-bg); padding: 6px 10px; font: 400 12.5px var(--sans); color: var(--r-tx); cursor: pointer; max-width: 280px; }
+    .co-adj button:hover { border-color: var(--r-tx); }
+    .co-adj button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .co-adj button small { color: var(--r-mu); }
+    .co-cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .co-cuerpo iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+    .co-cuerpo pre { flex: 1; overflow: auto; margin: 0; padding: 18px 20px; white-space: pre-wrap; word-break: break-word; font: 400 14.5px/1.6 var(--sans); }
+    .co-imgs { padding: 6px 20px; font-size: 12.5px; color: var(--r-mu); background: color-mix(in srgb, var(--r-panel) 40%, transparent); }
+    .co-imgs button { background: none; border: 0; padding: 0; font: inherit; color: var(--r-tx); text-decoration: underline; text-decoration-color: var(--acido); text-decoration-thickness: 2px; cursor: pointer; }
+    .co-vacio { margin: auto; text-align: center; color: var(--r-mu); padding: 30px; }
+    .co-vacio h3 { font: 400 20px var(--sora); color: var(--r-tx); margin: 0 0 6px; }
+    .co-vacio h3 em { font-family: var(--bitter); font-style: italic; }
+    .co-cargando { opacity: .55; pointer-events: none; }
+
+    /* ventanas */
+    .m-capa { position: fixed; inset: 0; background: rgba(20, 28, 38, .45); z-index: 900; display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px; overflow-y: auto; }
+    .m-capa[hidden] { display: none; }
+    .m-ven { background: var(--r-sup); width: min(720px, 100%); padding: 22px 24px 18px; position: relative; }
+    .m-ven h3 { font: 400 20px var(--sora); margin: 0 0 14px; }
+    .m-ven h3 em { font-family: var(--bitter); font-style: italic; }
+    .m-ven .fila { display: grid; grid-template-columns: 70px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .m-ven .fila label { font: 500 11px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--r-mu); }
+    .m-ven .m-campo { width: 100%; box-sizing: border-box; }
+    .m-ven textarea.m-campo { min-height: 260px; font-size: 14.5px; }
+    .m-ven .pie { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+    .m-ven .pie .izq { margin-right: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .m-ven .adjs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .m-ven .adjs span { font-size: 12.5px; background: var(--r-bg); border: 1px solid var(--r-li); padding: 4px 8px; display: inline-flex; gap: 6px; align-items: center; }
+    .m-ven .adjs button { background: none; border: 0; cursor: pointer; color: var(--r-mu); padding: 0; font-size: 14px; }
+    .m-ven .nota { font-size: 12.5px; color: var(--r-mu); }
+    .m-ven .error { color: var(--rojo); font-size: 13px; }
+
+    .co-aviso { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--azul); color: var(--papel); padding: 10px 18px; font: 400 13.5px var(--sans); z-index: 950; max-width: 90vw; }
+    .co-aviso[hidden] { display: none; }
+    .co-aviso.mal { background: var(--rojo); }
+    .co-aviso button { background: none; border: 0; color: var(--acido); font: 600 13px var(--sans); margin-left: 12px; cursor: pointer; padding: 0; }
+
+    .co-volver { display: none; }
+    @media (max-width: 1100px) {
+      .co { grid-template-columns: 200px minmax(0, 1fr); height: auto; }
+      .co-lee { grid-column: 1 / -1; min-height: 70vh; }
+    }
+    @media (max-width: 720px) {
+      .co { grid-template-columns: 1fr; }
+      .co-col.co-carpetas { max-height: 220px; }
+      .co-lista { max-height: 65vh; }
+      .co.leyendo .co-carpetas, .co.leyendo .co-medio { display: none; }
+      .co:not(.leyendo) .co-lee { display: none; }
+      .co-volver { display: inline-flex; }
+    }
+  </style>
+</head>
+<body class="marca" data-page="correo" data-title="Correo" data-subtitle="La casilla contacto@rosaint.com.ar">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+
+  <div class="m-cab">
+    <div>
+      <span class="eyebrow">Ventas · Correo · contacto@rosaint.com.ar</span>
+      <h1 class="titular">La casilla, <em>en orden</em>.</h1>
+    </div>
+    <div class="m-cab-acc">
+      <span class="m-vivo" id="vivo"><i></i><span>Conectando…</span></span>
+      <button class="rb si" onclick="redactar()">Escribir correo</button>
+    </div>
+  </div>
+
+  <div class="co" id="co">
+    <!-- carpetas -->
+    <section class="co-col co-carpetas">
+      <div class="co-carp" id="carpetas"><div class="co-vacio">Cargando…</div></div>
+      <div class="co-carp-acc">
+        <button class="rb suave" onclick="ventanaCarpeta('crear')" title="Crear una carpeta">+ Carpeta</button>
+        <button class="rb suave" id="b-ren" onclick="ventanaCarpeta('renombrar')" title="Cambiarle el nombre a la carpeta abierta">Renombrar</button>
+        <button class="rb suave" id="b-bor" onclick="ventanaCarpeta('borrar')" title="Borrar la carpeta abierta">Borrar</button>
+      </div>
+    </section>
+
+    <!-- lista -->
+    <section class="co-col co-medio">
+      <form class="co-busca" onsubmit="event.preventDefault(); buscar();">
+        <input class="m-campo" id="q" placeholder="Buscar por remitente, destinatario o asunto" autocomplete="off">
+        <button class="rb linea" type="submit">Buscar</button>
+      </form>
+      <div class="co-chips">
+        <button class="co-chip" id="f-noleidos" onclick="alternar('sin_leer')">Sin leer</button>
+        <button class="co-chip" id="f-destacados" onclick="alternar('destacados')">Destacados</button>
+        <button class="co-chip" id="f-texto" onclick="alternar('texto')" hidden title="Busca también dentro de los correos. El servidor los recorre todos: tarda alrededor de un minuto.">También en el texto (tarda ~1 min)</button>
+        <button class="co-chip" id="f-limpiar" onclick="limpiarBusqueda()" hidden>Quitar búsqueda ✕</button>
+      </div>
+      <div class="co-info"><span id="info">—</span><span><button class="rb suave" onclick="recargar()" title="Volver a leer la carpeta">Actualizar</button></span></div>
+      <div class="co-sel" id="sel" hidden>
+        <b id="sel-n" style="font:400 13px var(--sora);margin:0 6px">0</b>
+        <button class="rb suave" onclick="accionSel('leido')">Leído</button>
+        <button class="rb suave" onclick="accionSel('noleido')">No leído</button>
+        <button class="rb suave" onclick="accionSel('destacar')">Destacar</button>
+        <select class="m-campo" id="sel-mover" onchange="accionSel('mover', this.value); this.value=''"><option value="">Mover a…</option></select>
+        <button class="rb suave" onclick="accionSel('borrar')" style="color:var(--rojo)">Borrar</button>
+        <button class="rb suave" onclick="seleccion.clear(); pintarLista()" title="Quitar la selección">✕</button>
+      </div>
+      <div class="co-lista" id="lista"></div>
+    </section>
+
+    <!-- lectura -->
+    <section class="co-col co-lee" id="lee">
+      <div class="co-vacio"><img class="iso" src="../shared/marca/isotipo-original.svg" alt="" style="width:46px;margin:0 auto 10px;display:block"><h3>Elegí un <em>correo</em></h3><div>Se abre acá. Al abrirlo queda como leído.</div></div>
+    </section>
+  </div>
+</main>
+
+<!-- redactar -->
+<div class="m-capa" id="capa-red" hidden>
+  <div class="m-ven corte">
+    <h3 id="red-tit">Correo <em>nuevo</em></h3>
+    <div class="fila"><label for="r-para">Para</label><input class="m-campo" id="r-para" placeholder="cliente@ejemplo.com, otra@ejemplo.com" autocomplete="off"></div>
+    <div class="fila"><label for="r-cc">CC</label><input class="m-campo" id="r-cc" autocomplete="off"></div>
+    <div class="fila"><label for="r-cco">CCO</label><input class="m-campo" id="r-cco" placeholder="copia oculta" autocomplete="off"></div>
+    <div class="fila"><label for="r-asunto">Asunto</label><input class="m-campo" id="r-asunto" autocomplete="off"></div>
+    <textarea class="m-campo" id="r-texto" placeholder="Escribí el mensaje…"></textarea>
+    <div class="adjs" id="r-adjs"></div>
+    <div class="nota" id="r-nota"></div>
+    <div class="error" id="r-error"></div>
+    <div class="pie">
+      <div class="izq">
+        <label class="rb linea" style="cursor:pointer">Adjuntar<input type="file" id="r-file" multiple hidden onchange="agregarAdjuntos(this.files); this.value=''"></label>
+        <button class="rb suave" onclick="enviar(true)" id="r-borr">Guardar borrador</button>
+      </div>
+      <button class="rb suave" onclick="cerrarRedactar()">Cancelar</button>
+      <button class="rb si" onclick="enviar(false)" id="r-env">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- carpeta: crear / renombrar / borrar; y confirmar -->
+<div class="m-capa" id="capa-dlg" hidden>
+  <div class="m-ven corte" style="width:min(460px,100%)">
+    <h3 id="dlg-tit"></h3>
+    <div id="dlg-cuerpo"></div>
+    <div class="error" id="dlg-error"></div>
+    <div class="pie">
+      <button class="rb suave" onclick="cerrarDlg()">Cancelar</button>
+      <button class="rb si" id="dlg-ok">Aceptar</button>
+    </div>
+  </div>
+</div>
+
+<div class="co-aviso" id="aviso" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=20261112correo"></script>
+<script>
+const FN = window.SUPABASE_URL + '/functions/v1/correo';
+const CASILLA = 'contacto@rosaint.com.ar';
+const MAX_ADJ = 15 * 1024 * 1024;   // adjuntos en base64 (+33 %); el hosting acepta 128 MB y Ferozo manda hasta 50 MB, Gmail recibe hasta 25 MB
+const POR_PAGINA = 50;
+const NOMBRES = { INBOX: 'Bandeja de entrada', '\\Sent': 'Enviados', '\\Drafts': 'Borradores', '\\Junk': 'Spam', '\\Trash': 'Papelera' };
+const ORDEN_ESP = ['\\Inbox', '\\Drafts', '\\Sent', '\\Junk', '\\Trash'];
+
+let CARPETAS = [], ESP = {}, carpeta = 'INBOX', pagina = 1, encontrados = 0;
+let CORREOS = [], abierto = null, LEIDO = null, mostrarImgs = false;
+const filtros = { sin_leer: false, destacados: false, q: '', texto: false };
+let pedidoLista = 0;   // cada carga de la lista lleva número: si llega una respuesta vieja, se descarta
+const seleccion = new Set();
+let ocupado = 0;
+
+// ---------------- utilidades
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const $ = id => document.getElementById(id);
+function cuando(iso){
+  if (!iso) return '';
+  const d = new Date(iso), ahora = new Date();
+  const dia = x => x.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+  if (dia(d) === dia(ahora)) return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
+  const opc = { day: 'numeric', month: 'short', timeZone: 'America/Argentina/Buenos_Aires' };
+  if (d.getFullYear() !== ahora.getFullYear()) opc.year = '2-digit';
+  return d.toLocaleDateString('es-AR', opc);
+}
+function fechaLarga(iso){ return iso ? new Date(iso).toLocaleString('es-AR', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Argentina/Buenos_Aires' }) : ''; }
+function peso(n){ return n > 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function nombreDe(s){ const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>/.exec(s || ''); return m ? (m[1].trim() || m[2]) : (s || '').trim(); }
+function emailDe(s){ const m = /<([^>]+)>/.exec(s || ''); return (m ? m[1] : (s || '')).trim(); }
+function nombreCarpeta(c){ if (!c) return ''; if (c.ruta === 'INBOX') return NOMBRES.INBOX; const e = Object.keys(ESP).find(k => ESP[k] === c.ruta); return e ? NOMBRES[e] : c.nombre; }
+const esPapelera = () => ESP['\\Trash'] === carpeta;
+const esDeSalida = () => carpeta === ESP['\\Sent'] || carpeta === ESP['\\Drafts'];
+
+let avisoT = null;
+function avisar(txt, mal, deshacer){
+  const a = $('aviso'); a.className = 'co-aviso' + (mal ? ' mal' : ''); a.innerHTML = esc(txt);
+  if (deshacer) { const b = document.createElement('button'); b.textContent = 'Deshacer'; b.onclick = () => { a.hidden = true; deshacer(); }; a.appendChild(b); }
+  a.hidden = false; clearTimeout(avisoT); avisoT = setTimeout(() => a.hidden = true, mal ? 9000 : 6000);
+}
+function vivo(ok, txt){ const v = $('vivo'); v.classList.toggle('off', !ok); v.querySelector('span').textContent = txt; }
+
+async function api(body){
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess && sess.session && sess.session.access_token;
+  ocupado++;
+  try {
+    const r = await fetch(FN, { method: 'POST', headers: { apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (r.status === 401) throw new Error('Tu usuario no tiene acceso al correo (solo las cuentas habilitadas).');
+    const j = await r.json().catch(() => ({ ok: false, error: 'Respuesta inválida del servidor (HTTP ' + r.status + ')' }));
+    if (!j.ok) throw new Error(j.error || 'Error del correo');
+    return j;
+  } finally { ocupado--; }
+}
+
+// ---------------- carpetas
+async function cargarCarpetas(){
+  try {
+    const [c, e] = await Promise.all([api({ accion: 'carpetas', conteos: true }), Object.keys(ESP).length ? null : api({ accion: 'estado' })]);
+    if (e) ESP = e.especiales || {};
+    CARPETAS = c.carpetas || [];
+    vivo(true, 'Conectado');
+    pintarCarpetas();
+  } catch (err) { vivo(false, 'Sin conexión'); $('carpetas').innerHTML = '<div class="co-vacio">' + esc(err.message) + '</div>'; throw err; }
+}
+function pintarCarpetas(){
+  const rutasEsp = new Set(Object.values(ESP));
+  const espDe = r => Object.keys(ESP).find(k => ESP[k] === r);
+  // primero las del sistema (en orden fijo), después el resto como árbol
+  const sistema = CARPETAS.filter(c => c.ruta === 'INBOX' || rutasEsp.has(c.ruta))
+    .sort((a, b) => ORDEN_ESP.indexOf(a.ruta === 'INBOX' ? '\\Inbox' : espDe(a.ruta)) - ORDEN_ESP.indexOf(b.ruta === 'INBOX' ? '\\Inbox' : espDe(b.ruta)));
+  const resto = CARPETAS.filter(c => !(c.ruta === 'INBOX' || rutasEsp.has(c.ruta)));
+  const hijos = {}; resto.forEach(c => { const p = (c.padre && c.padre !== 'INBOX' && resto.some(x => x.ruta === c.padre)) ? c.padre : ''; (hijos[p] = hijos[p] || []).push(c); });
+  Object.values(hijos).forEach(l => l.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+  const fila = (c, n) => {
+    const sl = c.sin_leer || 0, cuenta = (c.ruta === ESP['\\Drafts'] || c.ruta === ESP['\\Sent']) ? (c.total || '') : (sl || '');
+    return `<button class="co-c ${c.ruta === carpeta ? 'on' : ''} ${n === 0 && (c.ruta === 'INBOX' || rutasEsp.has(c.ruta)) ? 'esp' : ''}" style="--n:${n}" data-ruta="${esc(c.ruta)}"
+      title="${esc(c.ruta)}${c.total != null ? ' · ' + c.total + ' correos' : ''}" ${c.se_puede_abrir === false ? 'disabled' : ''}
+      onclick="elegirCarpeta(this.dataset.ruta)" ondragover="sobreCarpeta(event,this)" ondragleave="this.classList.remove('drop')" ondrop="soltarEnCarpeta(event,this)">
+      <span class="nom">${esc(nombreCarpeta(c))}</span><span class="n ${sl && cuenta === sl ? 'hay' : ''}">${cuenta}</span></button>`;
+  };
+  const arbol = (p, n) => (hijos[p] || []).map(c => fila(c, n) + arbol(c.ruta, n + 1)).join('');
+  $('carpetas').innerHTML = sistema.map(c => fila(c, 0)).join('') + '<div class="co-sep"></div>' + arbol('', 0);
+  const actual = CARPETAS.find(c => c.ruta === carpeta);
+  const fija = carpeta === 'INBOX' || rutasEsp.has(carpeta);
+  $('b-ren').disabled = $('b-bor').disabled = fija || !actual;
+  // destinos para «Mover a…»
+  const opciones = '<option value="">Mover a…</option>' + [...sistema, ...resto].filter(c => c.ruta !== carpeta && c.se_puede_abrir !== false)
+    .map(c => `<option value="${esc(c.ruta)}">${esc(c.ruta === 'INBOX' || rutasEsp.has(c.ruta) ? nombreCarpeta(c) : c.ruta.replace(/^INBOX\./, '').replace(/\./g, ' › '))}</option>`).join('');
+  $('sel-mover').innerHTML = opciones;
+  const lm = document.getElementById('lee-mover'); if (lm) lm.innerHTML = opciones;
+}
+function elegirCarpeta(r){
+  if (r === carpeta) return recargar();
+  carpeta = r; pagina = 1; seleccion.clear(); filtros.q = ''; filtros.texto = false; $('q').value = ''; cerrarLectura();
+  history.replaceState(null, '', r === 'INBOX' ? location.pathname : '#' + encodeURIComponent(r));
+  pintarCarpetas(); cargarLista();
+}
+
+// ---------------- lista
+async function cargarLista(mas){
+  const lista = $('lista');
+  if (!mas) { lista.classList.add('co-cargando'); if (!CORREOS.length) lista.innerHTML = '<div class="co-vacio">Cargando…</div>'; }
+  const pedido = { accion: 'buscar', carpeta, limite: POR_PAGINA, pagina };
+  if (filtros.sin_leer) pedido.sin_leer = true;
+  if (filtros.destacados) pedido.destacados = true;
+  if (filtros.q) { if (filtros.texto) pedido.texto = filtros.q; else pedido.q = filtros.q; }
+  const n = ++pedidoLista;
+  if (filtros.q && filtros.texto && !mas) lista.innerHTML = '<div class="co-vacio">Buscando dentro de todos los correos…<br><small>El servidor los recorre uno por uno: puede tardar un minuto.</small></div>';
+  try {
+    const r = await api(pedido);
+    if (n !== pedidoLista) return;   // mientras cargaba se pidió otra cosa (carpeta, filtro o búsqueda)
+    CORREOS = mas ? CORREOS.concat(r.correos) : r.correos;
+    encontrados = r.encontrados;
+    vivo(true, 'Conectado · ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    pintarLista();
+  } catch (err) {
+    if (n !== pedidoLista) return;
+    vivo(false, 'Sin conexión');
+    if (!mas) lista.innerHTML = '<div class="co-vacio">No se pudo leer la carpeta.<br><small>' + esc(err.message) + '</small></div>';
+    else avisar(err.message, true);
+  } finally { if (n === pedidoLista) lista.classList.remove('co-cargando'); }
+}
+function pintarLista(){
+  const c = CARPETAS.find(x => x.ruta === carpeta);
+  const filtrado = filtros.q || filtros.sin_leer || filtros.destacados;
+  $('info').textContent = (c ? nombreCarpeta(c) + ' · ' : '') + (filtrado ? encontrados + ' encontrados' : encontrados + ' correos');
+  $('f-noleidos').classList.toggle('on', filtros.sin_leer);
+  $('f-destacados').classList.toggle('on', filtros.destacados);
+  $('f-limpiar').hidden = !filtros.q;
+  $('f-texto').hidden = !filtros.q; $('f-texto').classList.toggle('on', filtros.texto);
+  const lista = $('lista');
+  if (!CORREOS.length) {
+    lista.innerHTML = `<div class="co-vacio"><h3>Nada <em>por acá</em></h3><div>${filtrado ? 'Ningún correo coincide con la búsqueda.' : 'La carpeta está vacía.'}</div></div>`;
+  } else {
+    const salida = esDeSalida();
+    lista.innerHTML = CORREOS.map(m => {
+      const quien = salida ? 'Para: ' + (nombreDe(m.para) || '(sin destinatario)') : (m.de_nombre || m.de_email || m.de || '(sin remitente)');
+      return `<div class="co-m ${m.uid === abierto ? 'on' : ''} ${m.leido ? '' : 'nuevo'}" draggable="true" data-uid="${m.uid}"
+          onclick="abrir(${m.uid})" ondragstart="arrastrar(event,${m.uid})" title="${esc(m.de)}">
+        <input type="checkbox" ${seleccion.has(m.uid) ? 'checked' : ''} onclick="event.stopPropagation(); marcarSel(${m.uid}, this.checked)" aria-label="Elegir">
+        <span class="de">${esc(quien)}</span><span class="cu">${esc(cuando(m.fecha))}</span>
+        <span class="as">${esc(m.asunto || '(sin asunto)')}</span>
+        <span class="ic">${m.tiene_adjuntos ? '📎' : ''}${m.respondido ? ' ↩' : ''}${m.destacado ? ' <span class="est">★</span>' : ''}</span>
+      </div>`;
+    }).join('') + (CORREOS.length < encontrados ? `<div class="co-mas"><button class="rb linea" onclick="pagina++; cargarLista(true)">Ver ${Math.min(POR_PAGINA, encontrados - CORREOS.length)} más (quedan ${encontrados - CORREOS.length})</button></div>` : '');
+  }
+  $('sel').hidden = !seleccion.size;
+  $('sel-n').textContent = seleccion.size + (seleccion.size === 1 ? ' elegido' : ' elegidos');
+}
+function marcarSel(uid, si){ if (si) seleccion.add(uid); else seleccion.delete(uid); $('sel').hidden = !seleccion.size; $('sel-n').textContent = seleccion.size + (seleccion.size === 1 ? ' elegido' : ' elegidos'); }
+function buscar(){ filtros.q = $('q').value.trim(); if (!filtros.q) filtros.texto = false; pagina = 1; seleccion.clear(); cargarLista(); }
+function limpiarBusqueda(){ $('q').value = ''; buscar(); }
+function alternar(k){ filtros[k] = !filtros[k]; pagina = 1; seleccion.clear(); cargarLista(); }
+function recargar(){ pagina = 1; return Promise.all([cargarCarpetas().catch(() => {}), cargarLista()]); }
+
+// ---------------- leer
+async function abrir(uid){
+  abierto = uid; mostrarImgs = false;
+  document.querySelectorAll('.co-m').forEach(e => e.classList.toggle('on', +e.dataset.uid === uid));
+  $('co').classList.add('leyendo');
+  const lee = $('lee');
+  lee.innerHTML = '<div class="co-vacio">Abriendo…</div>';
+  const m = CORREOS.find(x => x.uid === uid);
+  try {
+    const r = await api({ accion: 'leer', carpeta, uid, marcar_leido: !(m && m.leido) && !esDeSalida() });
+    if (abierto !== uid) return;
+    LEIDO = r;
+    if (m && !m.leido) { m.leido = true; const c = CARPETAS.find(x => x.ruta === carpeta); if (c && c.sin_leer) c.sin_leer--; pintarCarpetas(); pintarLista(); }
+    pintarLectura();
+  } catch (err) { lee.innerHTML = '<div class="co-vacio">No se pudo abrir el correo.<br><small>' + esc(err.message) + '</small></div>'; }
+}
+function cerrarLectura(){
+  abierto = null; LEIDO = null; $('co').classList.remove('leyendo');
+  $('lee').innerHTML = '<div class="co-vacio"><h3>Elegí un <em>correo</em></h3><div>Se abre acá. Al abrirlo queda como leído.</div></div>';
+}
+function pintarLectura(){
+  const r = LEIDO, m = CORREOS.find(x => x.uid === r.uid) || {};
+  const adj = (r.adjuntos || []).filter(a => !(a.en_linea && /^image\//.test(a.tipo)) || !r.html);
+  const inline = (r.adjuntos || []).length - adj.length;
+  const tieneRemotas = r.html && /<img[^>]+src\s*=\s*["']?https?:/i.test(r.html);
+  $('lee').innerHTML = `
+    <div class="co-lee-acc">
+      <button class="rb suave co-volver" onclick="cerrarLectura()">← Volver</button>
+      ${esDeSalida() && carpeta === ESP['\\Drafts'] ? `<button class="rb linea" onclick="redactar('borrador')">Seguir escribiendo</button>` : `
+      <button class="rb linea" onclick="redactar('responder')">Responder</button>
+      <button class="rb suave" onclick="redactar('todos')">Responder a todos</button>
+      <button class="rb suave" onclick="redactar('reenviar')">Reenviar</button>`}
+      <span style="flex:1"></span>
+      <button class="rb suave" onclick="unoSolo('noleido')" title="Volver a marcarlo como no leído">No leído</button>
+      <button class="rb suave" onclick="unoSolo('${m.destacado ? 'nodestacar' : 'destacar'}')">${m.destacado ? 'Quitar ★' : 'Destacar ★'}</button>
+      <select class="m-campo" id="lee-mover" onchange="unoSolo('mover', this.value)"></select>
+      <button class="rb suave" onclick="unoSolo('borrar')" style="color:var(--rojo)">${esPapelera() ? 'Borrar para siempre' : 'Borrar'}</button>
+    </div>
+    <div class="co-lee-cab">
+      <h2>${esc(r.asunto || '(sin asunto)')}</h2>
+      <div class="q"><b>${esc(nombreDe(r.de))}</b> &lt;${esc(emailDe(r.de))}&gt;<br>
+        Para: ${esc(r.para || '—')}${r.cc ? '<br>CC: ' + esc(r.cc) : ''}${r.responder_a && emailDe(r.responder_a) !== emailDe(r.de) ? '<br>Responder a: ' + esc(r.responder_a) : ''}<br>
+        ${esc(fechaLarga(r.fecha))}</div>
+    </div>
+    ${adj.length ? `<div class="co-adj">${adj.map(a => `<button onclick="bajarAdjunto('${esc(a.parte)}', this)" title="${esc(a.nombre)} · ${esc(a.tipo)}"><span>📎 ${esc(a.nombre)}</span><small>${peso(a.tamano)}</small></button>`).join('')}</div>` : ''}
+    ${tieneRemotas && !mostrarImgs ? `<div class="co-imgs">Las imágenes de internet están ocultas (así el remitente no se entera de que lo abriste). <button onclick="mostrarImgs = true; pintarLectura()">Mostrar imágenes</button></div>` : ''}
+    <div class="co-cuerpo" id="cuerpo"></div>`;
+  const cuerpo = $('cuerpo');
+  if (r.html) {
+    const f = document.createElement('iframe');
+    // sin scripts y en un origen aparte; los enlaces abren en otra pestaña
+    f.setAttribute('sandbox', 'allow-popups allow-popups-to-escape-sandbox');
+    f.setAttribute('referrerpolicy', 'no-referrer');
+    const csp = `default-src 'none'; style-src 'unsafe-inline' ${mostrarImgs ? 'https: http:' : ''}; font-src ${mostrarImgs ? 'https: http:' : "'none'"}; img-src data: ${mostrarImgs ? 'https: http:' : ''}`;
+    f.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><base target="_blank">
+      <style>body{font-family:'Source Sans 3',system-ui,sans-serif;font-size:14.5px;line-height:1.5;color:#34495E;margin:16px 20px;word-wrap:break-word}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>${r.html}</body></html>`;
+    cuerpo.appendChild(f);
+  } else {
+    const pre = document.createElement('pre');
+    pre.innerHTML = esc(r.texto || '(sin texto)').replace(/https?:\/\/[^\s<>"']+/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+    cuerpo.appendChild(pre);
+  }
+  if (inline) { /* imágenes incrustadas: ya se ven dentro del html si son data:, si no van como cid y no se muestran */ }
+  pintarCarpetas();   // llena el «Mover a…» de la lectura
+  $('lee-mover').value = '';
+}
+async function bajarAdjunto(parte, btn){
+  const w = window.open('', '_blank');   // se abre ya (si no, el navegador bloquea la ventana)
+  if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">Bajando el adjunto…</p>');
+  btn.disabled = true;
+  try {
+    const r = await api({ accion: 'adjunto', carpeta, uid: abierto, parte });
+    if (!r.enlace) throw new Error('No se generó el enlace');
+    if (w) w.location = r.enlace; else location.href = r.enlace;
+  } catch (err) { if (w) w.close(); avisar('No se pudo bajar: ' + err.message, true); }
+  finally { btn.disabled = false; }
+}
+
+// ---------------- acciones (sobre la selección o el abierto)
+async function aplicar(accion, uids, destino){
+  if (!uids.length) return;
+  const base = { carpeta, uids };
+  const pc = n => n + (n === 1 ? ' correo' : ' correos');
+  try {
+    if (accion === 'leido' || accion === 'noleido') {
+      await api({ ...base, accion: 'marcar', leido: accion === 'leido' });
+      CORREOS.forEach(m => { if (uids.includes(m.uid)) m.leido = accion === 'leido'; });
+      cargarCarpetas().catch(() => {});
+    } else if (accion === 'destacar' || accion === 'nodestacar') {
+      await api({ ...base, accion: 'marcar', destacado: accion === 'destacar' });
+      CORREOS.forEach(m => { if (uids.includes(m.uid)) m.destacado = accion === 'destacar'; });
+    } else if (accion === 'mover') {
+      if (!destino) return;
+      const r = await api({ ...base, accion: 'mover', destino });
+      sacar(uids);
+      const nombre = nombreCarpeta(CARPETAS.find(c => c.ruta === destino)) || destino;
+      const vuelta = r.uids_nuevos;   // para deshacer: los uids que quedaron en el destino
+      avisar(pc(uids.length) + ' movido' + (uids.length === 1 ? '' : 's') + ' a ' + nombre, false,
+        vuelta ? () => deshacerMover(destino, vuelta, carpeta) : null);
+      cargarCarpetas().catch(() => {});
+    } else if (accion === 'borrar') {
+      if (esPapelera()) {
+        const ok = await confirmar('Borrar <em>para siempre</em>', `Se borra${uids.length === 1 ? '' : 'n'} ${pc(uids.length)} de la Papelera. <b>No se puede deshacer.</b>`, 'Borrar para siempre');
+        if (!ok) return;
+        await api({ ...base, accion: 'borrar', definitivo: true });
+        sacar(uids); avisar(pc(uids.length) + ' borrado' + (uids.length === 1 ? '' : 's') + ' para siempre');
+      } else {
+        const r = await api({ ...base, accion: 'borrar' });
+        sacar(uids);
+        const enPap = r.uids_en_papelera;
+        avisar(pc(uids.length) + ' a la Papelera', false, enPap ? () => deshacerMover(r.a_papelera, enPap, carpeta) : null);
+      }
+      cargarCarpetas().catch(() => {});
+    }
+    pintarLista();
+    if (LEIDO && uids.includes(LEIDO.uid) && CORREOS.some(m => m.uid === LEIDO.uid)) pintarLectura();
+  } catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+function sacar(uids){
+  CORREOS = CORREOS.filter(m => !uids.includes(m.uid)); encontrados = Math.max(0, encontrados - uids.length);
+  uids.forEach(u => seleccion.delete(u));
+  if (abierto && uids.includes(abierto)) cerrarLectura();
+}
+// "1:3,7" → [1,2,3,7]
+function expandir(set){ const out = []; String(set).split(',').forEach(p => { const [a, b] = p.split(':').map(Number); for (let i = a; i <= (b || a); i++) out.push(i); }); return out; }
+async function deshacerMover(desde, set, hacia){
+  try { await api({ accion: 'mover', carpeta: desde, uids: expandir(set), destino: hacia }); avisar('Listo, volvió a su lugar'); recargar(); }
+  catch (err) { avisar('No se pudo deshacer: ' + err.message, true); }
+}
+function accionSel(a, destino){ aplicar(a, [...seleccion], destino); }
+function unoSolo(a, destino){ if (abierto) aplicar(a, [abierto], destino); }
+
+// arrastrar correos a una carpeta
+function arrastrar(ev, uid){
+  const uids = seleccion.has(uid) ? [...seleccion] : [uid];
+  ev.dataTransfer.setData('text/plain', JSON.stringify(uids)); ev.dataTransfer.effectAllowed = 'move';
+}
+function sobreCarpeta(ev, el){ if (el.dataset.ruta !== carpeta) { ev.preventDefault(); el.classList.add('drop'); } }
+function soltarEnCarpeta(ev, el){
+  ev.preventDefault(); el.classList.remove('drop');
+  let uids = []; try { uids = JSON.parse(ev.dataTransfer.getData('text/plain')); } catch {}
+  if (uids.length) aplicar('mover', uids, el.dataset.ruta);
+}
+
+// ---------------- ventanas: confirmar y carpetas
+let dlgResolver = null;
+function confirmar(titulo, html, boton){
+  return new Promise(res => {
+    $('dlg-tit').innerHTML = titulo; $('dlg-cuerpo').innerHTML = '<p style="margin:0">' + html + '</p>'; $('dlg-error').textContent = '';
+    $('dlg-ok').textContent = boton || 'Aceptar';
+    $('dlg-ok').onclick = () => { cerrarDlg(); res(true); };
+    dlgResolver = () => res(false);
+    $('capa-dlg').hidden = false;
+  });
+}
+function cerrarDlg(){ $('capa-dlg').hidden = true; if (dlgResolver) { const r = dlgResolver; dlgResolver = null; r(); } }
+function ventanaCarpeta(modo){
+  const actual = CARPETAS.find(c => c.ruta === carpeta);
+  $('dlg-error').textContent = '';
+  dlgResolver = null;
+  if (modo === 'crear') {
+    const padres = CARPETAS.filter(c => c.ruta === 'INBOX' || !Object.values(ESP).includes(c.ruta));
+    $('dlg-tit').innerHTML = 'Carpeta <em>nueva</em>';
+    $('dlg-cuerpo').innerHTML = `<div class="fila" style="display:grid;grid-template-columns:70px 1fr;gap:8px;align-items:center;margin-bottom:8px"><label style="font:500 11px var(--sora);letter-spacing:.08em;text-transform:uppercase;color:var(--r-mu)">Nombre</label><input class="m-campo" id="dlg-nombre" maxlength="60" autocomplete="off"></div>
+      <div class="fila" style="display:grid;grid-template-columns:70px 1fr;gap:8px;align-items:center"><label style="font:500 11px var(--sora);letter-spacing:.08em;text-transform:uppercase;color:var(--r-mu)">Dentro de</label>
+      <select class="m-campo" id="dlg-padre">${padres.map(c => `<option value="${esc(c.ruta)}" ${c.ruta === (actual && padres.includes(actual) ? carpeta : 'INBOX') ? 'selected' : ''}>${esc(c.ruta === 'INBOX' ? '(arriba de todo)' : c.ruta.replace(/^INBOX\./, '').replace(/\./g, ' › '))}</option>`).join('')}</select></div>`;
+    $('dlg-ok').textContent = 'Crear';
+    $('dlg-ok').onclick = async () => {
+      const nombre = $('dlg-nombre').value.trim(); if (!nombre) return;
+      try { const r = await api({ accion: 'crear_carpeta', nombre, padre: $('dlg-padre').value }); cerrarDlg(); avisar('Carpeta creada'); await cargarCarpetas(); elegirCarpeta(r.ruta); }
+      catch (err) { $('dlg-error').textContent = err.message; }
+    };
+    $('capa-dlg').hidden = false; setTimeout(() => $('dlg-nombre').focus(), 30);
+  } else if (modo === 'renombrar' && actual) {
+    $('dlg-tit').innerHTML = 'Cambiar el <em>nombre</em>';
+    $('dlg-cuerpo').innerHTML = `<input class="m-campo" id="dlg-nombre" maxlength="60" value="${esc(actual.nombre)}" style="width:100%;box-sizing:border-box" autocomplete="off">`;
+    $('dlg-ok').textContent = 'Guardar';
+    $('dlg-ok').onclick = async () => {
+      const nombre = $('dlg-nombre').value.trim(); if (!nombre || nombre === actual.nombre) return cerrarDlg();
+      if (nombre.includes('.')) { $('dlg-error').textContent = 'El nombre no puede tener puntos.'; return; }
+      const nuevo = (actual.padre ? actual.padre + '.' : '') + nombre;
+      try { await api({ accion: 'renombrar_carpeta', carpeta: actual.ruta, nuevo }); cerrarDlg(); avisar('Carpeta renombrada'); carpeta = nuevo; await cargarCarpetas(); cargarLista(); }
+      catch (err) { $('dlg-error').textContent = err.message; }
+    };
+    $('capa-dlg').hidden = false; setTimeout(() => $('dlg-nombre').select(), 30);
+  } else if (modo === 'borrar' && actual) {
+    const hijas = CARPETAS.filter(c => c.padre === actual.ruta).length, total = actual.total || 0;
+    $('dlg-tit').innerHTML = 'Borrar la <em>carpeta</em>';
+    $('dlg-cuerpo').innerHTML = total || hijas
+      ? `<p style="margin:0">«${esc(actual.nombre)}» tiene <b>${total} correo${total === 1 ? '' : 's'}</b>${hijas ? ` y <b>${hijas} subcarpeta${hijas === 1 ? '' : 's'}</b>` : ''}. Si la borrás, se borra todo eso y <b>no se puede deshacer</b>.<br><br>Si querés conservar los correos, primero movelos a otra carpeta.</p>`
+      : `<p style="margin:0">«${esc(actual.nombre)}» está vacía. ¿La borro?</p>`;
+    $('dlg-ok').textContent = total || hijas ? 'Borrar con todo' : 'Borrar';
+    $('dlg-ok').onclick = async () => {
+      try { await api({ accion: 'borrar_carpeta', carpeta: actual.ruta, forzar: !!(total || hijas) }); cerrarDlg(); avisar('Carpeta borrada'); carpeta = 'INBOX'; await cargarCarpetas(); cargarLista(); }
+      catch (err) { $('dlg-error').textContent = err.message; }
+    };
+    $('capa-dlg').hidden = false;
+  }
+}
+
+// ---------------- redactar
+let RED = { modo: 'nuevo', adjuntos: [], responder: null, reenviar: null, borrador: null };
+function redactar(modo){
+  modo = modo || 'nuevo';
+  RED = { modo, adjuntos: [], responder: null, reenviar: null, borrador: null };
+  const r = LEIDO;
+  let para = '', cc = '', asunto = '', texto = '', tit = 'Correo <em>nuevo</em>';
+  if (r && (modo === 'responder' || modo === 'todos')) {
+    tit = modo === 'todos' ? 'Responder a <em>todos</em>' : '<em>Responder</em>';
+    const destino = r.responder_a || r.de;
+    para = emailDe(destino);
+    if (modo === 'todos') {
+      const yo = CASILLA.toLowerCase(), ya = new Set([para.toLowerCase(), yo]);
+      cc = [r.para, r.cc].join(',').split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(emailDe).filter(e => e && /@/.test(e) && !ya.has(e.toLowerCase()) && ya.add(e.toLowerCase())).join(', ');
+    }
+    asunto = /^\s*(re|rv|aw)\s*:/i.test(r.asunto || '') ? r.asunto : 'Re: ' + (r.asunto || '');
+    texto = '\n\n\nEl ' + fechaLarga(r.fecha) + ', ' + nombreDe(r.de) + ' escribió:\n' + (r.texto || '').split('\n').map(l => '> ' + l).join('\n');
+    RED.responder = { carpeta, uid: r.uid };
+  } else if (r && modo === 'reenviar') {
+    tit = '<em>Reenviar</em>';
+    asunto = /^\s*(rv|fw|fwd)\s*:/i.test(r.asunto || '') ? r.asunto : 'Rv: ' + (r.asunto || '');
+    texto = '\n\n\n---------- Correo reenviado ----------\nDe: ' + r.de + '\nFecha: ' + fechaLarga(r.fecha) + '\nAsunto: ' + (r.asunto || '') + '\nPara: ' + (r.para || '') + '\n\n' + (r.texto || '');
+    RED.reenviar = { carpeta, uid: r.uid };
+  } else if (r && modo === 'borrador') {
+    tit = 'Seguir <em>escribiendo</em>';
+    para = r.para || ''; cc = r.cc || ''; asunto = r.asunto || ''; texto = r.texto || '';
+    RED.borrador = { carpeta, uid: r.uid };
+  }
+  $('red-tit').innerHTML = tit;
+  $('r-para').value = para; $('r-cc').value = cc; $('r-cco').value = ''; $('r-asunto').value = asunto; $('r-texto').value = texto;
+  $('r-error').textContent = '';
+  $('r-nota').textContent = modo === 'reenviar' ? 'El correo original va adjunto, con sus archivos.' : '';
+  pintarAdjuntos();
+  $('r-env').disabled = $('r-borr').disabled = false;
+  $('capa-red').hidden = false;
+  setTimeout(() => { const t = $('r-texto'); if (para) { t.focus(); t.setSelectionRange(0, 0); t.scrollTop = 0; } else $('r-para').focus(); }, 30);
+}
+function cerrarRedactar(){
+  const algo = $('r-texto').value.trim() && RED.modo === 'nuevo';
+  if (algo && !confirm('¿Descartar el mensaje? (Podés guardarlo como borrador)')) return;
+  $('capa-red').hidden = true;
+}
+function pintarAdjuntos(){
+  const total = RED.adjuntos.reduce((s, a) => s + a.tamano, 0);
+  $('r-adjs').innerHTML = RED.adjuntos.map((a, i) => `<span>📎 ${esc(a.nombre)} <small>${peso(a.tamano)}</small><button onclick="RED.adjuntos.splice(${i},1); pintarAdjuntos()" title="Quitar">✕</button></span>`).join('');
+  if (total > MAX_ADJ) $('r-error').textContent = 'Los adjuntos suman ' + peso(total) + ': el máximo es ' + peso(MAX_ADJ) + '.';
+  else if ($('r-error').textContent.startsWith('Los adjuntos')) $('r-error').textContent = '';
+}
+function agregarAdjuntos(files){
+  [...files].forEach(f => {
+    const rd = new FileReader();
+    rd.onload = () => { RED.adjuntos.push({ nombre: f.name, tipo: f.type || 'application/octet-stream', tamano: f.size, base64: String(rd.result).split(',')[1] || '' }); pintarAdjuntos(); };
+    rd.readAsDataURL(f);
+  });
+}
+async function enviar(soloBorrador){
+  const para = $('r-para').value.trim(), cc = $('r-cc').value.trim(), cco = $('r-cco').value.trim();
+  const asunto = $('r-asunto').value.trim(), texto = $('r-texto').value;
+  const err = $('r-error'); err.textContent = '';
+  if (!soloBorrador && !para && !cc && !cco) { err.textContent = 'Falta a quién mandarlo.'; return; }
+  const mal = [para, cc, cco].join(',').split(',').map(s => emailDe(s.trim())).filter(Boolean).filter(e => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  if (mal.length) { err.textContent = 'Revisá estas direcciones: ' + mal.join(', '); return; }
+  if (RED.adjuntos.reduce((s, a) => s + a.tamano, 0) > MAX_ADJ) { err.textContent = 'Los adjuntos pesan demasiado (máximo ' + peso(MAX_ADJ) + ').'; return; }
+  if (!soloBorrador && !asunto && !confirm('El correo no tiene asunto. ¿Lo mando igual?')) return;
+  const pedido = { accion: soloBorrador ? 'guardar_borrador' : 'enviar', para, cc, cco, asunto, texto,
+    adjuntos: RED.adjuntos.map(a => ({ nombre: a.nombre, tipo: a.tipo, base64: a.base64 })) };
+  if (RED.responder) pedido.responder = RED.responder;
+  if (RED.reenviar) pedido.reenviar = RED.reenviar;
+  $('r-env').disabled = $('r-borr').disabled = true;
+  $('r-env').textContent = soloBorrador ? 'Enviar' : 'Enviando…';
+  try {
+    const r = await api(pedido);
+    // el borrador viejo que se siguió escribiendo se reemplaza por el nuevo (o se va si se envió)
+    if (RED.borrador) { try { await api({ accion: 'borrar', carpeta: RED.borrador.carpeta, uids: [RED.borrador.uid], definitivo: true }); } catch {} }
+    $('capa-red').hidden = true;
+    avisar(soloBorrador ? 'Guardado en Borradores' : (r.aviso ? r.aviso : 'Enviado ✓ — la copia quedó en Enviados'), !!r.aviso);
+    if (RED.responder && LEIDO && LEIDO.uid === RED.responder.uid) { const m = CORREOS.find(x => x.uid === LEIDO.uid); if (m) m.respondido = true; pintarLista(); }
+    if (esDeSalida() || RED.borrador) recargar(); else cargarCarpetas().catch(() => {});
+  } catch (e) { err.textContent = (soloBorrador ? 'No se guardó: ' : 'No se envió: ') + e.message; }
+  finally { $('r-env').disabled = $('r-borr').disabled = false; $('r-env').textContent = 'Enviar'; }
+}
+
+// ---------------- teclado y refresco
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (!$('capa-dlg').hidden) cerrarDlg(); else if (!$('capa-red').hidden) cerrarRedactar(); }
+});
+// se actualiza solo cada 2 minutos con la pestaña a la vista (sin apretar nada); sin abusar del servidor de correo
+setInterval(() => {
+  if (document.hidden || ocupado || !$('capa-red').hidden || !$('capa-dlg').hidden || seleccion.size || pagina > 1) return;
+  recargar();
+}, 120000);
+
+// ---------------- arranque
+(async () => {
+  const ini = (location.hash.slice(1) && decodeURIComponent(location.hash.slice(1))) || 'INBOX';
+  carpeta = ini;
+  try { await cargarCarpetas(); }
+  catch { $('lista').innerHTML = '<div class="co-vacio">Sin conexión con la casilla.</div>'; return; }
+  if (!CARPETAS.some(c => c.ruta === carpeta)) carpeta = 'INBOX';
+  pintarCarpetas();
+  cargarLista();
+})();
+window.addEventListener('hashchange', () => { const r = decodeURIComponent(location.hash.slice(1)); if (r && r !== carpeta && CARPETAS.some(c => c.ruta === r)) elegirCarpeta(r); });
+</script>
+</body>
+</html>
