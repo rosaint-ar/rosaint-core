@@ -773,6 +773,62 @@ _servirConGuardia(async (req: Request) => {
 
     // ---- Modo crear_presentacion: producto vendible nuevo copiando otro (categoría, impuestos, rutas) + su lista de materiales ----
     // { crear_presentacion: { codigo, nombre, copiar_de, lineas: [{codigo, cantidad}] }, dry_run }   (15-oct-2026)
+    // ---- Modo comparar_productos (solo lectura): { comparar_productos: [base, otro1, otro2...] } ----
+    // Lee todos los campos guardados de la ficha (template y variante) y devuelve solo los que difieren de la base.
+    if (Array.isArray(body.comparar_productos)) {
+      const codes = body.comparar_productos.map(String);
+      const ignorar = /^(id|create_date|write_date|create_uid|write_uid|__last_update|display_name|message_|activity_|website_message|rating_|.*_count$|image_|avatar|product_variant_id|product_variant_ids|product_tmpl_id|default_code|name|code|barcode)/;
+      const todos = body.todos_campos === true;
+      const leer = async (modelo: string, ids: number[]) => {
+        const f = await call("ir.model.fields", "search_read", [[["model", "=", modelo], ["store", "=", true], ["ttype", "not in", ["binary", "one2many"]]], ["name"]]);
+        if (Array.isArray(body.campos)) return await call(modelo, "read", [ids, body.campos.filter((n: string) => f.some((x: any) => x.name === n))], { context: { active_test: false } });
+        return await call(modelo, "read", [ids, f.map((x: any) => x.name).filter((n: string) => !ignorar.test(n))], { context: { active_test: false } });
+      };
+      const vars = await call("product.product", "search_read", [[["default_code", "in", codes]], ["id", "default_code", "product_tmpl_id"]], { context: { active_test: false } });
+      const orden = codes.map((c: string) => vars.find((v: any) => v.default_code === c)).filter(Boolean);
+      const tm = await leer("product.template", orden.map((v: any) => v.product_tmpl_id[0]));
+      const pp = await leer("product.product", orden.map((v: any) => v.id));
+      const norm = (x: any) => JSON.stringify(Array.isArray(x) && x.length === 2 && typeof x[1] === "string" ? x[0] : x);
+      const dif = (filas: any[], key: (r: any) => number) => {
+        const base = filas.find((r) => key(r) === key({ id: filas[0].id, ...filas[0] })) || filas[0]; const out: any = {};
+        for (const k of Object.keys(base)) if (filas.some((r) => norm(r[k]) !== norm(base[k]))) out[k] = filas.map((r) => r[k]);
+        return out;
+      };
+      const tmOrd = orden.map((v: any) => tm.find((t: any) => t.id === v.product_tmpl_id[0]));
+      const ppOrd = orden.map((v: any) => pp.find((p: any) => p.id === v.id));
+      // Lo que cuelga de cada producto (cantidades por código)
+      const cuenta = async (modelo: string, campo: string, ids: number[]) => { try { return await call(modelo, "search_count", [[[campo, "in", ids]]], { context: { active_test: false } }); } catch { return "—"; } };
+      const relacionados: any = {};
+      for (const v of orden) {
+        const pid = [v.id], tid = [v.product_tmpl_id[0]];
+        relacionados[v.default_code] = {
+          reposicion: await cuenta("stock.warehouse.orderpoint", "product_id", pid), proveedores: await cuenta("product.supplierinfo", "product_tmpl_id", tid),
+          empaques: await cuenta("product.packaging", "product_id", pid), listas_materiales: await cuenta("mrp.bom", "product_tmpl_id", tid),
+          en_listas_de_otros: await cuenta("mrp.bom.line", "product_id", pid), reglas_tarifa: await cuenta("product.pricelist.item", "product_tmpl_id", tid),
+          promos: await cuenta("loyalty.reward", "discount_product_ids", pid), ventas: await cuenta("sale.order.line", "product_id", pid),
+        };
+      }
+      return new Response(JSON.stringify({ ok: true, codigos: orden.map((v: any) => v.default_code), relacionados, template: dif(tmOrd, (r) => r.id), variante: dif(ppOrd, (r) => r.id) }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo copiar_textos: { copiar_textos: { pares: [[desde, hacia], ...], campos? }, dry_run } ----
+    // Copia las descripciones de una ficha a otra (por defecto, la de la tienda y la de la web).
+    if (body.copiar_textos) {
+      const g = body.copiar_textos; const dry = body.dry_run !== false;
+      const campos: string[] = g.campos || ["description_ecommerce", "website_description"];
+      const out: any[] = [];
+      for (const [desde, hacia] of g.pares) {
+        const vs = await call("product.product", "search_read", [[["default_code", "in", [String(desde), String(hacia)]]], ["default_code", "product_tmpl_id"]], { context: { active_test: false } });
+        const a = vs.find((v: any) => v.default_code === String(desde)), b = vs.find((v: any) => v.default_code === String(hacia));
+        if (!a || !b) { out.push({ desde, hacia, error: "no encontrado" }); continue; }
+        const [ta] = await call("product.template", "read", [[a.product_tmpl_id[0]], campos]);
+        const vals: any = {}; for (const c of campos) vals[c] = ta[c];
+        if (!dry) await call("product.template", "write", [[b.product_tmpl_id[0]], vals]);
+        out.push({ desde, hacia, campos, largo: campos.map((c) => String(ta[c] || "").length) });
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo copiar_producto: { copiar_producto: { codigo, copiar_de, nombre, costo? }, dry_run } ----
     // Producto nuevo copiado de otro (categoría, impuestos, rutas, unidad, compra/venta), sin lista de materiales. Para insumos.
     if (body.copiar_producto) {
