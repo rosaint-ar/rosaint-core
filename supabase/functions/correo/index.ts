@@ -117,7 +117,8 @@ Deno.serve(async (req: Request) => {
       // primero las de una dirección puntual, después las de dominio: así una excepción gana sobre la regla general
       reglasActivas.sort((a, b) => Number(String(a.patron).startsWith("@")) - Number(String(b.patron).startsWith("@")));
       if (!reglasActivas.length) return responder({ ok: true, movidos: 0, reglas: [] });
-      body = { accion: "ordenar", carpeta: "INBOX", simular: !!body.simular, reglas: reglasActivas.map((x) => ({ patron: x.patron, carpeta: x.carpeta })) };
+      // se revisa la Bandeja y también Spam: Ferozo manda ahí correos de proveedores y de Odoo, y los borra a los ~30 días
+      body = { accion: "ordenar", origenes: ["INBOX", "spam"], simular: !!body.simular, reglas: reglasActivas.map((x) => ({ patron: x.patron, carpeta: x.carpeta })) };
     }
 
     // adjuntos para enviar que ya están en Storage → base64 para el puente
@@ -153,15 +154,15 @@ Deno.serve(async (req: Request) => {
     // reglas aplicadas: cuándo y cuántos movió cada una
     if (accion === "aplicar_reglas" && out.ok && !out.simulado) {
       const ahora = new Date().toISOString();
-      for (const f of (out.reglas as Rec[]) || []) {
-        const regla = reglasActivas.find((x) => x.patron === f.patron);
+      const ids = reglasActivas.map((x) => x.id).join(",");
+      await db(`correo_reglas?id=in.(${ids})`, { method: "PATCH", body: JSON.stringify({ ultima_vez: ahora }) });
+      const porPatron: Record<string, number> = {};
+      for (const f of (out.reglas as Rec[]) || []) if (Number(f.movidos) > 0) porPatron[String(f.patron)] = (porPatron[String(f.patron)] || 0) + Number(f.movidos);
+      for (const [patron, n] of Object.entries(porPatron)) {
+        const regla = reglasActivas.find((x) => x.patron === patron);
         if (!regla) continue;
-        const cambio: Rec = { ultima_vez: ahora };
-        if (Number(f.movidos) > 0) {
-          const act = await (await db(`correo_reglas?select=movidos&id=eq.${regla.id}`)).json();
-          cambio.movidos = Number(act[0]?.movidos || 0) + Number(f.movidos);
-        }
-        await db(`correo_reglas?id=eq.${regla.id}`, { method: "PATCH", body: JSON.stringify(cambio) });
+        const act = await (await db(`correo_reglas?select=movidos&id=eq.${regla.id}`)).json();
+        await db(`correo_reglas?id=eq.${regla.id}`, { method: "PATCH", body: JSON.stringify({ movidos: Number(act[0]?.movidos || 0) + n }) });
       }
     }
 

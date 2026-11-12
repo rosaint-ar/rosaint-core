@@ -247,24 +247,33 @@ function atender(array $b) {
         return $out;
       }
 
-      // ordenar {carpeta?, reglas:[{patron, carpeta}], simular?}
+      // ordenar {carpeta? | origenes?:[...], reglas:[{patron, carpeta}], simular?}
       //   patron = "persona@dominio.com" (ese remitente) o "@dominio.com" (todo el dominio, también subdominios).
       //   Mueve de la carpeta (por defecto la Bandeja) a la carpeta de cada regla. simular: solo cuenta.
+      //   origenes: varias carpetas de una vez; "spam" = la carpeta de Spam (así las reglas rescatan lo que
+      //   Ferozo marca como spam, que se borra solo a los ~30 días).
       case 'ordenar': {
         $reglas = (array)($b['reglas'] ?? []);
         if (!$reglas) throw new Exception('Faltan las reglas');
         if (count($reglas) > 500) throw new Exception('Demasiadas reglas en una sola orden (máx. 500)');
         $simular = !empty($b['simular']);
         $carpetasExisten = array_column($imap->carpetas(false), 'ruta');
-        $imap->abrir($carpeta, $simular);
+        $origenes = [];
+        foreach ((array)($b['origenes'] ?? [$carpeta]) as $o) {
+          $o = $o === 'spam' ? $imap->especial('\\Junk') : (string)$o;
+          if ($o && in_array($o, $carpetasExisten, true) && !in_array($o, $origenes, true)) $origenes[] = $o;
+        }
+        if (!$origenes) throw new Exception('No existe la carpeta de origen');
         $res = []; $total = 0;
+        foreach ($origenes as $carpeta) {
+        $imap->abrir($carpeta, $simular);
         foreach ($reglas as $r) {
           $patron = strtolower(trim((string)($r['patron'] ?? '')));
           $destino = (string)($r['carpeta'] ?? '');
-          $fila = ['patron' => $patron, 'carpeta' => $destino, 'encontrados' => 0, 'movidos' => 0];
+          $fila = ['patron' => $patron, 'carpeta' => $destino, 'origen' => $carpeta, 'encontrados' => 0, 'movidos' => 0];
           if (!preg_match('/^([^@\s]+)?@[a-z0-9.-]+\.[a-z]{2,}$/', $patron)) { $fila['error'] = 'patrón inválido'; $res[] = $fila; continue; }
           if (!in_array($destino, $carpetasExisten, true)) { $fila['error'] = 'no existe la carpeta'; $res[] = $fila; continue; }
-          if ($destino === $carpeta) { $fila['error'] = 'es la misma carpeta'; $res[] = $fila; continue; }
+          if ($destino === $carpeta) { if (count($origenes) === 1) { $fila['error'] = 'es la misma carpeta'; $res[] = $fila; } continue; }
           // el servidor busca "contiene"; después se confirma remitente por remitente
           $cand = $imap->buscar(['de' => ltrim($patron, '@')]);
           $uids = [];
@@ -272,9 +281,11 @@ function atender(array $b) {
             if (coincideRemitente(_primerEmail(Mime::decodificarEncabezado($x['h']['from'] ?? '')), $patron)) $uids[] = $uid;
           $fila['encontrados'] = count($uids);
           if ($uids && !$simular) { $imap->mover($uids, $destino); $fila['movidos'] = count($uids); $total += count($uids); }
-          $res[] = $fila;
+          // con varias carpetas de origen, solo se informa lo que encontró algo (o falló)
+          if (count($origenes) === 1 || $fila['encontrados'] || isset($fila['error'])) $res[] = $fila;
         }
-        return ['ok' => true, 'simulado' => $simular, 'movidos' => $total, 'reglas' => $res];
+        }
+        return ['ok' => true, 'simulado' => $simular, 'movidos' => $total, 'origenes' => $origenes, 'reglas' => $res];
       }
 
       // enviar {para, cc?, cco?, asunto, texto?, html?, adjuntos?:[{nombre,tipo,base64}],

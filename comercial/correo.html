@@ -230,6 +230,7 @@
   <!-- ordenar: la bandeja agrupada por remitente -->
   <section class="or" id="or" hidden>
     <div class="or-cab">
+      <select class="m-campo" id="or-origen" onchange="cambiarOrigen(this.value)" title="Qué carpeta ordenar" style="padding:7px 8px"><option value="INBOX">Ordenar la Bandeja de entrada</option><option value="spam">Rescatar de Spam</option></select>
       <p id="or-resumen">Leyendo la bandeja…</p>
       <button class="rb suave" onclick="cargarOrdenar()">Volver a leer</button>
       <button class="rb linea" onclick="modoOrdenar(false)">Volver al correo</button>
@@ -744,7 +745,7 @@ async function enviar(soloBorrador){
 }
 
 // ---------------- ordenar la bandeja (la persona elige; el sistema solo sugiere)
-const ORD = { abierto: false, datos: null, grupos: [], elegidos: new Set(), destino: {}, siempre: new Set(), expandidos: new Set(), filtro: 'todos', reglas: [] };
+const ORD = { origen: 'INBOX', abierto: false, datos: null, grupos: [], elegidos: new Set(), destino: {}, siempre: new Set(), expandidos: new Set(), filtro: 'todos', reglas: [] };
 // dominios de correo personal: ahí se agrupa por dirección, no por dominio
 const PUBLICOS = new Set(['gmail.com', 'hotmail.com', 'hotmail.com.ar', 'yahoo.com', 'yahoo.com.ar', 'outlook.com', 'outlook.com.ar', 'live.com', 'live.com.ar', 'icloud.com', 'me.com', 'msn.com', 'fibertel.com.ar', 'speedy.com.ar', 'arnet.com.ar']);
 const SEGUNDO_NIVEL = new Set(['com.ar', 'gob.ar', 'gov.ar', 'net.ar', 'org.ar', 'edu.ar', 'int.ar', 'tur.ar', 'com.br', 'com.mx', 'com.uy', 'com.py', 'com.co', 'com.pe', 'co.uk', 'com.au']);
@@ -756,6 +757,8 @@ function coincide(email, patron){ email = email.toLowerCase(); if (patron[0] !==
 const plano = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 function rutaLinda(r){ if (r === 'INBOX') return NOMBRES.INBOX; const e = Object.keys(ESP).find(k => ESP[k] === r); return e ? NOMBRES[e] : r.replace(/^INBOX\./, '').replace(/\./g, ' › '); }
 
+const origenRuta = () => ORD.origen === 'spam' ? (ESP['\\Junk'] || 'INBOX.spam') : 'INBOX';
+function cambiarOrigen(v){ ORD.origen = v; ORD.datos = null; ORD.elegidos.clear(); ORD.siempre.clear(); ORD.destino = {}; ORD.expandidos.clear(); cargarOrdenar(); }
 function modoOrdenar(si){
   ORD.abierto = si;
   $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si;
@@ -767,7 +770,7 @@ async function cargarOrdenar(){
   $('or-resumen').textContent = 'Leyendo la bandeja y las carpetas… (unos segundos)';
   $('or-filas').innerHTML = '<tr><td colspan="6"><div class="co-vacio">Leyendo la bandeja…</div></td></tr>';
   try {
-    const [d, r] = await Promise.all([api({ accion: 'remitentes', carpeta: 'INBOX', aprender: true }), api({ accion: 'reglas' })]);
+    const [d, r] = await Promise.all([api({ accion: 'remitentes', carpeta: origenRuta(), aprender: true }), api({ accion: 'reglas' })]);
     ORD.datos = d; ORD.reglas = r.reglas || [];
     armarGrupos(); pintarOrdenar(); pintarReglas();
   } catch (err) { $('or-resumen').textContent = 'No se pudo leer la bandeja: ' + err.message; $('or-filas').innerHTML = ''; }
@@ -818,7 +821,9 @@ function filtroOrd(f){ ORD.filtro = f; document.querySelectorAll('.or-filtros .c
 function opcionesDestino(sel){
   const propias = CARPETAS.filter(c => c.ruta !== 'INBOX' && c.se_puede_abrir !== false && !Object.values(ESP).includes(c.ruta)).sort((a, b) => rutaLinda(a.ruta).localeCompare(rutaLinda(b.ruta), 'es'));
   const pap = ESP['\\Trash'];
-  return `<option value="">— Elegí —</option>` + propias.map(c => `<option value="${esc(c.ruta)}" ${c.ruta === sel ? 'selected' : ''}>${esc(rutaLinda(c.ruta))}</option>`).join('')
+  // desde Spam se puede devolver a la Bandeja («no es spam»)
+  const bandeja = ORD.origen === 'spam' ? `<option value="INBOX" ${sel === 'INBOX' ? 'selected' : ''}>📥 Bandeja de entrada (no es spam)</option>` : '';
+  return `<option value="">— Elegí —</option>` + bandeja + propias.map(c => `<option value="${esc(c.ruta)}" ${c.ruta === sel ? 'selected' : ''}>${esc(rutaLinda(c.ruta))}</option>`).join('')
     + (pap ? `<option value="${esc(pap)}" ${pap === sel ? 'selected' : ''}>🗑 Papelera</option>` : '') + `<option value="__nueva">＋ Carpeta nueva…</option>`;
 }
 function filaOrd(item, sub){
@@ -845,7 +850,8 @@ function pintarOrdenar(){
   if (ORD.filtro === 'sin') lista = lista.filter(g => !g.sug);
   if (q) lista = lista.filter(g => plano(g.nombre + ' ' + g.clave + ' ' + g.emails.map(e => e.email + ' ' + e.nombre).join(' ')).includes(q));
   const conSug = ORD.grupos.filter(g => g.sug).length;
-  $('or-resumen').innerHTML = `La bandeja tiene <b>${d.total.toLocaleString('es-AR')} correos</b> de <b>${ORD.grupos.length} remitentes</b> (agrupados por empresa). Para <b>${conSug}</b> hay una carpeta sugerida. Elegí a dónde va cada uno y tocá «Mover ahora»; nada se mueve sin que lo elijas.`;
+  $('or-resumen').innerHTML = (ORD.origen === 'spam' ? 'Spam tiene <b>' : 'La bandeja tiene <b>') + `${d.total.toLocaleString('es-AR')} correos</b> de <b>${ORD.grupos.length} remitentes</b> (agrupados por empresa). Para <b>${conSug}</b> hay una carpeta sugerida. Elegí a dónde va cada uno y tocá «Mover ahora»; nada se mueve sin que lo elijas.`
+    + (ORD.origen === 'spam' ? ' <b>Ferozo borra lo de Spam a los ~30 días</b>: lo que sirva, rescatalo; con «siempre», lo que llegue después también se rescata solo.' : '');
   const MAX = 300;
   $('or-filas').innerHTML = lista.slice(0, MAX).map(g => filaOrd(g) + (ORD.expandidos.has(g.clave) ? g.emails.map(e => filaOrd(e, true)).join('') : '')).join('')
     + (lista.length > MAX ? `<tr><td colspan="6" style="text-align:center;color:var(--r-mu)">Se muestran los ${MAX} remitentes con más correos. Filtrá para ver otros (quedan ${lista.length - MAX}).</td></tr>` : '')
@@ -886,14 +892,14 @@ async function moverElegidos(){
   const aPapelera = reglas.filter(r => r.carpeta === ESP['\\Trash']).length;
   const nuevasReglas = reglas.filter(r => ORD.siempre.has(r.patron));
   const ok = await confirmar('Mover <em>' + correos.toLocaleString('es-AR') + ' correos</em>',
-    `De ${elegidos.length} remitente${elegidos.length === 1 ? '' : 's'}, desde la Bandeja a la carpeta que elegiste para cada uno.` +
+    `De ${elegidos.length} remitente${elegidos.length === 1 ? '' : 's'}, desde ${ORD.origen === 'spam' ? 'Spam' : 'la Bandeja'} a la carpeta que elegiste para cada uno.` +
     (aPapelera ? `<br>${aPapelera} van a la <b>Papelera</b> (se pueden recuperar desde ahí).` : '') +
     (nuevasReglas.length ? `<br><br>Además quedan <b>${nuevasReglas.length} regla${nuevasReglas.length === 1 ? '' : 's'}</b>: lo que llegue después de esos remitentes va solo a su carpeta.` : '') +
     '<br><br>Si algo queda mal, se vuelve a la Bandeja moviéndolo desde la carpeta.', 'Mover ahora');
   if (!ok) return;
   $('or-mover').disabled = true; $('or-mover').textContent = 'Moviendo…';
   try {
-    const r = await api({ accion: 'ordenar', carpeta: 'INBOX', reglas });
+    const r = await api({ accion: 'ordenar', carpeta: origenRuta(), reglas });
     const errores = (r.reglas || []).filter(f => f.error);
     for (const nr of nuevasReglas) { try { await api({ accion: 'regla_guardar', patron: nr.patron, carpeta: nr.carpeta }); } catch (e) { errores.push({ patron: nr.patron, error: 'no se guardó la regla: ' + e.message }); } }
     avisar('Listo: ' + r.movidos.toLocaleString('es-AR') + ' correos movidos' + (nuevasReglas.length ? ' y ' + nuevasReglas.length + ' reglas guardadas' : '') + (errores.length ? ' · ' + errores.length + ' con problema: ' + errores.map(e => e.patron + ' (' + e.error + ')').join(', ') : ''), !!errores.length);
