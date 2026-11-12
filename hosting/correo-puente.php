@@ -863,7 +863,12 @@ function _primerEmail($s) { try { $l = Direcciones::lista($s); return $l ? strto
 
 /* ================================================================== SMTP (Ferozo, puerto 465 con TLS) */
 class Smtp {
-  private $s;
+  protected $s;
+  protected function conectar($host, $port) {
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $host, 'SNI_enabled' => true]]);
+    $this->s = @stream_socket_client('ssl://' . $host . ':' . $port, $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$this->s) throw new Exception('No se pudo conectar al servidor de envío: ' . $errstr);
+  }
   private function resp() {
     $todo = '';
     while (true) {
@@ -880,14 +885,19 @@ class Smtp {
     return $txt;
   }
   function enviar($host, $port, $usuario, $clave, $remitente, array $destinatarios, $mensaje) {
-    $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $host, 'SNI_enabled' => true]]);
-    $this->s = @stream_socket_client('ssl://' . $host . ':' . $port, $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
-    if (!$this->s) throw new Exception('No se pudo conectar al servidor de envío: ' . $errstr);
+    $this->conectar($host, $port);
     stream_set_timeout($this->s, 120);
     try {
       list($cod) = $this->resp(); if ($cod !== 220) throw new Exception('El servidor de envío no saludó bien');
-      $this->cmd('EHLO ' . DOMINIO_MSGID, 250);
-      $this->cmd('AUTH PLAIN ' . base64_encode("\0" . $usuario . "\0" . $clave), 235, 'el usuario o la contraseña');
+      $ehlo = $this->cmd('EHLO ' . DOMINIO_MSGID, 250);
+      // Ferozo (12/11/2026) ofrece solo "AUTH LOGIN"; PLAIN se usa si algún día lo ofrece
+      if (preg_match('/^250[ -]AUTH[ =][^\r\n]*\bPLAIN\b/mi', $ehlo)) {
+        $this->cmd('AUTH PLAIN ' . base64_encode("\0" . $usuario . "\0" . $clave), 235, 'el usuario o la contraseña');
+      } else {
+        $this->cmd('AUTH LOGIN', 334, 'el método de identificación');
+        $this->cmd(base64_encode($usuario), 334, 'el usuario');
+        $this->cmd(base64_encode($clave), 235, 'el usuario o la contraseña');
+      }
       $this->cmd('MAIL FROM:<' . $remitente . '>', 250);
       foreach ($destinatarios as $d) $this->cmd('RCPT TO:<' . $d . '>', [250, 251], 'el destinatario ' . $d);
       $this->cmd('DATA', 354);
