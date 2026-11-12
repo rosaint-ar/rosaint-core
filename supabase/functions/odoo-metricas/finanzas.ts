@@ -199,6 +199,33 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
   // ---------- borradores (lo que todavía no cuenta) ----------
   out.borradores = (await sr("account.move", [...emp, ["state", "=", "draft"]], ["name", "move_type", "date", "partner_id", "amount_total_signed", "ref"])).map(m => ({ comprobante: m.name || "(sin número)", tipo: m.move_type, fecha: m.date, contacto: m2oName(m.partner_id), importe: r2((m.amount_total_signed as number) || 0), ref: m.ref || "" }));
 
+  // ---------- impuestos (12-nov-2026): qué se debe de cada impuesto y de qué período, y el mes en curso sin liquidar ----------
+  await safe("impuestos", async () => {
+    // deudas abiertas en las cuentas conciliables de impuestos (2.1.3.*): una por DDJJ liquidada (ref IIBB-CM-AAAA-MM, IVA-AAAA-MM…)
+    const ab = await sr("account.move.line", [...posted, ["account_id.code", "=like", "2.1.3.%"], ["account_id.reconcile", "=", true], ["reconciled", "=", false], ["amount_residual", "!=", 0]],
+      ["account_id", "move_id", "date", "amount_residual", "name"]);
+    const ids = [...new Set(ab.map(l => m2oId(l.move_id)).filter((x): x is number => !!x))];
+    const movs: Record<number, Rec> = {};
+    if (ids.length) for (const m of await sr("account.move", [["id", "in", ids]], ["name", "ref", "date"])) movs[m.id as number] = m;
+    const abiertos = ab.map(l => { const m = movs[m2oId(l.move_id) as number] || {}; const ref = String(m.ref || ""); const p = ref.match(/(20\d\d)-(\d\d)(?!\d)/);
+      return { codigo: codigo(m2oName(l.account_id)), cuenta: sinCodigo(m2oName(l.account_id)), asiento: m.name || "", ref, periodo: p ? `${p[1]}-${p[2]}` : "", fecha: l.date, detalle: String(l.name || ""), saldo: r2(-((l.amount_residual as number) || 0)) }; })
+      .sort((a, b) => (a.codigo + a.periodo).localeCompare(b.codigo + b.periodo));
+    // mes en curso: lo que todavía no entró en una liquidación (los meses liquidados quedan en cero en estas cuentas)
+    const mm = await rg("account.move.line", [...posted, "|", ["account_id.code", "in", ["2.1.3.03.010", "1.1.4.04.010", "1.1.4.04.020"]], ["account_id.code", "=like", "1.1.4.02.%"]], ["balance:sum"], ["account_id", "date:month"]);
+    const enCurso: Record<string, { iva_debito: number; iva_credito: number; iva_percepciones: number; iibb_percepciones: number }> = {};
+    for (const g of mm) {
+      const mes = String(((g.__range as Rec)?.["date:month"] as Rec | undefined)?.from || "").slice(0, 7); if (!mes) continue;
+      const nombre = m2oName(g.account_id), c = codigo(nombre), v = (g.balance as number) || 0;
+      const e = (enCurso[mes] ||= { iva_debito: 0, iva_credito: 0, iva_percepciones: 0, iibb_percepciones: 0 });
+      if (c === "2.1.3.03.010") e.iva_debito -= v; else if (c === "1.1.4.04.010") e.iva_credito += v; else if (c === "1.1.4.04.020") e.iva_percepciones += v;
+      else if (/Percepci/i.test(nombre)) e.iibb_percepciones += v;
+    }
+    const mesesEnCurso = Object.entries(enCurso).map(([mes, e]) => ({ mes, iva_debito: r2(e.iva_debito), iva_credito: r2(e.iva_credito), iva_percepciones: r2(e.iva_percepciones), iibb_percepciones: r2(e.iibb_percepciones) }))
+      // un mes liquidado queda con el débito en cero (los restos de crédito/percepciones de meses viejos son corrimientos de fecha que se compensan entre sí)
+      .filter(e => Math.abs(e.iva_debito) >= 1).sort((a, b) => a.mes.localeCompare(b.mes));
+    return { abiertos, meses_en_curso: mesesEnCurso };
+  });
+
   // ---------- control: cada número por dos caminos ----------
   const porTipo = await rg("account.move.line", posted, ["balance:sum"], ["account_type"]);
   const tipoSaldo: Record<string, number> = {}; for (const g of porTipo) tipoSaldo[String(g.account_type)] = (g.balance as number) || 0;

@@ -99,6 +99,7 @@
     <button data-t="flujo">Flujo de fondos</button>
     <button data-t="cobrar">A cobrar</button>
     <button data-t="pagar">A pagar</button>
+    <button data-t="impuestos">Impuestos</button>
     <button data-t="resultado">Resultado</button>
     <button data-t="balance">Balance</button>
   </div>
@@ -148,6 +149,8 @@
       const esImpuesto = x => /^(IVA|IIBB|Monotributo|Aut[oó]nomos|Plan |Ganancias|Impuesto|Retenci|Percepci)/i.test(String(x.cuenta || ''));
       D.impuestos_a_pagar = (D.a_pagar || []).filter(esImpuesto);
       D.a_pagar = (D.a_pagar || []).filter(x => !esImpuesto(x));
+      // agenda de vencimientos del Core (fechas reales de impuestos y cuotas de planes); si falla, la pantalla sigue
+      try { const { data: v } = await window.sb.from('vencimientos').select('id, fecha, impuesto, concepto, importe, estado').neq('estado', 'pagado').order('fecha'); D.agenda = v || []; } catch (_) { D.agenda = []; }
       prepararDatos(); render();
     } catch (e) {
       $('status').className = 'status err'; $('status').textContent = 'No se pudieron leer los datos: ' + e.message; $('root').innerHTML = '';
@@ -188,7 +191,7 @@
     OBS.splice(0).forEach(o => o.disconnect());
     renderStatus();
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === st.tab));
-    const fn = { resumen: tResumen, cuentas: tCuentas, flujo: tFlujo, cobrar: tCobrar, pagar: tPagar, resultado: tResultado, balance: tBalance }[st.tab] || tResumen;
+    const fn = { resumen: tResumen, cuentas: tCuentas, flujo: tFlujo, cobrar: tCobrar, pagar: tPagar, impuestos: tImpuestos, resultado: tResultado, balance: tBalance }[st.tab] || tResumen;
     fn();
   }
   document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { st.tab = b.dataset.t; history.replaceState(null, '', '#' + st.tab); if (D) render(); }));
@@ -215,7 +218,7 @@
       </div>
       <div class="grid2 row-gap">
         <div class="panel"><div class="panel-head"><h2>Próximos vencimientos a pagar</h2><a class="hint" href="#pagar" data-go="pagar">Ver todos →</a></div><div id="prox-pagar"></div></div>
-        <div class="panel"><div class="panel-head"><h2>Impuestos según Odoo</h2></div><div id="imp"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Impuestos</h2><a class="hint" href="#impuestos" data-go="impuestos">Ver detalle →</a></div><div id="imp"></div></div>
       </div>`;
     // alertas
     const al = [];
@@ -223,8 +226,8 @@
     if (X.internos && Math.abs(X.internos.saldo) > 1) al.push({ c: 'warn', t: `<b>Pagos internos:</b> facturas de proveedores pagadas por fuera de Efectivo, bancos y Mercado Pago (${X.internos.movimientos} pagos). Hay que definir de dónde salió esa plata.`, m: fmt$(-X.internos.saldo) });
     if (X.vencidoPagar > 0) al.push({ c: 'warn', t: `<b>Facturas de proveedores vencidas:</b> ${D.a_pagar.filter(x => x.dias_vencido > 0).map(x => esc(x.contacto)).join(', ')}.`, m: fmt$(X.vencidoPagar) });
     if (X.vencidoCobrar > 0) al.push({ c: 'warn', t: `<b>Clientes con facturas vencidas:</b> ${D.a_cobrar.filter(x => x.dias_vencido > 0).map(x => esc(x.contacto)).join(', ')}.`, m: fmt$(X.vencidoCobrar) });
-    const ivaTxt = X.ivaDeb - X.ivaCred - X.percIva;
-    al.push({ c: 'info', t: `<b>Impuestos sin pagos registrados en Odoo:</b> el IVA y los anticipos no tienen asientos de pago, por eso el saldo de IVA se acumula desde marzo.`, m: fmt$(ivaTxt) });
+    const IM = impuestosDatos();
+    if (IM.vencido.length) al.push({ c: 'hot', t: `<b>Impuestos vencidos:</b> ${IM.vencido.map(x => esc(x.nombre)).join(' · ')}. Al pagarlos se suman intereses.`, m: fmt$(sum(IM.vencido.map(x => x.saldo))) });
     if ((D.sin_vincular || []).length) al.push({ c: 'ok', t: `<b>Sueldos y cadeterías al día:</b> ${D.sin_vincular.map(x => esc(x.contacto.split(' ')[0])).filter((v, i, a) => a.indexOf(v) === i).join(', ')} con saldo cero. Los pagos están cargados pero sin vincular a cada devengamiento.`, m: '' });
     if ((D.borradores || []).length) al.push({ c: 'info', t: `<b>${D.borradores.length} comprobantes en borrador</b> (no cuentan): ${D.borradores.slice(0, 4).map(b => esc(b.comprobante) + ' ' + esc(b.contacto)).join(' · ')}${D.borradores.length > 4 ? '…' : ''}.`, m: '' });
     $('alertas').innerHTML = al.map(a => `<div class="alerta ${a.c}"><span class="ic">${a.c === 'ok' ? '✓' : a.c === 'info' ? 'i' : '!'}</span><span>${a.t}</span><span class="m">${a.m}</span></div>`).join('');
@@ -233,21 +236,103 @@
     // próximos vencimientos
     const prox = D.a_pagar.slice(0, 15);
     $('prox-pagar').innerHTML = prox.length ? tablaPagar(prox, true) + (D.a_pagar.length > prox.length ? `<div class="nota">Y ${D.a_pagar.length - prox.length} más: ver todos.</div>` : '') : '<div class="vacio">No hay pagos pendientes.</div>';
-    const imp = D.impuestos_a_pagar || [];
-    // impuestos
+    // impuestos: resumen corto (el detalle está en la pestaña Impuestos)
     $('imp').innerHTML = `<table class="tbl"><tbody>
-      <tr><td>IVA débito fiscal (ventas)<span class="sub">acumulado desde marzo</span></td><td class="num">${fmt$(X.ivaDeb)}</td></tr>
-      <tr><td>IVA crédito fiscal (compras)</td><td class="num">− ${fmt$(X.ivaCred)}</td></tr>
-      <tr><td>Percepciones de IVA sufridas</td><td class="num">− ${fmt$(X.percIva)}</td></tr>
-      <tr class="total"><td>Saldo de IVA según Odoo</td><td class="num">${fmt$(ivaSaldo)}</td></tr>
-      <tr><td>Percepciones de IIBB sufridas<span class="sub">a favor, para descontar de Ingresos Brutos</span></td><td class="num">${fmt$(X.percIibb)}</td></tr>
+      <tr><td>Vencido<span class="sub">declaraciones presentadas y no pagadas</span></td><td class="num ${IM.totVencido > 0 ? 'neg' : ''}">${fmt$(IM.totVencido)}</td></tr>
+      <tr><td>Por vencer<span class="sub">declaraciones presentadas, todavía en término</span></td><td class="num">${fmt$(IM.totPorVencer)}</td></tr>
+      <tr><td>En planes de pago<span class="sub">${IM.planes.length} planes · cuotas mensuales</span></td><td class="num">${fmt$(IM.totPlanes)}</td></tr>
+      <tr><td>IVA de ${IM.enCurso.map(m => lblMesLargo(m.mes).split(' ')[0]).join(' y ') || 'este mes'} (estimado)<span class="sub">todavía sin declarar: ventas − compras − percepciones</span></td><td class="num">${fmt$(IM.totEnCurso)}</td></tr>
     </tbody></table>
-    ${imp.length ? `<h3 style="margin:14px 0 6px;font-size:13px">Deudas de impuestos cargadas en Odoo</h3>
-    <table class="tbl"><tbody>${imp.map(x => `<tr><td>${esc(x.cuenta)}<span class="sub">${esc(x.origen || x.comprobante)} · cargado el ${fecha(x.fecha)}</span></td><td class="num">${fmt$(x.saldo)}</td></tr>`).join('')}
-      <tr class="total"><td>Total</td><td class="num">${fmt$(sum(imp.map(x => x.saldo)))}</td></tr></tbody></table>` : ''}
-    <div class="nota">Las fechas de vencimiento reales de estos impuestos están en la agenda de Vencimientos (Inicio). Los planes de pago de ARCA van por su cuenta y no figuran acá.</div>`;
+    <div class="nota">Lo vencido de Ingresos Brutos, mes por mes, está en <a href="#impuestos" data-go="impuestos">Impuestos</a>.</div>`;
     document.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); st.tab = a.dataset.go; history.replaceState(null, '', '#' + st.tab); render(); }));
     sparks({ dinero: X.dineroMes });
+  }
+
+  // ================= IMPUESTOS =================
+  // Odoo dice CUÁNTO se debe de cada declaración (una deuda por período: IIBB-CM-AAAA-MM, IVA-AAAA-MM…) y la agenda de
+  // Vencimientos del Core dice CUÁNDO vence. Se cruzan por impuesto + período (el mes escrito en el concepto de la agenda).
+  const periodoDe = txt => { const s = String(txt || '').toLowerCase(); const i = MES_LARGO.findIndex(m => s.includes(m)); const y = (s.match(/20\d\d/) || [])[0]; return i >= 0 && y ? `${y}-${String(i + 1).padStart(2, '0')}` : ''; };
+  const diasDesde = f => Math.round((Date.parse(D.hoy) - Date.parse(f)) / 86400000);
+  function impuestosDatos() {
+    const A = D.impuestos && !D.impuestos.error ? D.impuestos : { abiertos: [], meses_en_curso: [] };
+    const ag = D.agenda || [];
+    const tipoDe = x => x.codigo === '2.1.3.02.010' ? 'IIBB' : x.codigo === '2.1.3.03.020' ? 'IVA' : /Monotributo/i.test(x.cuenta) ? 'Monotributo' : /Aut[oó]nomos/i.test(x.cuenta) ? 'Autónomos' : x.cuenta;
+    const usados = new Set();
+    const decl = A.abiertos.map(x => {
+      const tipo = tipoDe(x);
+      const a = ag.find(v => !usados.has(v.id) && String(v.impuesto) === tipo && (x.periodo ? periodoDe(v.concepto) === x.periodo : true));
+      if (a) usados.add(a.id);
+      const vence = a ? a.fecha : '';
+      const nombre = tipo === 'IIBB' ? `IIBB ${lblMesLargo(x.periodo)}` : tipo === 'IVA' ? `IVA ${lblMesLargo(x.periodo)}` : (a ? a.concepto : x.cuenta);
+      // sin fecha en la agenda: es deuda vieja (p. ej. Monotributo) y se toma como vencida
+      return { ...x, tipo, nombre, vence, dias: vence ? diasDesde(vence) : null, vencido: !vence || vence <= D.hoy };
+    });
+    // vencimientos de impuestos que están en la agenda pero no en Odoo (p. ej. el anticipo de IIBB 08/2023)
+    const fueraOdoo = ag.filter(v => !usados.has(v.id) && /^(IIBB|IVA)$/.test(String(v.impuesto)) && v.importe && v.fecha <= D.hoy && !/presentar/i.test(v.concepto));
+    const planes = (D.saldos_cuentas || []).filter(x => String(x.codigo).startsWith('2.1.3.') && /^Plan /i.test(String(x.cuenta)) && Math.abs(x.saldo) >= 0.01).map(x => {
+      const w = (String(x.cuenta).match(/W\d+/) || [])[0];
+      const cuotas = ag.filter(v => /^Plan/i.test(String(v.impuesto)) && (w ? String(v.concepto).includes(w) : /IVA/i.test(x.cuenta) ? /IVA/i.test(v.impuesto + ' ' + v.concepto) : false));
+      return { cuenta: x.cuenta, saldo: -x.saldo, prox: cuotas[0] || null, restantes: cuotas.length };
+    });
+    const libre = ((D.saldos_cuentas || []).find(x => x.codigo === '1.1.4.04.050') || {}).saldo || 0;
+    const enCurso = (A.meses_en_curso || []).map(m => ({ ...m, neto: m.iva_debito - m.iva_credito - m.iva_percepciones }));
+    const vencido = decl.filter(x => x.vencido), porVencer = decl.filter(x => !x.vencido);
+    const proximos = ag.filter(v => /^(IVA|IIBB|Plan|Aut[oó]nomos|Monotributo|Ganancias)/i.test(String(v.impuesto)) && v.fecha >= D.hoy && diasDesde(v.fecha) >= -45);
+    const aFavor = (D.saldos_cuentas || []).filter(x => String(x.codigo).startsWith('1.1.4.02') && /Saldo a favor/i.test(String(x.cuenta)) && x.saldo >= 1).sort((a, b) => b.saldo - a.saldo);
+    return { decl, vencido, porVencer, fueraOdoo, planes, enCurso, libre, proximos, aFavor,
+      totVencido: sum(vencido.map(x => x.saldo)), totPorVencer: sum(porVencer.map(x => x.saldo)), totPlanes: sum(planes.map(x => x.saldo)), totEnCurso: Math.max(0, sum(enCurso.map(m => m.neto)) - libre) };
+  }
+
+  function tImpuestos() {
+    const IM = impuestosDatos();
+    const iibb = IM.decl.filter(x => x.tipo === 'IIBB');
+    const otrasDecl = IM.decl.filter(x => x.tipo !== 'IIBB');
+    const atraso = x => x.vence ? (x.dias > 0 ? `<span class="chip-s hot">hace ${x.dias} d</span>` : x.dias === 0 ? '<span class="chip-s warn">hoy</span>' : `<span class="chip-s ${x.dias >= -7 ? 'warn' : 'info'}">en ${-x.dias} d</span>`) : '<span class="chip-s hot">vencido</span>';
+    const percIibbEnCurso = sum(IM.enCurso.map(m => m.iibb_percepciones));
+    $('root').innerHTML = `
+      <div class="kpis">
+        ${kpi('Vencido', fmt$(IM.totVencido), `${IM.vencido.length} declaraciones sin pagar · al pagar se suman intereses`, IM.totVencido > 0 ? 'main' : '', 'Declaraciones juradas presentadas y vencidas, sin el pago registrado en Odoo')}
+        ${kpi('Por vencer', fmt$(IM.totPorVencer), IM.porVencer.map(x => esc(x.nombre) + ' ' + fecha(x.vence)).join(' · ') || 'nada declarado pendiente', '', 'Declaraciones presentadas que todavía están en término')}
+        ${kpi('En planes de pago', fmt$(IM.totPlanes), `${IM.planes.length} planes · próxima cuota ${IM.planes.map(p => p.prox).filter(Boolean).map(p => fecha(p.fecha)).sort()[0] || '—'}`, '', 'Saldo de capital de los planes de ARCA (las cuotas suman intereses de financiación)')}
+        ${kpi('IVA en curso (estimado)', fmt$(IM.totEnCurso), 'todavía sin declarar', '', 'IVA de las ventas − IVA de las compras − percepciones − saldo de libre disponibilidad, de los meses que todavía no se liquidaron. Lo confirma la declaración jurada.')}
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Ingresos Brutos · qué meses debés</h2><span class="hint">Convenio Multilateral</span></div>
+          ${iibb.length || IM.fueraOdoo.length ? `<table class="tbl"><thead><tr><th>Mes</th><th>Venció</th><th class="num">Capital</th></tr></thead><tbody>
+            ${iibb.map(x => `<tr><td>${esc(lblMesLargo(x.periodo))}<span class="sub">${esc(x.asiento)}</span></td><td style="white-space:nowrap">${x.vence ? fecha(x.vence) + ' ' : ''}${atraso(x)}</td><td class="num neg">${fmt$c(x.saldo)}</td></tr>`).join('')}
+            ${IM.fueraOdoo.filter(v => v.impuesto === 'IIBB').map(v => `<tr><td>${esc(v.concepto)}<span class="sub">en la agenda, no está en Odoo</span></td><td style="white-space:nowrap">${fecha(v.fecha)} <span class="chip-s hot">hace ${diasDesde(v.fecha)} d</span></td><td class="num neg">${fmt$c(v.importe)}</td></tr>`).join('')}
+            <tr class="total"><td>Total</td><td></td><td class="num">${fmt$c(sum(iibb.map(x => x.saldo)) + sum(IM.fueraOdoo.filter(v => v.impuesto === 'IIBB').map(v => +v.importe)))}</td></tr></tbody></table>
+            <div class="nota">Se paga con un VEP desde SIFERE, mes por mes y del más viejo al más nuevo. Fuera de término se suman <b>intereses resarcitorios</b>: el importe exacto lo da el VEP del día. Cuando pagues uno, pasame el comprobante y lo registro: sale de esta lista.</div>` : '<div class="vacio">Ingresos Brutos al día.</div>'}
+        </div>
+        <div class="panel"><div class="panel-head"><h2>IVA y otras declaraciones</h2></div>
+          ${otrasDecl.length ? `<table class="tbl"><thead><tr><th>Qué</th><th>Vence</th><th class="num">Saldo</th></tr></thead><tbody>
+            ${otrasDecl.map(x => `<tr><td>${esc(x.nombre)}<span class="sub">${esc(x.detalle || x.asiento)}</span></td><td style="white-space:nowrap">${x.vence ? fecha(x.vence) + ' ' : ''}${atraso(x)}</td><td class="num ${x.vencido ? 'neg' : ''}">${fmt$c(x.saldo)}</td></tr>`).join('')}</tbody></table>` : '<div class="vacio">Sin declaraciones pendientes.</div>'}
+          <h3 style="margin:16px 0 6px;font-size:13px">IVA del mes en curso (todavía sin declarar)</h3>
+          ${IM.enCurso.length ? `<table class="tbl"><thead><tr><th>Mes</th><th class="num">Ventas</th><th class="num">Compras</th><th class="num">Percep.</th><th class="num">A pagar (est.)</th></tr></thead><tbody>
+            ${IM.enCurso.map(m => `<tr><td>${esc(lblMesLargo(m.mes))}</td><td class="num">${fmt$(m.iva_debito)}</td><td class="num">− ${fmt$(m.iva_credito)}</td><td class="num">− ${fmt$(m.iva_percepciones)}</td><td class="num">${fmt$(m.neto)}</td></tr>`).join('')}
+            ${IM.libre >= 1 ? `<tr><td colspan="4">Saldo de libre disponibilidad (a favor)</td><td class="num">− ${fmt$(IM.libre)}</td></tr>` : ''}
+            <tr class="total"><td colspan="4">Estimado</td><td class="num">${fmt$(IM.totEnCurso)}</td></tr></tbody></table>
+            <div class="nota">«Ventas» es el IVA que cobraste (en Odoo: <b>IVA débito fiscal</b>) y «Compras» el que pagaste (<b>IVA crédito fiscal</b>). No es deuda hasta que la contadora presenta la declaración: ahí se hace la resta y el neto pasa a «IVA saldo a pagar».</div>` : '<div class="vacio">No hay meses sin declarar.</div>'}
+        </div>
+      </div>
+      <div class="grid2 row-gap">
+        <div class="panel"><div class="panel-head"><h2>Planes de pago</h2></div>
+          ${IM.planes.length ? `<table class="tbl"><thead><tr><th>Plan</th><th>Próxima cuota</th><th class="num">Saldo de capital</th></tr></thead><tbody>
+            ${IM.planes.map(p => `<tr><td>${esc(p.cuenta.replace(/ a pagar$/i, ''))}<span class="sub">${p.restantes ? p.restantes + ' cuotas en la agenda' : 'sin cuotas en la agenda'}</span></td><td style="white-space:nowrap">${p.prox ? fecha(p.prox.fecha) + ' · ' + fmt$(p.prox.importe) : '—'}</td><td class="num">${fmt$c(p.saldo)}</td></tr>`).join('')}
+            <tr class="total"><td>Total</td><td></td><td class="num">${fmt$c(IM.totPlanes)}</td></tr></tbody></table>
+            <div class="nota">Las cuotas se debitan del Santander el día 16 (segundo vencimiento el 26): tiene que haber saldo. La cuota incluye interés de financiación, por eso es más que la baja del saldo de capital.</div>` : '<div class="vacio">Sin planes de pago.</div>'}
+        </div>
+        <div class="panel"><div class="panel-head"><h2>Ingresos Brutos a favor</h2><span class="hint">se descuenta en las próximas declaraciones</span></div>
+          ${IM.aFavor.length ? `<table class="tbl"><tbody>${IM.aFavor.map(x => `<tr><td>${esc(String(x.cuenta).replace(/^Saldo a favor IIBB /i, ''))}</td><td class="num pos">${fmt$(x.saldo)}</td></tr>`).join('')}
+            ${percIibbEnCurso >= 1 ? `<tr><td>Percepciones del mes en curso<span class="sub">todavía sin descontar</span></td><td class="num pos">${fmt$(percIibbEnCurso)}</td></tr>` : ''}
+            <tr class="total"><td>Total a favor</td><td class="num">${fmt$(sum(IM.aFavor.map(x => x.saldo)) + Math.max(0, percIibbEnCurso))}</td></tr></tbody></table>
+            <div class="nota">Son provincias que te perciben más de lo que te toca pagar. Si en alguna crece mes a mes, conviene pedir la exclusión o una alícuota menor.</div>` : '<div class="vacio">Sin saldos a favor.</div>'}
+        </div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Próximos vencimientos de impuestos</h2><span class="hint">agenda del Core · 45 días</span></div>
+        ${IM.proximos.length ? `<table class="tbl"><tbody>${IM.proximos.map(v => `<tr><td style="white-space:nowrap">${fecha(v.fecha)}</td><td>${esc(v.concepto)}</td><td class="num">${v.importe ? fmt$c(v.importe) : '<span class="muted">a definir</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="vacio">Nada en los próximos 45 días.</div>'}
+      </div>`;
+    document.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); st.tab = a.dataset.go; history.replaceState(null, '', '#' + st.tab); render(); }));
   }
 
   // ================= CUENTAS =================
