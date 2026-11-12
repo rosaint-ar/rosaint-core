@@ -155,8 +155,8 @@ function atender(array $b) {
           if (!$papelera) throw new Exception('La casilla no tiene Papelera: para borrar sin vuelta atrás mandar definitivo:true');
           if ($papelera === $carpeta) throw new Exception('Ya están en la Papelera: para borrarlos de verdad mandar definitivo:true');
           $imap->abrir($carpeta, false);
-          $imap->mover($uids, $papelera);
-          return ['ok' => true, 'cantidad' => count($uids), 'a_papelera' => $papelera];
+          $nuevos = $imap->mover($uids, $papelera);
+          return ['ok' => true, 'cantidad' => count($uids), 'a_papelera' => $papelera, 'uids_en_papelera' => $nuevos];
         }
         $imap->abrir($carpeta, false);
         $imap->borrarDefinitivo($uids);
@@ -304,7 +304,8 @@ function armarMensaje(Imap $imap, array $b, $usuario) {
     }
     // la copia que queda en Enviados lleva las copias ocultas; el correo que sale, no
     if ($conCco && $cco) $out .= 'Bcc: ' . Direcciones::formatear($cco) . "\r\n";
-    return $out . $cuerpo[0] . "\r\n" . $cuerpo[1];
+    // la línea en blanco separa encabezados y cuerpo: sin ella se perdía la primera parte (el texto)
+    return $out . $cuerpo[0] . "\r\n\r\n" . $cuerpo[1];
   };
   $todos = array_merge($para, $cc, $cco);
   return ['sin_cco' => $lineas(false), 'con_cco' => $lineas(true), 'message_id' => $mid,
@@ -408,19 +409,30 @@ class Imap {
       }
     }
     foreach ($status as $ruta => $st) if (isset($lista[$ruta])) { $lista[$ruta]['total'] = $st['MESSAGES'] ?? null; $lista[$ruta]['sin_leer'] = $st['UNSEEN'] ?? null; }
-    $this->listaCache = $lista;
+    $this->listaCache = $lista; $this->especialesCache = null;
     return array_values(array_map(function ($c) { unset($c['_sep']); return $c; }, $lista));
   }
   private function lista() { if ($this->listaCache === null) $this->carpetas(false); return $this->listaCache; }
   function separador() { foreach ($this->lista() as $c) if ($c['_sep'] !== '') return $c['_sep']; return '.'; }
+  private $especialesCache = null;
   function especiales() {
+    if ($this->especialesCache !== null) return $this->especialesCache;
+    $cand = [];
+    foreach ($this->lista() as $c) if ($c['especial'] && $c['especial'] !== '\\Inbox') $cand[$c['especial']][] = $c['ruta'];
+    // contacto@ tiene DOS carpetas marcadas \Sent ("Sent Items" con ~3.000 correos y "Sent Messages" con 69):
+    // si hay más de una, manda la que más correos tiene (es la que usa el Outlook)
     $out = [];
-    foreach ($this->lista() as $c) if ($c['especial'] && $c['especial'] !== '\\Inbox') $out[$c['especial']] = $c['ruta'];
+    foreach ($cand as $esp => $rutas) {
+      if (count($rutas) === 1) { $out[$esp] = $rutas[0]; continue; }
+      $mejor = null; $max = -1;
+      foreach ($rutas as $r) { $t = $this->total($r); if ($t > $max) { $max = $t; $mejor = $r; } }
+      $out[$esp] = $mejor;
+    }
     // si el servidor no las marca, por nombre
     $nombres = ['\\Sent' => ['sent', 'enviados', 'sent items', 'sent messages'], '\\Trash' => ['trash', 'papelera', 'deleted items', 'deleted messages'],
       '\\Drafts' => ['drafts', 'borradores'], '\\Junk' => ['junk', 'spam', 'correo no deseado']];
     foreach ($nombres as $esp => $ns) if (!isset($out[$esp])) foreach ($this->lista() as $c) if (in_array(strtolower($c['nombre']), $ns, true)) { $out[$esp] = $c['ruta']; break; }
-    return $out;
+    return $this->especialesCache = $out;
   }
   function especial($esp) { $e = $this->especiales(); return $e[$esp] ?? null; }
   function existeCarpeta($ruta) { if (!isset($this->lista()[$ruta])) throw new Exception('No existe la carpeta "' . $ruta . '"'); }
@@ -801,7 +813,8 @@ class Mime {
       $largoP = strlen(preg_replace('/\s+/', '', (string)$plano)); $largoH = strlen(preg_replace('/\s+/', '', $deHtml));
       if ($plano === null || $largoP === 0 || ($largoP < 60 && $largoH > 5 * $largoP)) $plano = $deHtml;
     }
-    $plano = trim(preg_replace("/\n\s*\n+/", "\n\n", preg_replace('/[ \t]+/', ' ', (string)$plano)));
+    $plano = str_replace(["\r\n", "\r"], "\n", (string)$plano);   // saltos de línea parejos
+    $plano = trim(preg_replace("/\n[ \t]*\n\s*/", "\n\n", preg_replace('/[ \t]+/', ' ', $plano)));
     $e = $m['enc'];
     $de = _primerEmail($e['from'] ?? '');
     return ['fecha' => isset($e['date']) && ($t = fechaCorreo($e['date'])) ? gmdate('c', $t) : null,
