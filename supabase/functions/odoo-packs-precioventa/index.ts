@@ -773,6 +773,41 @@ _servirConGuardia(async (req: Request) => {
 
     // ---- Modo crear_presentacion: producto vendible nuevo copiando otro (categoría, impuestos, rutas) + su lista de materiales ----
     // { crear_presentacion: { codigo, nombre, copiar_de, lineas: [{codigo, cantidad}] }, dry_run }   (15-oct-2026)
+    // ---- Modo copiar_producto: { copiar_producto: { codigo, copiar_de, nombre, costo? }, dry_run } ----
+    // Producto nuevo copiado de otro (categoría, impuestos, rutas, unidad, compra/venta), sin lista de materiales. Para insumos.
+    if (body.copiar_producto) {
+      const g = body.copiar_producto; const dry = body.dry_run !== false;
+      const buscar = async (cod: string) => (await call("product.product", "search_read", [[["default_code", "=", cod]], ["id", "product_tmpl_id", "name"]], { context: { active_test: false } }))[0];
+      if (await buscar(String(g.codigo))) throw new Error(`Ya existe un producto con código ${g.codigo} en Odoo`);
+      const base = await buscar(String(g.copiar_de)); if (!base) throw new Error(`No encontré ${g.copiar_de}`);
+      const plan = { codigo: g.codigo, nombre: g.nombre, copia_de: `${g.copiar_de} ${base.name}`, costo: g.costo ?? "el de la copia en 0" };
+      if (dry) return new Response(JSON.stringify({ ok: true, dry_run: true, plan }, null, 2), { headers: cors });
+      let tmpl = await call("product.template", "copy", [base.product_tmpl_id[0], { name: String(g.nombre), default_code: String(g.codigo) }]);
+      if (Array.isArray(tmpl)) tmpl = tmpl[0];
+      if (g.costo != null) await call("product.template", "write", [[tmpl], { standard_price: Number(g.costo) }]);
+      const [t] = await call("product.template", "read", [[tmpl], ["default_code", "name", "standard_price", "categ_id", "uom_id", "purchase_ok", "sale_ok"]]);
+      return new Response(JSON.stringify({ ok: true, dry_run: false, producto: t }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo bom_completar: { bom_completar: { codigo, lineas: [{codigo, cantidad}] }, dry_run } ----
+    // Si el producto no tiene lista de materiales la crea (1 unidad); si la tiene, agrega solo los renglones que faltan.
+    if (body.bom_completar) {
+      const g = body.bom_completar; const dry = body.dry_run !== false;
+      const buscar = async (cod: string) => (await call("product.product", "search_read", [[["default_code", "=", cod]], ["id", "product_tmpl_id", "uom_id", "name"]], { context: { active_test: false } }))[0];
+      const prod = await buscar(String(g.codigo)); if (!prod) throw new Error(`No encontré ${g.codigo}`);
+      const comps: any[] = [];
+      for (const l of (g.lineas || [])) { const p = await buscar(String(l.codigo)); if (!p) throw new Error(`No encontré el componente ${l.codigo}`); comps.push({ codigo: l.codigo, cantidad: Number(l.cantidad), id: p.id, uom: p.uom_id[0], nombre: p.name }); }
+      const [bom] = await call("mrp.bom", "search_read", [[["product_tmpl_id", "=", prod.product_tmpl_id[0]]], ["id", "bom_line_ids"]], { limit: 1 });
+      const ya = bom?.bom_line_ids.length ? await call("mrp.bom.line", "read", [bom.bom_line_ids, ["product_id", "product_qty"]]) : [];
+      const faltan = comps.filter((c) => !ya.some((l: any) => l.product_id[0] === c.id));
+      const plan = { producto: `${g.codigo} ${prod.name}`, bom: bom ? `agrega a la lista ${bom.id}` : "crea la lista (rinde 1 unidad)", tiene: ya.map((l: any) => `${l.product_id[1]} × ${l.product_qty}`), agrega: faltan.map((c) => `${c.codigo} ${c.nombre} × ${c.cantidad}`) };
+      if (dry || !faltan.length) return new Response(JSON.stringify({ ok: true, dry_run: dry, plan }, null, 2), { headers: cors });
+      const lineas = faltan.map((c) => [0, 0, { product_id: c.id, product_qty: c.cantidad, product_uom_id: c.uom }]);
+      if (bom) await call("mrp.bom", "write", [[bom.id], { bom_line_ids: lineas }]);
+      else await call("mrp.bom", "create", [{ product_tmpl_id: prod.product_tmpl_id[0], product_qty: 1, product_uom_id: prod.uom_id[0], type: "normal", bom_line_ids: lineas }]);
+      return new Response(JSON.stringify({ ok: true, dry_run: false, plan }, null, 2), { headers: cors });
+    }
+
     if (body.crear_presentacion) {
       const g = body.crear_presentacion; const dry = body.dry_run !== false;
       const buscar = async (cod: string) => (await call("product.product", "search_read", [[["default_code", "=", cod]], ["id", "product_tmpl_id", "uom_id", "name"]], { context: { active_test: false } }))[0];
