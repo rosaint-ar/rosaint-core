@@ -11,7 +11,7 @@
   <style>
     /* Correo de contacto@rosaint.com.ar. Tres columnas: carpetas · correos · lectura.
        Todo pasa por la función `correo` (Supabase) → puente PHP en el hosting → la casilla de Ferozo. */
-    .co { display: grid; grid-template-columns: 220px minmax(300px, 370px) minmax(0, 1fr); gap: 10px; height: calc(100vh - 205px); min-height: 480px; }
+    .co { display: grid; grid-template-columns: 220px minmax(300px, 370px) minmax(0, 1fr); gap: 10px; height: calc(100vh - 335px); min-height: 480px; }
     .co-col { background: var(--r-sup); min-height: 0; display: flex; flex-direction: column; }
 
     /* carpetas */
@@ -102,7 +102,34 @@
     .co-aviso button { background: none; border: 0; color: var(--acido); font: 600 13px var(--sans); margin-left: 12px; cursor: pointer; padding: 0; }
 
     /* ---- Ordenar: la bandeja agrupada por remitente; la persona elige a dónde va cada uno */
-    .co[hidden], .or[hidden] { display: none; }
+    .co[hidden], .or[hidden], .fa[hidden] { display: none; }
+
+    /* tarjetas de arriba: Vencimientos y Facturas (después vendrán otras) */
+    .ct { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .ct-t { display: flex; flex-direction: column; gap: 5px; min-height: 120px; font: inherit; color: var(--r-tx); }
+    .ct-t .grande { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .ct-t .grande .m-num { font-size: 30px; line-height: 1; }
+    .ct-t .grande .tx { font-size: 14px; }
+    .ct-t .sec { font-size: 12.5px; color: var(--r-mu); }
+    .ct-t ul { list-style: none; margin: 3px 0 0; padding: 0; display: grid; gap: 3px; }
+    .ct-t li { font-size: 12.5px; display: flex; gap: 8px; justify-content: space-between; min-width: 0; }
+    .ct-t li .q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .ct-t li .c { white-space: nowrap; font-family: var(--sora); font-size: 12px; color: var(--r-mu); }
+    .ct-t.alerta { background: color-mix(in srgb, var(--rojo) 10%, var(--r-sup)); }
+    .ct-t.alerta .grande .m-num, .ct-t li .c.mal { color: var(--rojo); }
+    .ct-t li .c.ojo { color: var(--r-tx); font-weight: 600; }
+    .pill { display: inline-block; font: 500 11px var(--sora); padding: 2px 8px; border-radius: 99px; white-space: nowrap; background: color-mix(in srgb, var(--r-panel) 60%, transparent); }
+    .pill.ok { background: color-mix(in srgb, #2e9e5b 20%, transparent); }
+    .pill.mal { background: color-mix(in srgb, var(--rojo) 20%, transparent); }
+    .pill.ojo { background: color-mix(in srgb, var(--acido) 70%, transparent); color: var(--azul); }
+    .fa { background: var(--r-sup); }
+    .rojo { color: var(--rojo); }
+    .fa-tabla .acc { display: flex; gap: 4px; flex-wrap: wrap; }
+    .fa-tabla .acc .rb { padding: 3px 7px; font-size: 12px; }
+    .fa-tabla tr.vencida td { background: color-mix(in srgb, var(--rojo) 7%, transparent); }
+    .fa-tabla tr.quitada td { opacity: .55; }
+    .fa-tabla a { color: inherit; }
+    @media (max-width: 1100px) { .fa-tabla .c-total, .fa-tabla .c-llego { display: none; } }
     .or { background: var(--r-sup); }
     .or-cab { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--r-li); }
     .or-cab p { margin: 0; font-size: 14px; flex: 1 1 360px; color: var(--r-mu); line-height: 1.5; }
@@ -196,6 +223,33 @@
       <button class="rb si" onclick="redactar()">Escribir correo</button>
     </div>
   </div>
+
+  <!-- tarjetas: lo importante de la casilla de un vistazo -->
+  <div class="ct" id="tarjetas">
+    <button class="m-dato ct-t" id="t-venc" style="--c:var(--rojo)" onclick="modoFacturas(true, 'vencimientos')"><span class="l">Vencimientos</span><span class="sec">Cargando…</span></button>
+    <button class="m-dato ct-t" id="t-fact" style="--c:var(--azul)" onclick="modoFacturas(true, 'falta')"><span class="l">Facturas recibidas</span><span class="sec">Cargando…</span></button>
+  </div>
+
+  <section class="fa" id="fa" hidden>
+    <div class="or-cab">
+      <p id="fa-resumen">—</p>
+      <button class="rb suave" onclick="revisarOdoo(this)" title="Volver a buscar en Odoo si ya están cargadas y pagadas">Volver a mirar Odoo</button>
+      <button class="rb linea" onclick="modoFacturas(false)">Volver al correo</button>
+    </div>
+    <div class="or-filtros" id="fa-filtros">
+      <button class="co-chip" data-f="vencimientos" onclick="filtroFa('vencimientos')">Vencimientos</button>
+      <button class="co-chip" data-f="falta" onclick="filtroFa('falta')">Falta cargar en Odoo</button>
+      <button class="co-chip" data-f="todas" onclick="filtroFa('todas')">Todas</button>
+      <button class="co-chip" data-f="quitadas" onclick="filtroFa('quitadas')">Quitadas</button>
+      <input class="m-campo" id="fa-q" placeholder="Buscar proveedor o número" oninput="pintarFacturas()" autocomplete="off">
+    </div>
+    <div class="or-cuerpo">
+      <table class="or-tabla fa-tabla">
+        <thead><tr><th class="c-llego" style="width:7%">Llegó</th><th>Proveedor</th><th style="width:15%">Comprobante</th><th class="c-total num" style="width:10%">Total</th><th style="width:13%">Vence</th><th style="width:15%">En Odoo</th><th style="width:17%"></th></tr></thead>
+        <tbody id="fa-filas"></tbody>
+      </table>
+    </div>
+  </section>
 
   <div class="co" id="co">
     <!-- carpetas -->
@@ -806,6 +860,7 @@ function rutaLinda(r){ if (r === 'INBOX') return NOMBRES.INBOX; const e = Object
 const origenRuta = () => ORD.origen === 'spam' ? (ESP['\\Junk'] || 'INBOX.spam') : 'INBOX';
 function cambiarOrigen(v){ ORD.origen = v; ORD.datos = null; ORD.elegidos.clear(); ORD.siempre.clear(); ORD.destino = {}; ORD.expandidos.clear(); cargarOrdenar(); }
 function modoOrdenar(si){
+  if (si && FA.abierto) modoFacturas(false);
   ORD.abierto = si;
   $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si; $('or-blanca').hidden = !si;
   $('b-ordenar').textContent = si ? 'Volver al correo' : 'Ordenar la bandeja';
@@ -1048,6 +1103,145 @@ async function noEsSpam(){
   $('capa-dlg').hidden = false;
 }
 
+// ---------------- tarjetas Vencimientos y Facturas
+// Las detecta la función `correo` cuando llegan (asunto con factura/FC/FA-A…), copia cada una a la carpeta
+// «Facturas» y la cruza con Odoo: si está cargada, de Odoo salen el vencimiento y si está pagada;
+// si no, el vencimiento sale del PDF o del correo.
+let FACT = [];
+const FA = { abierto: false, filtro: 'vencimientos' };
+function hoyISO(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function diasA(f){ return Math.round((Date.parse(f + 'T12:00:00') - Date.parse(hoyISO() + 'T12:00:00')) / 864e5); }
+function plata(n){ return n == null || n === '' ? '' : '$ ' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
+function fechaCorta(iso){ return iso ? new Date(String(iso).length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }) : ''; }
+function provDe(f){
+  if (f.proveedor || f.de_nombre) return f.proveedor || f.de_nombre;
+  const d = String(f.de_email || '').split('@')[1] || '';   // sin nombre: el de la empresa que manda (tiendanube.com → Tiendanube)
+  const n = d.replace(/^(mail|info|correo|notificaciones|facturacion)[.]/, '').split('.')[0];
+  return n ? n[0].toUpperCase() + n.slice(1) : (f.de_email || '—');
+}
+function montoDe(f){ return f.pagada === false && f.odoo_saldo != null ? f.odoo_saldo : (f.odoo_total ?? f.total); }
+function enOdoo(f){
+  if (f.a_nombre_de) return { txt: 'Es de ' + f.a_nombre_de.split(' ')[0], cls: '', falta: false, nota: 'A nombre de ' + f.a_nombre_de + ': no va al Odoo de Velázquez' };
+  if (f.odoo_move_id && f.odoo_estado === 'draft') return { txt: 'En borrador', cls: 'ojo', falta: true };
+  if (f.odoo_move_id && f.odoo_coincide === 'fecha') return { txt: '¿Es ' + f.odoo_nombre + '?', cls: 'ojo', falta: false };
+  if (f.odoo_move_id) return { txt: 'Cargada', cls: 'ok', falta: false };
+  return { txt: 'Falta cargar', cls: 'mal', falta: true };
+}
+function vencDe(f){
+  if (!f.vence || f.pagada === true || f.descartada) return null;
+  const d = diasA(f.vence);
+  return { d, txt: d < 0 ? 'venció hace ' + (-d) + (d === -1 ? ' día' : ' días') : d === 0 ? 'vence hoy' : 'vence en ' + d + (d === 1 ? ' día' : ' días'), cls: d < 0 ? 'mal' : d <= 7 ? 'ojo' : '' };
+}
+async function cargarFacturas(){
+  try { const r = await api({ accion: 'facturas', dias: 120 }); FACT = r.facturas || []; }
+  catch (err) { $('t-venc').querySelector('.sec').textContent = 'No se pudieron leer las facturas: ' + err.message; return; }
+  pintarTarjetas(); if (FA.abierto) pintarFacturas();
+}
+function pintarTarjetas(){
+  const vivas = FACT.filter(f => !f.descartada);
+  const conV = vivas.map(f => [f, vencDe(f)]).filter(x => x[1]);
+  const vencidas = conV.filter(x => x[1].d < 0).sort((a, b) => a[1].d - b[1].d);
+  const proximas = conV.filter(x => x[1].d >= 0 && x[1].d <= 7).sort((a, b) => a[1].d - b[1].d);
+  const lista = arr => arr.length ? '<ul>' + arr.map(([f, v]) => `<li><span class="q">${esc(provDe(f))}${montoDe(f) ? ' · ' + esc(plata(montoDe(f))) : ''}</span><span class="c ${v ? v.cls : ''}">${esc(v ? v.txt : '')}</span></li>`).join('') + '</ul>' : '';
+  const tv = $('t-venc');
+  tv.classList.toggle('alerta', vencidas.length > 0);
+  tv.innerHTML = `<span class="l">Vencimientos de facturas</span>
+    <span class="grande"><span class="m-num">${vencidas.length}</span><span class="tx">${vencidas.length === 1 ? 'vencida sin pagar' : 'vencidas sin pagar'}</span></span>
+    <span class="sec">${proximas.length ? proximas.length + (proximas.length === 1 ? ' vence' : ' vencen') + ' en los próximos 7 días' : 'Ninguna vence en los próximos 7 días'}</span>
+    ${lista([...vencidas, ...proximas].slice(0, 4))}`;
+  const desde = new Date(Date.now() - 30 * 864e5).toISOString();
+  const recientes = vivas.filter(f => (f.recibido || '') >= desde);
+  const faltan = vivas.filter(f => enOdoo(f).falta);
+  const tf = $('t-fact');
+  tf.innerHTML = `<span class="l">Facturas recibidas</span>
+    <span class="grande"><span class="m-num">${faltan.length}</span><span class="tx">${faltan.length === 1 ? 'falta cargar en Odoo' : 'faltan cargar en Odoo'}</span></span>
+    <span class="sec">${recientes.length} ${recientes.length === 1 ? 'llegó' : 'llegaron'} en los últimos 30 días · copia de cada una en la carpeta Facturas</span>
+    ${recientes.length ? '<ul>' + recientes.slice(0, 3).map(f => { const o = enOdoo(f); return `<li><span class="q">${esc(fechaCorta(f.recibido))} · ${esc(provDe(f))}</span><span class="pill ${o.cls}">${esc(o.txt)}</span></li>`; }).join('') + '</ul>' : ''}`;
+}
+function modoFacturas(si, filtro){
+  if (si && ORD.abierto) modoOrdenar(false);
+  FA.abierto = si; if (filtro) FA.filtro = filtro;
+  $('fa').hidden = !si; $('co').hidden = si;
+  if (si) { pintarFacturas(); $('fa').scrollIntoView({ block: 'nearest' }); }
+}
+function filtroFa(f){ FA.filtro = f; pintarFacturas(); }
+function pintarFacturas(){
+  document.querySelectorAll('#fa-filtros .co-chip').forEach(b => b.classList.toggle('on', b.dataset.f === FA.filtro));
+  const q = $('fa-q').value.trim().toLowerCase();
+  let filas = FACT.filter(f => FA.filtro === 'quitadas' ? f.descartada : !f.descartada);
+  if (FA.filtro === 'vencimientos') filas = filas.filter(f => vencDe(f)).sort((a, b) => String(a.vence).localeCompare(String(b.vence)));
+  if (FA.filtro === 'falta') filas = filas.filter(f => enOdoo(f).falta);
+  if (q) filas = filas.filter(f => (provDe(f) + ' ' + (f.numero || '') + ' ' + (f.asunto || '') + ' ' + (f.odoo_nombre || '')).toLowerCase().includes(q));
+  const vivas = FACT.filter(f => !f.descartada);
+  const nVenc = vivas.filter(f => { const v = vencDe(f); return v && v.d < 0; }).length;
+  $('fa-resumen').innerHTML = `<b>${vivas.length}</b> facturas recibidas en los últimos 120 días · <b>${vivas.filter(f => enOdoo(f).falta).length}</b> faltan cargar en Odoo · <b class="${nVenc ? 'rojo' : ''}">${nVenc}</b> vencidas sin pagar.
+    El vencimiento sale de Odoo si está cargada; si no, del PDF o del correo.`;
+  if (!filas.length) { $('fa-filas').innerHTML = `<tr><td colspan="7"><div class="co-vacio">${FA.filtro === 'vencimientos' ? 'Nada vencido ni por vencer. 👌' : 'No hay facturas para mostrar.'}</div></td></tr>`; return; }
+  $('fa-filas').innerHTML = filas.map(f => {
+    const o = enOdoo(f), v = vencDe(f);
+    const comp = f.odoo_nombre && f.odoo_coincide === 'numero' ? f.odoo_nombre : [f.tipo === 'Factura' ? 'Factura' : f.tipo, f.letra, f.numero].filter(Boolean).join(' ') || '—';
+    const venceTxt = f.vence ? esc(fechaCorta(f.vence)) + (v ? `<div class="por"><span class="pill ${v.cls}">${esc(v.txt)}</span></div>` : f.pagada ? '<div class="por">pagada</div>' : '') : '<span class="dir">sin fecha</span>';
+    const pago = f.pagada === true ? `<div class="por">Pagada${f.pago_origen === 'manual' ? ' (marcada a mano)' : f.pago_origen === 'correo' ? ' (según el correo)' : ''}</div>` : f.pagada === false ? `<div class="por">Sin pagar${f.odoo_saldo != null ? ' · saldo ' + esc(plata(f.odoo_saldo)) : ''}</div>` : '';
+    const odoo = f.odoo_move_id ? `<a href="https://rosaint.odoo.com/odoo/account.move/${f.odoo_move_id}" target="_blank" rel="noopener"><span class="pill ${o.cls}">${esc(o.txt)}</span></a>` : `<span class="pill ${o.cls}" title="${esc(o.nota || '')}">${esc(o.txt)}</span>`;
+    return `<tr class="${v && v.d < 0 ? 'vencida' : ''} ${f.descartada ? 'quitada' : ''}">
+      <td class="c-llego num" style="text-align:left">${esc(fechaCorta(f.recibido))}</td>
+      <td><div class="quien" title="${esc(provDe(f))}">${esc(provDe(f))}</div><div class="ej" title="${esc(f.asunto)}">${esc(f.asunto)}</div></td>
+      <td style="font-size:13px">${esc(comp)}</td>
+      <td class="c-total num">${esc(plata(f.odoo_total ?? f.total))}</td>
+      <td>${venceTxt}</td>
+      <td>${odoo}${pago}</td>
+      <td><div class="acc">
+        ${(f.pdfs || []).length ? `<button class="rb linea" onclick="verPdfFactura(${f.id}, this)">PDF</button>` : ''}
+        <button class="rb suave" onclick="verCorreoFactura(${f.id})" title="Abrir el correo (en la carpeta Facturas)">Correo</button>
+        ${f.descartada ? '' : f.pagada === true && f.pago_origen === 'manual' ? `<button class="rb suave" onclick="marcarPagada(${f.id}, false)">No está pagada</button>` : f.pagada !== true ? `<button class="rb suave" onclick="marcarPagada(${f.id}, true)" title="Para las que no están en Odoo: dejar de avisar el vencimiento">Pagada</button>` : ''}
+        <button class="rb suave" onclick="quitarFactura(${f.id}, ${f.descartada ? 'false' : 'true'})" title="${f.descartada ? 'Volver a mostrarla' : 'No es una factura o no hace falta seguirla'}">${f.descartada ? 'Volver' : 'Quitar'}</button>
+      </div></td></tr>`;
+  }).join('');
+}
+async function verPdfFactura(id, btn){
+  const f = FACT.find(x => x.id === id); if (!f || !(f.pdfs || []).length) return;
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">Bajando la factura…</p>');
+  btn.disabled = true;
+  try {
+    const r = await api({ accion: 'adjunto', carpeta: f.carpeta, uid: f.uid, parte: f.pdfs[0].parte });
+    if (!r.enlace) throw new Error('No se generó el enlace');
+    if (w) w.location = r.enlace; else location.href = r.enlace;
+  } catch (err) { if (w) w.close(); avisar('No se pudo bajar: ' + err.message, true); }
+  finally { btn.disabled = false; }
+}
+function verCorreoFactura(id){
+  const f = FACT.find(x => x.id === id); if (!f) return;
+  modoFacturas(false);
+  if (carpeta !== f.carpeta) elegirCarpeta(f.carpeta);
+  abrir(f.uid);
+}
+async function marcarPagada(id, si){
+  try {
+    const r = await api({ accion: 'factura_pagada', id, pagada: si });
+    const i = FACT.findIndex(x => x.id === id); if (i >= 0 && r.factura) FACT[i] = r.factura;
+    if (!si) await cargarFacturas();
+    pintarTarjetas(); pintarFacturas();
+    avisar(si ? 'Marcada como pagada' : 'Vuelve a contar como sin pagar', false, si ? () => marcarPagada(id, false) : null);
+  } catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+async function quitarFactura(id, si){
+  try {
+    const r = await api({ accion: 'factura_descartar', id, descartada: si });
+    const i = FACT.findIndex(x => x.id === id); if (i >= 0 && r.factura) FACT[i] = r.factura;
+    pintarTarjetas(); pintarFacturas();
+    avisar(si ? 'Quitada de la lista' : 'Volvió a la lista', false, si ? () => quitarFactura(id, false) : null);
+  } catch (err) { avisar('No se pudo: ' + err.message, true); }
+}
+async function revisarOdoo(btn){
+  btn.disabled = true; const t = btn.textContent; btn.textContent = 'Mirando Odoo…';
+  try { const r = await api({ accion: 'facturas_odoo' }); await cargarFacturas(); avisar('Odoo revisado: ' + (r.revisadas || 0) + ' facturas'); }
+  catch (err) { avisar('No se pudo revisar Odoo: ' + err.message, true); }
+  finally { btn.disabled = false; btn.textContent = t; }
+}
+// las facturas se refrescan solas cada 5 minutos (las detecta el cron cada 10)
+setInterval(() => { if (!document.hidden) cargarFacturas(); }, 300000);
+
 // ---------------- teclado y refresco
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { if (!$('capa-dlg').hidden) cerrarDlg(); else if (!$('capa-red').hidden) cerrarRedactar(); }
@@ -1062,6 +1256,7 @@ setInterval(() => {
 (async () => {
   const ini = (location.hash.slice(1) && decodeURIComponent(location.hash.slice(1))) || 'INBOX';
   carpeta = ini;
+  cargarFacturas();
   try { await cargarCarpetas(); }
   catch { $('lista').innerHTML = '<div class="co-vacio">Sin conexión con la casilla.</div>'; return; }
   if (!CARPETAS.some(c => c.ruta === carpeta)) carpeta = 'INBOX';

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { encodeBase64, decodeBase64 } from "jsr:@std/encoding@1/base64";
+import * as Facturas from "./facturas.ts";
 
 // ====== correo — conector COMPLETO de la casilla de Rosaint (leer, ordenar, borrar, carpetas, enviar) ======
 // Ferozo bloquea las conexiones IMAP que salen de Supabase (corta apenas abre el TLS), así que el trabajo
@@ -16,6 +17,9 @@ import { encodeBase64, decodeBase64 } from "jsr:@std/encoding@1/base64";
 //   crear_carpeta{nombre,padre?} · renombrar_carpeta{carpeta,nuevo} · borrar_carpeta{carpeta,forzar?}
 //   enviar / guardar_borrador{para,cc,cco,asunto,texto,html,adjuntos:[{nombre,tipo,base64}|{ruta}],responder?,reenviar?}
 //     (adjuntos con "ruta" = archivo ya subido al bucket correo-adjuntos)
+//   facturas{dias?} · factura_descartar{id,descartada} · factura_pagada{id,pagada} · facturas_odoo{ids?}
+//   facturas_registrar{items:[{carpeta,correo}]} · facturas_releer{ids}
+//     (tarjeta «Facturas»: ver facturas.ts; el cron de las reglas también las detecta y las cruza con Odoo)
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const PUB = "sb_publishable_I2b_s6jYVI1Cas3vGHLvbQ_OWXkU0vB";
@@ -26,7 +30,7 @@ const PERMITIDOS = new Map([
   ["8a55f15a-184e-430b-9d2d-9067c1dbbd8a", "contacto@rosaint.com.ar"],
   ["c0e45351-4a9f-43ec-8197-784672a00653", "rosaint.ar@gmail.com"],
 ]);
-const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas", "lista_blanca"]);
+const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas", "lista_blanca", "facturas"]);
 type Rec = Record<string, unknown>;
 
 // devuelve quién llama (o null si no puede)
@@ -91,6 +95,62 @@ Deno.serve(async (req: Request) => {
   try {
     // ---- reglas para ordenar (las elige la persona en Correo → Ordenar; viven en correo_reglas)
     const db = (ruta: string, init: RequestInit = {}) => fetch(`${SB_URL}/rest/v1/${ruta}`, { ...init, headers: sbHeaders({ "Content-Type": "application/json", ...(init.headers as Record<string, string> || {}) }) });
+    // el puente del hosting (todo lo que toca la casilla pasa por acá)
+    const puente = async (b: Rec): Promise<Rec> => {
+      const rp = await fetch(PUENTE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Puente-Token": token, "User-Agent": "rosaint-core-correo/1" },
+        body: JSON.stringify({ ...b, cred: { usuario: casilla, clave } }),
+        signal: AbortSignal.timeout(140000),
+      });
+      const t = await rp.text();
+      try { return JSON.parse(t); }
+      catch { return { ok: false, error: `El puente del hosting no respondió bien (HTTP ${rp.status})`, detalle: t.replace(clave, "***").slice(0, 300) }; }
+    };
+
+    // ---- facturas recibidas (tarjeta «Facturas» de la pantalla Correo)
+    if (accion === "facturas") return responder(await Facturas.listar(db, Number(body.dias) || 90));
+    if (accion === "factura_descartar") {
+      const id = Number(body.id); if (!id) return responder({ ok: false, error: "Falta id" });
+      const r = await db(`correo_facturas?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ descartada: body.descartada !== false }) });
+      const j = await r.json();
+      await registrar({ usuario, accion, ok: r.ok, asunto: j[0]?.asunto ?? null, detalle: { id, descartada: body.descartada !== false } });
+      return responder({ ok: r.ok, factura: j[0] });
+    }
+    if (accion === "factura_pagada") {
+      // para las que no están en Odoo (o RST): se marca a mano. pagada:false vuelve a dejarla en manos de Odoo
+      const id = Number(body.id); if (!id) return responder({ ok: false, error: "Falta id" });
+      const si = body.pagada !== false;
+      const r = await db(`correo_facturas?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=representation" },
+        body: JSON.stringify(si ? { pagada: true, pago_origen: "manual" } : { pagada: null, pago_origen: null }) });
+      const j = await r.json();
+      if (!si) await Facturas.cruzarOdoo(db, [id]);
+      await registrar({ usuario, accion, ok: r.ok, asunto: j[0]?.asunto ?? null, detalle: { id, pagada: si } });
+      return responder({ ok: r.ok, factura: j[0] });
+    }
+    if (accion === "facturas_releer") {
+      const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(Number).filter(Boolean) : [];
+      if (!ids.length) return responder({ ok: false, error: "Faltan ids" });
+      const res = await Facturas.releer(puente, db, ids.slice(0, 25));
+      const odoo = await Facturas.cruzarOdoo(db, ids.slice(0, 25));
+      return responder({ ok: true, resultados: res, odoo });
+    }
+    if (accion === "facturas_odoo") {
+      const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(Number).filter(Boolean) : undefined;
+      return responder({ ok: true, ...(await Facturas.cruzarOdoo(db, ids)) });
+    }
+    if (accion === "facturas_registrar") {
+      const res: Rec[] = [];
+      for (const it of (body.items as Rec[]) || []) {
+        try { res.push({ uid: (it.correo as Rec)?.uid, ...(await Facturas.registrarFactura(puente, db, String(it.carpeta), it.correo as Rec)) }); }
+        catch (e) { res.push({ uid: (it.correo as Rec)?.uid, error: String((e as Error).message || e) }); }
+      }
+      const nuevas = res.filter((x) => x.id && !x.repetida).map((x) => Number(x.id));
+      const odoo = nuevas.length ? await Facturas.cruzarOdoo(db, nuevas) : null;
+      await registrar({ usuario, accion, ok: true, destino: Facturas.CARPETA_FACTURAS, detalle: { nuevas: nuevas.length, errores: res.filter((x) => x.error).length } });
+      return responder({ ok: true, resultados: res, odoo });
+    }
+
     if (accion === "reglas") {
       const r = await db("correo_reglas?select=*&order=carpeta,patron");
       return responder({ ok: true, reglas: await r.json() });
@@ -136,7 +196,23 @@ Deno.serve(async (req: Request) => {
     }
 
     let reglasActivas: Rec[] = [];
+    let facturasOut: Rec | null = null;
     if (accion === "aplicar_reglas") {
+      // antes de que las reglas muevan nada: las facturas nuevas de la Bandeja y de Spam (copia a «Facturas»)
+      if (!body.simular) {
+        try {
+          facturasOut = await Facturas.detectar(puente, db);
+          // cruce con Odoo: si llegaron facturas, o cada 30 minutos (lo cargado en Odoo cambia sin aviso)
+          const ultima = await (await db("correo_estado?select=actualizado&clave=eq.facturas:odoo")).json();
+          if (Number(facturasOut.facturas) > 0 || !ultima.length || Date.now() - new Date(ultima[0].actualizado).getTime() > 30 * 60e3) {
+            facturasOut.odoo = await Facturas.cruzarOdoo(db);
+            await db("correo_estado?on_conflict=clave", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+              body: JSON.stringify({ clave: "facturas:odoo", valor: facturasOut.odoo, actualizado: new Date().toISOString() }) });
+          }
+        } catch (e) { facturasOut = { error: String((e as Error).message || e) }; }
+        if (facturasOut && (Number(facturasOut.facturas) > 0 || facturasOut.error || (facturasOut.errores as string[] | undefined)?.length))
+          await registrar({ usuario, accion: "facturas_detectar", ok: !facturasOut.error, error: facturasOut.error ? String(facturasOut.error).slice(0, 500) : null, destino: Facturas.CARPETA_FACTURAS, detalle: facturasOut });
+      }
       reglasActivas = await (await db("correo_reglas?select=id,patron,carpeta&activa=eq.true")).json();
       // primero las de una dirección puntual, después las de dominio: así una excepción gana sobre la regla general
       reglasActivas.sort((a, b) => Number(String(a.patron).startsWith("@")) - Number(String(b.patron).startsWith("@")));
@@ -161,16 +237,8 @@ Deno.serve(async (req: Request) => {
       body.adjuntos = lista;
     }
 
-    const r = await fetch(PUENTE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Puente-Token": token, "User-Agent": "rosaint-core-correo/1" },
-      body: JSON.stringify({ ...body, cred: { usuario: casilla, clave } }),
-      signal: AbortSignal.timeout(140000),
-    });
-    const txt = await r.text();
-    let out: Rec;
-    try { out = JSON.parse(txt); }
-    catch { out = { ok: false, error: `El puente del hosting no respondió bien (HTTP ${r.status})`, detalle: txt.replace(clave, "***").slice(0, 300) }; }
+    let out: Rec = await puente(body);
+    if (facturasOut) out = { ...out, facturas: facturasOut };
 
     if (accion === "adjunto" && out.ok && !body.en_linea) {
       const datos = decodeBase64(String(out.base64 || ""));
