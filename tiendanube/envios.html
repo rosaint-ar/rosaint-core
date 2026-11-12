@@ -63,10 +63,15 @@
     .form-regla .todo { grid-column: 1 / -1; }
     .cats { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; padding: 6px; border: 1px solid var(--r-li); }
     .cats label { font-size: 13px; display: flex; gap: 4px; align-items: center; padding: 2px 6px; border: 1px solid var(--r-li); }
-    @media (max-width: 700px) { .titular { font-size: 24px; } table { font-size: 13px; } }
+    .cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .cifra { background: var(--r-sup); border: 1px solid var(--r-li); padding: 14px 16px; display: grid; gap: 2px; }
+    .cifra b { font: 400 26px/1.1 var(--sora); font-variant-numeric: tabular-nums; }
+    .cifra span { font-size: 12.5px; color: var(--r-mu); }
+    .cifra.clave { border-left: 3px solid var(--acido); }
+    @media (max-width: 700px) { .titular { font-size: 24px; } table { font-size: 13px; } .cifra b { font-size: 22px; } }
   </style>
 </head>
-<body data-page="tn-envios" data-title="Envíos y descuentos" data-subtitle="Tienda Nube · cotizar, reglas de descuento y medidas">
+<body data-page="tn-envios" data-title="Envíos y descuentos" data-subtitle="Tienda Nube · cotizar, reglas de descuento, medidas y resultados">
 
 <div id="app-shell"></div>
 
@@ -84,6 +89,7 @@
     <button class="chip on" data-tab="cotizar">Cotizar una bolsa</button>
     <button class="chip" data-tab="reglas">Reglas de descuento</button>
     <button class="chip" data-tab="medidas">Peso y medidas</button>
+    <button class="chip" data-tab="resultados">Resultados</button>
   </div>
 
   <!-- COTIZAR -->
@@ -126,6 +132,17 @@
     <p class="regla-txt">Peso y medidas de cada variante, tal como los guarda Tienda Nube (peso en kg, medidas en cm). El correo cobra por el mayor entre el peso real y el «peso por tamaño» (largo × ancho × alto ÷ 6.000), y en una bolsa se suman los de todos los productos. La tarifa mínima vale hasta 500 g y 3.000 cm³.</p>
     <div id="medidas"><div class="vacio">Cargando…</div></div>
   </section>
+
+  <!-- RESULTADOS -->
+  <section id="tab-resultados" hidden>
+    <p class="regla-txt">Cuánto se usa y cuánto cuesta la bonificación de envío. <b>Bolsas</b>: las que Tienda Nube consultó a la app (cada bolsa cuenta una vez, con su último estado; las de prueba no cuentan; registro desde el 1/11/2026). <b>Pedidos</b>: los de Tienda Nube del período, sin cancelados; la bonificación se toma del pedido, igual que al cargarlo en Odoo.</p>
+    <div class="chips" id="periodo">
+      <button class="chip" data-dias="7">7 días</button>
+      <button class="chip on" data-dias="30">30 días</button>
+      <button class="chip" data-dias="90">90 días</button>
+    </div>
+    <div id="resultados"><div class="vacio">Cargando…</div></div>
+  </section>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -157,9 +174,49 @@
   document.getElementById('pestanas').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]'); if (!b) return;
     document.querySelectorAll('#pestanas .chip').forEach(x => x.classList.toggle('on', x === b));
-    for (const t of ['cotizar', 'reglas', 'medidas']) document.getElementById('tab-' + t).hidden = t !== b.dataset.tab;
+    for (const t of ['cotizar', 'reglas', 'medidas', 'resultados']) document.getElementById('tab-' + t).hidden = t !== b.dataset.tab;
     history.replaceState(null, '', '#' + b.dataset.tab);
+    if (b.dataset.tab === 'resultados' && !RESULTADOS_CARGADOS) cargarResultados(30);
   });
+
+  // ---- resultados (función tn-envios, accion resultados)
+  let RESULTADOS_CARGADOS = false, pedidoResultados = 0;
+  const fecha = s => s ? new Date(s).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : '—';
+  const PAGO = { paid: 'pagado', pending: 'pendiente', authorized: 'autorizado', refunded: 'devuelto', voided: 'anulado', abandoned: 'abandonado' };
+  async function cargarResultados(dias) {
+    RESULTADOS_CARGADOS = true; const yo = ++pedidoResultados;
+    document.querySelectorAll('#periodo .chip').forEach(x => x.classList.toggle('on', Number(x.dataset.dias) === dias));
+    $('#resultados').innerHTML = '<div class="vacio">Leyendo bolsas y pedidos de Tienda Nube…</div>';
+    try {
+      const j = await llamar({ accion: 'resultados', dias });
+      if (yo !== pedidoResultados) return; // ya se pidió otro período
+      pintarResultados(j);
+    } catch (e) {
+      if (yo === pedidoResultados) $('#resultados').innerHTML = `<div class="vacio error">No se pudieron leer los resultados: ${esc(e.message)}</div>`;
+    }
+  }
+  function pintarResultados(j) {
+    const b = j.bolsas, p = j.pedidos, activas = j.reglas.filter(r => r.activa);
+    const rango = j.reglas.length ? j.reglas.map(r => `${esc(r.nombre)} <span class="marca ${r.activa ? 'ok' : ''}">${r.activa ? 'activa' : 'borrador'}</span>`).join(' · ') : 'sin reglas';
+    const pct = (a, t) => t ? Math.round(a * 100 / t) + '%' : '—';
+    $('#resultados').innerHTML = `
+      <div class="aviso">${rango}${activas.length ? '' : '<br>Ninguna regla está activa: las clientas todavía no reciben la bonificación. Lo que se ve abajo sirve de punto de partida para comparar después de activarla.'}</div>
+      <div class="cifras">
+        <div class="cifra"><span>Bolsas consultadas</span><b>${b.total}</b><span>últimos ${j.dias} días</span></div>
+        <div class="cifra"><span>Bolsas en el monto de la regla</span><b>${b.en_rango}</b><span>${pct(b.en_rango, b.total)} de las bolsas</span></div>
+        <div class="cifra"><span>Bolsas con bonificación</span><b>${b.con_bonificacion}</b><span>ofrecido ${plata(b.ofrecido)}</span></div>
+      </div>
+      <div class="cifras">
+        <div class="cifra"><span>Pedidos pagados</span><b>${p.pagados}</b><span>${p.vistos} pedidos en el período</span></div>
+        <div class="cifra"><span>Pagados en el monto de la regla</span><b>${p.pagados_en_rango}</b><span>${pct(p.pagados_en_rango, p.pagados)} de los pagados</span></div>
+        <div class="cifra clave"><span>Pagados con bonificación</span><b>${p.con_bonificacion}</b><span>ventas ${plata(p.ventas_con_bonificacion)}</span></div>
+        <div class="cifra clave"><span>Bonificado en pedidos pagados</span><b>${plata(p.bonificado)}</b><span>lo que pone Rosaint del envío</span></div>
+      </div>
+      <div class="panel"><h2>Pedidos con bonificación · ${p.lista.length}</h2>${p.lista.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Pedido</th><th>Fecha</th><th>Pago</th><th class="n">Productos</th><th class="n">Envío</th><th class="n">Bonificación</th><th class="n">Total</th></tr></thead><tbody>
+        ${p.lista.map(o => `<tr><td>#${esc(o.numero)}</td><td>${fecha(o.fecha)}</td><td>${o.pago === 'paid' ? '<span class="marca ok">pagado</span>' : `<span class="marca">${esc(PAGO[o.pago] || o.pago)}</span>`}</td><td class="n">${plata(o.subtotal)}</td><td class="n">${plata(o.envio)}</td><td class="n">−${plata(o.bonificacion)}</td><td class="n paga">${plata(o.total)}</td></tr>`).join('')}
+        </tbody></table></div>` : '<div class="sub">Todavía no hay pedidos con la bonificación de envío en este período.</div>'}</div>`;
+  }
+  document.getElementById('periodo').addEventListener('click', e => { const c = e.target.closest('[data-dias]'); if (c) cargarResultados(Number(c.dataset.dias)); });
 
   // ---- productos (para el buscador y para medidas)
   function etiquetaVar(p, v) { return `${p.nombre}${v.valores ? ' · ' + v.valores : ''}${v.sku ? ' [' + v.sku + ']' : ''}`; }

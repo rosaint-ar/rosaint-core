@@ -3,6 +3,7 @@
 //   accion "cotizar":   arma una bolsa de prueba en la Storefront API, pide las tarifas reales
 //                       (el mismo calculador del checkout) y aplica las reglas de descuento de envío.
 //   accion "promos":    promociones de envío gratis activas.
+//   accion "resultados": bolsas que consultó Tienda Nube y pedidos con la bonificación de envío (pestaña Resultados).
 // Las reglas viven en public.tn_envio_reglas. evaluarReglas() es la misma lógica que va a usar
 // el callback de la app de descuentos cuando Tienda Nube la autorice.
 // Primero solo Rosaint; Augusta se suma agregándola a TIENDAS (hasta que tenga su propio Core).
@@ -46,9 +47,9 @@ async function token(store: number): Promise<string> {
   if (!r.ok) throw new Error("token rpc " + r.status);
   const t = await r.json(); if (!t || typeof t !== "string") throw new Error("Sin token de Tienda Nube para " + store); return t;
 }
-async function tnGet(store: number, tok: string, path: string): Promise<any> {
+async function tnGet(store: number, tok: string, path: string, version = "2025-03"): Promise<any> {
   for (let intento = 0; intento < 4; intento++) {
-    const r = await fetch(`https://api.tiendanube.com/2025-03/${store}${path}`, { headers: { Authentication: `bearer ${tok}`, "User-Agent": UA, Accept: "application/json" } });
+    const r = await fetch(`https://api.tiendanube.com/${version}/${store}${path}`, { headers: { Authentication: `bearer ${tok}`, "User-Agent": UA, Accept: "application/json" } });
     if (r.status === 429) { await new Promise((ok) => setTimeout(ok, 1200 * (intento + 1))); continue; }
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`TN ${path} ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -199,6 +200,74 @@ async function publicarDescuentos() {
   return { publicado: datos.publicado, reglas: datos.reglas.length, prueba: datos.prueba.length };
 }
 
+// Resultados de las reglas (pestaña «Resultados»): cuánto se ofrece y cuánto se cobra de verdad.
+//   Bolsas: registro de tn-descuentos (nivel cross_items = filas con subtotal); por bolsa vale su ÚLTIMA consulta.
+//   Pedidos: API de pedidos de Tienda Nube; la bonificación se reconoce igual que en tn-odoo-cargar
+//   (promotion_id de tn_descuentos_tiendas o promoción «Envío con descuento»). Las bolsas de prueba no cuentan.
+async function sbGet(path: string): Promise<any[]> {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+  if (!r.ok) throw new Error("base " + r.status + ": " + (await r.text()).slice(0, 160));
+  return await r.json();
+}
+async function resultados(store: number, diasPedidos: number) {
+  const dias = [7, 30, 90].includes(diasPedidos) ? diasPedidos : 30;
+  const desde = new Date(Date.now() - dias * 864e5).toISOString();
+  const [reglas, tiendas] = await Promise.all([
+    sbGet(`tn_envio_reglas?select=nombre,activa,min_monto,max_monto,descuento_tipo,descuento_valor,texto&store_id=eq.${store}&order=prioridad`),
+    sbGet(`tn_descuentos_tiendas?select=promotion_id&store_id=eq.${store}`),
+  ]);
+  const enRango = (s: number | null) => s != null && reglas.some((r) => (r.min_monto == null || s >= Number(r.min_monto)) && (r.max_monto == null || s <= Number(r.max_monto)));
+
+  // Bolsas: la última consulta de cada una (una bolsa se consulta varias veces mientras cambia).
+  const ultima = new Map<string, Rec>();
+  for (let off = 0; off < 50000; off += 1000) {
+    const p = await sbGet(`tn_descuentos_log?select=cart_id,recibido_en,subtotal,descuento,prueba,respuesta&store_id=eq.${store}&recibido_en=gte.${desde}&subtotal=not.is.null&order=id.asc&limit=1000&offset=${off}`);
+    for (const x of p) if (x.cart_id && String(x.cart_id) !== "0" && x.prueba !== true) ultima.set(String(x.cart_id), x);
+    if (p.length < 1000) break;
+  }
+  const bolsas = [...ultima.values()];
+  const conBonif = bolsas.filter((x) => x.respuesta === "descuento" && Number(x.descuento) > 0);
+  const bolsasOut = {
+    total: bolsas.length,
+    en_rango: bolsas.filter((x) => enRango(num(x.subtotal))).length,
+    con_bonificacion: conBonif.length,
+    ofrecido: Math.round(conBonif.reduce((a, x) => a + Number(x.descuento), 0)),
+  };
+
+  // Pedidos del período (sin cancelados).
+  const tok = await token(store);
+  const idsEnvio = new Set(tiendas.map((t) => String(t.promotion_id || "")).filter(Boolean));
+  const pedidos: Rec[] = [];
+  for (let page = 1; page <= 15; page++) {
+    // Pedidos por la v1, como tn-odoo-cargar (la 2025-03 devuelve la lista vacía con estos filtros).
+    const p = await tnGet(store, tok, `/orders?per_page=200&page=${page}&created_at_min=${desde.slice(0, 10)}T00:00:00-03:00&sort_by=created_at-descending&fields=id,number,created_at,status,payment_status,subtotal,total,shipping_cost_customer,promotional_discount`, "v1");
+    if (!Array.isArray(p) || !p.length) break;
+    pedidos.push(...p);
+    if (p.length < 200) break;
+  }
+  const vivos = pedidos.filter((o) => o.status !== "cancelled");
+  const bonifDe = (o: Rec) => Math.round(((o.promotional_discount?.promotions_applied || []) as Rec[])
+    .filter((x) => idsEnvio.has(String(x.promotion_id || "")) || /^env[ií]o con descuento$/i.test(String(x.promotion_name || "").trim()))
+    .reduce((a, x) => a + (num(x.total_discount_amount) || 0), 0) * 100) / 100;
+  const pagados = vivos.filter((o) => o.payment_status === "paid");
+  const lista = vivos.map((o) => ({ numero: o.number, fecha: o.created_at, pago: o.payment_status, subtotal: num(o.subtotal), envio: num(o.shipping_cost_customer), bonificacion: bonifDe(o), total: num(o.total) }))
+    .filter((o) => o.bonificacion > 0).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const pagadosBonif = lista.filter((o) => o.pago === "paid");
+  return {
+    dias, desde, reglas,
+    bolsas: bolsasOut,
+    pedidos: {
+      vistos: pedidos.length,
+      pagados: pagados.length,
+      pagados_en_rango: pagados.filter((o) => enRango(num(o.subtotal))).length,
+      con_bonificacion: pagadosBonif.length,
+      bonificado: Math.round(pagadosBonif.reduce((a, o) => a + o.bonificacion, 0)),
+      ventas_con_bonificacion: Math.round(pagadosBonif.reduce((a, o) => a + (o.total || 0), 0)),
+      lista: lista.slice(0, 100),
+    },
+  };
+}
+
 // Link al checkout real de una bolsa de prueba, para ver el descuento ahí (no se paga nada).
 async function checkout(store: number, bolsa: string) {
   if (!/^cart_[A-Za-z0-9_-]+$/.test(bolsa || "")) throw new Error("Bolsa inválida");
@@ -220,6 +289,7 @@ _servirConGuardia(async (req: Request) => {
     else if (body.accion === "cotizar") out = await cotizar(store, body);
     else if (body.accion === "checkout") out = await checkout(store, String(body.bolsa || ""));
     else if (body.accion === "promos") out = await mcpLlamar(store, "get_free_shipping_promotions", {});
+    else if (body.accion === "resultados") out = await resultados(store, Number(body.dias || 30));
     else throw new Error("Acción desconocida");
     return new Response(JSON.stringify({ ok: true, tienda: TIENDAS[store].nombre, store, ...out }), { headers: cors });
   } catch (e) {
