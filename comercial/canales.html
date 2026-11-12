@@ -314,6 +314,10 @@
     .input.pa-num { width: 64px; height: 30px; padding: 4px 8px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
     .btn.sm { padding: 4px 10px; font-size: 12px; }
     .ads-plan-g { margin-top: 10px; font-size: 13px; line-height: 1.5; }
+    .ads-barra { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .ads-barra > span { position: absolute; left: 0; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; opacity: .28; }
+    .ads-barra > b { position: relative; }
+    .mg-bien-bg { background: var(--ok); } .mg-justo-bg { background: var(--warn); } .mg-mal-bg { background: var(--hot); } .pct-ok-bg { background: var(--muted); }
     .ads-plan-g > div { color: var(--muted); }
     .comp-det { margin: 6px 0 2px; display: grid; gap: 3px; font-size: 12px; }
     .comp-det > div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px dashed var(--border); padding-top: 3px; }
@@ -2127,93 +2131,163 @@ async function sincronizarAdsGasto() {
   finally { btn.disabled = false; btn.textContent = prev; }
 }
 
-// ─────── 3.2) SUB-TAB PUBLICIDAD (v2, nov-2026) ───────
-// Publicidad inteligente: v_ml_ads_analisis cruza las métricas de cada anuncio (ml_ads_metricas, las trae
-// ml-ads-auto cada día) con el margen real de hoy (v_ml_promo_control / ml_margen). Techo de ACOS = el que
-// deja $0 por venta por anuncio; ACOS objetivo = el que deja el margen mínimo (promos_margen_min_pct).
-// Mercado Ads no deja escribir por API a apps no certificadas: las acciones se aplican en el panel de
-// Publicidad (a mano o desde Chrome).
+// ─────── 3.2) SUB-TAB PUBLICIDAD (v3, nov-2026) ───────
+// Publicidad inteligente. Datos: ml-ads-auto {accion:'traer_ads'} (cron diario + tarea de los lunes y jueves)
+// → ml_ads_metricas (por anuncio), ml_ads_campanas (objetivo y presupuesto), ml_ads_diario (gasto y ventas por día).
+// v_ml_ads_analisis compara cada anuncio con la campaña que le corresponde según su ACOS objetivo
+// (tabla ml_ads_bandas) usando el margen real de hoy (v_ml_promo_control). Mercado Ads no deja escribir por API:
+// los cambios los aplica la tarea programada desde Chrome y quedan en ml_ads_bitacora.
 const ADS_REC = {
-  pausar: { k: 'mal', txt: 'Pausar' }, bajar: { k: 'exc', txt: 'Bajar ACOS' }, activar: { k: 'ok', txt: 'Activar' },
+  pausar: { k: 'mal', txt: 'Pausar' }, mover: { k: 'exc', txt: 'Mover de campaña' }, activar: { k: 'ok', txt: 'Activar' },
   mantener: { k: 'ok', txt: 'Mantener' }, sin_publicidad: { k: 'sin', txt: 'Sin publicidad' },
 };
 const ADS_ESTADO = { active: 'activo', paused: 'pausado', idle: 'sin circular', hold: 'en espera', 'sin anuncio': 'sin anuncio' };
-let ADS_ROWS = [], ADS_CAMP = null;
+const numAR = t => String(t || '').replace(/d[d.,]*d/g, m => m.replace(/[.,]/g, c => c === '.' ? ',' : '.'));
+const ADS_ACCION = { pausar: 'Pausó', activar: 'Activó', mover: 'Movió', reestructura: 'Reorganizó campañas', pausar_display: 'Pausó la campaña de seguidores' };
+let ADS = { rows: [], camps: [], bandas: [], sem: [], bit: [], vendra: {} };
 
 async function cargarPublicidad() {
   const el = $('#sub-ads');
   el.innerHTML = '<div class="empty-box">Cargando publicidad…</div>';
-  const [a, b] = await Promise.all([
+  const [a, c, bd, s, bi, v, m] = await Promise.all([
     sb.from('v_ml_ads_analisis').select('*'),
+    sb.from('ml_ads_campanas').select('*'),
+    sb.from('ml_ads_bandas').select('*').order('acos_min', { ascending: false }),
+    sb.from('v_ml_ads_semanal').select('*').order('semana', { ascending: false }).limit(10),
+    sb.from('ml_ads_bitacora').select('*').neq('accion', 'corrida').order('ejecutado_en', { ascending: false }).limit(25),
+    sb.from('ml_vendra_resumen').select('clave,desde,hasta,publicidad,display,ventas'),
     sb.from('ml_ads_metricas').select('traido_en,desde,hasta').eq('ventana', '30d').order('traido_en', { ascending: false }).limit(1),
   ]);
-  if (a.error) { el.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(a.error.message)}</div>`; return; }
-  ADS_ROWS = a.data || [];
-  const meta = (b.data || [])[0];
-  renderPublicidad(meta);
+  const err = [a, c, bd, s, bi].find(x => x.error);
+  if (err) { el.innerHTML = `<div class="empty-box" style="color:var(--hot);">Error: ${esc(err.error.message)}</div>`; return; }
+  ADS = { rows: a.data || [], camps: c.data || [], bandas: bd.data || [], sem: s.data || [], bit: bi.data || [], vendra: {}, meta: (m.data || [])[0] };
+  (v.data || []).forEach(x => ADS.vendra[x.clave] = x);
+  renderPublicidad();
 }
 
-function renderPublicidad(meta) {
+function renderPublicidad() {
   const el = $('#sub-ads');
-  const R = ADS_ROWS;
+  const { rows: R, camps, bandas, sem, bit, vendra, meta } = ADS;
+  const minMg = PAUTO_PAR.promos_margen_min_pct ?? 20;
   const sum = (f) => R.reduce((s, r) => s + Number(r[f] || 0), 0);
-  const gasto = sum('costo30'), uAds = sum('u_ads30'), uOrg = sum('u_org30'), resultado = sum('resultado_ads30');
-  const activos = R.filter(r => r.estado_anuncio === 'active');
-  const orden = { pausar: 0, bajar: 1, activar: 2, mantener: 3, sin_publicidad: 4 };
+  const resultado = sum('resultado_ads30');
+  const semana = sem[0] && sem[0].dias >= 7 ? sem[0] : sem[1] || sem[0];   // última semana completa
+  const cls = (pct) => pct == null ? 'pct-ok' : Number(pct) > 20 ? 'mg-mal' : Number(pct) > 12 ? 'mg-justo' : 'mg-bien';
+
+  // 6) Publicidad sobre ventas
+  const maxPub = Math.max(1, ...sem.map(x => Number(x.pub_sobre_ventas || 0)));
+  const semFilas = sem.slice().reverse().map(x => `<tr>
+      <td>${fFecha(x.desde)} al ${fFecha(x.hasta)}${x.dias < 7 ? ' <span class="pct-ok">(en curso)</span>' : ''}</td>
+      <td class="num">${fmtARS(Number(x.ventas))}<span class="sub">${x.ordenes} órdenes</span></td>
+      <td class="num">${fmtARS(Number(x.publicidad))}${Number(x.display) ? `<span class="sub">incluye página $${fmtN(x.display)}</span>` : ''}</td>
+      <td class="num" style="width:34%;"><div class="ads-barra"><span style="width:${Math.min(100, 100 * Number(x.pub_sobre_ventas || 0) / maxPub)}%;" class="${cls(x.pub_sobre_ventas)}-bg"></span><b class="${cls(x.pub_sobre_ventas)}">${pctTxt(x.pub_sobre_ventas)}</b></div></td>
+    </tr>`).join('');
+
+  // 2) Campañas y bandas
+  const enCampana = id => R.filter(r => r.estado_anuncio === 'active' && Number(r.campaign_id) === Number(id));
+  const banda = id => bandas.find(b => Number(b.campaign_id) === Number(id));
+  const campFilas = camps.slice().sort((x, y) => Number(y.acos_target) - Number(x.acos_target)).map(c => {
+    const b = banda(c.id), ads = enCampana(c.id);
+    const mal = ads.filter(r => r.recomendacion === 'mover' || r.recomendacion === 'pausar');
+    return `<tr>
+      <td><b>${esc(c.nombre)}</b>${c.estado !== 'active' ? ' <span class="est est-sin">pausada</span>' : ''}<span class="sub">${b ? `Para productos con ACOS objetivo ${b.acos_min}%${Number(b.acos_max) < 1000 ? ` a ${b.acos_max}%` : ' o más'}` : 'Sin banda asignada'}</span></td>
+      <td class="num">${pctTxt(c.acos_target)}<span class="sub">ROAS ${String(c.roas_target ?? '—').replace('.', ',')}x</span></td>
+      <td class="num">${fmtARS(Number(c.presupuesto))}<span class="sub">por día</span></td>
+      <td class="num">${fmtARS(Number(c.costo7))}<span class="sub">ACOS ${pctTxt(c.acos7)}</span></td>
+      <td class="num">${fmtARS(Number(c.costo30))}<span class="sub">ACOS ${pctTxt(c.acos30)}</span></td>
+      <td>${ads.length ? ads.map(r => `${esc(cleanTitle(r.titulo))}${r.recomendacion === 'mover' ? ' <span class="est est-exc" style="font-size:10px;">no va acá</span>' : ''}`).join('<br>') : '<span class="pct-ok">sin anuncios activos</span>'}${mal.length ? '' : ''}</td>
+    </tr>`;
+  }).join('');
+  // 5) Publicidad de página (Display: campaña de seguidores)
+  const disp = bit.find(x => x.accion === 'pausar_display' || x.accion === 'activar_display');
+  const dispMes = vendra.mes?.display;
+  const dispFila = `<tr>
+      <td><b>Campaña de seguidores</b> <span class="pct-ok">(publicidad de página)</span><span class="sub">Suma seguidores a tu tienda; no vende productos directo.</span></td>
+      <td class="num">—</td><td class="num">${disp?.detalle?.presupuesto ? fmtARS(Number(disp.detalle.presupuesto)) : '—'}<span class="sub">por día</span></td>
+      <td class="num" colspan="2">${dispMes != null ? `${fmtARS(Number(dispMes))} <span class="sub">gastado este mes (Vendra)</span>` : '—'}</td>
+      <td>${disp?.accion === 'pausar_display' ? `<span class="est est-sin">Pausada el ${fFecha(disp.ejecutado_en)}</span><span class="sub">${esc(disp.motivo || '')}</span>` : '<span class="est est-exc">Activa</span>'}</td>
+    </tr>`;
+
+  // 3) Qué hacer con cada anuncio
+  const orden = { pausar: 0, mover: 1, activar: 2, mantener: 3, sin_publicidad: 4 };
   const filas = R.slice().sort((x, y) => (orden[x.recomendacion] - orden[y.recomendacion]) || (Number(y.costo30) - Number(x.costo30)));
   const n = k => R.filter(r => r.recomendacion === k).length;
-
   const fila = r => {
     const rec = ADS_REC[r.recomendacion] || { k: 'sin', txt: r.recomendacion };
-    const acosCls = r.acos30 == null || Number(r.costo30) === 0 ? 'pct-ok' : Number(r.acos30) > Number(r.techo_acos) ? 'mg-mal' : Number(r.acos30) > Number(r.acos_obj) ? 'mg-justo' : 'mg-bien';
+    const acos7Cls = !Number(r.costo7) ? 'pct-ok' : Number(r.acos7) > Number(r.techo_acos) ? 'mg-mal' : Number(r.acos7) > Number(r.acos_obj) ? 'mg-justo' : 'mg-bien';
     const gv = r.gan_venta_ads == null ? '<span class="pct-ok">—</span>'
-      : `<span class="${Number(r.margen_venta_ads) < (PAUTO_PAR.promos_margen_min_pct ?? 20) ? (Number(r.gan_venta_ads) <= 0 ? 'mg-mal' : 'mg-justo') : 'mg-bien'}">$${fmtN(r.gan_venta_ads)}</span><span class="sub">${pctTxt(r.margen_venta_ads)} de margen</span>`;
+      : `<span class="${Number(r.margen_venta_ads) < minMg ? (Number(r.gan_venta_ads) <= 0 ? 'mg-mal' : 'mg-justo') : 'mg-bien'}">$${fmtN(r.gan_venta_ads)}</span><span class="sub">${pctTxt(r.margen_venta_ads)} de margen · 30 días</span>`;
+    const proxPromo = r.precio_prox && r.inicio_prox ? `<span class="sub">desde ${fFecha(r.inicio_prox)}: ${esc(r.promo_prox)} ${fmtARS(Number(r.precio_prox))}</span>` : '';
     return `<tr>
-      <td>${esc(cleanTitle(r.titulo))}<span class="sub">${fmtARS(Number(r.precio_hoy))} · margen sin publicidad ${pctTxt(r.margen_pct)}</span></td>
-      <td>${esc(ADS_ESTADO[r.estado_anuncio] || r.estado_anuncio)}<span class="sub">${esc(r.campana || '')}</span></td>
-      <td class="num">${Number(r.costo30) ? fmtARS(Number(r.costo30)) : '—'}<span class="sub">${r.u_ads30} por anuncio · ${r.u_org30} solas</span></td>
-      <td class="num"><span class="${acosCls}">${Number(r.costo30) ? pctTxt(r.acos30) : '—'}</span>${Number(r.costo7) ? `<span class="sub">7 días: ${pctTxt(r.acos7)}</span>` : ''}</td>
-      <td class="num">${pctTxt(r.techo_acos)}<span class="sub">objetivo ${pctTxt(Math.max(0, Number(r.acos_obj)))}</span></td>
+      <td>${esc(cleanTitle(r.titulo))}<span class="sub">${fmtARS(Number(r.precio_hoy))} · ${esc(r.promo || 'sin promo')}${r.finish_date ? ' hasta ' + fFecha(r.finish_date) : ''} · margen ${pctTxt(r.margen_pct)}</span>${proxPromo}</td>
+      <td>${esc(ADS_ESTADO[r.estado_anuncio] || r.estado_anuncio)}<span class="sub">${esc(!r.campaign_id ? 'sin campaña' : camps.some(c => Number(c.id) === Number(r.campaign_id)) ? r.campana : 'campaña vieja (ya no existe)')}</span></td>
+      <td class="num">${pctTxt(r.acos_obj)}<span class="sub">techo ${pctTxt(r.techo_acos)}</span></td>
+      <td class="num">${Number(r.costo7) ? `<span class="${acos7Cls}">${pctTxt(r.acos7)}</span><span class="sub">${fmtARS(Number(r.costo7))} · ${r.u_ads7} ventas</span>` : '<span class="pct-ok">—</span>'}</td>
+      <td class="num">${Number(r.costo30) ? `${pctTxt(r.acos30)}<span class="sub">${fmtARS(Number(r.costo30))} · ${r.u_ads30} por anuncio · ${r.u_org30} solas</span>` : '<span class="pct-ok">—</span>'}</td>
       <td class="num">${gv}</td>
-      <td><span class="est est-${rec.k}">${rec.txt}</span><span class="sub" style="max-width:260px;">${esc(r.motivo || '')}</span></td>
+      <td><span class="est est-${rec.k}">${rec.txt}</span><span class="sub" style="max-width:280px;">${esc(numAR(r.motivo))}</span></td>
     </tr>`;
   };
 
-  // Plan de campañas: agrupa por ACOS objetivo (bandas de 5 puntos) lo que conviene que circule
-  const circulan = R.filter(r => ['mantener', 'bajar', 'activar'].includes(r.recomendacion));
-  const grupos = {};
-  circulan.forEach(r => { const g = Number(r.grupo_acos); (grupos[g] = grupos[g] || []).push(r); });
-  const plan = Object.keys(grupos).map(Number).sort((a, b) => b - a).map(g => `
-    <div class="ads-plan-g"><b>Campaña ACOS objetivo ${g}%</b> <span class="pct-ok">(ROAS ${(100 / g).toFixed(1).replace('.', ',')})</span>
-      <div>${grupos[g].map(r => `${esc(cleanTitle(r.titulo))}${r.estado_anuncio !== 'active' ? ' <span class="est est-ok" style="font-size:10px;">activar</span>' : ''}`).join(' · ')}</div></div>`).join('');
-  const pausar = R.filter(r => r.recomendacion === 'pausar' || (r.recomendacion === 'sin_publicidad' && r.estado_anuncio === 'active'));
+  // 4) Historial de cambios
+  const bitFilas = bit.slice(0, 15).map(x => `<tr>
+      <td class="date">${new Date(x.ejecutado_en).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+      <td>${esc(ADS_ACCION[x.accion] || x.accion)}${x.item_id ? `<span class="sub">${esc(cleanTitle((R.find(r => r.item_id === x.item_id) || {}).titulo || x.item_id))}</span>` : ''}</td>
+      <td><span class="sub" style="margin:0;">${esc(x.motivo || '')}</span></td>
+      <td>${x.resultado === 'ok' ? '<span class="est est-ok">hecho</span>' : `<span class="est est-mal">${esc(x.resultado || '')}</span>`}</td>
+    </tr>`).join('');
 
+  const pubMes = vendra.mes ? 100 * Number(vendra.mes.publicidad) / Math.max(1, Number(vendra.mes.ventas)) : null;
   el.innerHTML = `
     <div class="kpi-row">
-      <div class="kpi"><div class="v">${fmtARS(gasto)}</div><div class="l">Gasto en publicidad · 30 días</div></div>
-      <div class="kpi"><div class="v">${uAds} <span style="font-size:13px;color:var(--muted);font-weight:500;">+ ${uOrg} solas</span></div><div class="l">Ventas por anuncio (las publicitadas)</div></div>
-      <div class="kpi"><div class="v" style="color:${resultado > 0 ? 'var(--ok)' : 'var(--hot)'}">${fmtARS(resultado)}</div><div class="l">Lo que dejó la publicidad (ganancia − gasto, sin IVA)</div></div>
-      <div class="kpi"><div class="v">${activos.length}</div><div class="l">Anuncios circulando</div></div>
+      <div class="kpi"><div class="v ${cls(semana?.pub_sobre_ventas)}">${pctTxt(semana?.pub_sobre_ventas)}</div><div class="l">Publicidad sobre ventas · semana ${semana ? fFecha(semana.desde) + ' al ' + fFecha(semana.hasta) : ''}</div></div>
+      <div class="kpi"><div class="v ${cls(pubMes)}">${pubMes == null ? '—' : pctTxt(Math.round(pubMes * 10) / 10)}</div><div class="l">Publicidad sobre ventas · ${vendra.mes ? 'mes (Vendra, ' + fFecha(vendra.mes.desde) + ' al ' + fFecha(vendra.mes.hasta) + ')' : 'mes'}</div></div>
+      <div class="kpi"><div class="v" style="color:${resultado > 0 ? 'var(--ok)' : 'var(--hot)'}">${fmtARS(resultado)}</div><div class="l">Lo que dejó la publicidad en 30 días (ganancia de las ventas por anuncio − gasto, sin IVA)</div></div>
+      <div class="kpi"><div class="v">${R.filter(r => r.estado_anuncio === 'active').length}</div><div class="l">Anuncios circulando · ${camps.filter(c => c.estado === 'active').length} campañas activas</div></div>
     </div>
+
     <div class="control-card">
       <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
-        <h4 style="margin:0;">Qué conviene hacer con cada anuncio</h4>
-        <span style="font-size:12.5px; color:var(--muted);">${[n('pausar') && `${n('pausar')} pausar`, n('bajar') && `${n('bajar')} bajar ACOS`, n('activar') && `${n('activar')} activar`, n('mantener') && `${n('mantener')} mantener`].filter(Boolean).join(' · ') || 'sin cambios'}</span>
+        <h4 style="margin:0;">Campañas</h4>
+        <span style="font-size:12.5px; color:var(--muted);">Cada producto va a la campaña cuyo objetivo no supera lo que su margen aguanta.</span>
         <span style="flex:1;"></span>
         <button class="btn secondary" id="btnAdsTraer">Actualizar datos</button>
       </div>
-      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Últimos 30 días${meta ? ` (${fFecha(meta.desde)} al ${fFecha(meta.hasta)}, leído ${fFecha(meta.traido_en)})` : ''}. <b>Techo</b> = ACOS en el que una venta por anuncio deja $0. <b>Objetivo</b> = el que deja tu margen mínimo (${PAUTO_PAR.promos_margen_min_pct ?? 20}%). Margen con el precio de hoy, costo con mano de obra, cargos de ML e Ingresos Brutos.</div>
       <table class="control-tabla">
-        <thead><tr><th>Producto</th><th>Anuncio</th><th class="num">Gasto 30 d</th><th class="num">ACOS 30 d</th><th class="num">Techo · objetivo</th><th class="num">Deja por venta por anuncio</th><th>Recomendación</th></tr></thead>
+        <thead><tr><th>Campaña</th><th class="num">ACOS objetivo</th><th class="num">Presupuesto</th><th class="num">Gasto 7 días</th><th class="num">Gasto 30 días</th><th>Anuncios activos</th></tr></thead>
+        <tbody>${campFilas}${dispFila}</tbody>
+      </table>
+      <div class="control-note">Las dos campañas de ventas se reorganizaron el 11-11 y Mercado Libre las tiene "aprendiendo" unos 7 días: el gasto de 30 días todavía mezcla el esquema anterior. ${meta ? `Datos de Mercado Libre leídos el ${fFecha(meta.traido_en)}.` : ''}</div>
+    </div>
+
+    <div class="control-card">
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;">
+        <h4 style="margin:0;">Qué conviene hacer con cada anuncio</h4>
+        <span style="font-size:12.5px; color:var(--muted);">${[n('pausar') && `${n('pausar')} pausar`, n('mover') && `${n('mover')} mover`, n('activar') && `${n('activar')} activar`, n('mantener') && `${n('mantener')} bien ubicados`].filter(Boolean).join(' · ') || 'sin cambios'}</span>
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:4px;"><b>ACOS objetivo</b> = el máximo que deja tu margen mínimo (${minMg}%) con el precio de hoy; <b>techo</b> = el ACOS en el que una venta por anuncio deja $0. Margen con costo con mano de obra, cargos de ML e Ingresos Brutos. La tarea de los lunes y jueves aplica estos cambios sola (máximo 4 por vez y sin tocar un anuncio dos veces en 7 días) y te manda un mail.</div>
+      <table class="control-tabla">
+        <thead><tr><th>Producto</th><th>Anuncio</th><th class="num">ACOS objetivo</th><th class="num">ACOS 7 días</th><th class="num">ACOS 30 días</th><th class="num">Deja por venta por anuncio</th><th>Recomendación</th></tr></thead>
         <tbody>${filas.map(fila).join('')}</tbody>
       </table>
     </div>
+
     <div class="control-card">
-      <h4 style="margin:0 0 4px;">Plan de campañas sugerido</h4>
-      <div style="font-size:12.5px; color:var(--muted);">Una sola campaña con ACOS 25% hace que ML gaste de más en los productos que aguantan menos. Agrupando por ACOS objetivo, cada producto paga solo lo que su margen permite.</div>
-      ${plan || '<div style="margin-top:8px;">Nada para publicitar con el margen actual.</div>'}
-      ${pausar.length ? `<div class="ads-plan-g"><b>Sacar de la publicidad</b><div>${pausar.map(r => esc(cleanTitle(r.titulo))).join(' · ')}</div></div>` : ''}
-      <div class="control-note">Mercado Libre no deja que el sistema cambie la publicidad por API (pedido de permiso hecho el 11-11). Estos cambios se hacen en Marketing → Publicidad; pedile a Claude que los aplique desde tu Chrome.</div>
+      <h4 style="margin:0 0 4px;">Publicidad sobre ventas, semana a semana</h4>
+      <div style="font-size:12.5px; color:var(--muted);">Todo lo gastado en publicidad (anuncios + página) dividido las ventas pagadas de Mercado Libre de esa semana. Verde hasta 12%, amarillo hasta 20%, rojo arriba. La publicidad de página se cuenta desde noviembre (dato de Vendra).</div>
+      <table class="control-tabla">
+        <thead><tr><th>Semana</th><th class="num">Ventas</th><th class="num">Publicidad</th><th class="num">Sobre ventas</th></tr></thead>
+        <tbody>${semFilas || '<tr><td colspan="4" class="pct-ok">Sin datos todavía.</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="control-card">
+      <h4 style="margin:0 0 4px;">Historial de cambios</h4>
+      <div style="font-size:12.5px; color:var(--muted);">Lo que se cambió en la publicidad, a mano o por la tarea automática.</div>
+      <table class="control-tabla">
+        <thead><tr><th>Cuándo</th><th>Qué</th><th>Por qué</th><th></th></tr></thead>
+        <tbody>${bitFilas || '<tr><td colspan="4" class="pct-ok">Sin cambios registrados.</td></tr>'}</tbody>
+      </table>
     </div>`;
   $('#btnAdsTraer').addEventListener('click', () => actualizarAdsComp('traer_ads', '#btnAdsTraer', cargarPublicidad));
 }

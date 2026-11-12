@@ -16,6 +16,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const ML_API = "https://api.mercadolibre.com";
 const ML_TOKEN_URL = `${ML_API}/oauth/token`;
 const ADVERTISER = 8126;
+const SELLER = 157540060;
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info, x-proxy-secret",
@@ -86,6 +87,52 @@ async function traerAds(supabase: any, headers: any) {
     }
     res[ventana] = filas.length;
   }
+
+  // Campañas con su objetivo, presupuesto y métricas 7/30 días → ml_ads_campanas
+  const mc = "cost,acos,direct_units_quantity,indirect_units_quantity,total_amount";
+  const campMet: Record<string, Map<number, any>> = {};
+  for (const [v, dias] of [["7", 7], ["30", 30]] as const) {
+    const d = await getJSON(`${ML_API}/marketplace/advertising/MLA/advertisers/${ADVERTISER}/product_ads/campaigns/search?limit=50&date_from=${diasAtras(dias)}&date_to=${diasAtras(1)}&metrics=${mc}`, h2);
+    campMet[v] = new Map((d?.results || []).map((c: any) => [Number(c.id), c.metrics || {}]));
+  }
+  const campanas = (camp?.results || []).map((c: any) => {
+    const m7 = campMet["7"].get(Number(c.id)) || {}, m30 = campMet["30"].get(Number(c.id)) || {};
+    return {
+      id: c.id, nombre: c.name, estado: c.status, estrategia: c.strategy, roas_target: c.roas_target ?? null,
+      acos_target: c.acos_target ?? (c.roas_target ? Math.round(10000 / c.roas_target) / 100 : null), presupuesto: c.budget ?? null,
+      costo7: m7.cost ?? 0, acos7: m7.acos ?? null, u_ads7: (m7.direct_units_quantity || 0) + (m7.indirect_units_quantity || 0),
+      costo30: m30.cost ?? 0, acos30: m30.acos ?? null, u_ads30: (m30.direct_units_quantity || 0) + (m30.indirect_units_quantity || 0),
+      monto30: m30.total_amount ?? 0, traido_en: new Date().toISOString(),
+    };
+  });
+  if (campanas.length) {
+    await supabase.from("ml_ads_campanas").upsert(campanas, { onConflict: "id" });
+    await supabase.from("ml_ads_campanas").delete().not("id", "in", `(${campanas.map((c: any) => c.id).join(",")})`);
+  }
+  res.campanas = campanas.length;
+
+  // Por día (90 días): gasto de Product Ads (todas las campañas) y ventas pagadas en ML → ml_ads_diario
+  const dias: Record<string, any> = {};
+  const fila = (f: string) => (dias[f] = dias[f] || { fecha: f, costo_pads: 0, costo_display: null, ventas_monto: 0, ordenes: 0, unidades: 0 });
+  const daily = await getJSON(`${ML_API}/marketplace/advertising/MLA/advertisers/${ADVERTISER}/product_ads/campaigns/search?limit=100&date_from=${diasAtras(90)}&date_to=${diasAtras(1)}&metrics=cost&aggregation_type=DAILY`, h2);
+  for (const r of daily?.results || []) if (r.date) fila(String(r.date).slice(0, 10)).costo_pads += Number(r.cost || 0);
+  const desdeOrd = `${diasAtras(90)}T00:00:00.000-03:00`, hastaOrd = `${diasAtras(1)}T23:59:59.999-03:00`;
+  for (let offset = 0; offset < 3000; offset += 50) {
+    const o = await getJSON(`${ML_API}/orders/search?seller=${SELLER}&order.status=paid&order.date_created.from=${encodeURIComponent(desdeOrd)}&order.date_created.to=${encodeURIComponent(hastaOrd)}&limit=50&offset=${offset}&sort=date_asc`, headers);
+    const rs = o?.results || [];
+    for (const x of rs) {
+      const f = new Date(new Date(x.date_created).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      const d = fila(f); d.ventas_monto += Number(x.total_amount || 0); d.ordenes += 1;
+      d.unidades += (x.order_items || []).reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
+    }
+    if (rs.length < 50) break;
+  }
+  // Display (campaña de seguidores): el gasto diario lo trae Vendra en ml_vendra_resumen (mes) → por_dia
+  const { data: vr } = await supabase.from("ml_vendra_resumen").select("por_dia").eq("clave", "mes").maybeSingle();
+  for (const p of (vr?.por_dia || []) as any[]) if (p?.dia && dias[p.dia]) dias[p.dia].costo_display = Number(p.display || 0);
+  const filasDia = Object.values(dias).map((d: any) => ({ ...d, traido_en: new Date().toISOString() }));
+  if (filasDia.length) await supabase.from("ml_ads_diario").upsert(filasDia, { onConflict: "fecha" });
+  res.dias = filasDia.length;
   return res;
 }
 
