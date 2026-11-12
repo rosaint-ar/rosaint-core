@@ -530,7 +530,7 @@ function pintarLectura(){
       <h2>${esc(r.asunto || '(sin asunto)')}</h2>
       <div class="q"><b>${esc(nombreDe(r.de))}</b> &lt;${esc(emailDe(r.de))}&gt;<br>
         Para: ${esc(r.para || '—')}${r.cc ? '<br>CC: ' + esc(r.cc) : ''}${r.responder_a && emailDe(r.responder_a) !== emailDe(r.de) ? '<br>Responder a: ' + esc(r.responder_a) : ''}<br>
-        ${esc(fechaLarga(r.fecha))}</div>
+        ${esc(fechaLarga(r.fecha))}<span id="lee-odoo"></span></div>
     </div>
     ${adj.length ? `<div class="co-adj">${adj.map(a => `<button onclick="bajarAdjunto('${esc(a.parte)}', this)" title="${esc(a.nombre)} · ${esc(a.tipo)}"><span>📎 ${esc(a.nombre)}</span><small>${peso(a.tamano)}</small></button>`).join('')}</div>` : ''}
     ${tieneRemotas && !mostrarImgs ? `<div class="co-imgs">Las imágenes de internet están ocultas (así el remitente no se entera de que lo abriste). <button onclick="mostrarImgs = true; pintarLectura()">Mostrar imágenes</button></div>` : ''}
@@ -551,8 +551,27 @@ function pintarLectura(){
     cuerpo.appendChild(pre);
   }
   if (inline) { /* imágenes incrustadas: ya se ven dentro del html si son data:, si no van como cid y no se muestran */ }
+  quienEnOdoo(emailDe(r.de), r.uid);
   pintarCarpetas();   // llena el «Mover a…» de la lectura
   $('lee-mover').value = '';
+}
+// Quién es el remitente en Odoo: una persona de una empresa (odoo_contactos) o la empresa/cliente (cliente_metricas)
+const CACHE_ODOO = {};
+async function quienEnOdoo(email, uid){
+  email = String(email || '').toLowerCase(); if (!email || email === CASILLA) return;
+  if (!(email in CACHE_ODOO)) {
+    try {
+      const { data: p } = await sb.from('odoo_contactos').select('nombre, funcion, empresa_id, empresa_nombre').ilike('email', email).limit(1);
+      if (p && p.length) CACHE_ODOO[email] = { texto: p[0].nombre + (p[0].funcion ? ' · ' + p[0].funcion : '') + ' (' + p[0].empresa_nombre + ')', id: p[0].empresa_id };
+      else {
+        const { data: c } = await sb.from('cliente_metricas').select('partner_id, nombre, total_facturas').ilike('email', email).limit(1);
+        CACHE_ODOO[email] = c && c.length ? { texto: c[0].nombre + (c[0].total_facturas ? ' · cliente, ' + c[0].total_facturas + ' facturas' : ''), id: c[0].partner_id } : null;
+      }
+    } catch { CACHE_ODOO[email] = null; }
+  }
+  const x = CACHE_ODOO[email], el = document.getElementById('lee-odoo');
+  if (!x || !el || !LEIDO || LEIDO.uid !== uid) return;
+  el.innerHTML = '<br>En Odoo: <a href="https://rosaint.odoo.com/odoo/contacts/' + x.id + '" target="_blank" rel="noopener"><b>' + esc(x.texto) + '</b></a>';
 }
 async function bajarAdjunto(parte, btn){
   const w = window.open('', '_blank');   // se abre ya (si no, el navegador bloquea la ventana)

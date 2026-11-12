@@ -110,6 +110,16 @@
       .wa-links { justify-content: flex-start; }
       .wa-msg { max-width: 95%; } .wa-aviso24 { margin-left: 0; width: 100%; }
     }
+    .pe-capa { position: fixed; inset: 0; background: rgba(20, 28, 38, .45); z-index: 900; display: flex; align-items: flex-start; justify-content: center; padding: 10vh 16px; }
+    .pe-capa[hidden] { display: none; }
+    .pe-ven { background: var(--r-sup); width: min(440px, 100%); padding: 22px 24px 18px; font-family: var(--sans); color: var(--r-tx); }
+    .pe-ven h3 { font: 400 20px var(--sora); margin: 0 0 8px; }
+    .pe-ven h3 em { font-family: var(--bitter); font-style: italic; }
+    .pe-txt { font-size: 14px; color: var(--r-mu); margin: 0 0 12px; line-height: 1.5; }
+    .pe-ven label { display: block; font: 500 11px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--r-mu); margin-bottom: 10px; }
+    .pe-ven label .m-campo { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; text-transform: none; letter-spacing: 0; }
+    .pe-error { color: var(--rojo); font-size: 13px; min-height: 16px; }
+    .pe-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
   </style>
 </head>
 <body class="marca" data-page="whatsapp" data-title="WhatsApp" data-subtitle="Lo que espera respuesta, y qué hacer en cada chat">
@@ -241,6 +251,18 @@
 
 </main>
 
+<!-- guardar el número como persona de la empresa en Odoo -->
+<div class="pe-capa" id="capa-persona" hidden>
+  <div class="pe-ven corte">
+    <h3>Guardar en <em>Odoo</em></h3>
+    <p class="pe-txt">El <b id="pe-tel"></b> queda como persona de <b id="pe-empresa"></b>: la próxima vez que escriba aparece con su nombre y su empresa</p>
+    <label>Nombre<input class="m-campo" id="pe-nombre" placeholder="Ej.: Anahí Pérez" autocomplete="off"></label>
+    <label>Sector o puesto<input class="m-campo" id="pe-funcion" list="pe-sectores" placeholder="Ej.: Compras" autocomplete="off"></label>
+    <datalist id="pe-sectores"><option>Compras</option><option>Administración</option><option>Pagos</option><option>Dueño/a</option><option>Encargado/a</option><option>Recepción</option><option>Ventas</option></datalist>
+    <div class="pe-error" id="pe-error"></div>
+    <div class="pe-pie"><button class="rb suave" onclick="cerrarPersona()">Ahora no</button><button class="rb si" id="pe-ok" onclick="guardarPersona()">Guardar en Odoo</button></div>
+  </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shell/shell.js?v=202610061943"></script>
@@ -301,7 +323,34 @@ async function cargarOdoo(tels){
       .in('telefono_wa', parte).not('partner_id', 'in', '(1,3,7,15)');
     parte.forEach(t => { ODOO[t] = null; });
     (data || []).forEach(c => { if (!ODOO[c.telefono_wa] || (c.total_facturas || 0) > (ODOO[c.telefono_wa].total_facturas || 0)) ODOO[c.telefono_wa] = c; });
+    await cargarPersonas(parte.filter(t => ODOO[t] === null));
   }
+}
+// Personas de una empresa en Odoo (contactos hijos, tabla odoo_contactos): ej. Anahí escribe por Cadena de Hoteles.
+// Se muestra «persona (empresa)» y se usan los datos de la empresa (pedidos, presupuestos).
+async function cargarPersonas(tels){
+  if (!tels.length) return;
+  const lista = tels.join(',');
+  const { data } = await sb.from('odoo_contactos').select('partner_id, nombre, funcion, empresa_id, empresa_nombre, telefono_wa, movil_wa')
+    .or(`telefono_wa.in.(${lista}),movil_wa.in.(${lista})`);
+  if (!data || !data.length) return;
+  const { data: emp } = await sb.from('cliente_metricas')
+    .select('partner_id, nombre, telefono_wa, es_profesional, total_facturas, ultima_compra, ultimo_pedido_id, ultimo_pedido_name, presupuesto_id, presupuesto_name, presupuesto_fecha')
+    .in('partner_id', [...new Set(data.map(p => p.empresa_id))]);
+  const porId = Object.fromEntries((emp || []).map(e => [e.partner_id, e]));
+  for (const p of data) for (const t of [p.telefono_wa, p.movil_wa]) {
+    if (!t || ODOO[t] !== null) continue;
+    ODOO[t] = { ...(porId[p.empresa_id] || { partner_id: p.empresa_id, nombre: p.empresa_nombre }), nombre: p.empresa_nombre,
+      persona: p.nombre, funcion: p.funcion, persona_id: p.partner_id };
+  }
+}
+// Nombre a mostrar: la persona y su empresa si es un contacto de empresa; si el nombre del chat es un relleno («..»), el de Odoo
+function nombreChat(f){
+  const o = ODOO[f.telefono];
+  if (o && o.persona) return o.persona + ' (' + o.nombre + ')';
+  const propio = /[a-záéíóúñ]{2}/i.test(f.nombre || '') ? f.nombre : '';
+  const vinculo = (f.vinculo_estado === 'confirmado' || f.vinculo_estado === 'auto') && f.vinculo_nombre;
+  return propio || (o && o.nombre) || vinculo || telLindo(f.telefono);
 }
 // Renglón de Odoo de un chat. Si pidió o pagó y en Odoo ya hay un pedido o presupuesto de después, se dice
 // claramente (es lo que el resumen del chat no puede saber si se cargó después de etiquetarlo).
@@ -326,7 +375,7 @@ function tituloCliente(f){
   const tel = telLindo(f.telefono);
   if (c === undefined) return tel;
   if (!c) return tel + (f.partner_odoo_nombre ? ' · en Odoo como ' + f.partner_odoo_nombre : ' · no está en la base de clientes');
-  return `${tel} · ${c.nombre} · ${c.es_profesional ? 'profesional' : 'consumidor'}${c.ultimo_pedido_id > 0 ? ' · último pedido ' + c.ultimo_pedido_name + ' del ' + fFecha(c.ultima_compra) : ' · sin pedidos'}`;
+  return `${tel} · ${c.persona ? c.persona + (c.funcion ? ' (' + c.funcion + ')' : '') + ' de ' : ''}${c.nombre}${c.total_facturas === undefined ? '' : ' · ' + (c.es_profesional ? 'profesional' : 'consumidor')}${c.ultimo_pedido_id > 0 ? ' · último pedido ' + c.ultimo_pedido_name + ' del ' + fFecha(c.ultima_compra) : ' · sin pedidos'}`;
 }
 // Número que escribe "de parte de" un cliente de Odoo (lo detecta el servidor cruzando dirección, CUIT, email,
 // monto de la cotización o el teléfono de un pedido). Si el nombre es el mismo, no hace falta aclararlo.
@@ -334,10 +383,13 @@ const sinTildes = s => String(s || '').toLowerCase().normalize('NFD').replace(/[
 const mismaPersona = (a, b) => { const x = sinTildes(a).split(/[^a-z]+/).filter(t => t.length >= 3)[0]; return !!x && sinTildes(b).includes(x.slice(0, 4)); };
 function etiquetaVinculo(f){
   if (!f.vinculo_nombre || f.vinculo_estado === 'rechazado') return '';
+  const o = ODOO[f.telefono];
+  if (o && o.persona && o.partner_id === f.vinculo_partner_id) return '';
   const t = esc(f.telefono);
   if (f.vinculo_estado === 'sugerido')
     return `<span class="wa-de" title="${esc(f.vinculo_motivo || '')}">¿De parte de <b>${esc(f.vinculo_nombre)}</b>? <button onclick="vincular('${t}', 'confirmado')">Sí</button><button onclick="vincular('${t}', 'rechazado')">No</button></span>`;
   if (mismaPersona(f.nombre, f.vinculo_nombre)) return '';
+  if (nombreChat(f) === f.vinculo_nombre) return '';   // el nombre que se muestra ya es la empresa
   return `<span class="wa-de" title="Detectado por ${esc(f.vinculo_motivo || 'cruce')}">de parte de <b>${esc(f.vinculo_nombre)}</b> <button onclick="vincular('${t}', 'rechazado')" title="No es de parte de este cliente">deshacer</button></span>`;
 }
 async function vincular(tel, estado){
@@ -345,6 +397,35 @@ async function vincular(tel, estado){
   if (error) { alert('No se pudo guardar: ' + error.message); return; }
   const f = PEND.find(x => x.telefono === tel); if (f) f.vinculo_estado = estado;
   pintarPendientes();
+  if (estado === 'confirmado' && f && f.vinculo_partner_id && !(ODOO[tel] && ODOO[tel].persona)) ventanaPersona(f);
+}
+// ---------------- Guardar el número como persona de la empresa en Odoo (contacto hijo, con su sector)
+let PERS = null;
+function ventanaPersona(f){
+  PERS = f;
+  document.getElementById('pe-empresa').textContent = f.vinculo_nombre;
+  document.getElementById('pe-tel').textContent = telLindo(f.telefono);
+  document.getElementById('pe-nombre').value = /[a-záéíóúñ]{2}/i.test(f.nombre || '') ? f.nombre : '';
+  document.getElementById('pe-funcion').value = '';
+  document.getElementById('pe-error').textContent = '';
+  document.getElementById('capa-persona').hidden = false;
+  setTimeout(() => document.getElementById('pe-nombre').focus(), 30);
+}
+function cerrarPersona(){ document.getElementById('capa-persona').hidden = true; PERS = null; }
+async function guardarPersona(){
+  const f = PERS; if (!f) return;
+  const nombre = document.getElementById('pe-nombre').value.trim(), funcion = document.getElementById('pe-funcion').value.trim();
+  const err = document.getElementById('pe-error'); err.textContent = '';
+  if (nombre.length < 2) { err.textContent = 'Escribí el nombre de la persona.'; return; }
+  const b = document.getElementById('pe-ok'); b.disabled = true; b.textContent = 'Guardando…';
+  try {
+    const r = await fetch(window.SUPABASE_URL + '/functions/v1/odoo-contactos', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'crear', empresa_id: f.vinculo_partner_id, nombre, funcion, telefono: f.telefono }) }).then(x => x.json());
+    if (!r.ok) throw new Error(r.error || 'No se pudo');
+    delete ODOO[f.telefono]; await cargarOdoo([f.telefono]);
+    cerrarPersona(); pintarPendientes();
+  } catch (e) { err.textContent = e.message; }
+  finally { b.disabled = false; b.textContent = 'Guardar en Odoo'; }
 }
 const linkCargar = f => ODOO[f.telefono] === null && !f.partner_odoo_nombre && !f.es_proveedor && !(f.vinculo_nombre && f.vinculo_estado !== 'rechazado')
   ? `<a href="../comercial/crm.html#nuevo=${encodeURIComponent(f.telefono)}|${encodeURIComponent(f.nombre || '')}" title="No está en la base de clientes">Cargar contacto</a>` : '';
@@ -392,7 +473,7 @@ function item(f, i, cerrado){
   const t = esc(f.telefono);
   return `<div class="wa-item ${f.horas_esperando >= 24 && !cerrado ? 'viejo' : ''}" style="--k:${c ? c.k : 'var(--r-li)'};animation-delay:${Math.min(i * .03, .4)}s" data-tel="${t}">
     <div class="wa-cuerpo">
-      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(f.nombre || (ODOO[f.telefono] && ODOO[f.telefono].nombre) || telLindo(f.telefono))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}${f.es_proveedor ? '<span class="wa-badge" title="El teléfono es de un proveedor en Odoo">Proveedor</span>' : ''}${etiquetaVinculo(f)}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
+      <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(f))}">${esc(nombreChat(f))}</span>${c ? `<span class="wa-cat ${esc(f.categoria)}">${c.l}</span>` : ''}${f.es_proveedor ? '<span class="wa-badge" title="El teléfono es de un proveedor en Odoo">Proveedor</span>' : ''}${etiquetaVinculo(f)}<span class="wa-cuando">${cerrado ? 'hace' : 'espera hace'} ${hace(f.horas_esperando)}${f.sin_responder > 1 && !cerrado ? ' · ' + f.sin_responder + ' mensajes' : ''}</span>${badgeSeg(f.telefono)}</div>
       ${f.resumen ? `<div class="wa-resumen">${esc(f.resumen)}</div>` : `<div class="wa-texto">${esc(ultimo)}</div>`}
       ${f.accion && !cerrado ? `<div class="wa-accion"><b>Qué hacer:</b> ${esc(f.accion)}</div>` : ''}
       ${cerrado ? '' : lineaOdoo(f)}
@@ -545,7 +626,7 @@ function pintarChats(){
     const o = ODOO[c.telefono];
     return `<div class="wa-item" style="--k:${c.ultimo_sentido === 'in' ? 'var(--acido)' : 'var(--r-li)'};animation-delay:${Math.min(i * .02, .3)}s">
       <div class="wa-cuerpo">
-        <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(c))}">${esc(c.nombre || (o && o.nombre) || telLindo(c.telefono))}</span><span class="wa-cuando">hace ${hace(h)}</span>${badgeSeg(c.telefono)}</div>
+        <div class="wa-l1"><span class="wa-nombre" title="${esc(tituloCliente(c))}">${esc(nombreChat(c))}</span><span class="wa-cuando">hace ${hace(h)}</span>${badgeSeg(c.telefono)}</div>
         <div class="wa-ult">${esc(txt)}</div>
       </div>
       <div class="wa-lado">
