@@ -573,6 +573,64 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, pasos, facturas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo cuotas_vencimiento (12-nov-2026): pone en una factura de compra YA VALIDADA las cuotas reales con su fecha ----
+    // { cuotas_vencimiento: { facturas: [{ id, cuotas: [{ fecha, monto }] }] }, dry_run }
+    // Las cuotas son el cronograma COMPLETO (las pagadas también) y deben sumar el total de la factura.
+    // Crea una condición de pago propia ("Cuotas <número>": montos fijos + la última por el resto, en días desde
+    // la fecha de la factura), desconcilia, pasa a borrador, asigna la condición, valida y vuelve a conciliar los
+    // mismos pagos (Odoo los aplica a las cuotas más viejas). Así Finanzas ve cada cuota con su vencimiento.
+    if (body.cuotas_vencimiento) {
+      const q = body.cuotas_vencimiento; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const out: any[] = [];
+      const dias = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+      for (const f of q.facturas) {
+        const fid = Number(f.id);
+        const [m] = await call("account.move", "read", [[fid], ["name", "state", "move_type", "company_id", "invoice_date", "amount_total", "amount_residual", "invoice_payment_term_id"]]);
+        if (!m || m.move_type !== "in_invoice" || m.company_id[0] !== 2 || m.state !== "posted") throw new Error(`Factura ${fid} inválida o no validada`);
+        const cuotas = (f.cuotas || []).map((c: any) => ({ fecha: String(c.fecha), monto: Math.round(Number(c.monto) * 100) / 100 })).sort((a: any, b: any) => a.fecha.localeCompare(b.fecha));
+        const suma = Math.round(cuotas.reduce((s: number, c: any) => s + c.monto, 0) * 100) / 100;
+        if (!cuotas.length || Math.abs(suma - m.amount_total) > 0.005) throw new Error(`${m.name}: las cuotas suman ${suma} y la factura ${m.amount_total}`);
+        if (cuotas.some((c: any) => c.fecha < m.invoice_date)) throw new Error(`${m.name}: hay una cuota antes de la fecha de la factura (${m.invoice_date})`);
+        const lineasTerm = cuotas.map((c: any, i: number) => i < cuotas.length - 1
+          ? { value: "fixed", value_amount: c.monto, delay_type: "days_after", nb_days: dias(m.invoice_date, c.fecha) }
+          : { value: "percent", value_amount: 100, delay_type: "days_after", nb_days: dias(m.invoice_date, c.fecha) });
+        const fila: any = { factura: m.name, total: m.amount_total, saldo_antes: m.amount_residual, cuotas: cuotas.map((c: any) => `${c.fecha} ${c.monto}`) };
+        // líneas de deuda actuales y lo que tienen conciliado
+        const lps = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["account_id.account_type", "=", "liability_payable"]], ["id", "account_id", "matched_debit_ids"]]);
+        const cta = lps[0]?.account_id?.[0];
+        const parciales = lps.flatMap((l: any) => l.matched_debit_ids);
+        const contra = parciales.length ? [...new Set((await call("account.partial.reconcile", "read", [parciales, ["debit_move_id"]])).map((p: any) => p.debit_move_id[0]))] as number[] : [];
+        fila.lineas_conciliadas = contra.length;
+        if (dry) { fila.estado = "se aplicaría"; out.push(fila); continue; }
+        const tid = await call("account.payment.term", "create", [{ name: `Cuotas ${m.name}`, company_id: 2, line_ids: lineasTerm.map((l: any) => [0, 0, l]) }], { context: ctx });
+        const termId = Array.isArray(tid) ? tid[0] : tid;
+        for (const l of lps) if (l.matched_debit_ids.length) await call("account.move.line", "remove_move_reconcile", [[l.id]]);
+        // Odoo arma las cuotas nuevas con la cuenta de proveedor del contacto: se pone la de esta factura y después se restituye
+        const [mp] = await call("account.move", "read", [[fid], ["partner_id"]]);
+        const pctx = { ...ctx, allowed_company_ids: [2] };
+        const [pp] = await call("res.partner", "read", [[mp.partner_id[0]], ["property_account_payable_id"]], { context: pctx });
+        const ctaContacto = pp?.property_account_payable_id?.[0];
+        if (cta && ctaContacto !== cta) await call("res.partner", "write", [[mp.partner_id[0]], { property_account_payable_id: cta }], { context: pctx });
+        try {
+          await call("account.move", "button_draft", [[fid]]);
+          await call("account.move", "write", [[fid], { invoice_payment_term_id: termId }], { context: ctx });
+          await call("account.move", "action_post", [[fid]]);
+        } finally {
+          if (cta && ctaContacto && ctaContacto !== cta) await call("res.partner", "write", [[mp.partner_id[0]], { property_account_payable_id: ctaContacto }], { context: pctx });
+        }
+        const nuevas = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["account_id.account_type", "=", "liability_payable"]], ["id", "date_maturity", "credit", "account_id"]], { order: "date_maturity asc" });
+        if (contra.length) {
+          const libres = await call("account.move.line", "search_read", [[["id", "in", contra], ["reconciled", "=", false]], ["id"]]);
+          if (libres.length) await call("account.move.line", "reconcile", [[...nuevas.map((l: any) => l.id), ...libres.map((l: any) => l.id)]]);
+        }
+        const [d] = await call("account.move", "read", [[fid], ["state", "amount_residual", "payment_state"]]);
+        const abiertas = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["account_id.account_type", "=", "liability_payable"], ["reconciled", "=", false]], ["date_maturity", "amount_residual"]], { order: "date_maturity asc" });
+        Object.assign(fila, { condicion: termId, cuenta_igual: nuevas.every((l: any) => l.account_id[0] === cta), estado: d.state, saldo: d.amount_residual, pago: d.payment_state, cuotas_abiertas: abiertas.map((l: any) => `${l.date_maturity} ${-l.amount_residual}`) });
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, facturas: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo conta_relevar (solo lectura, 15-oct-2026): cuentas, diarios de pago, contactos y productos por texto ----
     // { conta_relevar: { cuentas_prefijos?: ["1.2","5.3"], cuentas_texto?: "alquil", contactos?: "lopez", productos?: [ids], diarios?: true, movs_cuenta?: "5.9.1.01.020" } }
     // ---- Modo origen_ventas: { origen_ventas: true, dry_run } ----
