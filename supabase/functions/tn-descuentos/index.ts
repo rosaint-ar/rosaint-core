@@ -27,13 +27,43 @@ type Rec = Record<string, any>;
 // (función SQL tn_descuentos_datos). Si lo guardado tiene más de 15 s se responde con eso igual y se refresca por
 // detrás (hasta 5 min); solo la primera vez se espera.
 const ARCHIVO = `${SB_URL}/storage/v1/object/public/tn-publico/tn-descuentos-v2.json`;
-let cache: { leido: number; tiendas: Rec[]; reglas: Rec[]; prueba: Set<string> } | null = null;
+let cache: { leido: number; tiendas: Rec[]; reglas: Rec[]; prueba: Set<string>; cp: [number, number, string][] } | null = null;
+
+// ZONA (12/11/2026). Tienda Nube manda solo el código postal. CPA (S2000ABC): la letra ES la provincia
+// (ISO 3166-2:AR); CP de 4 dígitos: tabla cp_provincias publicada en rangos [desde, hasta, letra].
+// Misma lógica en tn-envios (simulador) y en la bolsa de rosaint.online (live.js shippingBonusQuote).
+const LETRAS = /^[ABCDEFGHJKLMNPQRSTUVWXYZ]$/;
+export function cpPartes(cp: unknown) { const m = String(cp ?? "").toUpperCase().replace(/\s/g, "").match(/^([A-Z])?(\d{4})/); return m ? { cp: m[2], letra: m[1] && LETRAS.test(m[1]) ? m[1] : "" } : null; }
+export function provinciaDe(cp: unknown, rangos: [number, number, string][]) {
+  const x = cpPartes(cp); if (!x) return null; if (x.letra) return x.letra;
+  const n = Number(x.cp); let a = 0, b = rangos.length - 1;
+  while (a <= b) { const m = (a + b) >> 1, r = rangos[m]; if (n < r[0]) b = m - 1; else if (n > r[1]) a = m + 1; else return r[2]; }
+  return null;
+}
+export function cpEnLista(lista: unknown, cp: string) {
+  for (const parte of String(lista ?? "").replace(/\s*-\s*/g, "-").split(/[,;\s]+/)) {
+    const m = parte.match(/^(\d{4})(?:-(\d{4}))?$/); if (!m) continue;
+    const a = Number(m[1]), b = Number(m[2] || m[1]), n = Number(cp);
+    if (n >= Math.min(a, b) && n <= Math.max(a, b)) return true;
+  }
+  return false;
+}
+// todas = siempre; incluir = CP en la lista o provincia marcada; excluir = ni CP en la lista ni provincia marcada.
+// Sin CP, o con provincias en juego y CP desconocido: la regla con zona NO vale (no se da donde no corresponde).
+export function zonaOk(r: Rec, cp: unknown, rangos: [number, number, string][]) {
+  const modo = r.zona_modo || "todas"; if (modo === "todas") return true;
+  const x = cpPartes(cp); if (!x) return false;
+  const enCps = cpEnLista(r.zona_cps, x.cp), provs: string[] = r.zona_provincias || [];
+  if (modo === "incluir") { if (enCps) return true; const p = provinciaDe(cp, rangos); return !!p && provs.includes(p); }
+  if (enCps) return false; if (!provs.length) return true;
+  const p = provinciaDe(cp, rangos); return !!p && !provs.includes(p);
+}
 let refrescando: Promise<void> | null = null;
 function refrescar() {
   refrescando ??= fetch(ARCHIVO)
     .then((x) => { if (!x.ok) throw new Error("archivo " + x.status); return x.json(); })
     .catch(() => fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: H, body: "{}" }).then((x) => x.json()))
-    .then((j: Rec) => { cache = { leido: Date.now(), tiendas: j.tiendas || [], reglas: j.reglas || [], prueba: new Set(j.prueba || []) }; })
+    .then((j: Rec) => { cache = { leido: Date.now(), tiendas: j.tiendas || [], reglas: j.reglas || [], prueba: new Set(j.prueba || []), cp: j.cp || [] }; })
     .finally(() => { refrescando = null; });
   return refrescando;
 }
@@ -64,6 +94,7 @@ function evaluarReglas(reglas: Rec[], carrito: Rec, opcion: Rec, hoy = new Date(
       ? r.categoria_ids.reduce((s: number, c: number) => s + (carrito.unidades_por_categoria[c] || 0), 0)
       : carrito.unidades;
     if (r.min_unidades != null && u < r.min_unidades) return false;
+    if (!zonaOk(r, carrito.cp, carrito.rangos || [])) return false;
     return true;
   });
   let mejor: Rec | null = null;
@@ -127,7 +158,7 @@ async function comandosEnvio(b: Rec, store: number, cart: number, t0: number): P
     : (tienda.excluir_pares || []).some((par: number[]) => par.every((v) => variantes.has(Number(v)))) ? 'rutina'
     : (!tiene && Number(b.totals?.total_discount || 0) > 0) ? 'otro descuento' : '';
   const aplicables = otros ? reglas.filter((r) => r.acumula) : reglas;
-  const mejor = evaluarReglas(aplicables, { unidades, unidades_por_categoria: porCat, subtotal }, { precio: envio, medio: '?', entrega: '?' });
+  const mejor = evaluarReglas(aplicables, { unidades, unidades_por_categoria: porCat, subtotal, cp: b.shipping?.postalcode ?? null, rangos: d.cp }, { precio: envio, medio: '?', entrega: '?' });
   const base = { store_id: store, cart_id: cart, envio, cp: b.shipping?.postalcode ?? null, unidades, subtotal, prueba, payload: prueba ? b : null };
   if (mejor && mejor.descuento > 0) return { log: { ...base, respuesta: 'descuento', descuento: mejor.descuento, regla: mejor.regla + (mejor.estimado ? ' · sobre envío de referencia' : '') },
     cmds: [{ command: 'create_or_update_discount', specs: { promotion_id: tienda.promotion_id, currency: b.currency || 'ARS',

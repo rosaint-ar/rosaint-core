@@ -99,6 +99,37 @@ function clasificar(nombre: string) {
   return { medio, entrega };
 }
 
+// ZONA (12/11/2026): MISMA lógica que tn-descuentos (callback) y que la bolsa de rosaint.online.
+// CPA (S2000ABC): la letra ES la provincia; CP de 4 dígitos: tabla cp_provincias (rangos [desde, hasta, letra]).
+const LETRAS = /^[ABCDEFGHJKLMNPQRSTUVWXYZ]$/;
+const PROVINCIAS: Record<string, string> = { C: "Ciudad de Buenos Aires", B: "Buenos Aires", K: "Catamarca", H: "Chaco", U: "Chubut", X: "Córdoba", W: "Corrientes", E: "Entre Ríos", P: "Formosa", Y: "Jujuy", L: "La Pampa", F: "La Rioja", M: "Mendoza", N: "Misiones", Q: "Neuquén", R: "Río Negro", A: "Salta", J: "San Juan", D: "San Luis", Z: "Santa Cruz", S: "Santa Fe", G: "Santiago del Estero", V: "Tierra del Fuego", T: "Tucumán" };
+const NOMBRE_A_LETRA: Record<string, string> = Object.fromEntries(Object.entries(PROVINCIAS).map(([l, n]) => [n.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(), l]));
+NOMBRE_A_LETRA["capital federal"] = "C"; NOMBRE_A_LETRA["ciudad autonoma de buenos aires"] = "C"; NOMBRE_A_LETRA["caba"] = "C";
+const letraDeNombre = (n: unknown) => NOMBRE_A_LETRA[String(n ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim()] || "";
+function cpPartes(cp: unknown) { const m = String(cp ?? "").toUpperCase().replace(/\s/g, "").match(/^([A-Z])?(\d{4})/); return m ? { cp: m[2], letra: m[1] && LETRAS.test(m[1]) ? m[1] : "" } : null; }
+function provinciaDe(cp: unknown, rangos: [number, number, string][]) {
+  const x = cpPartes(cp); if (!x) return null; if (x.letra) return x.letra;
+  const n = Number(x.cp); let a = 0, b = rangos.length - 1;
+  while (a <= b) { const m = (a + b) >> 1, r = rangos[m]; if (n < r[0]) b = m - 1; else if (n > r[1]) a = m + 1; else return r[2]; }
+  return null;
+}
+function cpEnLista(lista: unknown, cp: string) {
+  for (const parte of String(lista ?? "").replace(/\s*-\s*/g, "-").split(/[,;\s]+/)) {
+    const m = parte.match(/^(\d{4})(?:-(\d{4}))?$/); if (!m) continue;
+    const a = Number(m[1]), b = Number(m[2] || m[1]), n = Number(cp);
+    if (n >= Math.min(a, b) && n <= Math.max(a, b)) return true;
+  }
+  return false;
+}
+function zonaOk(r: Rec, cp: unknown, rangos: [number, number, string][]) {
+  const modo = r.zona_modo || "todas"; if (modo === "todas") return true;
+  const x = cpPartes(cp); if (!x) return false;
+  const enCps = cpEnLista(r.zona_cps, x.cp), provs: string[] = r.zona_provincias || [];
+  if (modo === "incluir") { if (enCps) return true; const p = provinciaDe(cp, rangos); return !!p && provs.includes(p); }
+  if (enCps) return false; if (!provs.length) return true;
+  const p = provinciaDe(cp, rangos); return !!p && !provs.includes(p);
+}
+
 // Misma lógica para el simulador y para el futuro callback de descuentos.
 // carrito = { unidades_por_categoria: {catId: n}, unidades: n, subtotal: $ }, opcion = { medio, entrega, precio }
 export function evaluarReglas(reglas: Rec[], carrito: Rec, opcion: Rec, hoy = new Date().toISOString().slice(0, 10)) {
@@ -114,6 +145,7 @@ export function evaluarReglas(reglas: Rec[], carrito: Rec, opcion: Rec, hoy = ne
       ? r.categoria_ids.reduce((s: number, c: number) => s + (carrito.unidades_por_categoria[c] || 0), 0)
       : carrito.unidades;
     if (r.min_unidades != null && u < r.min_unidades) return false;
+    if (!zonaOk(r, carrito.cp, carrito.rangos || [])) return false;
     return true;
   });
   let mejor: Rec | null = null;
@@ -168,7 +200,13 @@ async function cotizar(store: number, body: Rec) {
     : ((tiendaCfg as Rec[])[0]?.excluir_pares || []).some((par: number[]) => par.every((v) => variantes.has(Number(v)))) ? "rutina"
     : (carro.line_items || []).some((l: Rec) => (l.discounts || []).length) ? "otro descuento" : "";
   if (otros) avisos.push(`La bolsa tiene ${otros}: solo se aplican las reglas que se suman a otros descuentos.`);
-  const carrito = { unidades, unidades_por_categoria: porCat, subtotal, otros };
+  // Provincia del CP cotizado (CPA: su letra; si no, la tabla) para las reglas con zona.
+  const px = cpPartes(cp);
+  let rangos: [number, number, string][] = [];
+  if (px && !px.letra) { const f = await sbGet(`cp_provincias?select=provincia&cp=eq.${px.cp}`); if (f[0]) rangos = [[Number(px.cp), Number(px.cp), f[0].provincia]]; }
+  const provincia = provinciaDe(cp, rangos);
+  if (!provincia && reglas.some((r: Rec) => r.zona_modo && r.zona_modo !== "todas")) avisos.push(`El código postal ${cp} no está en la tabla de provincias: las reglas con zona no se aplican (cargalo en Resultados → códigos sin provincia).`);
+  const carrito = { unidades, unidades_por_categoria: porCat, subtotal, otros, cp, rangos, provincia, provincia_nombre: provincia ? PROVINCIAS[provincia] : null };
   const vistos = new Map<string, Rec>();
   for (const o of [...(p.home_delivery || []), ...(p.pickup_points || [])]) {
     const nombre = String(o.original_name || o.name || "");
@@ -212,21 +250,33 @@ async function sbGet(path: string): Promise<any[]> {
 async function resultados(store: number, diasPedidos: number) {
   const dias = [7, 30, 90].includes(diasPedidos) ? diasPedidos : 30;
   const desde = new Date(Date.now() - dias * 864e5).toISOString();
-  const [reglas, tiendas] = await Promise.all([
-    sbGet(`tn_envio_reglas?select=nombre,activa,min_monto,max_monto,descuento_tipo,descuento_valor,texto&store_id=eq.${store}&order=prioridad`),
+  const [reglas, tiendas, tablaCp] = await Promise.all([
+    sbGet(`tn_envio_reglas?select=nombre,activa,min_monto,max_monto,descuento_tipo,descuento_valor,texto,zona_modo,zona_provincias,zona_cps&store_id=eq.${store}&order=prioridad`),
     sbGet(`tn_descuentos_tiendas?select=promotion_id&store_id=eq.${store}`),
+    // La tabla entera en rangos (la misma que usa el callback): un select directo corta en 1.000 filas.
+    fetch(`${SB_URL}/rest/v1/rpc/tn_descuentos_datos`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json()).then((j) => (j.cp || []) as [number, number, string][]),
   ]);
   const enRango = (s: number | null) => s != null && reglas.some((r) => (r.min_monto == null || s >= Number(r.min_monto)) && (r.max_monto == null || s <= Number(r.max_monto)));
+  const provDe = (cp: unknown) => provinciaDe(cp, tablaCp) || "";
+  const porProv: Record<string, Rec> = {};
+  const fila = (p: string) => (porProv[p || "?"] ??= { provincia: p || "?", nombre: p ? PROVINCIAS[p] : "Sin código postal o sin provincia", bolsas: 0, bolsas_en_rango: 0, bolsas_bonificadas: 0, pagados: 0, pagados_en_rango: 0, pagados_bonificados: 0 });
+  const sinProv = new Map<string, Rec>(); // CP que aparecen y no están en la tabla (con la provincia que dice el pedido, si hay)
 
   // Bolsas: la última consulta de cada una (una bolsa se consulta varias veces mientras cambia).
   const ultima = new Map<string, Rec>();
   for (let off = 0; off < 50000; off += 1000) {
-    const p = await sbGet(`tn_descuentos_log?select=cart_id,recibido_en,subtotal,descuento,prueba,respuesta&store_id=eq.${store}&recibido_en=gte.${desde}&subtotal=not.is.null&order=id.asc&limit=1000&offset=${off}`);
+    const p = await sbGet(`tn_descuentos_log?select=cart_id,recibido_en,subtotal,descuento,prueba,respuesta,cp&store_id=eq.${store}&recibido_en=gte.${desde}&subtotal=not.is.null&order=id.asc&limit=1000&offset=${off}`);
     for (const x of p) if (x.cart_id && String(x.cart_id) !== "0" && x.prueba !== true) ultima.set(String(x.cart_id), x);
     if (p.length < 1000) break;
   }
   const bolsas = [...ultima.values()];
   const conBonif = bolsas.filter((x) => x.respuesta === "descuento" && Number(x.descuento) > 0);
+  for (const x of bolsas) {
+    const p = provDe(x.cp), f = fila(p); f.bolsas++;
+    if (enRango(num(x.subtotal))) f.bolsas_en_rango++;
+    if (x.respuesta === "descuento" && Number(x.descuento) > 0) f.bolsas_bonificadas++;
+    const cx = cpPartes(x.cp); if (cx && !p) { const s = sinProv.get(cx.cp) || { cp: cx.cp, veces: 0, sugerida: "" }; s.veces++; sinProv.set(cx.cp, s); }
+  }
   const bolsasOut = {
     total: bolsas.length,
     en_rango: bolsas.filter((x) => enRango(num(x.subtotal))).length,
@@ -240,7 +290,7 @@ async function resultados(store: number, diasPedidos: number) {
   const pedidos: Rec[] = [];
   for (let page = 1; page <= 15; page++) {
     // Pedidos por la v1, como tn-odoo-cargar (la 2025-03 devuelve la lista vacía con estos filtros).
-    const p = await tnGet(store, tok, `/orders?per_page=200&page=${page}&created_at_min=${desde.slice(0, 10)}T00:00:00-03:00&sort_by=created_at-descending&fields=id,number,created_at,status,payment_status,subtotal,total,shipping_cost_customer,promotional_discount`, "v1");
+    const p = await tnGet(store, tok, `/orders?per_page=200&page=${page}&created_at_min=${desde.slice(0, 10)}T00:00:00-03:00&sort_by=created_at-descending&fields=id,number,created_at,status,payment_status,subtotal,total,shipping_cost_customer,promotional_discount,shipping_address`, "v1");
     if (!Array.isArray(p) || !p.length) break;
     pedidos.push(...p);
     if (p.length < 200) break;
@@ -253,8 +303,17 @@ async function resultados(store: number, diasPedidos: number) {
   const lista = vivos.map((o) => ({ numero: o.number, fecha: o.created_at, pago: o.payment_status, subtotal: num(o.subtotal), envio: num(o.shipping_cost_customer), bonificacion: bonifDe(o), total: num(o.total) }))
     .filter((o) => o.bonificacion > 0).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   const pagadosBonif = lista.filter((o) => o.pago === "paid");
+  // Del pedido solo se usan CP y provincia de entrega (nada personal sale de acá).
+  for (const o of pagados) {
+    const cp = o.shipping_address?.zipcode, p = provDe(cp), f = fila(p); f.pagados++;
+    if (enRango(num(o.subtotal))) f.pagados_en_rango++;
+    if (bonifDe(o) > 0) f.pagados_bonificados++;
+    const cx = cpPartes(cp); if (cx && !p) { const s = sinProv.get(cx.cp) || { cp: cx.cp, veces: 0, sugerida: "" }; s.veces++; s.sugerida ||= letraDeNombre(o.shipping_address?.province); sinProv.set(cx.cp, s); }
+  }
   return {
-    dias, desde, reglas,
+    dias, desde, reglas, provincias: PROVINCIAS,
+    por_provincia: Object.values(porProv).sort((a, b) => (b.pagados + b.bolsas) - (a.pagados + a.bolsas)),
+    sin_provincia: [...sinProv.values()].sort((a, b) => b.veces - a.veces).slice(0, 60),
     bolsas: bolsasOut,
     pedidos: {
       vistos: pedidos.length,

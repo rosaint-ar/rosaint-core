@@ -158,6 +158,11 @@
   const MEDIOS = { todos: 'Todos los correos', correo: 'Correo Argentino', andreani: 'Andreani' };
   const ENTREGAS = { todas: 'Domicilio y sucursal', domicilio: 'Solo a domicilio', sucursal: 'Solo a sucursal' };
   let PRODUCTOS = [], CATEGORIAS = [], REGLAS = [], BOLSA = [], quien = '';
+  // Provincias con su letra ISO 3166-2:AR (la misma del CPA). Regiones = atajos que marcan varias juntas.
+  const PROVINCIAS = { C: 'Ciudad de Buenos Aires', B: 'Buenos Aires', K: 'Catamarca', H: 'Chaco', U: 'Chubut', X: 'Córdoba', W: 'Corrientes', E: 'Entre Ríos', P: 'Formosa', Y: 'Jujuy', L: 'La Pampa', F: 'La Rioja', M: 'Mendoza', N: 'Misiones', Q: 'Neuquén', R: 'Río Negro', A: 'Salta', J: 'San Juan', D: 'San Luis', Z: 'Santa Cruz', S: 'Santa Fe', G: 'Santiago del Estero', V: 'Tierra del Fuego', T: 'Tucumán' };
+  const REGIONES = { Centro: ['C', 'B', 'X', 'S', 'E', 'L'], NOA: ['Y', 'A', 'T', 'K', 'G', 'F'], NEA: ['N', 'W', 'H', 'P'], Cuyo: ['M', 'J', 'D'], Patagonia: ['Q', 'R', 'U', 'Z', 'V'] };
+  const ZONAS = { todas: 'Todo el país', incluir: 'Solo en estas provincias / códigos', excluir: 'Todo el país menos estas provincias / códigos' };
+  const nombresProv = l => (l || []).map(x => PROVINCIAS[x] || x).join(', ');
 
   async function llamar(cuerpo) {
     const { data: s } = await sb.auth.getSession();
@@ -214,7 +219,13 @@
       </div>
       <div class="panel"><h2>Pedidos con bonificación · ${p.lista.length}</h2>${p.lista.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Pedido</th><th>Fecha</th><th>Pago</th><th class="n">Productos</th><th class="n">Envío</th><th class="n">Bonificación</th><th class="n">Total</th></tr></thead><tbody>
         ${p.lista.map(o => `<tr><td>#${esc(o.numero)}</td><td>${fecha(o.fecha)}</td><td>${o.pago === 'paid' ? '<span class="marca ok">pagado</span>' : `<span class="marca">${esc(PAGO[o.pago] || o.pago)}</span>`}</td><td class="n">${plata(o.subtotal)}</td><td class="n">${plata(o.envio)}</td><td class="n">−${plata(o.bonificacion)}</td><td class="n paga">${plata(o.total)}</td></tr>`).join('')}
-        </tbody></table></div>` : '<div class="sub">Todavía no hay pedidos con la bonificación de envío en este período.</div>'}</div>`;
+        </tbody></table></div>` : '<div class="sub">Todavía no hay pedidos con la bonificación de envío en este período.</div>'}</div>
+      <div class="panel"><h2>Por provincia</h2><p class="sub" style="margin:0 0 8px">Provincia según el código postal de envío (bolsas: el que eligió la clienta; pedidos: el de la dirección de entrega).</p><div style="overflow-x:auto"><table><thead><tr><th>Provincia</th><th class="n">Bolsas</th><th class="n">En el monto</th><th class="n">Bonificadas</th><th class="n">Pedidos pagados</th><th class="n">En el monto</th><th class="n">Con bonificación</th></tr></thead><tbody>
+        ${(j.por_provincia || []).map(f => `<tr><td>${esc(f.nombre)}</td><td class="n">${f.bolsas}</td><td class="n">${f.bolsas_en_rango}</td><td class="n">${f.bolsas_bonificadas}</td><td class="n">${f.pagados}</td><td class="n">${f.pagados_en_rango}</td><td class="n">${f.pagados_bonificados}</td></tr>`).join('')}
+        </tbody></table></div></div>
+      ${(j.sin_provincia || []).length ? `<div class="panel"><h2>Códigos postales sin provincia · ${j.sin_provincia.length}</h2><p class="sub" style="margin:0 0 8px">Aparecieron en bolsas o pedidos y no están en la tabla: las reglas con zona no se les aplican. Elegí la provincia y guardá (si vino de un pedido, ya está sugerida).</p><table><tbody>
+        ${j.sin_provincia.map(s => `<tr><td>CP ${esc(s.cp)} <span class="sub">· ${s.veces} ${s.veces === 1 ? 'vez' : 'veces'}</span></td><td><select data-cp-prov="${esc(s.cp)}"><option value="">Elegí la provincia…</option>${Object.entries(PROVINCIAS).sort((a, b) => a[1].localeCompare(b[1])).map(([l, n]) => `<option value="${l}" ${s.sugerida === l ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td><td><button class="btn secondary" data-guardar-cp="${esc(s.cp)}">Guardar</button></td></tr>`).join('')}
+        </tbody></table></div>` : ''}`;
   }
   document.getElementById('periodo').addEventListener('click', e => { const c = e.target.closest('[data-dias]'); if (c) cargarResultados(Number(c.dataset.dias)); });
 
@@ -266,7 +277,7 @@
           <td>${d ? `${esc(d.regla)} <span class="marca ${d.activa ? 'ok' : ''}">${d.activa ? 'activa' : 'borrador'}</span><div class="sub">La clienta ve: «${esc(d.texto)}» −${plata(d.descuento)}</div>` : '<span class="sub">—</span>'}</td>
           <td class="n paga">${o.precio_cliente > 0 ? plata(o.precio_cliente) : 'Gratis'}</td></tr>`;
       }).join('');
-      $('#resultado').innerHTML = `<div class="panel"><h2>CP ${esc($('#cp').value)} · ${j.carrito.unidades} unidades · subtotal ${plata(j.carrito.subtotal)}</h2>
+      $('#resultado').innerHTML = `<div class="panel"><h2>CP ${esc($('#cp').value)}${j.carrito.provincia_nombre ? ' · ' + esc(j.carrito.provincia_nombre) : ' · <span class="error">provincia desconocida</span>'} · ${j.carrito.unidades} unidades · subtotal ${plata(j.carrito.subtotal)}</h2>
         ${j.avisos.length ? `<p class="error">${j.avisos.map(esc).join('<br>')}</p>` : ''}
         ${filas ? `<table><thead><tr><th>Envío</th><th class="n">Tarifa real</th><th>Regla que aplica</th><th class="n">Paga la clienta</th></tr></thead><tbody>${filas}</tbody></table>` : '<div class="vacio">La tienda no devolvió opciones de envío para ese código postal.</div>'}</div>`;
     } catch (e) {
@@ -312,6 +323,10 @@
     if (r.medio !== 'todos') c.push(MEDIOS[r.medio]);
     if (r.entrega !== 'todas') c.push(ENTREGAS[r.entrega].toLowerCase());
     if (r.desde || r.hasta) c.push(`vigente ${r.desde ? 'desde ' + r.desde : ''}${r.hasta ? ' hasta ' + r.hasta : ''}`);
+    if ((r.zona_modo || 'todas') !== 'todas') {
+      const que = [r.zona_provincias?.length ? nombresProv(r.zona_provincias) : '', r.zona_cps ? 'CP ' + r.zona_cps : ''].filter(Boolean).join(' + ');
+      c.push((r.zona_modo === 'incluir' ? 'solo en ' : 'todo el país menos ') + (que || '(sin provincias ni códigos: revisar)'));
+    }
     c.push(r.acumula ? 'se suma a otros descuentos' : 'no se suma a otros descuentos');
     const d = r.descuento_tipo === 'porcentaje' ? `${Number(r.descuento_valor)}% del envío` : `${plata(r.descuento_valor)} del envío`;
     const ref = r.descuento_tipo === 'porcentaje' ? (r.referencia_envio ? ` (antes de elegir el envío: sobre ${plata(r.referencia_envio)})` : ' (solo con el envío ya elegido)') : '';
@@ -346,13 +361,35 @@
       <label class="campo">Hasta (fecha) <input id="f-hasta" type="date" value="${esc(v('hasta'))}"></label>
       <label class="campo">Prioridad (menor gana en empate) <input id="f-prio" type="number" value="${esc(v('prioridad', 100))}"></label>
       <label class="campo todo" style="flex-direction:row;display:flex;gap:8px;align-items:center"><input id="f-acumula" type="checkbox" ${r.acumula ? 'checked' : ''}> Se suma a otros descuentos (rutina 5%, cupones, productos en oferta). Apagado = cuida el margen: si la bolsa ya tiene otro descuento, no se aplica.</label>
+      <div class="campo todo">Zona (por el código postal de envío; sin código postal o con uno que no está en la tabla, la regla con zona no se aplica)
+        <select id="f-zona" style="max-width:420px">${Object.entries(ZONAS).map(([k, t]) => `<option value="${k}" ${v('zona_modo', 'todas') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <div id="f-zona-detalle" ${v('zona_modo', 'todas') === 'todas' ? 'hidden' : ''}>
+          <div class="fila" style="margin:8px 0 6px;gap:6px">Regiones: ${Object.keys(REGIONES).map(k => `<button type="button" class="chip" data-region="${k}">${k}</button>`).join('')}<button type="button" class="chip" data-region="">Ninguna</button></div>
+          <div class="cats" id="f-provs">${Object.entries(PROVINCIAS).sort((a, b) => a[1].localeCompare(b[1])).map(([l, n]) => `<label><input type="checkbox" value="${l}" ${(r.zona_provincias || []).includes(l) ? 'checked' : ''}>${esc(n)}</label>`).join('')}</div>
+          <label class="campo" style="margin-top:8px">Códigos postales puntuales (opcional): lista o rangos, ej. «2000-2009, 1414» <input id="f-cps" value="${esc(v('zona_cps'))}" placeholder="2000-2009, 1414"></label>
+        </div></div>
       <div class="campo todo">Solo si la bolsa tiene productos de estas categorías (las unidades mínimas cuentan solo esos productos). Ninguna marcada = cualquier producto.<div class="cats" id="f-cats">${cats || '<span class="sub">Cargando categorías…</span>'}</div></div>
     </div><div class="fila" style="margin-top:12px"><button class="btn primary" id="f-guardar" data-id="${r.id || ''}">Guardar</button><button class="btn secondary" id="f-cancelar">Cancelar</button></div></div>`;
     $('#form-regla').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   const numo = id => { const x = $(id).value; return x === '' ? null : Number(x); };
+  document.addEventListener('change', e => { if (e.target.id === 'f-zona') $('#f-zona-detalle').hidden = e.target.value === 'todas'; });
   document.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.region !== undefined && b.closest('#f-zona-detalle')) {
+      const cajas = [...document.querySelectorAll('#f-provs input')];
+      if (!b.dataset.region) cajas.forEach(i => i.checked = false);
+      else { const ls = REGIONES[b.dataset.region], todas = cajas.filter(i => ls.includes(i.value)).every(i => i.checked); cajas.forEach(i => { if (ls.includes(i.value)) i.checked = !todas; }); }
+      return;
+    }
+    if (b.dataset.guardarCp) {
+      const cp = b.dataset.guardarCp, prov = document.querySelector(`[data-cp-prov="${cp}"]`).value;
+      if (!prov) { alert('Elegí la provincia del código postal ' + cp + '.'); return; }
+      b.disabled = true;
+      const { error } = await sb.from('cp_provincias').insert({ cp, provincia: prov, fuente: 'manual', actualizado_por: quien || 'Core' });
+      if (error) { b.disabled = false; alert('No se pudo guardar: ' + error.message); return; }
+      b.closest('tr').remove(); return;
+    }
     if (b.id === 'nueva') abrirForm();
     if (b.id === 'f-cancelar') $('#form-regla').innerHTML = '';
     if (b.dataset.editar) abrirForm(REGLAS.find(r => r.id === b.dataset.editar));
@@ -364,7 +401,12 @@
         hasta: $('#f-hasta').value || null, prioridad: numo('#f-prio') ?? 100,
         categoria_ids: [...document.querySelectorAll('#f-cats input:checked')].map(i => Number(i.value)), actualizado_por: quien || 'Core',
         acumula: $('#f-acumula').checked,
+        zona_modo: $('#f-zona').value, zona_provincias: [...document.querySelectorAll('#f-provs input:checked')].map(i => i.value),
+        zona_cps: $('#f-cps').value.trim() || null,
       };
+      if (fila.zona_modo === 'todas') { fila.zona_provincias = []; fila.zona_cps = null; }
+      if (fila.zona_cps && !/^s*d{4}(s*-s*d{4})?(s*[,;s]s*d{4}(s*-s*d{4})?)*s*$/.test(fila.zona_cps)) { alert('Códigos postales: usá números de 4 cifras separados por coma, o rangos como 2000-2009.'); return; }
+      if (fila.zona_modo !== 'todas' && !fila.zona_provincias.length && !fila.zona_cps) { alert('Elegí al menos una provincia o un código postal para la zona.'); return; }
       if (!fila.nombre) { alert('Poné un nombre.'); return; }
       if (!(fila.descuento_valor > 0)) { alert('El valor del descuento tiene que ser mayor que 0.'); return; }
       if (fila.descuento_tipo === 'porcentaje' && fila.descuento_valor > 100) { alert('El porcentaje no puede pasar de 100.'); return; }
