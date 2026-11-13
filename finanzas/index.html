@@ -117,7 +117,7 @@
   const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const INTERNOS = 'Pagos internos';                 // diario que no es una cuenta real de dinero
-  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Alquiler': 'color-mix(in srgb, var(--structure) 50%, var(--accent))', 'Servicios públicos': 'color-mix(in srgb, var(--cyan) 60%, var(--structure))', 'Honorarios profesionales': 'color-mix(in srgb, var(--accent) 55%, var(--warn))', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
+  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Alquiler': 'color-mix(in srgb, var(--structure) 50%, var(--accent))', 'Servicios públicos': 'color-mix(in srgb, var(--cyan) 60%, var(--structure))', 'Honorarios profesionales': 'color-mix(in srgb, var(--accent) 55%, var(--warn))', 'Mantenimiento y changas': 'color-mix(in srgb, var(--warn) 55%, var(--structure))', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const $ = id => document.getElementById(id);
@@ -444,10 +444,10 @@
         <div class="nota">Las facturas en dólares muestran el importe en dólares y su equivalente en pesos al tipo de cambio de la factura; al pagarlas cambia según el día.</div>
       </div>
       <div class="grid2 row-gap">
-        <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, alquiler, servicios, honorarios, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
+        <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, alquiler, servicios, honorarios, mantenimiento, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
         <div class="panel"><div class="panel-head"><h2>Sueldos y cadeterías</h2></div><div id="sueldos"></div></div>
       </div>`;
-    const cats = ['Pagos a proveedores', 'Alquiler', 'Servicios públicos', 'Honorarios profesionales', 'Sueldos y honorarios', 'Cadeterías'];
+    const cats = ['Pagos a proveedores', 'Alquiler', 'Servicios públicos', 'Honorarios profesionales', 'Mantenimiento y changas', 'Sueldos y honorarios', 'Cadeterías'];
     apiladas($('ch-pag'), D.meses, cats.map(k => ({ name: k, color: COL_CAT[k], values: D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === k && f.cuenta !== INTERNOS).map(f => f.salidas[i]))) })));
     const sv = D.sin_vincular || [];
     const pend = D.a_pagar.filter(x => /Sueldos|Cadeter/i.test(String(x.cuenta || '')));

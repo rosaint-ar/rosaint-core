@@ -22,6 +22,7 @@ function categoria(code: string, tipo: string): string {
   // 12-nov-2026: luz, agua y tasas del galpón (y sus planes de pago) y el estudio contable ya no van por Proveedores
   if (code.startsWith("2.1.1.01.09") || code.startsWith("2.1.1.01.10")) return "Servicios públicos";
   if (code.startsWith("2.1.1.01.11")) return "Honorarios profesionales";
+  if (code.startsWith("2.1.1.01.12")) return "Mantenimiento y changas";   // 13-nov-2026: Vicente Feliciani y similares, sin factura
   if (tipo === "asset_receivable") return "Cobros de clientes";
   if (tipo === "liability_payable") return "Pagos a proveedores";
   if (code.startsWith("2.1.2") || code.startsWith("2.1.3") || code.startsWith("1.1.4")) return "Impuestos";
