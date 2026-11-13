@@ -573,6 +573,18 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, pasos, facturas: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo renombrar_cuenta (13-nov-2026): cambia SOLO el nombre de una cuenta contable de VELAZQUEZ (el código no se toca) ----
+    // { renombrar_cuenta: { code, name }, dry_run }
+    if (body.renombrar_cuenta) {
+      const q = body.renombrar_cuenta; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const [cta] = await call("account.account", "search_read", [[["code", "=", String(q.code)], ["company_ids", "in", [2]]], ["id", "code", "name"]], { context: ctx });
+      if (!cta) throw new Error(`No existe la cuenta ${q.code}`);
+      if (!String(q.name || "").trim()) throw new Error("Falta el nombre nuevo");
+      if (!dry) await call("account.account", "write", [[cta.id], { name: String(q.name).trim() }], { context: ctx });
+      const [d] = await call("account.account", "read", [[cta.id], ["code", "name"]], { context: ctx });
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: cta.name, ahora: d.name, codigo: d.code }, null, 2), { headers: cors });
+    }
+
     // ---- Modo cuotas_vencimiento (12-nov-2026): pone en una factura de compra YA VALIDADA las cuotas reales con su fecha ----
     // { cuotas_vencimiento: { facturas: [{ id, cuotas: [{ fecha, monto }] }] }, dry_run }
     // Las cuotas son el cronograma COMPLETO (las pagadas también) y deben sumar el total de la factura.
