@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { encodeBase64, decodeBase64 } from "jsr:@std/encoding@1/base64";
 import * as Facturas from "./facturas.ts";
+import * as Auto from "./auto.ts";
 
 // ====== correo — conector COMPLETO de la casilla de Rosaint (leer, ordenar, borrar, carpetas, enviar) ======
 // Ferozo bloquea las conexiones IMAP que salen de Supabase (corta apenas abre el TLS), así que el trabajo
@@ -30,7 +31,7 @@ const PERMITIDOS = new Map([
   ["8a55f15a-184e-430b-9d2d-9067c1dbbd8a", "contacto@rosaint.com.ar"],
   ["c0e45351-4a9f-43ec-8197-784672a00653", "rosaint.ar@gmail.com"],
 ]);
-const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas", "lista_blanca", "facturas"]);
+const SOLO_LECTURA = new Set(["estado", "carpetas", "buscar", "leer", "adjunto", "remitentes", "reglas", "lista_blanca", "facturas", "promos"]);
 type Rec = Record<string, unknown>;
 
 // devuelve quién llama (o null si no puede)
@@ -135,6 +136,22 @@ Deno.serve(async (req: Request) => {
       const odoo = await Facturas.cruzarOdoo(db, ids.slice(0, 25));
       return responder({ ok: true, resultados: res, odoo });
     }
+    // ---- Promociones (filtro automático) e Impuestos separados por empresa: ver auto.ts
+    if (accion === "promos") return responder(await Auto.listarPromos(db));
+    if (accion === "promo_decidir") {
+      const r = await Auto.decidirPromo(puente, db, String(body.de_email || ""), body.decision === "papelera" ? "papelera" : "bandeja", usuario);
+      await registrar({ usuario, accion, ok: !!r.ok, para: String(body.de_email || ""), destino: body.decision === "papelera" ? "INBOX.Trash" : "INBOX", detalle: r });
+      return responder(r);
+    }
+    if (accion === "promos_barrer") {   // pasada manual (la primera vez, sobre toda la Bandeja)
+      if (body.desde_cero) {   // vuelve a mirar toda la Bandeja desde el primer correo
+        const b = await puente({ accion: "buscar", carpeta: "INBOX", limite: 1 });
+        await db("correo_estado?on_conflict=clave", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ clave: "promos:INBOX", valor: { validez: b.uid_validez, ultimo: 0 }, actualizado: new Date().toISOString() }) });
+      }
+      return responder({ ok: true, ...(await Auto.promociones(puente, db, { maxLeer: Number(body.max) || 25 })) });
+    }
+    if (accion === "impuestos_separar") return responder({ ok: true, ...(await Auto.separarImpuestos(puente, db, Number(body.max) || 30)) });
     if (accion === "facturas_odoo") {
       const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(Number).filter(Boolean) : undefined;
       return responder({ ok: true, ...(await Facturas.cruzarOdoo(db, ids)) });
@@ -197,6 +214,7 @@ Deno.serve(async (req: Request) => {
 
     let reglasActivas: Rec[] = [];
     let facturasOut: Rec | null = null;
+    const autoOut: Rec = {};
     if (accion === "aplicar_reglas") {
       // antes de que las reglas muevan nada: las facturas nuevas de la Bandeja y de Spam (copia a «Facturas»)
       if (!body.simular) {
@@ -212,6 +230,12 @@ Deno.serve(async (req: Request) => {
         } catch (e) { facturasOut = { error: String((e as Error).message || e) }; }
         if (facturasOut && (Number(facturasOut.facturas) > 0 || facturasOut.error || (facturasOut.errores as string[] | undefined)?.length))
           await registrar({ usuario, accion: "facturas_detectar", ok: !facturasOut.error, error: facturasOut.error ? String(facturasOut.error).slice(0, 500) : null, destino: Facturas.CARPETA_FACTURAS, detalle: facturasOut });
+        // publicidad nueva de remitentes desconocidos → Promociones (después de las facturas, antes de las reglas)
+        try {
+          autoOut.promos = await Auto.promociones(puente, db, { maxLeer: 15 });
+          if (Number((autoOut.promos as Rec).promos) > 0 || (autoOut.promos as Rec).error)
+            await registrar({ usuario, accion: "promos_detectar", ok: !(autoOut.promos as Rec).error, destino: Auto.CARPETA_PROMOS, detalle: autoOut.promos });
+        } catch (e) { autoOut.promos = { error: String((e as Error).message || e) }; }
       }
       reglasActivas = await (await db("correo_reglas?select=id,patron,carpeta&activa=eq.true")).json();
       // primero las de una dirección puntual, después las de dominio: así una excepción gana sobre la regla general
@@ -239,6 +263,15 @@ Deno.serve(async (req: Request) => {
 
     let out: Rec = await puente(body);
     if (facturasOut) out = { ...out, facturas: facturasOut };
+    // después de las reglas: lo que cayó en «Impuestos y organismos» se separa entre Velázquez y RST
+    if (accion === "aplicar_reglas" && out.ok && !body.simular) {
+      try {
+        autoOut.impuestos = await Auto.separarImpuestos(puente, db, 15);
+        if (Object.keys(((autoOut.impuestos as Rec).movidos as Rec) || {}).length || (autoOut.impuestos as Rec).error)
+          await registrar({ usuario, accion: "impuestos_separar", ok: !(autoOut.impuestos as Rec).error, destino: Auto.CARPETA_IMPUESTOS, detalle: autoOut.impuestos });
+      } catch (e) { autoOut.impuestos = { error: String((e as Error).message || e) }; }
+      out = { ...out, ...autoOut };
+    }
 
     if (accion === "adjunto" && out.ok && !body.en_linea) {
       const datos = decodeBase64(String(out.base64 || ""));

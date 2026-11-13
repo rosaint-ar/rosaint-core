@@ -228,7 +228,21 @@
   <div class="ct" id="tarjetas">
     <button class="m-dato ct-t" id="t-venc" style="--c:var(--rojo)" onclick="modoFacturas(true, 'vencimientos')"><span class="l">Vencimientos</span><span class="sec">Cargando…</span></button>
     <button class="m-dato ct-t" id="t-fact" style="--c:var(--azul)" onclick="modoFacturas(true, 'falta')"><span class="l">Facturas recibidas</span><span class="sec">Cargando…</span></button>
+    <button class="m-dato ct-t" id="t-promo" style="--c:var(--acido)" onclick="modoPromos(true)"><span class="l">Promociones nuevas</span><span class="sec">Cargando…</span></button>
   </div>
+
+  <section class="fa" id="pr" hidden>
+    <div class="or-cab">
+      <p id="pr-resumen">—</p>
+      <button class="rb linea" onclick="modoPromos(false)">Volver al correo</button>
+    </div>
+    <div class="or-cuerpo">
+      <table class="or-tabla fa-tabla">
+        <thead><tr><th>Quién manda</th><th class="c-llego" style="width:9%">Correos</th><th style="width:34%">Último asunto</th><th style="width:30%"></th></tr></thead>
+        <tbody id="pr-filas"></tbody>
+      </table>
+    </div>
+  </section>
 
   <section class="fa" id="fa" hidden>
     <div class="or-cab">
@@ -861,6 +875,7 @@ const origenRuta = () => ORD.origen === 'spam' ? (ESP['\\Junk'] || 'INBOX.spam')
 function cambiarOrigen(v){ ORD.origen = v; ORD.datos = null; ORD.elegidos.clear(); ORD.siempre.clear(); ORD.destino = {}; ORD.expandidos.clear(); cargarOrdenar(); }
 function modoOrdenar(si){
   if (si && FA.abierto) modoFacturas(false);
+  if (si && PR.abierto) modoPromos(false);
   ORD.abierto = si;
   $('co').hidden = si; $('or').hidden = !si; $('or-reglas').hidden = !si; $('or-blanca').hidden = !si;
   $('b-ordenar').textContent = si ? 'Volver al correo' : 'Ordenar la bandeja';
@@ -1158,8 +1173,69 @@ function pintarTarjetas(){
     <span class="sec">${recientes.length} ${recientes.length === 1 ? 'llegó' : 'llegaron'} en los últimos 30 días · copia de cada una en la carpeta Facturas</span>
     ${recientes.length ? '<ul>' + recientes.slice(0, 3).map(f => { const o = enOdoo(f); return `<li><span class="q">${esc(fechaCorta(f.recibido))} · ${esc(provDe(f))}</span><span class="pill ${o.cls}">${esc(o.txt)}</span></li>`; }).join('') + '</ul>' : ''}`;
 }
+// ---------------- tarjeta Promociones nuevas
+// El filtro automático (función correo, cada 10 min) manda a la carpeta Promociones lo que llega de remitentes
+// sin regla, que no son clientes ni proveedores de Odoo y que traen el link de «darse de baja». Acá se decide.
+let PROMOS = [];
+const PR = { abierto: false };
+async function cargarPromos(){
+  try { const r = await api({ accion: 'promos' }); PROMOS = r.promos || []; }
+  catch (err) { $('t-promo').querySelector('.sec').textContent = 'No se pudieron leer: ' + err.message; return; }
+  pintarTarjetaPromos(); if (PR.abierto) pintarPromos();
+}
+function gruposPromo(){
+  const g = new Map();
+  for (const p of PROMOS) { const x = g.get(p.de_email) || { de_email: p.de_email, nombre: p.de_nombre, n: 0, ultimo: p }; x.n++; if ((p.recibido || '') > (x.ultimo.recibido || '')) x.ultimo = p; g.set(p.de_email, x); }
+  return [...g.values()].sort((a, b) => String(b.ultimo.recibido).localeCompare(String(a.ultimo.recibido)));
+}
+function pintarTarjetaPromos(){
+  const gs = gruposPromo();
+  $('t-promo').innerHTML = `<span class="l">Promociones nuevas</span>
+    <span class="grande"><span class="m-num">${PROMOS.length}</span><span class="tx">${PROMOS.length === 1 ? 'correo de publicidad' : 'correos de publicidad'}</span></span>
+    <span class="sec">${gs.length ? 'de ' + gs.length + (gs.length === 1 ? ' remitente nuevo' : ' remitentes nuevos') + ' · están en la carpeta Promociones, no se borró nada' : 'Nada nuevo: la publicidad conocida va sola a la Papelera'}</span>
+    ${gs.length ? '<ul>' + gs.slice(0, 3).map(x => `<li><span class="q">${esc(x.nombre || x.de_email)}</span><span class="c">${esc(fechaCorta(x.ultimo.recibido))}</span></li>`).join('') + '</ul>' : ''}`;
+}
+function modoPromos(si){
+  if (si && ORD.abierto) modoOrdenar(false);
+  if (si && FA.abierto) modoFacturas(false);
+  PR.abierto = si;
+  $('pr').hidden = !si; $('co').hidden = si;
+  if (si) { pintarPromos(); $('pr').scrollIntoView({ block: 'nearest' }); }
+}
+function pintarPromos(){
+  const gs = gruposPromo();
+  $('pr-resumen').innerHTML = `Publicidad de <b>remitentes nuevos</b> (sin regla y que no son clientes ni proveedores de Odoo): ya está en la carpeta <b>Promociones</b>.
+    <b>Siempre a la Papelera</b> crea la regla y tira lo que haya; <b>No es publicidad</b> lo devuelve a la Bandeja y no lo vuelve a apartar.`;
+  if (!gs.length) { $('pr-filas').innerHTML = '<tr><td colspan="4"><div class="co-vacio">No hay publicidad nueva para revisar. 👌</div></td></tr>'; return; }
+  $('pr-filas').innerHTML = gs.map(x => `<tr>
+    <td><div class="quien" title="${esc(x.de_email)}">${esc(x.nombre || x.de_email)}</div><div class="dir">${esc(x.de_email)}</div></td>
+    <td class="c-llego num" style="text-align:left">${x.n}</td>
+    <td><div class="ej" title="${esc(x.ultimo.asunto)}">${esc(x.ultimo.asunto)}</div><div class="por">${esc(fechaCorta(x.ultimo.recibido))}</div></td>
+    <td><div class="acc">
+      <button class="rb si" onclick="decidirPromo('${esc(x.de_email)}', 'papelera', this)">Siempre a la Papelera</button>
+      <button class="rb suave" onclick="decidirPromo('${esc(x.de_email)}', 'bandeja', this)">No es publicidad</button>
+      ${x.ultimo.uid ? `<button class="rb suave" onclick="verPromo(${x.ultimo.uid})">Ver</button>` : ''}
+    </div></td></tr>`).join('');
+}
+async function decidirPromo(email, decision, btn){
+  btn.disabled = true;
+  try {
+    const r = await api({ accion: 'promo_decidir', de_email: email, decision });
+    PROMOS = PROMOS.filter(p => p.de_email !== email);
+    pintarTarjetaPromos(); pintarPromos();
+    avisar(decision === 'papelera' ? `${email}: siempre a la Papelera (${r.movidos || 0} tirados)` : `${email}: vuelve a la Bandeja y no se aparta más`);
+  } catch (err) { btn.disabled = false; avisar('No se pudo: ' + err.message, true); }
+}
+function verPromo(uid){
+  modoPromos(false);
+  if (carpeta !== 'INBOX.Promociones') elegirCarpeta('INBOX.Promociones');
+  abrir(uid);
+}
+setInterval(() => { if (!document.hidden) cargarPromos(); }, 300000);
+
 function modoFacturas(si, filtro){
   if (si && ORD.abierto) modoOrdenar(false);
+  if (si && PR.abierto) modoPromos(false);
   FA.abierto = si; if (filtro) FA.filtro = filtro;
   $('fa').hidden = !si; $('co').hidden = si;
   if (si) { pintarFacturas(); $('fa').scrollIntoView({ block: 'nearest' }); }
@@ -1256,7 +1332,7 @@ setInterval(() => {
 (async () => {
   const ini = (location.hash.slice(1) && decodeURIComponent(location.hash.slice(1))) || 'INBOX';
   carpeta = ini;
-  cargarFacturas();
+  cargarFacturas(); cargarPromos();
   try { await cargarCarpetas(); }
   catch { $('lista').innerHTML = '<div class="co-vacio">Sin conexión con la casilla.</div>'; return; }
   if (!CARPETAS.some(c => c.ruta === carpeta)) carpeta = 'INBOX';
