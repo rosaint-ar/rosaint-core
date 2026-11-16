@@ -37,6 +37,8 @@ const CATS: Record<string, { code: string; account: number; label: string }> = {
   higiene:     { code: "", account: 758, label: "Higiene y Seguridad (5.1.2.01.100)" },
   // comisiones del banco (cuenta existente Gastos Bancarios), sin producto: el texto va en linea_nombre
   bancarios:   { code: "", account: 821, label: "Gastos Bancarios (5.5.1.01.050)" },
+  // hosting, dominios y abonos de software (16-nov-2026): sin producto, el texto va en linea_nombre
+  software:    { code: "", account: 783, label: "Software y suscripciones (5.3.1.01.090)" },
 };
 // diarios de pago: Mercado Pago (también tarjeta, como puente) o Efectivo
 const PAGO_DIARIO: Record<string, { journal: number; pml: number; nombre: string }> = { mp: { journal: J_MP, pml: PML_MP_OUT, nombre: "Mercado Pago" }, efectivo: { journal: 38, pml: 19, nombre: "Efectivo" }, internos: { journal: 55, pml: 28, nombre: "Pagos internos" }, santander: { journal: 54, pml: 26, nombre: "Banco Santander" } };
