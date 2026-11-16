@@ -412,7 +412,7 @@
   function verDetalleFlujo(cat, tipo, mes) {
     const campo = tipo === 'e' ? 'entradas' : 'salidas';
     const L = (D.flujo_detalle || []).filter(d => d.categoria === cat && (st.internos || d.cuenta !== INTERNOS) && d[campo] > 0.004);
-    const porC = {}; L.forEach(d => { const c = (porC[d.contacto] ||= { m: new Array(X.N).fill(0), n: 0, cuentas: new Set(), ej: [] }); c.m[d.mes] += d[campo]; c.n += d.n; c.cuentas.add(d.cuenta); if (mes === null || d.mes === mes) c.ej.push(...(d.ej || [])); });
+    const porC = {}; L.forEach(d => { const c = (porC[d.contacto] ||= { m: new Array(X.N).fill(0), n: 0, cuentas: new Set(), ej: [] }); c.m[d.mes] += d[campo]; if (mes === null || d.mes === mes) { c.n += d.n; c.cuentas.add(d.cuenta); c.ej.push(...(d.ej || [])); } });
     let filas = Object.entries(porC).map(([k, c]) => ({ k, ...c, tot: mes === null ? sum(c.m) : c.m[mes] })).filter(r => r.tot > 0.004).sort((a, b) => b.tot - a.tot);
     const total = sum(filas.map(r => r.tot));
     const titulo = esc(cat) + ' · ' + (mes === null ? 'todos los meses' : lblMesLargo(D.meses[mes]));
