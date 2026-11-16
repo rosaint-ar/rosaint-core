@@ -586,7 +586,7 @@ _servirConGuardia(async (req: Request) => {
     }
 
     // ---- Modo reclasificar_contacto (16-nov-2026): pasa TODA la deuda de un contacto (facturas, NC y pagos) a otra cuenta ----
-    // { reclasificar_contacto: { partner_id, cuenta_code, limite? }, dry_run }
+    // { reclasificar_contacto: { partner_id, cuenta_code, limite?, excluir_asientos?: [move ids] }, dry_run }
     // A diferencia de reclasificar_pasivo, respeta los grupos de conciliación tal cual estaban (factura+pago, factura+NC,
     // pagos parciales): arma los grupos por matching_number, los desconcilia, cambia la cuenta de deuda de cada asiento
     // (pagos: destination_account_id; facturas/NC: el renglón de deuda) y reconcilia de nuevo el mismo grupo.
@@ -602,7 +602,8 @@ _servirConGuardia(async (req: Request) => {
       // grupos: por matching_number (los sin conciliar van solos)
       const grupos: Record<string, any[]> = {};
       for (const l of lineas) { const k = l.matching_number ? "m" + l.matching_number : "s" + l.id; (grupos[k] = grupos[k] || []).push(l); }
-      const claves = Object.keys(grupos); const hacer = claves.slice(0, limite);
+      const excluir = new Set(((q.excluir_asientos as any[]) || []).map(Number));
+      const claves = Object.keys(grupos).filter((k) => !grupos[k].some((l: any) => excluir.has(l.move_id[0]))); const hacer = claves.slice(0, limite);
       const out: any[] = [];
       for (const k of hacer) {
         const g = grupos[k]; const fila: any = { grupo: k, asientos: g.map((l: any) => l.move_id[1]), saldo: Math.round(g.reduce((a: number, l: any) => a + l.balance, 0) * 100) / 100 };
