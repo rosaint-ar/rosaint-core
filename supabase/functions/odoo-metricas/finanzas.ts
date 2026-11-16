@@ -91,7 +91,8 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
   // Alquiler: el pago va contra el proveedor (a pagar), así que se reconoce por el contacto de las facturas
   // cargadas en "Alquileres Administrativos" (5.3.1.01.040), hoy el locador del galpón.
   const alqPartners = new Set((await sr("account.move.line", [...posted, ["account_id.code", "=", "5.3.1.01.040"]], ["partner_id"])).map(l => m2oId(l.partner_id)).filter(Boolean));
-  const catCp = (cp: Rec) => cp.account_type === "liability_payable" && alqPartners.has(m2oId(cp.partner_id)) ? "Alquiler" : categoria(codigo(m2oName(cp.account_id)), String(cp.account_type || ""));
+  // 16-nov-2026: alquileres que no son del galpón (depto, no operativo) y bienes de uso ya no caen en "Pagos a proveedores"
+  const catCp = (cp: Rec) => { const cod = codigo(m2oName(cp.account_id)); if (cp.account_type === "liability_payable" && alqPartners.has(m2oId(cp.partner_id))) return "Alquiler"; if (cod.startsWith("2.1.1.01.05")) return "Alquileres no operativos"; if (cod.startsWith("2.1.1.01.08")) return "Bienes de uso"; return categoria(cod, String(cp.account_type || "")); };
   const cpPorMov: Record<number, Rec[]> = {}; for (const l of lCp) (cpPorMov[m2oId(l.move_id) as number] ||= []).push(l);
   const liqPorMov: Record<number, Rec[]> = {}; for (const l of lLiq) (liqPorMov[m2oId(l.move_id) as number] ||= []).push(l);
 
@@ -100,6 +101,9 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
   const flujo: Record<string, { entradas: number[]; salidas: number[] }> = {};
   // flujo por cuenta de dinero + categoría (así la pantalla puede separar, p. ej., "Pagos internos")
   const addF = (cuenta: string, cat: string, i: number, v: number) => { const f = (flujo[cuenta + "|" + cat] ||= { entradas: zeros(), salidas: zeros() }); if (v >= 0) f.entradas[i] += v; else f.salidas[i] += -v; };
+  // detalle del flujo por cuenta + concepto + mes + contacto (para la ventana "a quién se le pagó")
+  const det: Record<string, { cuenta: string; categoria: string; mes: number; contacto: string; entradas: number; salidas: number; n: number; ej: Rec[] }> = {};
+  const addD = (cuenta: string, cat: string, i: number, contacto: string, v: number, ej: Rec) => { const k = cuenta + "|" + cat + "|" + i + "|" + contacto; const d = (det[k] ||= { cuenta, categoria: cat, mes: i, contacto, entradas: 0, salidas: 0, n: 0, ej: [] }); if (v >= 0) d.entradas += v; else d.salidas += -v; d.n++; if (d.ej.length < 4) d.ej.push(ej); };
   const recientes: Rec[] = [];
   let transferencias = 0;
 
@@ -120,6 +124,7 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
       const totCp = Object.values(porCat).reduce((s, v) => s + v, 0);
       const cuentaMov = String(liq[m2oId(ls[0]?.account_id) as number]?.diario || "");
       for (const [cat, v] of Object.entries(porCat)) if (i !== undefined && Math.abs(totCp) > 0.005) addF(cuentaMov, cat, i, neto * v / totCp);
+      if (i !== undefined && Math.abs(totCp) > 0.005) for (const cp of cps) { const v = -((cp.balance as number) || 0); if (Math.abs(v) < 0.005) continue; const contacto = m2oName(cp.partner_id) || m2oName(ls[0]?.partner_id) || m2oName(cp.account_id); const imp = neto * v / totCp; addD(cuentaMov, catCp(cp), i, contacto, imp, { fecha, asiento: m2oName(ls[0]?.move_id), importe: r2(imp), detalle: String(ls[0]?.name || "").slice(0, 80) }); }
       det = Object.keys(porCat).join(" + ");
     } else if (ls.length > 1) { transferencias += ls.filter(l => ((l.balance as number) || 0) > 0).reduce((s, l) => s + (l.balance as number), 0); det = "Transferencia entre cuentas"; }
     recientes.push({ fecha, asiento: m2oName(ls[0]?.move_id), cuenta: ls.map(l => liq[m2oId(l.account_id) as number]?.diario).join(" → "), importe: r2(neto), categoria: det, detalle: String(ls[0]?.name || ""), contacto: m2oName(ls[0]?.partner_id) || m2oName(cps[0]?.partner_id) });
@@ -135,6 +140,19 @@ export async function finanzas(body: Rec, ex: Ex, ctx: Rec): Promise<Rec> {
     .sort((x, y) => Math.abs(y.saldo) - Math.abs(x.saldo));
   out.flujo = Object.entries(flujo).map(([k, f]) => ({ cuenta: k.split("|")[0], categoria: k.split("|")[1], entradas: f.entradas.map(r2), salidas: f.salidas.map(r2) }));
   out.transferencias_entre_cuentas = r2(transferencias);
+  // compacto: por cuenta+concepto+mes, los 12 contactos de mayor importe y el resto agrupado; ejemplos solo en salidas
+  {
+    const grupos: Record<string, typeof det[string][]> = {};
+    for (const d of Object.values(det)) (grupos[d.cuenta + "|" + d.categoria + "|" + d.mes] ||= []).push(d);
+    const fd: Rec[] = [];
+    for (const g of Object.values(grupos)) {
+      g.sort((x, y) => (y.entradas + y.salidas) - (x.entradas + x.salidas));
+      const top = g.slice(0, 12), resto = g.slice(12);
+      for (const d of top) fd.push({ cuenta: d.cuenta, categoria: d.categoria, mes: d.mes, contacto: d.contacto, entradas: r2(d.entradas), salidas: r2(d.salidas), n: d.n, ej: d.salidas > d.entradas ? d.ej.slice(0, 3) : [] });
+      if (resto.length) fd.push({ cuenta: g[0].cuenta, categoria: g[0].categoria, mes: g[0].mes, contacto: "Otros (" + resto.length + " contactos)", entradas: r2(resto.reduce((a, d) => a + d.entradas, 0)), salidas: r2(resto.reduce((a, d) => a + d.salidas, 0)), n: resto.reduce((a, d) => a + d.n, 0), ej: [] });
+    }
+    out.flujo_detalle = fd;
+  }
   out.movimientos_recientes = recientes.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 120);
 
   // ---------- a cobrar / a pagar (renglones abiertos de clientes y proveedores) ----------

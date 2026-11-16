@@ -62,6 +62,13 @@
     #tbl-flujo td:first-child, #tbl-res td:first-child { min-width: 190px; }
     .tbl tr.total td { font-weight: 800; border-top: 2px solid var(--border-2); }
     .neg { color: var(--hot); } .pos { color: var(--ok); } .muted { color: var(--muted); }
+    #tbl-flujo tr[data-cat] td { cursor: pointer; } #tbl-flujo tr[data-cat]:hover td { background: var(--surface-2); }
+    .modal-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 50; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: min(980px, 100%); max-height: 86vh; display: flex; flex-direction: column; }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .modal-head h3 { margin: 0; font-size: 15px; } .modal-head .hint { font-size: 12px; color: var(--muted); }
+    .modal-head button { font: inherit; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 5px 11px; cursor: pointer; }
+    .modal-body { overflow: auto; padding: 6px 18px 16px; }
     .chip-s { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
     .chip-s.hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 13%, transparent); }
     .chip-s.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
@@ -117,7 +124,7 @@
   const MES_TXT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const INTERNOS = 'Pagos internos';                 // diario que no es una cuenta real de dinero
-  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Alquiler': 'color-mix(in srgb, var(--structure) 50%, var(--accent))', 'Servicios públicos': 'color-mix(in srgb, var(--cyan) 60%, var(--structure))', 'Honorarios profesionales': 'color-mix(in srgb, var(--accent) 55%, var(--warn))', 'Servicios de mantenimiento': 'color-mix(in srgb, var(--warn) 55%, var(--structure))', 'Servicios contratados': 'color-mix(in srgb, var(--cyan) 45%, var(--accent))', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
+  const COL_CAT = { 'Cobros de clientes': 'var(--ok)', 'Ingresos directos': 'color-mix(in srgb, var(--ok) 55%, var(--cyan))', 'Pagos a proveedores': 'var(--structure)', 'Alquiler': 'color-mix(in srgb, var(--structure) 50%, var(--accent))', 'Servicios públicos': 'color-mix(in srgb, var(--cyan) 60%, var(--structure))', 'Honorarios profesionales': 'color-mix(in srgb, var(--accent) 55%, var(--warn))', 'Servicios de mantenimiento': 'color-mix(in srgb, var(--warn) 55%, var(--structure))', 'Servicios contratados': 'color-mix(in srgb, var(--cyan) 45%, var(--accent))', 'Alquileres no operativos': 'color-mix(in srgb, var(--muted) 55%, var(--accent))', 'Bienes de uso': 'color-mix(in srgb, var(--structure) 40%, var(--ok))', 'Sueldos y honorarios': 'var(--accent)', 'Cadeterías': 'var(--warn)', 'Impuestos': 'var(--hot)', 'Gastos pagados directo': 'var(--cyan)', 'Aportes y retiros': 'var(--muted)', 'Otros': 'color-mix(in srgb, var(--muted) 60%, var(--warn))' };
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const $ = id => document.getElementById(id);
@@ -386,7 +393,7 @@
     barrasSigno($('ch-neto'), D.meses, neto);
     // tabla conceptos × meses
     const th = D.meses.map((m, i) => `<th class="num" style="${st.mesFlujo === i ? 'color:var(--accent)' : ''}">${lblMes(m)}</th>`).join('');
-    const fila = (k, arr, signo) => `<tr><td>${esc(k)}</td>${arr.map((v, i) => `<td class="num ${st.mesFlujo === i ? 'pos' : ''}">${v ? fmt$(signo * v) : ''}</td>`).join('')}<td class="num"><b>${fmt$(signo * sum(arr))}</b></td></tr>`;
+    const fila = (k, arr, signo) => `<tr data-cat="${esc(k)}" data-tipo="${signo > 0 ? 'e' : 's'}" title="Tocá para ver a quién se le pagó / de quién entró"><td>${esc(k)} <span class="muted" style="font-size:11px">›</span></td>${arr.map((v, i) => `<td data-i="${i}" class="num ${st.mesFlujo === i ? 'pos' : ''}">${v ? fmt$(signo * v) : ''}</td>`).join('')}<td class="num"><b>${fmt$(signo * sum(arr))}</b></td></tr>`;
     const totE = D.meses.map((_, i) => sum(ent.map(([, c]) => c.e[i]))), totS = D.meses.map((_, i) => sum(sal.map(([, c]) => c.s[i])));
     $('tbl-flujo').innerHTML = `<thead><tr><th>Concepto</th>${th}<th class="num">Total</th></tr></thead><tbody>
       <tr class="grupo"><td colspan="${X.N + 2}">Entró</td></tr>${ent.map(([k, c]) => fila(k, c.e, 1)).join('')}
@@ -394,11 +401,38 @@
       <tr class="total"><td>Entró − salió</td>${neto.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${fmt$(v)}</td>`).join('')}<td class="num">${fmt$(sum(neto))}</td></tr>
       <tr><td class="muted">Total entró / salió</td>${totE.map((v, i) => `<td class="num muted" style="font-size:11.5px">${corto(v)} / ${corto(totS[i])}</td>`).join('')}<td></td></tr>
     </tbody>`;
+    $('tbl-flujo').querySelectorAll('tr[data-cat]').forEach(tr => tr.addEventListener('click', ev => { const td = ev.target.closest('td[data-i]'); verDetalleFlujo(tr.dataset.cat, tr.dataset.tipo, td ? +td.dataset.i : null); }));
     // proyección
     barrasConLinea($('ch-proy'), proy.map(p => p.key), [{ name: 'A cobrar', color: 'var(--ok)', values: proy.map(p => p.cobrar) }, { name: 'A pagar', color: 'var(--structure)', values: proy.map(p => p.pagar) }], { name: 'Dinero proyectado', color: 'var(--accent)', values: proy.map(p => p.saldo) }, null, proy.map(p => p.label));
     $('tbl-proy').innerHTML = `<thead><tr><th>Semana</th><th class="num">Entra (a cobrar)</th><th class="num">Sale (a pagar)</th><th class="num">Dinero al final</th></tr></thead><tbody>
       <tr><td class="muted">Hoy</td><td></td><td></td><td class="num"><b>${fmt$(X.dinero)}</b></td></tr>
       ${proy.map(p => `<tr><td>${esc(p.label)}<span class="sub">${esc(p.detalle)}</span></td><td class="num pos">${p.cobrar ? fmt$(p.cobrar) : ''}</td><td class="num neg">${p.pagar ? fmt$(-p.pagar) : ''}</td><td class="num ${p.saldo < 0 ? 'neg' : ''}"><b>${fmt$(p.saldo)}</b></td></tr>`).join('')}</tbody>`;
+  }
+  // ventana: a quién se le pagó (o de quién entró) en un concepto, un mes o todos
+  function verDetalleFlujo(cat, tipo, mes) {
+    const campo = tipo === 'e' ? 'entradas' : 'salidas';
+    const L = (D.flujo_detalle || []).filter(d => d.categoria === cat && (st.internos || d.cuenta !== INTERNOS) && d[campo] > 0.004);
+    const porC = {}; L.forEach(d => { const c = (porC[d.contacto] ||= { m: new Array(X.N).fill(0), n: 0, cuentas: new Set(), ej: [] }); c.m[d.mes] += d[campo]; c.n += d.n; c.cuentas.add(d.cuenta); if (mes === null || d.mes === mes) c.ej.push(...(d.ej || [])); });
+    let filas = Object.entries(porC).map(([k, c]) => ({ k, ...c, tot: mes === null ? sum(c.m) : c.m[mes] })).filter(r => r.tot > 0.004).sort((a, b) => b.tot - a.tot);
+    const total = sum(filas.map(r => r.tot));
+    const titulo = esc(cat) + ' · ' + (mes === null ? 'todos los meses' : lblMesLargo(D.meses[mes]));
+    const verbo = tipo === 'e' ? 'De quién entró' : 'A quién se le pagó';
+    const ejHtml = r => r.ej.length ? '<span class="sub">' + r.ej.slice(0, 3).map(e => fecha(e.fecha) + ' ' + esc(e.asiento || '') + ' ' + fmt$(Math.abs(e.importe))).join(' · ') + '</span>' : '';
+    const cuerpo = mes === null
+      ? '<table class="tbl"><thead><tr><th>' + verbo + '</th>' + D.meses.map(m => '<th class="num">' + lblMes(m) + '</th>').join('') + '<th class="num">Total</th></tr></thead><tbody>' +
+        filas.map(r => '<tr><td>' + esc(r.k) + '<span class="sub">' + [...r.cuentas].join(' · ') + '</span></td>' + r.m.map(v => '<td class="num">' + (v > 0.004 ? fmt$(v) : '') + '</td>').join('') + '<td class="num"><b>' + fmt$(r.tot) + '</b></td></tr>').join('') +
+        '<tr class="total"><td>Total</td>' + D.meses.map((_, i) => '<td class="num">' + fmt$(sum(filas.map(r => r.m[i]))) + '</td>').join('') + '<td class="num">' + fmt$(total) + '</td></tr></tbody></table>'
+      : '<table class="tbl"><thead><tr><th>' + verbo + '</th><th>Desde</th><th class="num">Movimientos</th><th class="num">Importe</th><th class="num">%</th></tr></thead><tbody>' +
+        filas.map(r => '<tr><td>' + esc(r.k) + ejHtml(r) + '</td><td class="muted">' + [...r.cuentas].join(' · ') + '</td><td class="num">' + r.n + '</td><td class="num"><b>' + fmt$(r.tot) + '</b></td><td class="num muted">' + (total ? Math.round(100 * r.tot / total) : 0) + '%</td></tr>').join('') +
+        '<tr class="total"><td>Total</td><td></td><td class="num">' + sum(filas.map(r => r.n)) + '</td><td class="num">' + fmt$(total) + '</td><td></td></tr></tbody></table>';
+    const fondo = document.createElement('div'); fondo.className = 'modal-fondo';
+    fondo.innerHTML = '<div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><div><h3>' + titulo + '</h3><span class="hint">' + filas.length + ' contacto' + (filas.length === 1 ? '' : 's') + ' · ' + fmt$(total) + (mes === null ? ' · tocá el importe de un mes para ver los movimientos' : '') + '</span></div><button type="button">Cerrar ✕</button></div><div class="modal-body">' + (filas.length ? cuerpo : '<p class="muted">Sin movimientos.</p>') + '<div class="nota">«Desde» es la cuenta de donde salió o entró la plata. Si un movimiento paga varias cosas a la vez, se reparte en proporción. Los contactos más chicos de cada mes se agrupan en «Otros».</div></div></div>';
+    const cerrar = () => { fondo.remove(); document.removeEventListener('keydown', esc_); };
+    const esc_ = e => { if (e.key === 'Escape') cerrar(); };
+    fondo.addEventListener('click', e => { if (e.target === fondo) cerrar(); });
+    fondo.querySelector('button').addEventListener('click', cerrar);
+    document.addEventListener('keydown', esc_);
+    document.body.appendChild(fondo);
   }
   function proyeccion() {
     const hoy = new Date(D.hoy + 'T12:00:00Z');
@@ -447,7 +481,7 @@
         <div class="panel"><div class="panel-head"><h2>Pagos por mes</h2><span class="hint">proveedores, alquiler, servicios, honorarios, mantenimiento, sueldos y cadeterías</span></div><div class="chart" id="ch-pag"></div></div>
         <div class="panel"><div class="panel-head"><h2>Sueldos y cadeterías</h2></div><div id="sueldos"></div></div>
       </div>`;
-    const cats = ['Pagos a proveedores', 'Alquiler', 'Servicios públicos', 'Honorarios profesionales', 'Servicios de mantenimiento', 'Servicios contratados', 'Sueldos y honorarios', 'Cadeterías'];
+    const cats = ['Pagos a proveedores', 'Alquiler', 'Alquileres no operativos', 'Bienes de uso', 'Servicios públicos', 'Honorarios profesionales', 'Servicios de mantenimiento', 'Servicios contratados', 'Sueldos y honorarios', 'Cadeterías'];
     apiladas($('ch-pag'), D.meses, cats.map(k => ({ name: k, color: COL_CAT[k], values: D.meses.map((_, i) => sum(D.flujo.filter(f => f.categoria === k && f.cuenta !== INTERNOS).map(f => f.salidas[i]))) })));
     const sv = D.sin_vincular || [];
     const pend = D.a_pagar.filter(x => /Sueldos|Cadeter/i.test(String(x.cuenta || '')));
