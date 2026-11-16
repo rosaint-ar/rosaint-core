@@ -633,6 +633,29 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, cuenta: cta.code, grupos_total: claves.length, procesados: out.length, quedan: claves.length - out.length, grupos: out }, null, 2), { headers: cors });
     }
 
+    // ---- Modo borrar_borradores (16-nov-2026): elimina asientos/pagos EN BORRADOR que quedaron sin uso ----
+    // { borrar_borradores: { ids: [move ids] }, dry_run }  Solo company 2 y state=draft. Si Odoo no deja borrarlo
+    // (ya consumió número), lo cancela.
+    if (body.borrar_borradores) {
+      const dry = body.dry_run !== false; const out: any[] = [];
+      for (const id of (body.borrar_borradores.ids as any[]).map(Number)) {
+        const [m] = await call("account.move", "read", [[id], ["name", "state", "company_id", "move_type", "amount_total", "ref", "origin_payment_id"]]);
+        if (!m || m.company_id[0] !== 2 || m.state !== "draft") { out.push({ id, error: "no existe, no es de VELAZQUEZ o no está en borrador" }); continue; }
+        const fila: any = { id, nombre: m.name, tipo: m.move_type, total: m.amount_total, ref: m.ref };
+        if (dry) { out.push(fila); continue; }
+        try {
+          if (m.origin_payment_id) await call("account.payment", "unlink", [[m.origin_payment_id[0]]]);
+          else await call("account.move", "unlink", [[id]]);
+          fila.resultado = "borrado";
+        } catch (e) {
+          try { await call("account.move", "button_cancel", [[id]]); fila.resultado = "cancelado (Odoo no deja borrarlo: " + String((e as Error).message).slice(0, 120) + ")"; }
+          catch (e2) { fila.error = String((e2 as Error).message).slice(0, 200); }
+        }
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, borradores: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo cambiar_cuenta_gasto (16-nov-2026): pasa los renglones de gasto de facturas SIN impuestos a otra cuenta ----
     // { cambiar_cuenta_gasto: { facturas: [ids], de: code, a: code, a_nombre?: string }, dry_run }
     // Crea la cuenta de gasto `a` si no existe (con a_nombre). Solo facturas sin impuestos (las CSC): así no hay recálculo de IVA.
