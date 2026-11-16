@@ -23,6 +23,7 @@ function categoria(code: string, tipo: string): string {
   if (code.startsWith("2.1.1.01.09") || code.startsWith("2.1.1.01.10")) return "Servicios públicos";
   if (code.startsWith("2.1.1.01.11")) return "Honorarios profesionales";
   if (code.startsWith("2.1.1.01.12")) return "Servicios de mantenimiento";   // 13-nov-2026: mantenimiento de equipos sin factura (Vicente Feliciani)
+  if (code.startsWith("2.1.1.01.13")) return "Servicios contratados";   // 16-nov-2026: internet, alarma, agua envasada, hosting y dominios
   if (tipo === "asset_receivable") return "Cobros de clientes";
   if (tipo === "liability_payable") return "Pagos a proveedores";
   if (code.startsWith("2.1.2") || code.startsWith("2.1.3") || code.startsWith("1.1.4")) return "Impuestos";
