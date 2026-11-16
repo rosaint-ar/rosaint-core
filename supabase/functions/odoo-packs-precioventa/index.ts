@@ -585,6 +585,136 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: cta.name, ahora: d.name, codigo: d.code }, null, 2), { headers: cors });
     }
 
+    // ---- Modo reclasificar_contacto (16-nov-2026): pasa TODA la deuda de un contacto (facturas, NC y pagos) a otra cuenta ----
+    // { reclasificar_contacto: { partner_id, cuenta_code, limite? }, dry_run }
+    // A diferencia de reclasificar_pasivo, respeta los grupos de conciliación tal cual estaban (factura+pago, factura+NC,
+    // pagos parciales): arma los grupos por matching_number, los desconcilia, cambia la cuenta de deuda de cada asiento
+    // (pagos: destination_account_id; facturas/NC: el renglón de deuda) y reconcilia de nuevo el mismo grupo.
+    // Solo toca el renglón de deuda: importes, impuestos, fechas y números no cambian. Idempotente; `limite` = grupos por llamada.
+    if (body.reclasificar_contacto) {
+      const q = body.reclasificar_contacto; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const pid = Number(q.partner_id); const limite = Number(q.limite) || 15;
+      const [cta] = await call("account.account", "search_read", [[["code", "=", String(q.cuenta_code)], ["company_ids", "in", [2]]], ["id", "code", "name", "account_type", "reconcile"]], { context: ctx });
+      if (!cta || cta.account_type !== "liability_payable" || !cta.reconcile) throw new Error(`La cuenta ${q.cuenta_code} no existe o no es de deuda conciliable`);
+      if (!dry) await call("res.partner", "write", [[pid], { property_account_payable_id: cta.id }], { context: { ...ctx, allowed_company_ids: [2] } });
+      const lineas = await call("account.move.line", "search_read", [[["partner_id", "=", pid], ["company_id", "=", 2], ["parent_state", "=", "posted"], ["account_id.account_type", "=", "liability_payable"], ["account_id", "!=", cta.id]],
+        ["id", "move_id", "move_type", "payment_id", "matching_number", "balance", "journal_id"]], { context: ctx });
+      // grupos: por matching_number (los sin conciliar van solos)
+      const grupos: Record<string, any[]> = {};
+      for (const l of lineas) { const k = l.matching_number ? "m" + l.matching_number : "s" + l.id; (grupos[k] = grupos[k] || []).push(l); }
+      const claves = Object.keys(grupos); const hacer = claves.slice(0, limite);
+      const out: any[] = [];
+      for (const k of hacer) {
+        const g = grupos[k]; const fila: any = { grupo: k, asientos: g.map((l: any) => l.move_id[1]), saldo: Math.round(g.reduce((a: number, l: any) => a + l.balance, 0) * 100) / 100 };
+        if (dry) { out.push(fila); continue; }
+        await call("account.move.line", "remove_move_reconcile", [g.map((l: any) => l.id)]);
+        const movidos = new Set<number>();
+        for (const l of g) {
+          const mid = l.move_id[0]; if (movidos.has(mid)) continue; movidos.add(mid);
+          if (l.payment_id) {
+            const pagoId = l.payment_id[0];
+            await call("account.payment", "action_draft", [[pagoId]]);
+            await call("account.payment", "write", [[pagoId], { destination_account_id: cta.id }]);
+            await call("account.payment", "action_post", [[pagoId]]);
+          } else {
+            const delAsiento = g.filter((x: any) => x.move_id[0] === mid);
+            await call("account.move", "button_draft", [[mid]]);
+            await call("account.move", "write", [[mid], { line_ids: delAsiento.map((x: any) => [1, x.id, { account_id: cta.id }]) }]);
+            await call("account.move", "action_post", [[mid]]);
+          }
+        }
+        const nuevas = await call("account.move.line", "search_read", [[["move_id", "in", [...movidos]], ["account_id", "=", cta.id], ["reconciled", "=", false]], ["id", "balance"]]);
+        if (nuevas.length > 1) await call("account.move.line", "reconcile", [nuevas.map((l: any) => l.id)]);
+        const fin = await call("account.move.line", "search_read", [[["move_id", "in", [...movidos]], ["account_id", "=", cta.id]], ["reconciled", "amount_residual"]]);
+        fila.ok = fin.length === g.length; fila.pendiente = Math.round(fin.reduce((a: number, l: any) => a + l.amount_residual, 0) * 100) / 100;
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, cuenta: cta.code, grupos_total: claves.length, procesados: out.length, quedan: claves.length - out.length, grupos: out }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo cambiar_cuenta_gasto (16-nov-2026): pasa los renglones de gasto de facturas SIN impuestos a otra cuenta ----
+    // { cambiar_cuenta_gasto: { facturas: [ids], de: code, a: code, a_nombre?: string }, dry_run }
+    // Crea la cuenta de gasto `a` si no existe (con a_nombre). Solo facturas sin impuestos (las CSC): así no hay recálculo de IVA.
+    // Desconcilia, borrador, cambia la cuenta de los renglones `de`, valida, verifica el total y reconcilia con lo mismo de antes.
+    if (body.cambiar_cuenta_gasto) {
+      const q = body.cambiar_cuenta_gasto; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const [de] = await call("account.account", "search_read", [[["code", "=", String(q.de)], ["company_ids", "in", [2]]], ["id", "code", "name"]], { context: ctx });
+      if (!de) throw new Error("No existe la cuenta " + q.de);
+      let [a] = await call("account.account", "search_read", [[["code", "=", String(q.a)], ["company_ids", "in", [2]]], ["id", "code", "name", "account_type"]], { context: ctx });
+      const pasos: any[] = [];
+      if (!a) {
+        if (!q.a_nombre) throw new Error(`No existe la cuenta ${q.a}: pasá a_nombre para crearla`);
+        pasos.push({ paso: "crear cuenta de gasto", code: q.a, nombre: q.a_nombre });
+        if (!dry) { const id = await call("account.account", "create", [{ code: String(q.a), name: String(q.a_nombre), account_type: "expense", company_ids: [[6, 0, [2]]] }], { context: ctx }); a = { id: Array.isArray(id) ? id[0] : id, code: q.a, name: q.a_nombre }; }
+      } else if (!String(a.account_type).startsWith("expense")) throw new Error(`La cuenta ${q.a} no es de gasto`);
+      const out: any[] = [];
+      for (const fid of (q.facturas as any[]).map(Number)) {
+        const [m] = await call("account.move", "read", [[fid], ["name", "state", "company_id", "amount_tax", "amount_total", "payment_state"]]);
+        if (!m || m.company_id[0] !== 2 || m.state !== "posted") throw new Error(`Factura ${fid} inválida o no validada`);
+        if (Math.abs(m.amount_tax) > 0.001) throw new Error(`${m.name} tiene impuestos: este modo es solo para facturas sin impuestos`);
+        const ls = await call("account.move.line", "search_read", [[["move_id", "=", fid]], ["id", "display_type", "account_id", "matched_debit_ids", "matched_credit_ids"]]);
+        const cambiar = ls.filter((l: any) => l.display_type === "product" && l.account_id[0] === de.id);
+        const fila: any = { factura: m.name, renglones: cambiar.length, total: m.amount_total };
+        if (!cambiar.length || dry) { out.push(fila); continue; }
+        const pt = ls.filter((l: any) => l.display_type === "payment_term"); const ptIds = new Set(pt.map((l: any) => l.id));
+        const parc = [...new Set(pt.flatMap((l: any) => [...l.matched_debit_ids, ...l.matched_credit_ids]))];
+        const pr = parc.length ? await call("account.partial.reconcile", "read", [parc, ["debit_move_id", "credit_move_id"]]) : [];
+        const contra = [...new Set(pr.flatMap((p: any) => [p.debit_move_id[0], p.credit_move_id[0]]).filter((id: number) => !ptIds.has(id)))];
+        if (pt.length) await call("account.move.line", "remove_move_reconcile", [pt.map((l: any) => l.id)]);
+        await call("account.move", "button_draft", [[fid]]);
+        await call("account.move", "write", [[fid], { line_ids: cambiar.map((l: any) => [1, l.id, { account_id: a.id }]) }]);
+        await call("account.move", "action_post", [[fid]]);
+        const pt2 = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["display_type", "=", "payment_term"]], ["id"]]);
+        if (contra.length) await call("account.move.line", "reconcile", [[...pt2.map((l: any) => l.id), ...contra]]);
+        const [d] = await call("account.move", "read", [[fid], ["amount_total", "amount_tax", "payment_state", "amount_residual"]]);
+        Object.assign(fila, { ok: Math.abs(d.amount_total - m.amount_total) < 0.005 && d.payment_state === m.payment_state, pago: d.payment_state, saldo: d.amount_residual });
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, de: de.code, a: q.a, pasos, facturas: out }, null, 2), { headers: cors });
+    }
+
+    // ---- Modo fijar_impuestos (16-nov-2026): deja el IVA y la percepción de una factura de compra en los importes dados ----
+    // { fijar_impuestos: { facturas: [{ id, iva, otros, total }] }, dry_run }  (importes de ARCA / del PDF)
+    // Para reparar facturas cuyo impuesto Odoo recalculó al pasar a borrador. Mismo método que compras-ml corregir_arca:
+    // desconcilia, borrador, escribe el balance de los renglones de impuesto (check_move_validity=false), valida,
+    // verifica contra `total` y reconcilia de nuevo con lo que estaba conciliado. Si no cierra, no publica y avisa.
+    if (body.fijar_impuestos) {
+      const q = body.fijar_impuestos; const dry = body.dry_run !== false; const out: any[] = [];
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      for (const f of q.facturas) {
+        const fid = Number(f.id);
+        const [m] = await call("account.move", "read", [[fid], ["name", "state", "move_type", "company_id", "amount_tax", "amount_total", "currency_id"]]);
+        if (!m || m.company_id[0] !== 2 || !["in_invoice", "in_refund"].includes(m.move_type)) throw new Error(`Factura ${fid} inválida`);
+        const ls = await call("account.move.line", "search_read", [[["move_id", "=", fid]], ["id", "display_type", "tax_line_id", "balance", "account_id", "matched_debit_ids", "matched_credit_ids"]]);
+        const ivaL = ls.filter((l: any) => l.tax_line_id && [188, 186, 190].includes(l.tax_line_id[0]));
+        const otrL = ls.filter((l: any) => l.tax_line_id && ![188, 186, 190].includes(l.tax_line_id[0]));
+        const pt = ls.filter((l: any) => l.display_type === "payment_term");
+        const fila: any = { factura: m.name, antes: { iva: r2(ivaL.reduce((a: number, l: any) => a + l.balance, 0)), otros: r2(otrL.reduce((a: number, l: any) => a + l.balance, 0)), total: m.amount_total }, objetivo: { iva: f.iva, otros: f.otros, total: f.total } };
+        if (ivaL.length !== 1 || otrL.length > 1 || (Number(f.otros) && otrL.length !== 1)) { fila.error = `renglones de impuesto inesperados (IVA ${ivaL.length}, otros ${otrL.length})`; out.push(fila); continue; }
+        if (!Array.isArray(f.contra_ids) && Math.abs(fila.antes.iva - f.iva) < 0.005 && Math.abs(fila.antes.otros - (f.otros || 0)) < 0.005 && Math.abs(m.amount_total - f.total) < 0.005) { fila.estado = "ya estaba bien"; out.push(fila); continue; }
+        if (dry) { out.push(fila); continue; }
+        const parc = [...new Set(pt.flatMap((l: any) => [...l.matched_debit_ids, ...l.matched_credit_ids]))];
+        const pr = parc.length ? await call("account.partial.reconcile", "read", [parc, ["debit_move_id", "credit_move_id"]]) : [];
+        const ptIds = new Set(pt.map((l: any) => l.id));
+        const contra = Array.isArray(f.contra_ids) ? f.contra_ids.map(Number) : [...new Set(pr.flatMap((p: any) => [p.debit_move_id[0], p.credit_move_id[0]]).filter((id: number) => !ptIds.has(id)))];
+        if (pt.length) await call("account.move.line", "remove_move_reconcile", [pt.map((l: any) => l.id)]);
+        if (m.state === "posted") await call("account.move", "button_draft", [[fid]]);
+        const vals: any[] = [[1, ivaL[0].id, { balance: Number(f.iva), amount_currency: Number(f.iva) }]];
+        if (otrL.length) vals.push([1, otrL[0].id, { balance: Number(f.otros), amount_currency: Number(f.otros) }]);
+        await call("account.move", "write", [[fid], { line_ids: vals }], { context: { check_move_validity: false } });
+        const [d0] = await call("account.move", "read", [[fid], ["amount_total", "amount_tax"]]);
+        if (Math.abs(d0.amount_total - Number(f.total)) > 0.005) { fila.error = `no cierra en borrador: total ${d0.amount_total}`; out.push(fila); continue; }
+        await call("account.move", "action_post", [[fid]]);
+        const [d] = await call("account.move", "read", [[fid], ["amount_total", "amount_tax", "payment_state"]]);
+        const pt2 = await call("account.move.line", "search_read", [[["move_id", "=", fid], ["display_type", "=", "payment_term"]], ["id"]]);
+        if (contra.length) await call("account.move.line", "reconcile", [[...pt2.map((l: any) => l.id), ...contra]]);
+        const [d2] = await call("account.move", "read", [[fid], ["amount_total", "amount_tax", "amount_residual", "payment_state"]]);
+        Object.assign(fila, { despues: { tax: d2.amount_tax, total: d2.amount_total }, pago: d2.payment_state, saldo: d2.amount_residual, ok: Math.abs(d2.amount_total - Number(f.total)) < 0.005 && Math.abs(d2.amount_tax - r2(Number(f.iva) + Number(f.otros || 0))) < 0.005 });
+        out.push(fila);
+      }
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, facturas: out }, null, 2), { headers: cors });
+    }
+
     // ---- Modo corregir_importe (16-nov-2026): cambia el importe de una factura de compra VALIDADA y SIN PAGOS de un solo renglón ----
     // { corregir_importe: { id, precio, detalle? }, dry_run }  (ej. alquiler cargado provisorio antes del ajuste por IPC)
     // Pasa a borrador, cambia el precio unitario del renglón (cantidad 1) y vuelve a validar. Mismo número de comprobante.
