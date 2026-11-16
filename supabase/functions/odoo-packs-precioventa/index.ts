@@ -585,6 +585,32 @@ _servirConGuardia(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, dry_run: dry, antes: cta.name, ahora: d.name, codigo: d.code }, null, 2), { headers: cors });
     }
 
+    // ---- Modo corregir_importe (16-nov-2026): cambia el importe de una factura de compra VALIDADA y SIN PAGOS de un solo renglón ----
+    // { corregir_importe: { id, precio, detalle? }, dry_run }  (ej. alquiler cargado provisorio antes del ajuste por IPC)
+    // Pasa a borrador, cambia el precio unitario del renglón (cantidad 1) y vuelve a validar. Mismo número de comprobante.
+    if (body.corregir_importe) {
+      const q = body.corregir_importe; const dry = body.dry_run !== false; const ctx = { lang: "es_ES" };
+      const fid = Number(q.id); const precio = Number(q.precio);
+      if (!(precio > 0)) throw new Error("Falta el precio nuevo");
+      const [m] = await call("account.move", "read", [[fid], ["name", "state", "move_type", "company_id", "payment_state", "amount_total", "amount_residual", "invoice_line_ids"]], { context: ctx });
+      if (!m) throw new Error("No existe la factura " + fid);
+      if (m.company_id?.[0] !== 2) throw new Error("Solo facturas de VELAZQUEZ");
+      if (m.move_type !== "in_invoice") throw new Error("Solo facturas de compra");
+      if (m.state !== "posted" && m.state !== "draft") throw new Error("Estado no permitido: " + m.state);
+      if (m.payment_state !== "not_paid" || Math.abs(m.amount_residual - m.amount_total) > 0.005) throw new Error("La factura ya tiene pagos: no se toca");
+      const ls = await call("account.move.line", "read", [m.invoice_line_ids, ["id", "quantity", "price_unit", "tax_ids", "name"]], { context: ctx });
+      if (ls.length !== 1) throw new Error("La factura tiene " + ls.length + " renglones: este modo es para uno solo");
+      if (ls[0].tax_ids?.length) throw new Error("El renglón tiene impuestos: corregir a mano");
+      const antes = { total: m.amount_total, renglon: ls[0] };
+      if (!dry) {
+        if (m.state === "posted") await call("account.move", "button_draft", [[fid]], { context: ctx });
+        await call("account.move", "write", [[fid], { invoice_line_ids: [[1, ls[0].id, { quantity: 1, price_unit: precio, ...(q.detalle ? { name: String(q.detalle) } : {}) }]] }], { context: ctx });
+        if (m.state === "posted") await call("account.move", "action_post", [[fid]], { context: ctx });
+      }
+      const [d] = await call("account.move", "read", [[fid], ["name", "state", "amount_total", "amount_residual", "invoice_date_due"]], { context: ctx });
+      return new Response(JSON.stringify({ ok: true, dry_run: dry, antes, ahora: d }, null, 2), { headers: cors });
+    }
+
     // ---- Modo cuotas_vencimiento (12-nov-2026): pone en una factura de compra YA VALIDADA las cuotas reales con su fecha ----
     // { cuotas_vencimiento: { facturas: [{ id, cuotas: [{ fecha, monto }] }] }, dry_run }
     // Las cuotas son el cronograma COMPLETO (las pagadas también) y deben sumar el total de la factura.
