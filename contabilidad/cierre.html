@@ -89,7 +89,7 @@
   <!-- Los dos envíos comparten la misma estructura; el script los arma con crearEnvio(). -->
   <div class="card envio" id="envio-iibb" style="margin-bottom:14px;">
     <div class="envio-tit"><span class="paso">1</span><strong>Ingresos Brutos · Convenio Multilateral</strong></div>
-    <div class="hint" style="margin:4px 0 12px;">Ventas por jurisdicción (base imponible) + percepciones de IIBB por jurisdicción. Si hay percepciones que SIFERE no importa (CABA, Tucumán…), el mensaje lo avisa solo.</div>
+    <div class="hint" style="margin:4px 0 12px;">Ventas por jurisdicción (base imponible) + percepciones de IIBB por jurisdicción + retenciones sufridas. Si hay percepciones que SIFERE no importa (CABA, Tucumán…), el mensaje lo avisa solo.</div>
     <div class="controls" style="margin-bottom:12px;">
       <button class="btn primary" data-acc="preparar">Preparar archivos</button>
       <label class="btn" style="cursor:pointer;">Agregar archivos…<input type="file" data-acc="extras" multiple style="display:none;"></label>
@@ -105,7 +105,7 @@
 
   <div class="card envio" id="envio-iva" style="margin-bottom:14px;">
     <div class="envio-tit"><span class="paso">2</span><strong>IVA</strong></div>
-    <div class="hint" style="margin:4px 0 12px;">Libro de IVA Compras + Libro de IVA Ventas (los archivos para importar).</div>
+    <div class="hint" style="margin:4px 0 12px;">Libro de IVA Compras + Libro de IVA Ventas (los archivos para importar) + Percepciones de IVA en Excel (para cargarlas a mano en la DDJJ).</div>
     <div class="controls" style="margin-bottom:12px;">
       <button class="btn primary" data-acc="preparar">Preparar archivos</button>
       <label class="btn" style="cursor:pointer;">Agregar archivos…<input type="file" data-acc="extras" multiple style="display:none;"></label>
@@ -125,7 +125,8 @@
 <script src="../shared/supabase.js?v=202610061904"></script>
 <script src="../shared/charts.js"></script>
 <script src="../shell/shell.js?v=202610061943"></script>
-<script src="percep-iibb.js?v=202610131200"></script>
+<script src="percep-iibb.js?v=202611171200"></script>
+<script src="percep-ret.js?v=202611171200"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // Cierre mensual · dos envíos a la contadora: 1) IIBB (ventas y percepciones por jurisdicción),
@@ -186,16 +187,18 @@ function textoManuales(){
     + manualesMes.map(r => r.nombre + ' $' + r.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).join(' · ')
     + '. El detalle comprobante por comprobante está en la hoja "Cargar a mano en SIFERE" del adjunto de percepciones.';
 }
+let percepIvaMes = null;   // total de percepciones de IVA del período (se completa al preparar los adjuntos)
+function textoPercepIva(){ return percepIvaMes ? ' (total del mes: $' + percepIvaMes.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ')' : ''; }
 const FIRMA = 'VELAZQUEZ DIEGO MARTIN (CUIT 20-31092413-0)';
 // Textos por defecto de cada mail (si el usuario los editó a mano, no se pisan hasta cambiar el período)
 const TEXTOS = {
   iibb: (p) => ({
     asunto: `IIBB Convenio Multilateral ${p} — ${FIRMA}`,
-    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando lo de Ingresos Brutos de ${p}:\n\n• IIBB por jurisdicción (ventas netas por provincia, base imponible)\n• Percepciones de IIBB sufridas por jurisdicción${textoManuales()}\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
+    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando lo de Ingresos Brutos de ${p}:\n\n• IIBB por jurisdicción (ventas netas por provincia, base imponible)\n• Percepciones de IIBB sufridas por jurisdicción\n• Retenciones sufridas (por jurisdicción, régimen y agente, con CUIT)${textoManuales()}\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
   }),
   iva: (p) => ({
     asunto: `IVA ${p} — ${FIRMA}`,
-    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando el cierre de IVA de ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n\nVentas: todas emitidas con factura electrónica desde Odoo (con CAE).\nCompras: conciliadas contra Mis Comprobantes Recibidos de ARCA.\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
+    cuerpo: `Hola María Belén, ¿cómo estás?\n\nTe mando el cierre de IVA de ${p}:\n\n• Libro de IVA Compras\n• Libro de IVA Ventas\n• Percepciones de IVA en Excel, para cargarlas en la DDJJ: una fila por comprobante con CUIT del agente, fecha, comprobante, régimen e importe${textoPercepIva()}\n\nVentas: todas emitidas con factura electrónica desde Odoo (con CAE).\nCompras: conciliadas contra Mis Comprobantes Recibidos de ARCA.\n\nCualquier cosa me avisás.\n\nSaludos,\nDiego`,
   }),
 };
 
@@ -301,18 +304,23 @@ const envioIIBB = crearEnvio('iibb', async (mes, avisar) => {
   avisar('Generando percepciones de IIBB…');
   const p = PercepIIBB.armarXlsx(await PercepIIBB.traerOdoo(mes, mes), mes, mes, null);
   manualesMes = p.manuales;
-  return [ventas, { filename: p.filename, base64: p.base64, mimetype: p.mimetype }];
-}, ['IIBB por jurisdicción (ventas)', 'Percepciones IIBB por jurisdicción']);
+  avisar('Generando retenciones sufridas…');
+  const ret = await PercepRet.retencionesXlsx(mes);
+  return [ventas, { filename: p.filename, base64: p.base64, mimetype: p.mimetype }, { filename: ret.filename, base64: ret.base64, mimetype: ret.mimetype }];
+}, ['IIBB por jurisdicción (ventas)', 'Percepciones IIBB por jurisdicción', 'Retenciones sufridas']);
 
 // 2) IVA: los dos libros para importar
 const envioIVA = crearEnvio('iva', async (mes, avisar) => {
   avisar('Generando Libro de IVA Compras…'); const c = await libroZip(mes, 'purchase');
   avisar('Generando Libro de IVA Ventas…'); const v = await libroZip(mes, 'sale');
-  return [c, v];
-}, ['Libro de IVA Compras', 'Libro de IVA Ventas']);
+  avisar('Generando percepciones de IVA…'); const pi = await PercepRet.percepIvaXlsx(mes); percepIvaMes = pi.total;
+  const out = [c, v, { filename: pi.filename, base64: pi.base64, mimetype: pi.mimetype }];
+  const ret = await PercepRet.retencionesXlsx(mes); if (ret.hayIva) out.push({ filename: ret.filename, base64: ret.base64, mimetype: ret.mimetype });
+  return out;
+}, ['Libro de IVA Compras', 'Libro de IVA Ventas', 'Percepciones de IVA']);
 
 envioIIBB.iniciar(); envioIVA.iniciar();
-$('periodo').addEventListener('change', () => { manualesMes = null; envioIIBB.alCambiarPeriodo(); envioIVA.alCambiarPeriodo(); });
+$('periodo').addEventListener('change', () => { manualesMes = null; percepIvaMes = null; envioIIBB.alCambiarPeriodo(); envioIVA.alCambiarPeriodo(); });
 </script>
 </body>
 </html>

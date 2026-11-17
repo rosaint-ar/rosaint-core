@@ -57,7 +57,7 @@ function jurDe(cuenta: string): { codigo: string; nombre: string } {
 }
 async function percepIibb(uid: number, periodo: string, desde: string, hasta: string): Promise<Rec> {
   // el período es el de la FECHA DEL COMPROBANTE (fecha de la percepción); si no tiene, la contable
-  const dom = [["company_id", "=", COMPANY_ID], ["parent_state", "=", "posted"], ["account_id.code", "=like", "1.1.4.02%"],
+  const dom = [["company_id", "=", COMPANY_ID], ["parent_state", "=", "posted"], ["account_id.code", "=like", "1.1.4.02%"], ["move_id.move_type", "in", ["in_invoice", "in_refund"]], ["account_id.name", "not ilike", "retenc"],
     "|", "&", ["move_id.invoice_date", ">=", desde], ["move_id.invoice_date", "<=", hasta],
     "&", "&", ["move_id.invoice_date", "=", false], ["date", ">=", desde], ["date", "<=", hasta]];
   const ls = await execKw(uid, "account.move.line", "search_read", [dom], { fields: ["move_id", "account_id", "balance", "partner_id", "date"] }) as Rec[];
@@ -87,6 +87,79 @@ async function percepIibb(uid: number, periodo: string, desde: string, hasta: st
     .filter(f => f.importe !== 0)
     .sort((a, b) => String(a.jur_codigo).localeCompare(String(b.jur_codigo)) || String(a.fecha).localeCompare(String(b.fecha)));
   return { ok: true, periodo, desde, hasta, cantidad: lineas.length, lineas };
+}
+
+// ===== Datos de los comprobantes (tipo, letra, PV, número, agente y CUIT) =====
+async function datosCbtes(uid: number, movIds: number[]): Promise<Record<number, Rec>> {
+  const out: Record<number, Rec> = {}; if (!movIds.length) return out;
+  const movs = await execKw(uid, "account.move", "read", [movIds, ["name", "move_type", "invoice_date", "date", "l10n_latam_document_number", "l10n_latam_document_type_id", "partner_id", "ref", "journal_id"]]) as Rec[];
+  const tipoIds = [...new Set(movs.map(m => m2oId(m.l10n_latam_document_type_id)).filter((x): x is number => x !== null))];
+  const tipos: Record<number, Rec> = {};
+  if (tipoIds.length) for (const t of await execKw(uid, "l10n_latam.document.type", "read", [tipoIds, ["code", "name", "l10n_ar_letter"]]) as Rec[]) tipos[t.id as number] = t;
+  const pids = [...new Set(movs.map(m => m2oId(m.partner_id)).filter((x): x is number => x !== null))];
+  const cuits: Record<number, string> = pids.length ? Object.fromEntries((await execKw(uid, "res.partner", "read", [pids, ["vat"]]) as Rec[]).map(p => [p.id as number, String((p.vat as string) || "").replace(/\D/g, "")])) : {};
+  for (const m of movs) {
+    const t = tipos[m2oId(m.l10n_latam_document_type_id) as number] || {};
+    const nro = String(m.l10n_latam_document_number || ""); const [pv, numero] = nro.includes("-") ? nro.split("-") : ["", nro];
+    out[m.id as number] = { comprobante: m.name, numero_completo: nro, pv, numero, tipo_codigo: t.code ? String(t.code).padStart(3, "0") : "",
+      tipo: TIPO_CBTE[String(t.code || "")] || String(t.name || ""), letra: t.l10n_ar_letter || "", es_nc: m.move_type === "in_refund",
+      fecha: m.invoice_date || m.date, agente: m2oName(m.partner_id) || "", cuit: cuits[m2oId(m.partner_id) as number] || "", ref: m.ref || "", diario: m2oName(m.journal_id) || "" };
+  }
+  return out;
+}
+
+// ===== Percepciones de IVA sufridas (cuenta 1.1.4.04.020): una fila por comprobante y régimen =====
+// Lo que ARCA pide para cargarlas a mano en la F.2051: CUIT del agente, fecha, comprobante, régimen e importe.
+const REGIMEN_IVA: Record<string, string> = { "493": "Percepción IVA General (RG 2408)", "976": "Percepción IVA Especial (RG 5319)" };
+async function percepIva(uid: number, periodo: string, desde: string, hasta: string): Promise<Rec> {
+  const dom = [["company_id", "=", COMPANY_ID], ["parent_state", "=", "posted"], ["account_id.code", "=", "1.1.4.04.020"], ["move_id.move_type", "in", ["in_invoice", "in_refund"]],
+    "|", "&", ["move_id.invoice_date", ">=", desde], ["move_id.invoice_date", "<=", hasta],
+    "&", "&", ["move_id.invoice_date", "=", false], ["date", ">=", desde], ["date", "<=", hasta]];
+  const ls = await execKw(uid, "account.move.line", "search_read", [dom], { fields: ["move_id", "balance", "tax_line_id", "tax_base_amount", "date"] }) as Rec[];
+  const cb = await datosCbtes(uid, [...new Set(ls.map(l => m2oId(l.move_id)).filter((x): x is number => x !== null))]);
+  const taxIds = [...new Set(ls.map(l => m2oId(l.tax_line_id)).filter((x): x is number => x !== null))];
+  const taxes: Record<number, Rec> = {};
+  if (taxIds.length) for (const t of await execKw(uid, "account.tax", "read", [taxIds, ["name", "amount", "amount_type"]]) as Rec[]) taxes[t.id as number] = t;
+  const filas: Record<string, Rec> = {};
+  for (const l of ls) {
+    const mid = m2oId(l.move_id); if (mid === null) continue; const c = cb[mid] || {};
+    const t = taxes[m2oId(l.tax_line_id) as number] || {}; const nombre = String(t.name || m2oName(l.tax_line_id) || "Percepción IVA"); const reg = regimenDe(nombre);
+    const k = mid + "|" + reg; const signo = c.es_nc ? -1 : 1;
+    const f = filas[k] ||= { ...c, regimen_codigo: reg, regimen: REGIMEN_IVA[reg] || nombre, alicuota: t.amount_type === "percent" ? t.amount : null, base: 0, importe: 0 };
+    f.importe = (f.importe as number) + ((l.balance as number) || 0);
+    f.base = (f.base as number) + signo * Math.abs((l.tax_base_amount as number) || 0);
+  }
+  const lineas = Object.values(filas).map(f => ({ ...f, importe: Math.round((f.importe as number) * 100) / 100, base: Math.round((f.base as number) * 100) / 100 }))
+    .filter(f => f.importe !== 0).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || String(a.comprobante).localeCompare(String(b.comprobante)));
+  return { ok: true, periodo, desde, hasta, cantidad: lineas.length, total: Math.round(lineas.reduce((a, l) => a + (l.importe as number), 0) * 100) / 100, lineas };
+}
+
+// ===== Retenciones sufridas (IIBB por jurisdicción, SIRCREB, IVA, Ganancias, SUSS) =====
+// Asientos de cobro o de banco donde un agente retuvo. No entran las liquidaciones mensuales
+// (IIBB-CM-…, IVA-…): esas son el USO de las retenciones en la DDJJ.
+async function retenciones(uid: number, periodo: string, desde: string, hasta: string): Promise<Rec> {
+  // el nombre de la cuenta se traduce según el idioma del usuario API: se busca por código y se filtra en castellano
+  const ctas = (await execKw(uid, "account.account", "search_read", [[["code", "=like", "1.1.4.%"]]], { fields: ["id", "code", "name"], context: { allowed_company_ids: [COMPANY_ID], lang: "es_ES" } }) as Rec[])
+    .filter(c => /retenc|sircreb/i.test(String(c.name)));
+  const ids = ctas.map(c => c.id as number);
+  const ls = ids.length ? await execKw(uid, "account.move.line", "search_read", [[["company_id", "=", COMPANY_ID], ["parent_state", "=", "posted"], ["account_id", "in", ids], ["date", ">=", desde], ["date", "<=", hasta]]], { fields: ["move_id", "account_id", "balance", "name", "partner_id", "date"], context: { allowed_company_ids: [COMPANY_ID] } }) as Rec[] : [];
+  const cb = await datosCbtes(uid, [...new Set(ls.map(l => m2oId(l.move_id)).filter((x): x is number => x !== null))]);
+  const lineas: Rec[] = [];
+  for (const l of ls) {
+    const mid = m2oId(l.move_id); if (mid === null) continue; const c = cb[mid] || {};
+    if (/^(IIBB-CM-|IVA-20|IIBB-SAF)/.test(String(c.ref || ""))) continue;   // uso en la liquidación, no es una retención sufrida
+    const cuenta = String((ctas.find(x => x.id === m2oId(l.account_id)) || {}).name || m2oName(l.account_id) || ""); const j = jurDe(cuenta);
+    const imp = /iva/i.test(cuenta) ? "IVA" : /ganancia/i.test(cuenta) ? "Ganancias" : /suss/i.test(cuenta) ? "SUSS" : "IIBB";
+    const txt = String(l.name || ""); const todo = txt + " " + c.ref + " " + cuenta;
+    const reg = /sirtac/i.test(todo) ? "SIRTAC" : /sircreb/i.test(todo) ? "SIRCREB (recaudación bancaria)" : /sircar/i.test(todo) ? "SIRCAR" : "Retención";
+    const mp = /mercado (pago|libre)/i.test(txt + " " + c.diario), san = /santander/i.test(txt + " " + c.diario);
+    lineas.push({ impuesto: imp, regimen: reg, jur_codigo: imp === "IIBB" ? j.codigo : "", jurisdiccion: imp === "IIBB" ? (j.codigo ? j.nombre : "SIRCREB (varias)") : "",
+      fecha: l.date, agente: mp ? "Mercado Libre S.R.L. (Mercado Pago)" : san ? "Banco Santander Argentina S.A." : (m2oName(l.partner_id) || c.agente || ""),
+      cuit: mp ? "30703088534" : san ? "30500008454" : (c.cuit || ""), comprobante: c.comprobante, detalle: txt, ref: c.ref,
+      importe: Math.round(((l.balance as number) || 0) * 100) / 100 });
+  }
+  lineas.sort((a, b) => String(a.impuesto).localeCompare(String(b.impuesto)) || String(a.jur_codigo).localeCompare(String(b.jur_codigo)) || String(a.fecha).localeCompare(String(b.fecha)));
+  return { ok: true, periodo, desde, hasta, cuentas: ids.length, renglones: ls.length, cantidad: lineas.length, total: Math.round(lineas.reduce((a, l) => a + (l.importe as number), 0) * 100) / 100, lineas };
 }
 
 // ===== Control de acceso (auditoría 6-oct-2026) =====
@@ -130,6 +203,8 @@ _servirConGuardia(async (req: Request) => {
     if (!periodo) return new Response(JSON.stringify({ ok: false, error: "falta periodo" }), { headers: cors });
     const uid = await authenticate();
     const { desde, hasta } = monthRange(periodo);
+    if (body.modo === "iva") return new Response(JSON.stringify(await percepIva(uid, periodo, desde, hasta)), { headers: cors });
+    if (body.modo === "retenciones") return new Response(JSON.stringify(await retenciones(uid, periodo, desde, hasta)), { headers: cors });
     if (body.modo === "iibb") return new Response(JSON.stringify(await percepIibb(uid, periodo, desde, hasta)), { headers: cors });
     const moves = await execKw(uid, "account.move", "search_read", [[["move_type", "in", ["in_invoice", "in_refund"]], ["company_id", "=", COMPANY_ID], ["state", "=", "posted"], ["date", ">=", desde], ["date", "<=", hasta]]], { fields: ["id", "move_type", "l10n_latam_document_number", "partner_id"] }) as Rec[];
     const moveIds = moves.map(m => m.id as number);
