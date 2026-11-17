@@ -749,7 +749,7 @@ async function iva_pago(body: Rec): Promise<Rec> {
 // (pagado − cuota) → Debe 5.5.1.01.040 Intereses fiscales; Haber el diario con que se pagó.
 const PLAN_CUOTAS: Record<string, { capital: number; interes: number; fecha?: string; pagado?: number; diario?: number; nota?: string }> = {
   "1": { capital: 174095.22, interes: 42197.29, fecha: "2026-10-20", pagado: 217085.58, diario: 42, nota: "no se debitó del Santander el 16/10; VEP pagado por Mercado Pago el 20/10" },
-  "2": { capital: 178882.84, interes: 37409.67 }, "3": { capital: 183802.12, interes: 32490.39 }, "4": { capital: 188856.67, interes: 27435.84 },
+  "2": { capital: 178882.84, interes: 37409.67, fecha: "2026-11-17", pagado: 216490.78, diario: 54, nota: "pagado el 17/11 por Santander (vencía el 16/11): 198,27 de resarcitorios" }, "3": { capital: 183802.12, interes: 32490.39 }, "4": { capital: 188856.67, interes: 27435.84 },
   "5": { capital: 194050.23, interes: 22242.28 }, "6": { capital: 199386.61, interes: 16905.90 }, "7": { capital: 204869.74, interes: 11422.77 },
   "8": { capital: 210503.66, interes: 5788.85 },
 };
