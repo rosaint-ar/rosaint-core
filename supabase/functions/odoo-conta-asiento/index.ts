@@ -685,6 +685,14 @@ const RET_SIRCAR: Record<string, { fecha: string; diario: number; regimen: strin
     { cuenta: "1.1.4.02.320", jur: "San Juan", importe: 2.16 }, { cuenta: "1.1.4.02.350", jur: "San Luis", importe: 2.01 },
     { cuenta: "1.1.4.02.680", jur: "Santa Cruz", importe: 27.41 }, { cuenta: "1.1.4.02.410", jur: "Santiago del Estero", importe: 22.30 },
     { cuenta: "1.1.4.02.710", jur: "Tierra del Fuego", importe: 16.02 }] },
+  // 17-11-2026 (SIFERE web + certificados de Pago Nube, cruzados al centavo; ver memoria rosaint-percepciones-retenciones-contadora)
+  "2026-07-911": { fecha: "2026-07-31", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 170039812977, 2,5% s/ 161.424,00 (la CM03 07/2026 ya la descontó)", lineas: [{ cuenta: "1.1.4.02.620", jur: "La Pampa", importe: 4035.60 }] },
+  "2026-10-905": { fecha: "2026-10-03", diario: 42, regimen: "Mercado Libre (SIRCAR)", nota: "SIRCAR comprobante 182255869374, 2% s/ 277.566,00", lineas: [{ cuenta: "1.1.4.02.140", jur: "Corrientes", importe: 5551.32 }] },
+  "SIRTAC-2026-10": { fecha: "2026-10-31", diario: 42, regimen: "Mercado Libre y Pago Nube/dLocal (SIRTAC)", nota: "listado SIRTAC 202610, monto distribuido 73.932,40 (Mercado Libre 64.436,31 + dLocal 9.496,09)", lineas: [{ cuenta: "1.1.4.02.050", jur: "Buenos Aires", importe: 9226.75 }, { cuenta: "1.1.4.02.110", jur: "Córdoba", importe: 22904.25 }, { cuenta: "1.1.4.02.500", jur: "Chubut", importe: 12065.78 }, { cuenta: "1.1.4.02.170", jur: "Entre Ríos", importe: 170.01 }, { cuenta: "1.1.4.02.530", jur: "Formosa", importe: 88.73 }, { cuenta: "1.1.4.02.620", jur: "La Pampa", importe: 2070.11 }, { cuenta: "1.1.4.02.230", jur: "Mendoza", importe: 5308.31 }, { cuenta: "1.1.4.02.560", jur: "Misiones", importe: 6010.70 }, { cuenta: "1.1.4.02.590", jur: "Neuquén", importe: 3193.88 }, { cuenta: "1.1.4.02.650", jur: "Río Negro", importe: 4110.64 }, { cuenta: "1.1.4.02.320", jur: "San Juan", importe: 2240.15 }, { cuenta: "1.1.4.02.350", jur: "San Luis", importe: 1079.42 }, { cuenta: "1.1.4.02.680", jur: "Santa Cruz", importe: 2565.45 }, { cuenta: "1.1.4.02.710", jur: "Tierra del Fuego", importe: 2898.22 }] },
+  "PNCABA-2026-04": { fecha: "2026-04-30", diario: 42, regimen: "Pago Nube/dLocal 30-71577872-2 (AGIP RG 352/2022)", nota: "certificado 38582026007000059760, 2,5% s/ 145.276,89", lineas: [{ cuenta: "1.1.4.02.020", jur: "CABA", importe: 3631.92 }] },
+  "PNCABA-2026-05": { fecha: "2026-05-31", diario: 42, regimen: "Pago Nube/dLocal 30-71577872-2 (AGIP RG 352/2022)", nota: "certificado 38582026007000064812, 2,5% s/ 126.140,00", lineas: [{ cuenta: "1.1.4.02.020", jur: "CABA", importe: 3153.50 }] },
+  "PNCABA-2026-07": { fecha: "2026-07-31", diario: 42, regimen: "Pago Nube/dLocal 30-71577872-2 (AGIP RG 352/2022)", nota: "certificado 38582026007000074184, 2,5% s/ 54.280,00", lineas: [{ cuenta: "1.1.4.02.020", jur: "CABA", importe: 1357.00 }] },
+  "PNCABA-2026-10": { fecha: "2026-10-31", diario: 42, regimen: "Pago Nube/dLocal 30-71577872-2 (AGIP RG 352/2022)", nota: "certificado 38582026007000082369, 2,5% s/ 138.230,00", lineas: [{ cuenta: "1.1.4.02.020", jur: "CABA", importe: 3455.75 }] },
 };
 async function ret_sircar(body: Rec): Promise<Rec> {
   const dry = !!body.dry_run; const out: Rec[] = [];
@@ -693,7 +701,7 @@ async function ret_sircar(body: Rec): Promise<Rec> {
   const id: Rec = {}; for (const a of acc) id[a.code as string] = a.id;
   const faltan = codes.filter(c => !id[c]); if (faltan.length) return { ok: false, error: "cuentas inexistentes", faltan };
   for (const [k, r] of Object.entries(RET_SIRCAR)) {
-    const ref = k.startsWith("SIR") ? `RET-${k}` : `RET-SIRCAR-${k}`;
+    const ref = /^(SIR|PN)/.test(k) ? `RET-${k}` : `RET-SIRCAR-${k}`;
     const total = r2(r.lineas.reduce((a, l) => a + l.importe, 0));
     const ya = await ex("account.move", "search_read", [[["ref", "=", ref], ["company_id", "=", C], ["state", "!=", "cancel"]]], { fields: ["name"] }) as Rec[];
     if (ya.length) {

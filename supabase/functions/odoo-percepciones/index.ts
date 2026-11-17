@@ -151,11 +151,13 @@ async function retenciones(uid: number, periodo: string, desde: string, hasta: s
     const cuenta = String((ctas.find(x => x.id === m2oId(l.account_id)) || {}).name || m2oName(l.account_id) || ""); const j = jurDe(cuenta);
     const imp = /iva/i.test(cuenta) ? "IVA" : /ganancia/i.test(cuenta) ? "Ganancias" : /suss/i.test(cuenta) ? "SUSS" : "IIBB";
     const txt = String(l.name || ""); const todo = txt + " " + c.ref + " " + cuenta;
-    const reg = /sirtac/i.test(todo) ? "SIRTAC" : /sircreb/i.test(todo) ? "SIRCREB (recaudación bancaria)" : /sircar/i.test(todo) ? "SIRCAR" : "Retención";
-    const mp = /mercado (pago|libre)/i.test(txt + " " + c.diario), san = /santander/i.test(txt + " " + c.diario);
+    const reg = /sirtac/i.test(todo) ? "SIRTAC" : /sircreb/i.test(todo) ? "SIRCREB (recaudación bancaria)" : /sircar/i.test(todo) ? "SIRCAR" : /RG 352/i.test(todo) ? "Plataformas de pago (AGIP RG 352/2022)" : "Retención";
+    // el agente sale del texto del asiento (el diario puede ser Mercado Pago aunque retenga dLocal / Pago Nube)
+    const dl = /dlocal|pago nube/i.test(txt), ml = /mercado libre/i.test(txt);
+    const mp = !dl && /mercado (pago|libre)/i.test(txt + " " + c.diario), san = !dl && /santander/i.test(txt + " " + c.diario);
     lineas.push({ impuesto: imp, regimen: reg, jur_codigo: imp === "IIBB" ? j.codigo : "", jurisdiccion: imp === "IIBB" ? (j.codigo ? j.nombre : "SIRCREB (varias)") : "",
-      fecha: l.date, agente: mp ? "Mercado Libre S.R.L. (Mercado Pago)" : san ? "Banco Santander Argentina S.A." : (m2oName(l.partner_id) || c.agente || ""),
-      cuit: mp ? "30703088534" : san ? "30500008454" : (c.cuit || ""), comprobante: c.comprobante, detalle: txt, ref: c.ref,
+      fecha: l.date, agente: dl && ml ? "Mercado Libre S.R.L. y dLocal Argentina S.A. (ver detalle en SIFERE)" : dl ? "dLocal Argentina S.A. (Pago Nube)" : mp ? "Mercado Libre S.R.L. (Mercado Pago)" : san ? "Banco Santander Argentina S.A." : (m2oName(l.partner_id) || c.agente || ""),
+      cuit: dl && ml ? "30703088534 / 30715778722" : dl ? "30715778722" : mp ? "30703088534" : san ? "30500008454" : (c.cuit || ""), comprobante: c.comprobante, detalle: txt, ref: c.ref,
       importe: Math.round(((l.balance as number) || 0) * 100) / 100 });
   }
   lineas.sort((a, b) => String(a.impuesto).localeCompare(String(b.impuesto)) || String(a.jur_codigo).localeCompare(String(b.jur_codigo)) || String(a.fecha).localeCompare(String(b.fecha)));
