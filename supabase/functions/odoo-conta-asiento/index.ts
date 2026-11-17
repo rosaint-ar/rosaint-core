@@ -783,7 +783,7 @@ async function iva_plan_cuota(body: Rec): Promise<Rec> {
 // Lote "aut_plan_cuota": cada cuota (capital contra el plan; interés financiero y resarcitorio de 2º vto a intereses).
 const PLAN_AUT = { ref: "PLAN-AUT-W820473", fecha: "2026-10-20", total: 776288.71, anticipo: { fecha: "2026-10-20", importe: 50000, diario: 42 } };
 const PLAN_AUT_CUOTAS: Record<string, { capital: number; interes: number; fecha?: string; pagado?: number; diario?: number }> = {
-  "1": { capital: 31724.74, interes: 19972.94 }, "2": { capital: 32597.17, interes: 19100.51 }, "3": { capital: 33493.59, interes: 18204.09 },
+  "1": { capital: 31724.74, interes: 19972.94, fecha: "2026-11-16", pagado: 51697.68, diario: 54 }, "2": { capital: 32597.17, interes: 19100.51 }, "3": { capital: 33493.59, interes: 18204.09 },
   "4": { capital: 34414.67, interes: 17283.01 }, "5": { capital: 35361.07, interes: 16336.61 }, "6": { capital: 36333.50, interes: 15364.18 },
   "7": { capital: 37332.67, interes: 14365.01 }, "8": { capital: 38359.32, interes: 13338.36 }, "9": { capital: 39414.20, interes: 12283.48 },
   "10": { capital: 40498.09, interes: 11199.59 }, "11": { capital: 41611.79, interes: 10085.89 }, "12": { capital: 42756.11, interes: 8941.57 },
