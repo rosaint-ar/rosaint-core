@@ -125,7 +125,7 @@ export async function listarPromos(db: Db): Promise<Rec> {
 const RELAY_ODOO = /@rosaint\.odoo\.com$/i;
 const POR_NOMBRE: { buscar: string[]; nombre: RegExp; carpeta: string }[] = [
   // Diego 17/11: Pura Química es la misma empresa que antes se llamaba Todo Droga
-  { buscar: ["Pura Qu", "Todo Droga"], nombre: /pura\s*qu[ií]mica|todo\s*droga/i, carpeta: "INBOX.@Proveedores.Todo Droga" },
+  { buscar: ["Pura Qu", "Todo Droga"], nombre: /pura\s*qu[ií]mica|todo\s*droga/i, carpeta: "INBOX.@Proveedores.Pura Química" },
 ];
 
 export async function porNombre(puente: Puente, origenes = ["INBOX", "INBOX.spam"]): Promise<Rec> {

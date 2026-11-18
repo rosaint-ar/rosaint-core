@@ -281,6 +281,20 @@ Deno.serve(async (req: Request) => {
       out = { ...out, ...autoOut };
     }
 
+    // carpeta renombrada (o movida): las reglas que mandaban ahí —y a sus subcarpetas— pasan a la ruta nueva
+    if (accion === "renombrar_carpeta" && out.ok) {
+      const vieja = String(body.carpeta || ""), nueva = String(out.ruta || body.nuevo || "");
+      const todas: Rec[] = await (await db("correo_reglas?select=id,carpeta")).json();
+      let n = 0;
+      for (const r of todas) {
+        const c = String(r.carpeta);
+        if (c !== vieja && !c.startsWith(vieja + ".")) continue;
+        await db(`correo_reglas?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify({ carpeta: nueva + c.slice(vieja.length) }) });
+        n++;
+      }
+      out = { ...out, reglas_actualizadas: n };
+    }
+
     if (accion === "adjunto" && out.ok && !body.en_linea) {
       const datos = decodeBase64(String(out.base64 || ""));
       const g = await guardarAdjunto(String(body.carpeta || "INBOX"), Number(body.uid), String(out.nombre || "adjunto"), String(out.tipo || ""), datos);
