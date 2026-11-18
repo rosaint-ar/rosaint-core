@@ -2,7 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!-- interactive-widget=resizes-content: al abrirse el teclado del sistema el viewport de
+       maquetación se ENCOGE, así que el modal de "Registrar producción" y su botón Registrar
+       suben y quedan arriba del teclado en vez de detrás. Sin esto, en la tablet en vertical
+       el teclado tapaba el botón y había que cerrarlo y scrollear (nov/2026).
+       iOS/Safari ignora este atributo: ahí lo resuelve la variable --kb de más abajo. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -62,6 +67,47 @@
       color: var(--gris-30); text-decoration: none; font-size: 13px; padding: 6px 10px;
     }
     .topbar__link:hover { color: var(--blanco); }
+
+    /* ---- Lo cargado hoy (arriba de la hoja) ----
+       Números grandes y legibles de lejos: la tablet está sobre la mesada del laboratorio. */
+    .hoy { padding: 12px 20px 0; }
+    .hoy-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .hoy-card {
+      background: var(--blanco); border: 1px solid var(--gris-20); border-radius: 14px;
+      padding: 12px 14px; min-width: 0;
+    }
+    .hoy-card__k {
+      font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--gris-50); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .hoy-card__v { font-size: 30px; font-weight: 800; line-height: 1.1; margin-top: 2px; }
+    .hoy-card__s { font-size: 12px; color: var(--gris-50); margin-top: 2px; }
+    .hoy-card.fab  .hoy-card__v { color: var(--rojo); }
+    .hoy-card.frac .hoy-card__v { color: var(--naranja); }
+    .hoy-card.ctrl .hoy-card__v { color: var(--ok, #16a34a); }
+    /* Última carga: confirmación de que el renglón entró, y el espejo para ver un duplicado. */
+    .hoy-ultimo {
+      margin-top: 10px; padding: 9px 13px; border-radius: 11px;
+      background: var(--gris-05, #f6f6f6); border: 1px dashed var(--gris-20);
+      font-size: 13px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+    }
+    .hoy-ultimo b { font-weight: 700; }
+    .hoy-ultimo .u-hora { font-family: 'SF Mono', Consolas, monospace; color: var(--gris-50); }
+    .hoy-plan { margin-top: 10px; }
+    .hoy-plan > summary {
+      cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--gris-50);
+      padding: 9px 2px; list-style: none; user-select: none;
+    }
+    .hoy-plan > summary::before { content: '▸ '; }
+    .hoy-plan[open] > summary::before { content: '▾ '; }
+    .hoy-plan > summary::-webkit-details-marker { display: none; }
+    @media (max-width: 640px) {
+      .hoy { padding: 10px 14px 0; }
+      .hoy-cards { grid-template-columns: 1fr 1fr; }
+      .hoy-card.ctrl { grid-column: 1 / -1; }
+      .hoy-card__v { font-size: 26px; }
+    }
 
     /* Header con pendientes — lista tabular compacta */
     .pendientes {
@@ -192,15 +238,20 @@
     }
 
     /* Modal */
+    /* bottom:var(--kb) = el fondo del modal termina donde empieza el teclado, así el modal
+       queda centrado en lo que SÍ se ve y su botón Registrar nunca cae detrás del teclado. */
     .modal-bg {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      position: fixed; top: 0; left: 0; right: 0; bottom: var(--kb, 0px);
+      background: rgba(0,0,0,0.55);
       z-index: 100; display: none; align-items: center; justify-content: center;
       padding: 20px;
     }
     .modal-bg.open { display: flex; }
+    /* max-height:100% se mide sobre el fondo ya encogido; el min() mantiene el 92% de antes
+       cuando no hay teclado. El cuerpo scrollea solo (.modal__body) y el pie queda fijo. */
     .modal {
       background: var(--blanco); border-radius: 16px; width: 100%; max-width: 640px;
-      max-height: 92vh; display: flex; flex-direction: column; overflow: hidden;
+      max-height: min(92dvh, 100%); display: flex; flex-direction: column; overflow: hidden;
     }
     .modal__header {
       padding: 20px 24px; border-bottom: 1px solid var(--gris-20);
@@ -211,7 +262,10 @@
       background: none; border: none; font-size: 26px; color: var(--gris-50);
       cursor: pointer; padding: 4px 12px;
     }
-    .modal__body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    /* min-height:0 es imprescindible: sin eso el cuerpo no se encoge dentro del flex y
+       empuja el pie fuera del modal (con el teclado abierto queda poquísimo alto). */
+    .modal__body { padding: 20px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+    .modal__header, .modal__footer { flex: none; }
     .modal__footer {
       padding: 16px 24px; border-top: 1px solid var(--gris-20);
       display: flex; gap: 12px; justify-content: flex-end;
@@ -314,7 +368,7 @@
     @media print {
       @page { size: A4 portrait; margin: 14mm 12mm; }
       html, body { overflow: visible !important; height: auto !important; background: white !important; }
-      .topbar, .pendientes, .toolbar-btns, .modal-bg, .toast,
+      .topbar, .pendientes, .hoy, .toolbar-btns, .modal-bg, .toast,
       table.hoja th:last-child, table.hoja td.acciones,
       table.hoja th.col-check, table.hoja td.check { display: none !important; }
       .contenido { overflow: visible !important; padding: 0 !important; flex: unset !important; }
@@ -400,22 +454,50 @@
   <a href="index.html" class="topbar__link">← Volver a plataforma</a>
 </div>
 
-<div class="pendientes">
-  <div class="pend-col fab">
-    <div class="pend-col__header">
-      <span class="pend-col__label">🔨 A Fabricar</span>
-      <span class="pend-col__count" id="pend-fab-count">—</span>
+<!-- ARRIBA: lo que YA se cargó hoy (nov/2026). Antes había dos listas con el plan del día
+     ("A Fabricar" / "A Fraccionar") que en la práctica nadie mira, porque el trabajo se lo
+     indican a mano. Lo que sí le falta al que llena la hoja es la devolución de lo que
+     registró: así ve que entró, cuánto lleva hecho y se da cuenta si cargó algo dos veces.
+     El plan no se tiró: quedó plegado acá abajo, a un toque. -->
+<div class="hoy">
+  <div class="hoy-cards">
+    <div class="hoy-card fab">
+      <div class="hoy-card__k">🔨 Fabricado hoy</div>
+      <div class="hoy-card__v" id="hoy-fab-v">—</div>
+      <div class="hoy-card__s" id="hoy-fab-s">&nbsp;</div>
     </div>
-    <div class="pend-list" id="pend-fab-list"><span class="pend-empty">Cargando…</span></div>
-  </div>
-  <div class="pend-col frac">
-    <div class="pend-col__header">
-      <span class="pend-col__label">📦 A Fraccionar</span>
-      <span class="pend-col__count" id="pend-frac-count">—</span>
+    <div class="hoy-card frac">
+      <div class="hoy-card__k">📦 Fraccionado hoy</div>
+      <div class="hoy-card__v" id="hoy-frac-v">—</div>
+      <div class="hoy-card__s" id="hoy-frac-s">&nbsp;</div>
     </div>
-    <div class="pend-list" id="pend-frac-list"><span class="pend-empty">Cargando…</span></div>
+    <div class="hoy-card ctrl">
+      <div class="hoy-card__k">✅ Controlado</div>
+      <div class="hoy-card__v" id="hoy-ctrl-v">—</div>
+      <div class="hoy-card__s" id="hoy-ctrl-s">&nbsp;</div>
+    </div>
   </div>
-  <div id="pend-fuente" style="grid-column:1/-1;font-size:11.5px;color:var(--muted);padding-top:4px"></div>
+  <div class="hoy-ultimo" id="hoy-ultimo" hidden></div>
+  <details class="hoy-plan">
+    <summary>Ver el plan del día</summary>
+    <div class="pendientes">
+      <div class="pend-col fab">
+        <div class="pend-col__header">
+          <span class="pend-col__label">🔨 A Fabricar</span>
+          <span class="pend-col__count" id="pend-fab-count">—</span>
+        </div>
+        <div class="pend-list" id="pend-fab-list"><span class="pend-empty">Cargando…</span></div>
+      </div>
+      <div class="pend-col frac">
+        <div class="pend-col__header">
+          <span class="pend-col__label">📦 A Fraccionar</span>
+          <span class="pend-col__count" id="pend-frac-count">—</span>
+        </div>
+        <div class="pend-list" id="pend-frac-list"><span class="pend-empty">Cargando…</span></div>
+      </div>
+      <div id="pend-fuente" style="grid-column:1/-1;font-size:11.5px;color:var(--muted);padding-top:4px"></div>
+    </div>
+  </details>
 </div>
 
 <div class="contenido">
@@ -668,7 +750,55 @@ async function cargarActividades() {
   if (STATE.pend) cargarPendientes(); // lo cargado cambia lo que falta
 }
 
+/* Resumen de arriba: lo que YA se cargó en la hoja del día.
+   Las cantidades se suman POR UNIDAD y no se convierten entre sí: sumar kg con lts sería
+   inventar un número. Si hubo kg y g se muestran juntos ("142 kg · 300 g"), tal cual se
+   cargaron, que es lo que el de producción puede comparar con lo que hizo. */
+function resumenPorUnidad(lista) {
+  const porU = new Map();
+  for (const a of lista) {
+    const u = (a.unidad || 'un').trim();
+    porU.set(u, (porU.get(u) || 0) + (Number(a.cantidad) || 0));
+  }
+  if (!porU.size) return '0';
+  const orden = ['kg', 'lts', 'un', 'g', 'cc'];
+  return [...porU.entries()]
+    .sort((a, b) => (orden.indexOf(a[0]) + 1 || 99) - (orden.indexOf(b[0]) + 1 || 99))
+    .map(([u, n]) => fmt(n) + ' ' + u)
+    .join(' · ');
+}
+
+function renderResumen() {
+  const act = STATE.actividades || [];
+  const fab  = act.filter(a => (a.tipo || 'fraccionamiento') === 'fabricacion');
+  const frac = act.filter(a => (a.tipo || 'fraccionamiento') !== 'fabricacion');
+  const ctrl = act.filter(a => a.controlado === true);
+  const distintos = l => new Set(l.map(a => a.producto_sku)).size;
+  const renglones = l => l.length + (l.length === 1 ? ' renglón' : ' renglones');
+  const productos = l => distintos(l) + (distintos(l) === 1 ? ' producto' : ' productos');
+
+  document.getElementById('hoy-fab-v').textContent  = resumenPorUnidad(fab);
+  document.getElementById('hoy-fab-s').textContent  = fab.length  ? renglones(fab)  + ' · ' + productos(fab)  : 'todavía nada';
+  document.getElementById('hoy-frac-v').textContent = resumenPorUnidad(frac);
+  document.getElementById('hoy-frac-s').textContent = frac.length ? renglones(frac) + ' · ' + productos(frac) : 'todavía nada';
+  document.getElementById('hoy-ctrl-v').textContent = act.length ? ctrl.length + '/' + act.length : '—';
+  document.getElementById('hoy-ctrl-s').textContent = !act.length ? 'sin renglones'
+    : (ctrl.length === act.length ? 'todo controlado' : (act.length - ctrl.length) + ' sin controlar');
+
+  // Último renglón cargado (el más tarde del día, no el último del array por si se editó)
+  const caja = document.getElementById('hoy-ultimo');
+  if (!act.length) { caja.hidden = true; caja.innerHTML = ''; return; }
+  const ult = act.reduce((a, b) => ((b.hora || '') > (a.hora || '') ? b : a));
+  caja.hidden = false;
+  caja.innerHTML = '<span>Último:</span>'
+    + '<span class="u-hora">' + escapeHTML(fmtHora(ult.hora)) + '</span>'
+    + '<b>' + escapeHTML(ult.producto_nombre || '—') + '</b>'
+    + '<span>· ' + fmt(ult.cantidad) + ' ' + escapeHTML(ult.unidad || '') + '</span>'
+    + (ult.iniciales ? '<span>· ' + escapeHTML(ult.iniciales) + '</span>' : '');
+}
+
 function renderTabla() {
+  renderResumen();
   const tbody = document.getElementById('tbody-hoja');
   document.getElementById('titulo-fecha').textContent =
     STATE.fecha === new Date().toLocaleDateString('en-CA')
@@ -1039,6 +1169,30 @@ async function stockAlDia() {
   } catch (e) { console.warn('stock al día:', e.message); }
 }
 setTimeout(stockAlDia, 3000);   // después de que la Hoja ya cargó lo suyo
+
+/* Alto del teclado del sistema → variable CSS --kb (tablet en vertical, nov/2026).
+   El problema: al tocar Producto, Cantidad o Firma en el modal de "Registrar producción"
+   se abre el teclado y tapaba el botón Registrar; había que cerrar el teclado y scrollear.
+   El `interactive-widget=resizes-content` del <meta viewport> ya lo arregla en Chrome/Android
+   (ahí encoge el viewport de maquetación y --kb queda en 0, no se descuenta dos veces), pero
+   iOS/Safari lo ignora: encoge sólo el viewport VISUAL. --kb cubre ese caso y los navegadores
+   viejos. Es lo que el teclado le come al viewport visual por abajo. */
+function setKb() {
+  const vv = window.visualViewport;
+  let kb = 0;
+  if (vv) {
+    kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    if (kb < 80) kb = 0;                          // barras del navegador, no es teclado
+    if (kb > window.innerHeight * 0.75) kb = 0;   // dato absurdo: mejor no mover nada
+  }
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', setKb);
+  window.visualViewport.addEventListener('scroll', setKb);
+}
+window.addEventListener('orientationchange', () => setTimeout(setKb, 250));
+setKb();
 </script>
 
 </body>
