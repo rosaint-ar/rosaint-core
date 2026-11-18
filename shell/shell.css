@@ -336,11 +336,11 @@ body { display: grid; grid-template-columns: var(--sidebar-w) 1fr; grid-template
 .tr-arr { color: var(--muted); display: flex; }
 .tr-arr svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
 .tr.soon { opacity: .55; pointer-events: none; }
-.hero-row { background: linear-gradient(135deg, var(--accent), var(--accent-press)); color: #fff; border: none; box-shadow: 0 6px 18px var(--accent-glow); }
+.hero-row { background: linear-gradient(135deg, var(--accent), var(--accent-press)); color: var(--on-accent, #fff); border: none; box-shadow: 0 6px 18px var(--accent-glow); }
 .hero-row .tr-ico { background: rgba(255,255,255,.18); color: #fff; }
 .hero-row .tr-desc { color: rgba(255,255,255,.85); }
 .hero-row .tr-arr { color: #fff; }
-.hero-row:hover { background: linear-gradient(135deg, var(--accent), var(--accent-press)); filter: brightness(1.04); color: #fff; }
+.hero-row:hover { background: linear-gradient(135deg, var(--accent), var(--accent-press)); filter: brightness(1.04); color: var(--on-accent, #fff); }
 
 @media (max-width: 560px) { .brand-name, .topbar-title .sub { display: none; } }
 
