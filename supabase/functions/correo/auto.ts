@@ -120,29 +120,58 @@ export async function listarPromos(db: Db): Promise<Rec> {
 }
 
 // ---------------- Respuestas que llegan reenviadas por Odoo («Ventas Pura Química <notifications@rosaint.odoo.com>»)
-// Las reglas miran la dirección y la de Odoo es la misma para todos: acá se ordenan por el NOMBRE del remitente.
+// La dirección de Odoo es la misma para todos, pero el NOMBRE es el del contacto que respondió («Pablo Godoy»):
+// se busca ese nombre en los contactos de Odoo (odoo_contactos), se toma su email y se le aplican las reglas
+// de siempre, como si hubiera escrito directo. Así cualquier proveedor con regla recibe también lo que llega por Odoo.
 // Sirve también para rescatarlas de Spam (Ferozo las marca como ****SPAM**** a menudo).
+// Nunca a la Papelera ni a Promociones: es una respuesta a un pedido nuestro.
 const RELAY_ODOO = /@rosaint\.odoo\.com$/i;
-const POR_NOMBRE: { buscar: string[]; nombre: RegExp; carpeta: string }[] = [
+const NO_DESTINO = new Set(["INBOX.Trash", CARPETA_PROMOS, "INBOX"]);
+// nombres que no son un contacto de Odoo (el alias de ventas de la empresa)
+const POR_NOMBRE: { nombre: RegExp; carpeta: string }[] = [
   // Diego 17/11: Pura Química es la misma empresa que antes se llamaba Todo Droga
-  { buscar: ["Pura Qu", "Todo Droga"], nombre: /pura\s*qu[ií]mica|todo\s*droga/i, carpeta: "INBOX.@Proveedores.Pura Química" },
+  { nombre: /pura\s*qu[ií]mica|todo\s*droga/i, carpeta: "INBOX.@Proveedores.Pura Química" },
 ];
 
-export async function porNombre(puente: Puente, origenes = ["INBOX", "INBOX.spam"]): Promise<Rec> {
+export async function porNombre(puente: Puente, db: Db, origenes = ["INBOX", "INBOX.spam"], simular = false): Promise<Rec> {
   const movidos: Rec = {};
+  const reglas: Rec[] = (await (await db("correo_reglas?select=patron,carpeta&activa=eq.true")).json())
+    .filter((r: Rec) => !NO_DESTINO.has(String(r.carpeta)));
+  // primero las de una dirección puntual, después las de dominio (igual que en aplicar_reglas)
+  reglas.sort((a, b) => Number(String(a.patron).startsWith("@") || String(a.patron).startsWith("*@")) - Number(String(b.patron).startsWith("@") || String(b.patron).startsWith("*@")));
+  const emailsDe = new Map<string, string[]>();
   for (const origen of origenes) {
-    for (const r of POR_NOMBRE) {
-      const uids = new Set<number>();
-      for (const t of r.buscar) {
-        const b = await puente({ accion: "buscar", carpeta: origen, de: t, limite: 500 });
-        if (!b.ok) return { error: `buscar «${t}» en ${origen}: ${b.error}` };
-        for (const m of (b.correos as Rec[]) || [])
-          if (RELAY_ODOO.test(String(m.de_email || "")) && r.nombre.test(String(m.de_nombre || ""))) uids.add(Number(m.uid));
+    const b = await puente({ accion: "buscar", carpeta: origen, de: "rosaint.odoo.com", limite: 500 });
+    if (!b.ok) return { error: `buscar en ${origen}: ${b.error}` };
+    const relay = ((b.correos as Rec[]) || []).filter((m) => RELAY_ODOO.test(String(m.de_email || "")) && String(m.de_nombre || "").trim());
+    // los nombres que todavía no se buscaron en Odoo
+    const faltan = [...new Set(relay.map((m) => String(m.de_nombre).trim()))].filter((n) => !emailsDe.has(n));
+    for (let i = 0; i < faltan.length; i += 40) {
+      const lote = faltan.slice(i, i + 40);
+      const lista = lote.map((n) => `"${n.replace(/["\\]/g, "")}"`).join(",");
+      const filas: Rec[] = await (await db(`odoo_contactos?select=nombre,email&email=not.is.null&nombre=in.(${encodeURIComponent(lista)})`)).json();
+      for (const n of lote) emailsDe.set(n, []);
+      for (const f of Array.isArray(filas) ? filas : []) emailsDe.get(String(f.nombre))?.push(String(f.email).toLowerCase().trim());
+    }
+    const a: Record<string, number[]> = {};
+    for (const m of relay) {
+      const nombre = String(m.de_nombre).trim();
+      let destino: string | null = null;
+      for (const email of emailsDe.get(nombre) || []) {
+        const r = reglas.find((x) => coincide(email, String(x.patron)));
+        if (r) { destino = String(r.carpeta); break; }
       }
-      if (!uids.size) continue;
-      const o = await puente({ accion: "mover", carpeta: origen, uids: [...uids], destino: r.carpeta });
-      if (!o.ok) return { error: `mover a ${r.carpeta}: ${o.error}` };
-      movidos[`${origen} → ${r.carpeta.split(".").pop()}`] = uids.size;
+      if (!destino) destino = POR_NOMBRE.find((x) => x.nombre.test(nombre))?.carpeta ?? null;
+      if (destino && destino !== origen) (a[destino] ||= []).push(Number(m.uid));
+    }
+    for (const [destino, uids] of Object.entries(a)) {
+      if (simular) {
+        movidos[`${origen} → ${destino.split(".").pop()}`] = relay.filter((m) => uids.includes(Number(m.uid))).map((m) => `${m.de_nombre}: ${String(m.asunto).slice(0, 60)}`);
+        continue;
+      }
+      const o = await puente({ accion: "mover", carpeta: origen, uids, destino });
+      if (!o.ok) return { error: `mover a ${destino}: ${o.error}` };
+      movidos[`${origen} → ${destino.split(".").pop()}`] = uids.length;
     }
   }
   return { movidos };

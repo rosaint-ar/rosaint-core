@@ -152,7 +152,7 @@ Deno.serve(async (req: Request) => {
       return responder({ ok: true, ...(await Auto.promociones(puente, db, { maxLeer: Number(body.max) || 25 })) });
     }
     if (accion === "impuestos_separar") return responder({ ok: true, ...(await Auto.separarImpuestos(puente, db, Number(body.max) || 30)) });
-    if (accion === "por_nombre") return responder({ ok: true, ...(await Auto.porNombre(puente, Array.isArray(body.origenes) ? (body.origenes as string[]) : undefined)) });
+    if (accion === "por_nombre") return responder({ ok: true, ...(await Auto.porNombre(puente, db, Array.isArray(body.origenes) ? (body.origenes as string[]) : undefined, !!body.simular)) });
     if (accion === "facturas_odoo") {
       const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(Number).filter(Boolean) : undefined;
       return responder({ ok: true, ...(await Facturas.cruzarOdoo(db, ids)) });
@@ -239,7 +239,7 @@ Deno.serve(async (req: Request) => {
         } catch (e) { autoOut.promos = { error: String((e as Error).message || e) }; }
         // respuestas de proveedores reenviadas por Odoo → su carpeta según el nombre (también desde Spam)
         try {
-          autoOut.por_nombre = await Auto.porNombre(puente);
+          autoOut.por_nombre = await Auto.porNombre(puente, db);
           const pn = autoOut.por_nombre as Rec;
           if (pn.error || Object.keys((pn.movidos as Rec) || {}).length)
             await registrar({ usuario, accion: "por_nombre", ok: !pn.error, error: pn.error ? String(pn.error).slice(0, 500) : null, detalle: pn });
