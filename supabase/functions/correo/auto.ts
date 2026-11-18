@@ -119,6 +119,35 @@ export async function listarPromos(db: Db): Promise<Rec> {
   return { ok: true, promos: filas };
 }
 
+// ---------------- Respuestas que llegan reenviadas por Odoo («Ventas Pura Química <notifications@rosaint.odoo.com>»)
+// Las reglas miran la dirección y la de Odoo es la misma para todos: acá se ordenan por el NOMBRE del remitente.
+// Sirve también para rescatarlas de Spam (Ferozo las marca como ****SPAM**** a menudo).
+const RELAY_ODOO = /@rosaint\.odoo\.com$/i;
+const POR_NOMBRE: { buscar: string[]; nombre: RegExp; carpeta: string }[] = [
+  // Diego 17/11: Pura Química es la misma empresa que antes se llamaba Todo Droga
+  { buscar: ["Pura Qu", "Todo Droga"], nombre: /pura\s*qu[ií]mica|todo\s*droga/i, carpeta: "INBOX.@Proveedores.Todo Droga" },
+];
+
+export async function porNombre(puente: Puente, origenes = ["INBOX", "INBOX.spam"]): Promise<Rec> {
+  const movidos: Rec = {};
+  for (const origen of origenes) {
+    for (const r of POR_NOMBRE) {
+      const uids = new Set<number>();
+      for (const t of r.buscar) {
+        const b = await puente({ accion: "buscar", carpeta: origen, de: t, limite: 500 });
+        if (!b.ok) return { error: `buscar «${t}» en ${origen}: ${b.error}` };
+        for (const m of (b.correos as Rec[]) || [])
+          if (RELAY_ODOO.test(String(m.de_email || "")) && r.nombre.test(String(m.de_nombre || ""))) uids.add(Number(m.uid));
+      }
+      if (!uids.size) continue;
+      const o = await puente({ accion: "mover", carpeta: origen, uids: [...uids], destino: r.carpeta });
+      if (!o.ok) return { error: `mover a ${r.carpeta}: ${o.error}` };
+      movidos[`${origen} → ${r.carpeta.split(".").pop()}`] = uids.size;
+    }
+  }
+  return { movidos };
+}
+
 // ---------------- Impuestos: Velázquez o RST Cosmetics
 const ES_RST = /RST\s*COSMETICS|30-?71820815-?3/i;
 const ES_VELAZQUEZ = /VEL[AÁ]ZQUEZ\s*,?\s*DIEGO|DIEGO\s+MART[IÍ]N\s+VEL[AÁ]ZQUEZ|20-?31092413-?0/i;
