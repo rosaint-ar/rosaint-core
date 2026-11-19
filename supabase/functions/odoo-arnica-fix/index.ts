@@ -107,6 +107,38 @@ Deno.serve(async (req: Request) => {
         consume_mo: m.raw_material_production_id ? m2oName(m.raw_material_production_id) : null, produce_mo: m.production_id ? m2oName(m.production_id) : null, de: m2oName(m.location_id), a: m2oName(m.location_dest_id) })) }), { headers: cors });
     }
 
+    if (accion === "mo_ver" || accion === "mo_confirmar") {
+      // mo_ver {codigo, mo} → estado y componentes; mo_confirmar {codigo, mo, consumos:{codigoComp: qty}} → fija consumos y la marca hecha
+      const nombre = String(body.mo || "").trim(); if (!nombre) throw new Error("Falta mo");
+      const mos = await call("mrp.production", "search_read", [[["name", "=", nombre], ["company_id", "=", COMPANY_ID]]],
+        { fields: ["id", "name", "state", "product_id", "product_qty", "qty_producing", "lot_producing_id", "move_raw_ids", "move_finished_ids"] }) as Row[];
+      if (mos.length !== 1) throw new Error("No encuentro la orden " + nombre);
+      const mo = mos[0];
+      if (m2oName(mo.product_id).indexOf(`[${cod}]`) < 0) throw new Error(`La orden ${nombre} no es de ${cod}`);
+      const leerRaw = async () => await call("stock.move", "read", [mo.move_raw_ids as number[]], { fields: ["id", "product_id", "product_uom_qty", "quantity", "picked", "state"] }) as Row[];
+      const raw = await leerRaw();
+      const verRaw = (rs: Row[]) => rs.map((m) => ({ id: m.id, componente: m2oName(m.product_id), a_consumir: m.product_uom_qty, consumido: m.quantity, estado: m.state }));
+      if (accion === "mo_ver") return new Response(JSON.stringify({ ok: true, accion, mo: { id: mo.id, estado: mo.state, producto: m2oName(mo.product_id), qty: mo.product_qty, producing: mo.qty_producing, lote: m2oName(mo.lot_producing_id) }, componentes: verRaw(raw) }), { headers: cors });
+      if (["done", "cancel"].includes(String(mo.state))) throw new Error(`La orden ya está ${mo.state}`);
+      const consumos = (body.consumos || {}) as Record<string, number>;
+      if (!mo.lot_producing_id && body.lote) {
+        const pp = (mo.product_id as unknown[])[0] as number; const ln = String(body.lote);
+        const ex = await call("stock.lot", "search", [[["name", "=", ln], ["product_id", "=", pp], ["company_id", "=", COMPANY_ID]]]) as number[];
+        const lid = ex.length ? ex[0] : await call("stock.lot", "create", [{ name: ln, product_id: pp, company_id: COMPANY_ID }]) as number;
+        await call("mrp.production", "write", [[mo.id], { lot_producing_id: lid }]);
+      }
+      if (!Number(mo.qty_producing)) await call("mrp.production", "write", [[mo.id], { qty_producing: mo.product_qty }]);
+      await call("mrp.production", "action_assign", [[mo.id]]);  // reserva de lotes antes de fijar cantidades
+      for (const m of raw) {
+        const comp = m2oName(m.product_id); const k = Object.keys(consumos).find((c) => comp.includes(`[${c}]`));
+        const q = k ? Number(consumos[k]) : Number(m.product_uom_qty);
+        await call("stock.move", "write", [[m.id], { product_uom_qty: q, quantity: q, picked: true }]);
+      }
+      const res = await call("mrp.production", "button_mark_done", [[mo.id]]);
+      const fin = await call("mrp.production", "read", [[mo.id]], { fields: ["state"] }) as Row[];
+      return new Response(JSON.stringify({ ok: fin[0].state === "done", accion, mo: nombre, estado: fin[0].state, por: quien, wizard: (res && typeof res === "object") ? (res as Row).res_model || res : null, componentes: verRaw(await leerRaw()) }), { headers: cors });
+    }
+
     if (accion === "receta" || accion === "receta_set") {
       // receta {codigo} → listas de materiales del producto; receta_set {codigo, componente, cantidad, esperado}
       const boms = await call("mrp.bom", "search_read", [[["product_tmpl_id.product_variant_ids", "in", [pid]], ["company_id", "in", [COMPANY_ID, false]], ["active", "=", true]]],
