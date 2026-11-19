@@ -99,6 +99,14 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, accion, codigo: cod, por: quien, antes: suma, objetivo, despues: p2.qty_available, virtual_despues: p2.virtual_available,
         cambios: cambia.map((x) => ({ id: x.id, lote: m2oName(x.lot_id) || null, de: x.quantity, a: nuevo[x.id as number] })), renglones: ver(despues) }), { headers: cors });
     }
+    if (accion === "pendientes") {
+      // movimientos sin terminar del producto (qué tiene apartado / por entrar)
+      const mv = await call("stock.move", "search_read", [[["product_id", "=", pid], ["state", "not in", ["done", "cancel", "draft"]], ["company_id", "=", COMPANY_ID]]],
+        { fields: ["id", "reference", "origin", "date", "state", "product_uom_qty", "quantity", "raw_material_production_id", "production_id", "location_id", "location_dest_id"] }) as Row[];
+      return new Response(JSON.stringify({ ok: true, accion, codigo: cod, movimientos: mv.map((m) => ({ id: m.id, ref: m.reference, origen: m.origin, fecha: m.date, estado: m.state, qty: m.product_uom_qty, hecho: m.quantity,
+        consume_mo: m.raw_material_production_id ? m2oName(m.raw_material_production_id) : null, produce_mo: m.production_id ? m2oName(m.production_id) : null, de: m2oName(m.location_id), a: m2oName(m.location_dest_id) })) }), { headers: cors });
+    }
+
     if (accion === "receta" || accion === "receta_set") {
       // receta {codigo} → listas de materiales del producto; receta_set {codigo, componente, cantidad, esperado}
       const boms = await call("mrp.bom", "search_read", [[["product_tmpl_id.product_variant_ids", "in", [pid]], ["company_id", "in", [COMPANY_ID, false]], ["active", "=", true]]],
