@@ -8,6 +8,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 //            no es `esperado` (± 0,0005): así nunca se pisa algo que cambió desde que se miró.
 //            Si baja: descuenta de los lotes más viejos primero; si sube: suma al lote más nuevo.
 //            Un renglón negativo se lleva primero a 0.
+//   receta     {codigo}                                    → listas de materiales y renglones
+//   receta_set {codigo, componente, cantidad, esperado}    → cambia la cantidad de un componente (freno si no es `esperado`)
 const ODOO_URL = Deno.env.get("ODOO_URL")!;
 const ODOO_DB = Deno.env.get("ODOO_DB")!;
 const ODOO_LOGIN = Deno.env.get("ODOO_LOGIN")!;
@@ -96,6 +98,26 @@ Deno.serve(async (req: Request) => {
       const despues = await renglones(pid); const p2 = await producto(cod);
       return new Response(JSON.stringify({ ok: true, accion, codigo: cod, por: quien, antes: suma, objetivo, despues: p2.qty_available, virtual_despues: p2.virtual_available,
         cambios: cambia.map((x) => ({ id: x.id, lote: m2oName(x.lot_id) || null, de: x.quantity, a: nuevo[x.id as number] })), renglones: ver(despues) }), { headers: cors });
+    }
+    if (accion === "receta" || accion === "receta_set") {
+      // receta {codigo} → listas de materiales del producto; receta_set {codigo, componente, cantidad, esperado}
+      const boms = await call("mrp.bom", "search_read", [[["product_tmpl_id.product_variant_ids", "in", [pid]], ["company_id", "in", [COMPANY_ID, false]], ["active", "=", true]]],
+        { fields: ["id", "code", "product_qty", "product_uom_id", "bom_line_ids", "type"] }) as Row[];
+      const lineas: Row[] = [];
+      for (const b of boms) {
+        const ls = await call("mrp.bom.line", "read", [b.bom_line_ids as number[]], { fields: ["id", "product_id", "product_qty", "product_uom_id"] }) as Row[];
+        for (const l of ls) lineas.push({ bom: b.id, bom_qty: b.product_qty, linea: l.id, componente: m2oName(l.product_id), cantidad: l.product_qty, uom: m2oName(l.product_uom_id) });
+      }
+      if (accion === "receta") return new Response(JSON.stringify({ ok: true, accion, producto: p, boms: boms.map((b) => ({ id: b.id, code: b.code, qty: b.product_qty, tipo: b.type })), lineas }), { headers: cors });
+      const comp = String(body.componente || "").trim(); const cant = Number(body.cantidad), esp = Number(body.esperado);
+      if (!comp || !Number.isFinite(cant) || cant <= 0 || !Number.isFinite(esp)) throw new Error("Faltan componente, cantidad o esperado");
+      const hits = lineas.filter((l) => String(l.componente).includes(`[${comp}]`));
+      if (hits.length !== 1) throw new Error(`Se esperaba 1 renglón con [${comp}] y hay ${hits.length}. No se cambió nada.`);
+      const h = hits[0];
+      if (Math.abs(Number(h.cantidad) - esp) > 0.0005) throw new Error(`La receta cambió: se esperaba ${esp} y tiene ${h.cantidad}. No se cambió nada.`);
+      await call("mrp.bom.line", "write", [[h.linea], { product_qty: cant }]);
+      const r = await call("mrp.bom.line", "read", [[h.linea]], { fields: ["product_qty"] }) as Row[];
+      return new Response(JSON.stringify({ ok: true, accion, codigo: cod, por: quien, componente: h.componente, de: h.cantidad, a: r[0].product_qty, bom: h.bom }), { headers: cors });
     }
     throw new Error("accion desconocida: " + accion);
   } catch (e) { return new Response(JSON.stringify({ ok: false, error: String((e as Error).message ?? e) }), { headers: cors }); }
