@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Shopping · Rosaint CORE</title>
+  <meta name="app-root" content="../">
+  <link rel="stylesheet" href="../shell/shell.css?v=202610061943">
+  <style>
+    /* Identidad Rosaint: mismo criterio que Reseñas y Envíos y descuentos. */
+    @font-face { font-family: 'Sora'; src: url('../shared/marca/fuentes/sora.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Bitter'; src: url('../shared/marca/fuentes/bitter-italic.ttf') format('truetype'); font-weight: 100 900; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Source Sans 3'; src: url('../shared/marca/fuentes/source-sans-3.ttf') format('truetype'); font-weight: 200 900; font-display: swap; }
+    :root {
+      --azul: #34495E; --papel: #F7F5F2; --acido: #EAF46B; --rojo: #F93549; --niebla: #DDE4E8;
+      --r-bg: var(--papel); --r-sup: #FFFFFF; --r-tx: var(--azul);
+      --r-mu: color-mix(in srgb, var(--azul) 66%, var(--papel)); --r-li: rgba(52, 73, 94, .16);
+      --sora: 'Sora', system-ui, sans-serif; --bitter: 'Bitter', Georgia, serif; --sans: 'Source Sans 3', system-ui, sans-serif;
+    }
+    [data-theme="dark"] {
+      --r-bg: color-mix(in srgb, var(--azul) 55%, #000); --r-sup: color-mix(in srgb, var(--azul) 78%, #000);
+      --r-tx: var(--papel); --r-mu: color-mix(in srgb, var(--papel) 62%, var(--azul)); --r-li: rgba(247, 245, 242, .14);
+    }
+    body { background: var(--r-bg); }
+    body::before { display: none; }
+    #app-content { font-family: var(--sans); color: var(--r-tx); font-size: 15px; }
+    .eyebrow { font: 500 11px/1.5 var(--sora); letter-spacing: .15em; text-transform: uppercase; color: var(--r-mu); }
+    .titular { font: 400 30px/1.08 var(--sora); letter-spacing: -.01em; margin: 5px 0 0; }
+    .titular em { font-family: var(--bitter); font-style: italic; }
+    .filete { display: block; width: 40px; height: 3px; background: var(--acido); margin-top: 12px; }
+    .cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .regla-txt { font-size: 13.5px; color: var(--r-mu); max-width: 820px; margin: 0 0 16px; }
+    .aviso { background: var(--r-sup); border: 1px solid var(--r-li); border-left: 3px solid var(--acido); padding: 12px 14px; font-size: 13.5px; margin-bottom: 14px; max-width: 980px; }
+    .aviso.mal { border-left-color: var(--rojo); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .chip { font: 400 11.5px var(--sora); padding: 6px 12px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-mu); cursor: pointer; }
+    .chip.on { background: var(--azul); border-color: var(--azul); color: var(--papel); }
+    [data-theme="dark"] .chip.on { background: var(--papel); border-color: var(--papel); color: var(--azul); }
+    .chip b { font-weight: 600; }
+    .cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .cifra { background: var(--r-sup); border: 1px solid var(--r-li); padding: 14px 16px; display: grid; gap: 2px; }
+    .cifra b { font: 400 26px/1.1 var(--sora); font-variant-numeric: tabular-nums; }
+    .cifra span { font-size: 12.5px; color: var(--r-mu); }
+    .cifra.clave { border-left: 3px solid var(--acido); }
+    .panel { background: var(--r-sup); border: 1px solid var(--r-li); padding: 16px 18px; margin-bottom: 14px; }
+    .panel h2 { font: 500 14px var(--sora); margin: 0 0 10px; }
+    .fila { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .campo { display: grid; gap: 4px; font-size: 12.5px; color: var(--r-mu); }
+    .campo input, .campo select, .campo textarea { font: inherit; font-size: 14px; padding: 7px 9px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); min-width: 0; }
+    .campo textarea { min-height: 90px; resize: vertical; }
+    .campo.ancho { flex: 1 1 100%; }
+    .buscar { font: inherit; padding: 7px 10px; border: 1px solid var(--r-li); background: var(--r-sup); color: var(--r-tx); width: 280px; max-width: 100%; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; font: 500 11px var(--sora); letter-spacing: .06em; text-transform: uppercase; color: var(--r-mu); padding: 8px; border-bottom: 1px solid var(--r-li); position: sticky; top: 0; background: var(--r-bg); }
+    td { padding: 8px; border-bottom: 1px solid var(--r-li); vertical-align: top; }
+    td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr.fila-prod { cursor: pointer; }
+    tr.fila-prod:hover td { background: color-mix(in srgb, var(--niebla) 45%, transparent); }
+    .sub { font-size: 12.5px; color: var(--r-mu); }
+    .marca { font: 500 10.5px var(--sora); text-transform: uppercase; letter-spacing: .05em; padding: 2px 7px; border: 1px solid var(--r-li); white-space: nowrap; display: inline-block; margin: 0 3px 3px 0; }
+    .marca.ok { background: var(--niebla); border-color: var(--niebla); color: var(--azul); }
+    [data-theme="dark"] .marca.ok { background: transparent; border-color: var(--r-li); color: var(--r-tx); }
+    .marca.alerta { border-color: var(--rojo); color: var(--rojo); }
+    .marca.mano { border-color: var(--azul); }
+    .vacio { padding: 22px; text-align: center; color: var(--r-mu); border: 1px dashed var(--r-li); }
+    .error { color: var(--rojo); }
+    .url { font: 12.5px ui-monospace, monospace; word-break: break-all; background: var(--r-bg); padding: 6px 8px; border: 1px solid var(--r-li); }
+    /* panel lateral de edición */
+    .velo { position: fixed; inset: 0; background: rgba(20, 28, 36, .35); z-index: 60; }
+    .lateral { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--r-bg); z-index: 61; overflow: auto; padding: 20px 22px 90px; box-shadow: -8px 0 30px rgba(0,0,0,.15); }
+    .lateral h2 { font: 400 22px/1.15 var(--sora); margin: 2px 0 4px; }
+    .lateral h3 { font: 500 12px var(--sora); letter-spacing: .08em; text-transform: uppercase; color: var(--r-mu); margin: 18px 0 6px; }
+    .lateral .cerrar { position: absolute; top: 12px; right: 14px; background: none; border: 0; font-size: 26px; color: var(--r-mu); cursor: pointer; }
+    .det td { font-size: 13px; padding: 5px 6px; }
+    .det td:first-child { color: var(--r-mu); white-space: nowrap; }
+    .barra-guardar { position: sticky; bottom: -90px; background: var(--r-bg); padding: 12px 0; display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--r-li); margin-top: 18px; }
+    .origen { font: 400 10.5px var(--sora); color: var(--r-mu); text-transform: uppercase; letter-spacing: .05em; }
+    ul.hl { margin: 4px 0 0 18px; padding: 0; font-size: 13.5px; }
+    @media (max-width: 760px) { .titular { font-size: 24px; } table { font-size: 13px; } .ocultar-cel { display: none; } }
+  </style>
+</head>
+<body data-page="tn-google" data-title="Google Shopping" data-subtitle="Tienda Nube · lo que ve Google de cada producto">
+
+<div id="app-shell"></div>
+
+<main id="app-content">
+  <div class="cab">
+    <div>
+      <span class="eyebrow">Tienda Nube · Rosaint · Merchant Center 130292706</span>
+      <h1 class="titular">Lo que ve <em>Google</em> de cada producto.</h1>
+      <span class="filete"></span>
+    </div>
+  </div>
+  <p class="regla-txt"><b>Precio, oferta y stock</b> los manda Tienda Nube a Google al instante. Esta pantalla arma <b>todo lo demás</b> (descripción, destacados, detalles técnicos, código de barras, costo, link a rosaint.online y etiquetas para publicidad) con las fichas técnicas del Core, Odoo y la web. Google baja este archivo todos los días. Lo que escribas a mano en un producto le gana a lo automático.</p>
+
+  <div id="estado"><div class="vacio">Armando lo que se manda a Google (Tienda Nube, fichas, costos, Odoo y la web)… tarda unos segundos.</div></div>
+  <div id="cifras"></div>
+  <div class="chips" id="filtros"></div>
+  <div class="fila" style="margin-bottom:12px"><input class="buscar" id="buscar" placeholder="Buscar por nombre o código…" autocomplete="off"></div>
+  <div id="tabla"></div>
+
+  <div class="panel" id="config" style="margin-top:22px"></div>
+</main>
+
+<div id="lateral-wrap" hidden><div class="velo" id="velo"></div><aside class="lateral" id="lateral"></aside></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase.js?v=202610061904"></script>
+<script src="../shell/shell.js?v=202611191800"></script>
+<script>
+  // Función tn-google-feed (servidor): accion "vista" = productos + lo que se manda + avisos.
+  // Ajustes a mano: tabla google_feed_ajustes (por id de variante = id en Merchant). Config: google_feed_config.
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const $ = s => document.querySelector(s);
+  const plata = n => n == null ? '—' : '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 });
+  const fecha = s => s ? new Date(s).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  const CATEGORIAS = {
+    '2592': 'Cuidado de la piel › Loción (cremas y geles)',
+    '6262': 'Cuidado de la piel › Máscaras y peelings',
+    '5664': 'Masaje y relajación › Aceites para masaje',
+    '6104': 'Cuidado de la piel › Aceites corporales',
+    '567': 'Cosméticos › Cuidado de la piel',
+    '473': 'Salud y belleza › Cosméticos',
+  };
+  const ORIGEN = { manual: 'a mano', ficha: 'ficha técnica', tienda: 'Tienda Nube', 'tienda (SEO)': 'título SEO de Tienda Nube', odoo: 'Odoo', core: 'Core', web: 'rosaint.online', regla: 'regla', nombre: 'nombre del producto' };
+  let DATOS = null, FILTRO = 'todos', CFG = null;
+
+  async function llamar(cuerpo) {
+    const { data: s } = await sb.auth.getSession();
+    const r = await fetch(window.SUPABASE_URL + '/functions/v1/tn-google-feed', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_KEY, Authorization: 'Bearer ' + (s?.session?.access_token || '') },
+      body: JSON.stringify(cuerpo),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Error del servidor');
+    return j;
+  }
+
+  async function cargar() {
+    try {
+      const [vista, cfg] = await Promise.all([llamar({ accion: 'vista' }), sb.from('google_feed_config').select('*').eq('id', 1).maybeSingle()]);
+      if (cfg.error) throw cfg.error;
+      DATOS = vista; CFG = cfg.data;
+      pintarEstado(); pintarCifras(); pintarFiltros(); pintarTabla(); pintarConfig();
+    } catch (e) {
+      $('#estado').innerHTML = `<div class="aviso mal error">No se pudo armar: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function pintarEstado() {
+    const l = (DATOS.lecturas || [])[0];
+    const google = (DATOS.lecturas || []).find(x => /google/i.test(x.agente || ''));
+    let html = `<div class="aviso">`;
+    html += google ? `<b>Google bajó el archivo por última vez el ${fecha(google.en)}</b> (${google.items} productos).` :
+      `<b>Google todavía no está leyendo este archivo.</b> Hasta que se cambie la fuente en Merchant Center sigue usando la planilla «Feed Rosaint_merchantcenter».`;
+    if (l && !google) html += ` <span class="sub">Última lectura (prueba): ${fecha(l.en)}.</span>`;
+    html += `<br><span class="sub">Link del archivo para Merchant Center (no compartirlo: incluye costos):</span><div class="url" id="url">${esc(DATOS.url)}</div>
+      <button class="btn secondary" id="copiar" style="margin-top:6px">Copiar link</button>
+      <span class="sub"> · Armado en ${(DATOS.ms / 1000).toFixed(1)} s · catálogo web ${esc(DATOS.web || 'no leído')}</span>`;
+    for (const a of DATOS.avisos || []) html += `<div class="error" style="margin-top:6px">${esc(a)}</div>`;
+    html += `</div>`;
+    $('#estado').innerHTML = html;
+    $('#copiar').onclick = async () => { await navigator.clipboard.writeText(DATOS.url); $('#copiar').textContent = 'Copiado ✓'; };
+  }
+
+  function cuenta(f) { return DATOS.items.filter(f).length; }
+  function pintarCifras() {
+    const it = DATOS.items, n = it.length;
+    const conGtin = cuenta(i => i.gtin_tienda || i.g.gtin);
+    const conFicha = cuenta(i => i.ficha || i.g.is_bundle);
+    const conWeb = cuenta(i => i.origen.link === 'web');
+    const aMano = cuenta(i => i.ajuste);
+    $('#cifras').innerHTML = `<div class="cifras">
+      <div class="cifra clave"><b>${n}</b><span>productos que van a Google</span></div>
+      <div class="cifra"><b>${conFicha}/${n}</b><span>con ficha técnica (o combo)</span></div>
+      <div class="cifra"><b>${conGtin}/${n}</b><span>con código de barras</span></div>
+      <div class="cifra"><b>${conWeb}/${n}</b><span>con link a rosaint.online</span></div>
+      <div class="cifra"><b>${aMano}</b><span>con ajustes a mano</span></div></div>`;
+  }
+
+  const FILTROS = {
+    todos: ['Todos', () => true],
+    avisos: ['Con avisos', i => i.avisos.length],
+    gtin: ['Sin código de barras', i => i.avisos.some(a => /código de barras/.test(a))],
+    ficha: ['Sin ficha técnica', i => i.avisos.some(a => /ficha técnica/.test(a))],
+    mano: ['Editados a mano', i => i.ajuste],
+    combos: ['Combos', i => i.g.is_bundle],
+    oferta: ['En oferta', i => i.g.custom_label_4 === 'En oferta'],
+  };
+  function pintarFiltros() {
+    $('#filtros').innerHTML = Object.entries(FILTROS).map(([k, [t, f]]) => `<button class="chip ${k === FILTRO ? 'on' : ''}" data-f="${k}">${t} <b>${cuenta(f)}</b></button>`).join('');
+  }
+  $('#filtros').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (!b) return; FILTRO = b.dataset.f; pintarFiltros(); pintarTabla(); });
+  $('#buscar').addEventListener('input', () => pintarTabla());
+
+  function pintarTabla() {
+    const q = $('#buscar').value.trim().toLowerCase();
+    const f = FILTROS[FILTRO][1];
+    const filas = DATOS.items.filter(f).filter(i => !q || (i.nombre + ' ' + i.sku + ' ' + (i.g.title || '')).toLowerCase().includes(q));
+    if (!filas.length) { $('#tabla').innerHTML = '<div class="vacio">Nada para mostrar con este filtro.</div>'; return; }
+    $('#tabla').innerHTML = `<table><thead><tr><th>Producto</th><th class="ocultar-cel">Lo que recibe Google</th><th class="ocultar-cel">Etiquetas</th><th class="n">Precio</th><th>Avisos</th></tr></thead><tbody>${
+      filas.map(i => `<tr class="fila-prod" data-id="${esc(i.id)}">
+        <td><b>${esc(i.g.title || i.nombre)}</b><div class="sub">${esc(i.sku)} · ${esc(i.nombre)}</div></td>
+        <td class="ocultar-cel">
+          ${i.g.description ? `<span class="marca ok">Descripción ${i.g.description.length}</span>` : ''}
+          ${i.g.product_highlight ? `<span class="marca ok">${i.g.product_highlight.length} destacados</span>` : ''}
+          ${i.g.product_detail ? `<span class="marca ok">${i.g.product_detail.length} detalles</span>` : ''}
+          ${(i.gtin_tienda || i.g.gtin) ? `<span class="marca ok">Cód. barras${i.g.gtin ? ' (Odoo)' : ''}</span>` : ''}
+          ${i.g.cost_of_goods_sold ? `<span class="marca ok">Costo</span>` : ''}
+          ${i.g.is_bundle ? `<span class="marca ok">Combo</span>` : ''}
+          ${i.g.shipping ? `<span class="marca ok">Envío gratis</span>` : ''}
+          ${i.ajuste ? `<span class="marca mano">A mano</span>` : ''}
+          ${i.ajuste?.excluir ? `<span class="marca alerta">Fuera de Google</span>` : ''}
+        </td>
+        <td class="ocultar-cel sub">${[i.g.custom_label_0, i.g.custom_label_1, i.g.custom_label_2, i.g.custom_label_3].map(esc).join(' · ')}</td>
+        <td class="n">${plata(i.precio)}${i.precio_lista && i.precio !== i.precio_lista ? `<div class="sub" style="text-decoration:line-through">${plata(i.precio_lista)}</div>` : ''}</td>
+        <td>${i.avisos.map(a => `<span class="marca alerta">${esc(a)}</span>`).join('') || '<span class="sub">—</span>'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  $('#tabla').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) abrir(tr.dataset.id); });
+
+  // ---------- panel lateral
+  function cerrar() { $('#lateral-wrap').hidden = true; }
+  $('#velo').onclick = cerrar;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+
+  function abrir(id) {
+    const i = DATOS.items.find(x => x.id === id); if (!i) return;
+    const a = i.ajuste || {};
+    const o = i.origen;
+    const det = (i.g.product_detail || []).map(([s, n, v]) => `<tr><td>${esc(s)} › ${esc(n)}</td><td>${esc(v)}</td></tr>`).join('');
+    $('#lateral').innerHTML = `
+      <button class="cerrar" id="x" title="Cerrar">×</button>
+      <span class="eyebrow">${esc(i.sku)} · variante ${esc(i.id)}</span>
+      <h2>${esc(i.g.title || i.nombre)}</h2>
+      <div class="sub">${esc(i.nombre)} · ${plata(i.precio)} · stock ${i.stock ?? '—'} · vendidas en 90 días: ${i.ventas_90}${i.costo ? ` · costo materiales ${plata(i.costo)}` : ''}</div>
+      ${i.avisos.length ? `<div style="margin-top:8px">${i.avisos.map(x => `<span class="marca alerta">${esc(x)}</span>`).join('')}</div>` : ''}
+
+      <h3>Lo que se manda hoy</h3>
+      <table class="det"><tbody>
+        <tr><td>Título <span class="origen">${esc(ORIGEN[o.title] || o.title || '')}</span></td><td>${esc(i.g.title || '(el de Tienda Nube)')}</td></tr>
+        <tr><td>Descripción <span class="origen">${esc(ORIGEN[o.description] || '')}</span></td><td>${esc(i.g.description || '(la de Tienda Nube)')}</td></tr>
+        <tr><td>Destacados <span class="origen">${esc(ORIGEN[o.product_highlight] || '')}</span></td><td>${i.g.product_highlight ? `<ul class="hl">${i.g.product_highlight.map(h => `<li>${esc(h)}</li>`).join('')}</ul>` : '—'}</td></tr>
+        <tr><td>Link</td><td>${i.g.link ? `<a href="${esc(i.g.link)}" target="_blank" rel="noopener">${esc(i.g.link)}</a>` : '(el de Tienda Nube)'}</td></tr>
+        <tr><td>Código de barras</td><td>${esc(i.gtin_tienda || i.g.gtin || '—')} ${i.g.gtin ? '<span class="origen">Odoo</span>' : i.gtin_tienda ? '<span class="origen">Tienda Nube</span>' : ''}</td></tr>
+        <tr><td>Categoría de Google</td><td>${esc(CATEGORIAS[i.g.google_product_category] || i.g.google_product_category)} <span class="origen">${esc(ORIGEN[o.google_product_category] || '')}</span></td></tr>
+        <tr><td>Tamaño</td><td>${esc(i.g.size || '—')}</td></tr>
+        <tr><td>Costo</td><td>${esc(i.g.cost_of_goods_sold || '—')}</td></tr>
+        <tr><td>Etiquetas</td><td>${[0,1,2,3,4].map(n => esc(i.g['custom_label_' + n])).join(' · ')}</td></tr>
+        <tr><td>Envío</td><td>${i.g.shipping ? 'Envío gratis' : 'Según la tabla de envíos de Merchant'}</td></tr>
+      </tbody></table>
+      ${det ? `<h3>Detalles técnicos (${i.g.product_detail.length}) <span class="origen">${esc(ORIGEN[o.product_detail] || '')}</span></h3><table class="det"><tbody>${det}</tbody></table>` : ''}
+
+      <h3>Cambiar a mano</h3>
+      <p class="sub" style="margin:0 0 8px">Dejá vacío lo que quieras que siga saliendo solo. Lo que escribas acá le gana a la ficha técnica y a Tienda Nube.</p>
+      <div class="fila">
+        <label class="campo ancho">Título (hasta 150 letras)<input id="e-titulo" maxlength="150" value="${esc(a.titulo || '')}" placeholder="${esc(i.g.title || '')}"></label>
+        <label class="campo ancho">Descripción<textarea id="e-desc" maxlength="5000" placeholder="${esc(o.description === 'manual' ? '' : (i.g.description || ''))}">${esc(a.descripcion || '')}</textarea></label>
+        <label class="campo ancho">Destacados (uno por renglón, hasta 150 letras cada uno)<textarea id="e-dest" placeholder="${esc(o.product_highlight === 'manual' ? '' : (i.g.product_highlight || []).join('\n'))}">${esc((a.destacados || []).join('\n'))}</textarea></label>
+        <label class="campo">Categoría de Google<select id="e-cat"><option value="">Automática</option>${Object.entries(CATEGORIAS).map(([k, t]) => `<option value="${k}" ${a.categoria === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        <label class="campo">Envío gratis<select id="e-envio"><option value="">Según la regla general</option><option value="si" ${a.envio_gratis === true ? 'selected' : ''}>Sí, anunciar envío gratis</option><option value="no" ${a.envio_gratis === false ? 'selected' : ''}>No</option></select></label>
+        <label class="campo" style="align-self:center"><span><input type="checkbox" id="e-excluir" ${a.excluir ? 'checked' : ''}> No mostrar en Google</span></label>
+        <label class="campo ancho">Notas internas<input id="e-notas" value="${esc(a.notas || '')}"></label>
+      </div>
+      <div class="barra-guardar">
+        <button class="btn primary" id="guardar">Guardar</button>
+        ${i.ajuste ? '<button class="btn secondary" id="volver">Volver a todo automático</button>' : ''}
+        <span class="sub" id="msg"></span>
+      </div>`;
+    $('#lateral-wrap').hidden = false;
+    $('#x').onclick = cerrar;
+    $('#guardar').onclick = () => guardar(i);
+    if ($('#volver')) $('#volver').onclick = () => volver(i);
+  }
+
+  async function guardar(i) {
+    const btn = $('#guardar'); btn.disabled = true; $('#msg').textContent = 'Guardando…';
+    const dest = $('#e-dest').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const larga = dest.find(d => d.length > 150);
+    if (larga) { $('#msg').innerHTML = `<span class="error">Un destacado pasa las 150 letras: «${esc(larga.slice(0, 40))}…»</span>`; btn.disabled = false; return; }
+    const envio = $('#e-envio').value;
+    const { data: u } = await sb.auth.getUser();
+    const fila = {
+      offer_id: i.id, sku: i.sku,
+      titulo: $('#e-titulo').value.trim() || null,
+      descripcion: $('#e-desc').value.trim() || null,
+      destacados: dest.length ? dest : null,
+      categoria: $('#e-cat').value || null,
+      envio_gratis: envio === 'si' ? true : envio === 'no' ? false : null,
+      excluir: $('#e-excluir').checked,
+      notas: $('#e-notas').value.trim() || null,
+      actualizado_en: new Date().toISOString(), actualizado_por: u?.user?.email || null,
+    };
+    const vacio = !fila.titulo && !fila.descripcion && !fila.destacados && !fila.categoria && fila.envio_gratis == null && !fila.excluir && !fila.notas;
+    const r = vacio ? await sb.from('google_feed_ajustes').delete().eq('offer_id', i.id)
+                    : await sb.from('google_feed_ajustes').upsert(fila);
+    if (r.error) { $('#msg').innerHTML = `<span class="error">No se pudo guardar: ${esc(r.error.message)}</span>`; btn.disabled = false; return; }
+    $('#msg').textContent = 'Guardado. Actualizando…';
+    await recargarYAbrir(i.id);
+  }
+  async function volver(i) {
+    if (!confirm('¿Borrar los cambios a mano de este producto? Vuelve a salir todo automático.')) return;
+    const r = await sb.from('google_feed_ajustes').delete().eq('offer_id', i.id);
+    if (r.error) { $('#msg').innerHTML = `<span class="error">${esc(r.error.message)}</span>`; return; }
+    await recargarYAbrir(i.id);
+  }
+  async function recargarYAbrir(id) {
+    try { DATOS = await llamar({ accion: 'vista' }); pintarEstado(); pintarCifras(); pintarFiltros(); pintarTabla(); abrir(id); }
+    catch (e) { $('#msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  }
+
+  // ---------- configuración general
+  function pintarConfig() {
+    $('#config').innerHTML = `<h2>Reglas generales</h2>
+      <div class="fila">
+        <label class="campo">Anunciar envío gratis desde ($)<input id="c-envio" type="number" min="0" step="1000" style="width:150px" value="${CFG.envio_gratis_desde ?? ''}" placeholder="No anunciar"></label>
+        <label class="campo">Destacados por producto<input id="c-dest" type="number" min="0" max="10" style="width:90px" value="${CFG.max_destacados}"></label>
+        <label class="campo">% de productos «Más vendido»<input id="c-top" type="number" min="5" max="50" style="width:90px" value="${Math.round(CFG.top_ventas_pct * 100)}"></label>
+        <label class="campo" style="align-self:center"><span><input type="checkbox" id="c-costo" ${CFG.incluir_costo ? 'checked' : ''}> Mandar el costo (Google muestra la ganancia por venta; nadie más lo ve)</span></label>
+        <button class="btn primary" id="c-guardar">Guardar</button><span class="sub" id="c-msg"></span>
+      </div>
+      <p class="sub" style="margin:10px 0 0">El envío gratis solo se anuncia si de verdad lo das: Google lo compara con el checkout. «Margen alto / medio / bajo» reparte el catálogo en tres partes según lo que deja cada producto (costo de materiales), para separar campañas.</p>`;
+    $('#c-guardar').onclick = async () => {
+      const v = $('#c-envio').value;
+      const r = await sb.from('google_feed_config').update({
+        envio_gratis_desde: v === '' ? null : Number(v), max_destacados: Number($('#c-dest').value || 6),
+        top_ventas_pct: Number($('#c-top').value || 20) / 100, incluir_costo: $('#c-costo').checked, actualizado_en: new Date().toISOString(),
+      }).eq('id', 1).select().single();
+      if (r.error) { $('#c-msg').innerHTML = `<span class="error">${esc(r.error.message)}</span>`; return; }
+      CFG = r.data; $('#c-msg').textContent = 'Guardado. Actualizando…';
+      DATOS = await llamar({ accion: 'vista' }); pintarCifras(); pintarFiltros(); pintarTabla(); $('#c-msg').textContent = 'Guardado ✓';
+    };
+  }
+
+  cargar();
+</script>
+</body>
+</html>
